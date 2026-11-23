@@ -33,7 +33,8 @@ def _today() -> date:
 @router.get("/assets/overview")
 def assets_overview(cmd: Cmd, on: date | None = None) -> AssetsOverview:
     """Valued on read from the stored prices; every figure names its source and day."""
-    return english(cmd.read(overview.assets_overview, on or _today()))
+    today = _today()  # D291: a price read on demand values today only
+    return english(cmd.read(overview.assets_overview, on or today, today=today))
 
 
 @router.get("/assets")

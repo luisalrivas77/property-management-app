@@ -45,6 +45,8 @@ export interface Formatter {
   month(value: string | null | undefined): string;
   /** A timestamp in local time, medium date and short time. */
   dateTime(value: string | null | undefined): string;
+  /** A timestamp's local time of day: de „14:32“, en „2:32 PM“. */
+  time(value: string | null | undefined): string;
   /** A whole count ("3") with grouping: de „1.200“, en „1,200“. */
   count(value: number): string;
 }
@@ -54,6 +56,7 @@ const DASH = "–";
 export function formatterFor(locale: Locale): Formatter {
   const { group, decimal: point } = SEPARATORS[locale];
   const dateTimeFormat = new Intl.DateTimeFormat(LOCALE_TAG[locale], { dateStyle: "medium", timeStyle: "short" });
+  const timeFormat = new Intl.DateTimeFormat(LOCALE_TAG[locale], { timeStyle: "short" });
 
   function decimal(value: string | null | undefined, minFraction = 0): string {
     if (value == null || value === "") return DASH;
@@ -100,6 +103,9 @@ export function formatterFor(locale: Locale): Formatter {
     },
     dateTime(value) {
       return value ? dateTimeFormat.format(new Date(value)) : DASH;
+    },
+    time(value) {
+      return value ? timeFormat.format(new Date(value)) : DASH;
     },
     count(value) {
       return decimal(String(Math.trunc(value)));

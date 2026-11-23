@@ -108,7 +108,6 @@ COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("transfer_link", "kind"): TransferLinkKind,
     ("transfer_link", "matched_by"): TransferMatchedBy,
     ("price", "source"): PriceSourceKind,
-    ("valuation_snapshot", "price_source"): PriceSourceKind,
     # Phase 7 (0041)
     ("asset", "chain"): Chain,
     ("wallet_address", "chain"): Chain,
@@ -166,6 +165,14 @@ def test_proposal_kind_is_every_extraction_kind_but_manual(connect):
     with connect(OWNER) as conn:
         allowed = _allowed_values(conn, "proposal", "kind")
     assert allowed == {m.value for m in E.ExtractionKind} - {E.ExtractionKind.MANUAL.value}
+
+
+def test_a_month_end_is_priced_by_every_price_source_but_spot(connect):
+    # Phase 10 D291 (migration 0053): a price read on demand values today only, so the
+    # month-end's CHECK lists every PriceSourceKind but `spot` and the database refuses one.
+    with connect(OWNER) as conn:
+        allowed = _allowed_values(conn, "valuation_snapshot", "price_source")
+    assert allowed == {m.value for m in PriceSourceKind} - {PriceSourceKind.SPOT.value}
 
 
 def test_link_targets_match_document_link_columns(connect):

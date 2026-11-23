@@ -20,6 +20,7 @@ export function sourceLabel(t: T, source: string): string {
     kraken_daily: t.sourceKraken,
     ecb_fx: t.sourceEcb,
     user: t.sourceUser,
+    spot: t.sourceSpot,
   };
   return words[source] ?? source;
 }

@@ -414,6 +414,7 @@ const EVENT_TYPE_DE: Record<EventType, string> = {
   "workspace.inbox_poll_recovered": "Posteingang per E-Mail läuft wieder",
   "workspace.ai_consent_recorded": "Zustimmung zur KI-Zuordnung privater Konten erfasst",
   "workspace.prices_fetched": "Kurse abgerufen",
+  "workspace.crypto_refreshed": "Krypto-Werte aktualisiert",
   "workspace.valuation_snapshot_written": "Monatsendstand des Vermögens gespeichert",
   "health.snapshot_stored": "Kennzahlen eines abgeschlossenen Monats festgehalten",
   "household_scenario.created": "Haushaltsszenario gespeichert",
@@ -548,6 +549,7 @@ const EVENT_TYPE_EN: Record<EventType, string> = {
   "workspace.inbox_poll_recovered": "Email inbox working again",
   "workspace.ai_consent_recorded": "Consent to AI categorisation of private accounts recorded",
   "workspace.prices_fetched": "Prices fetched",
+  "workspace.crypto_refreshed": "Crypto values refreshed",
   "workspace.valuation_snapshot_written": "Month-end net worth stored",
   "health.snapshot_stored": "Key figures of a closed month stored",
   "household_scenario.created": "Household scenario saved",
@@ -823,6 +825,8 @@ const PRICE_SOURCE_DE: Record<PriceSourceKind, string> = {
   kraken_daily: "Kraken",
   ecb_fx: "EZB-Referenzkurs",
   user: "von Hand eingetragen",
+  // D291: a price read on demand with „Jetzt aktualisieren“, for today only
+  spot: "Aktueller Kurs",
 };
 const PRICE_SOURCE_EN: Record<PriceSourceKind, string> = {
   trade: "Trade confirmation",
@@ -833,6 +837,7 @@ const PRICE_SOURCE_EN: Record<PriceSourceKind, string> = {
   kraken_daily: "Kraken",
   ecb_fx: "ECB reference rate",
   user: "entered by hand",
+  spot: "Current price",
 };
 export const PRICE_SOURCE: Record<PriceSourceKind, string> = localized(PRICE_SOURCE_DE, PRICE_SOURCE_EN);
 

@@ -67,6 +67,7 @@ from .morning import (
     run_warm_step,
 )
 from .notify import NOTIFY_CRON, NOTIFY_LOCK, NOTIFY_TASK, run_send_reminders
+from .refresh_crypto import REFRESH_CRYPTO_LOCK, REFRESH_CRYPTO_TASK, run_refresh_crypto
 from .scrub import SCRUB_CRON, SCRUB_TASK, run_scrub_proposals
 from .sync_wallets import (
     SYNC_WALLET_TASK,
@@ -325,6 +326,14 @@ def sync_wallet(context: JobContext, *, workspace_id: str, account_id: str) -> N
     run_sync_wallet(deps, workspace_id=UUID(workspace_id), account_id=UUID(account_id))
 
 
+def refresh_crypto(context: JobContext, *, workspace_id: str) -> None:
+    """Phase 10 D291, „Jetzt aktualisieren“: the household's wallets read again, then a
+    current price for every held coin."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    assert context.job is not None
+    run_refresh_crypto(deps, workspace_id=UUID(workspace_id), job_id=context.job.id)
+
+
 def register_tasks(app: procrastinate.App) -> procrastinate.App:
     """The queued tasks, plus scrub_proposals as a periodic task: the worker's periodic
     deferrer queues it at SCRUB_CRON. Procrastinate skips a schedule missed by more than
@@ -394,6 +403,8 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
     )
     app.periodic(cron=SYNC_WALLETS_CRON, periodic_id=SYNC_WALLETS_TASK)(wallets)
     app.task(name=SYNC_WALLET_TASK, pass_context=True, lock=SYNC_WALLETS_LOCK)(sync_wallet)
+    # No retry: the household presses again. The wallet syncs' lock (D291).
+    app.task(name=REFRESH_CRYPTO_TASK, pass_context=True, lock=REFRESH_CRYPTO_LOCK)(refresh_crypto)
     # The morning chain (jobs.morning). No retry for either: the clock's fallback runs are the
     # backstop. The retry shares the wallets' lock; the gates run one at a time.
     app.task(name=SYNC_WALLETS_RETRY_TASK, pass_context=True, lock=SYNC_WALLETS_LOCK)(

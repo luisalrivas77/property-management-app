@@ -15,6 +15,7 @@ import { useCallback, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
+import { CryptoRefresh } from "@/components/cryptoRefresh";
 import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -40,7 +41,11 @@ export function CryptoTab() {
     return { holdings, owners };
   }, []);
   const state = useLoad(load);
-  return <Loading state={state}>{({ holdings, owners }) => <Crypto data={holdings} owners={owners} />}</Loading>;
+  return (
+    <Loading state={state}>
+      {({ holdings, owners }) => <Crypto data={holdings} owners={owners} onRefreshed={state.reload} />}
+    </Loading>
+  );
 }
 
 function coinLabel(coin: { symbol?: string | null; name?: string }): string {
@@ -50,7 +55,24 @@ function coinLabel(coin: { symbol?: string | null; name?: string }): string {
 
 const coinKey = (coin: CryptoCoin) => `${coin.account_id}~${coin.asset_id}`;
 
-function Crypto({ data, owners }: { data: CryptoHoldings; owners: Owner[] }) {
+/** The day before an ISO day, as an ISO day. */
+function dayBefore(day: string): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Where a coin's price stands (D291): „Stand 14:32“ for a price read on demand today; once one
+ * was read today, a coin still at a daily price says so: „Kurs von gestern“ for the last close
+ * (yesterday's, or a feed's row of today, which is its midnight snapshot), else its day. */
+function priceMoment(t: T, f: Formatter, coin: CryptoCoin, data: CryptoHoldings): string | null {
+  if (coin.price_source === "spot" && coin.price_read_at) return t.spotAt(f.time(coin.price_read_at));
+  if (!data.spot_read_at || !coin.price_on) return null;
+  if (coin.price_source !== "coingecko_daily" && coin.price_source !== "kraken_daily") return null;
+  return coin.price_on >= dayBefore(data.on) ? t.yesterdaysPrice : t.asOf(f.date(coin.price_on));
+}
+
+function Crypto({ data, owners, onRefreshed }: { data: CryptoHoldings; owners: Owner[]; onRefreshed: () => void }) {
   const t = useT(assets);
   const f = useFormat();
   const detail = useDetail("coin");
@@ -82,6 +104,7 @@ function Crypto({ data, owners }: { data: CryptoHoldings; owners: Owner[] }) {
   return (
     <DetailLayout panel={panel}>
       <div className="stack">
+        <CryptoRefresh onRefreshed={onRefreshed} />
         <Figures data={data} accounts={accounts} />
         {data.unfilled_movements ? (
           <div className="notice notice-warn" role="status">
@@ -128,6 +151,7 @@ function Crypto({ data, owners }: { data: CryptoHoldings; owners: Owner[] }) {
               {coins.map((coin) => {
                 const account = accountOf(coin.account_id);
                 const who = [account?.label ?? "–", owner(account)].filter(Boolean).join(" · ");
+                const moment = priceMoment(t, f, coin, data);
                 return (
                   <li key={coinKey(coin)}>
                     <a {...detail.linkProps(coinKey(coin))} className="asset-row">
@@ -135,6 +159,7 @@ function Crypto({ data, owners }: { data: CryptoHoldings; owners: Owner[] }) {
                         <strong>{coinLabel(coin)}</strong>
                         <span className="asset-row-sub">
                           {f.decimal(coin.units)} {coin.symbol ?? ""}
+                          {moment ? ` · ${moment}` : ""}
                         </span>
                         <span className="asset-row-sub asset-phone">
                           {who} · {holdingText(t, f, coin)}

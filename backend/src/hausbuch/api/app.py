@@ -40,6 +40,7 @@ from .routes import (
     assets,
     auth,
     bank_sync,
+    crypto_refresh,
     documents,
     exchange,
     health_figures,
@@ -96,6 +97,7 @@ ROUTE_MODULES = (
     health_figures,
     household_plan,
     exchange,
+    crypto_refresh,  # phase 10 D291: /crypto/refresh
     holdings,  # before wallets: GET /wallets/holdings, not /wallets/{account_id}
     wallet_sync,
     wallets,

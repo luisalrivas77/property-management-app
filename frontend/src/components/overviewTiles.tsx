@@ -708,7 +708,7 @@ export function TilePanel({
     case "nettovermoegen":
       body = (
         <>
-          <NetWorthSection />
+          <NetWorthSection onCryptoRefreshed={netWorth.reload} />
           <Go href="/assets">{t.toAssets}</Go>
         </>
       );

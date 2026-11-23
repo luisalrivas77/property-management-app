@@ -30,7 +30,7 @@ from hausbuch.schemas.holdings import (
     NextTranche,
     TranchePart,
 )
-from hausbuch.schemas.prices import PricePoint
+from hausbuch.schemas.prices import PricePoint, PriceSourceKind
 
 from .lots import cost_total, exact
 
@@ -104,6 +104,10 @@ def coin(
         units=units,
         price_eur=None if price is None else price.price_eur,
         price_on=None if price is None else price.on,
+        price_source=None if price is None else price.source,
+        price_read_at=(
+            price.fetched_at if price is not None and price.source is PriceSourceKind.SPOT else None
+        ),
         value_eur=value,
         cost_eur=cost.eur,
         cost_priced_eur=cost.priced_eur,

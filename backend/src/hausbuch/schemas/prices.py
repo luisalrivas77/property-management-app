@@ -74,6 +74,8 @@ class PriceLabel(Schema):
     on: date
     price_eur: PriceEur
     issuer: str | None = None  # issuer_nav: the adapter's key (spdr, ishares, ...)
+    # spot (phase 10 D291): the moment the price was read, for „Stand <Uhrzeit>“.
+    read_at: datetime | None = None
 
 
 class OverviewPosition(Schema):

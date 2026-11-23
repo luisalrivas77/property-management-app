@@ -2924,6 +2924,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crypto/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Crypto Refresh State */
+        get: operations["crypto_refresh_state_api_crypto_refresh_get"];
+        put?: never;
+        /** Crypto Refresh Start */
+        post: operations["crypto_refresh_start_api_crypto_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/holdings/crypto": {
         parameters: {
             query?: never;
@@ -6626,6 +6644,9 @@ export interface components {
             price_eur?: string | null;
             /** Price On */
             price_on?: string | null;
+            price_source?: components["schemas"]["PriceSourceKind"] | null;
+            /** Price Read At */
+            price_read_at?: string | null;
             /** Value Eur */
             value_eur?: string | null;
             /** Cost Eur */
@@ -6697,6 +6718,8 @@ export interface components {
             unfilled_account_ids?: string[];
             /** Waiting */
             waiting?: components["schemas"]["WalletWaiting"][];
+            /** Spot Read At */
+            spot_read_at?: string | null;
         };
         /**
          * CryptoLot
@@ -6758,6 +6781,48 @@ export interface components {
             value_eur?: string | null;
             /** Price Needs */
             price_needs?: components["schemas"]["LotPriceNeed"][];
+        };
+        /**
+         * CryptoRefreshState
+         * @description GET /crypto/refresh, and POST's answer.
+         *
+         *     status: `idle` (never pressed), `running` (queued or reading), `succeeded`, `failed`.
+         *     queued (POST only): whether this press queued a new run; false while one runs or one
+         *     finished less than two minutes ago, whose state is then returned (one at a time per
+         *     household). spot_read_at: the moment of the newest price read on demand today (Berlin),
+         *     null when none was read today.
+         *
+         *     The counts of the newest run when it succeeded (its workspace.crypto_refreshed event),
+         *     else null: `stored`, the held coins that got a current price; `unpriced`, those with a
+         *     price source (a Kraken pair or a CoinGecko id) that kept their daily close;
+         *     `wallets_failed`, the wallet addresses that could not be read; `wallets_aborted`, the
+         *     wallet read stopped as a whole, so no address count is known.
+         */
+        CryptoRefreshState: {
+            /** Job Id */
+            job_id?: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "idle" | "running" | "succeeded" | "failed";
+            /**
+             * Queued
+             * @default false
+             */
+            queued: boolean;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Spot Read At */
+            spot_read_at?: string | null;
+            /** Stored */
+            stored?: number | null;
+            /** Unpriced */
+            unpriced?: number | null;
+            /** Wallets Failed */
+            wallets_failed?: number | null;
+            /** Wallets Aborted */
+            wallets_aborted?: boolean | null;
         };
         /**
          * Currency
@@ -7800,7 +7865,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "workspace.app_secret_set" | "workspace.app_secret_deleted" | "workspace.advice_mode_changed" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.movement_times_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "account.holdings_exported" | "account.deposit_address_learned" | "account.deposit_address_forgotten" | "account.withdrawal_pair_learned" | "account.withdrawal_pair_forgotten" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "wallet.payee_answered" | "wallet.deposit_looked_up" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled" | "health.snapshot_stored" | "household_scenario.created" | "household_scenario.withdrawn" | "plan.explanation_stored";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.crypto_refreshed" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "workspace.app_secret_set" | "workspace.app_secret_deleted" | "workspace.advice_mode_changed" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.movement_times_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "account.holdings_exported" | "account.deposit_address_learned" | "account.deposit_address_forgotten" | "account.withdrawal_pair_learned" | "account.withdrawal_pair_forgotten" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "wallet.payee_answered" | "wallet.deposit_looked_up" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled" | "health.snapshot_stored" | "household_scenario.created" | "household_scenario.withdrawn" | "plan.explanation_stored";
         /**
          * ExchangeImport
          * @description An import on the exchange account's page, with its balances per asset.
@@ -11460,6 +11525,8 @@ export interface components {
             price_eur: string;
             /** Issuer */
             issuer?: string | null;
+            /** Read At */
+            read_at?: string | null;
         };
         /**
          * PriceSourceKind
@@ -11467,7 +11534,7 @@ export interface components {
          *     protocol below. The precedence among one day's rows is rules.valuation's data.
          * @enum {string}
          */
-        PriceSourceKind: "trade" | "statement" | "issuer_nav" | "coingecko_daily" | "kraken_daily" | "ecb_fx" | "user" | "exchange_close";
+        PriceSourceKind: "trade" | "statement" | "issuer_nav" | "coingecko_daily" | "kraken_daily" | "ecb_fx" | "user" | "exchange_close" | "spot";
         /** PriceSplit */
         PriceSplit: {
             /**
@@ -21867,6 +21934,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MovementAnswered"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    crypto_refresh_state_api_crypto_refresh_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CryptoRefreshState"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    crypto_refresh_start_api_crypto_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CryptoRefreshState"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
