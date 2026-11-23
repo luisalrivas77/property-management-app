@@ -221,6 +221,14 @@ def test_a_sale_today_with_a_taxable_gain(world):
     )
     assert (row.cash_back, row.percent) == (Decimal("-372.60"), Decimal("-0.6"))
     assert row.tax_estimated_years == [2026] and row.income_missing_years == []
+    # Phase 10 §7.6 (d): no Bescheid for 2026, so its cash before tax (−150.00) has arrived and
+    # its tax (an override, 222.60 owed) is an expected back-payment; together the cash back.
+    assert (row.arrived, row.expected_tax_refund) == (Decimal("-150.00"), Decimal("-222.60"))
+    assert (row.years[0].cash_before_tax, row.years[0].tax_refund) == (
+        Decimal("-150.00"),
+        Decimal("-222.60"),
+    )
+    assert not row.years[0].tax_assessed
     sold = row.sale_today
     assert (sold.value, sold.selling_costs, sold.taxable) == (
         Decimal("360000.00"),

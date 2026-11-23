@@ -16,6 +16,7 @@ from pydantic import Field, JsonValue, model_validator
 
 from .ai import ClassifyOutput, ExtractedValue
 from .common import (
+    BuildingShare,
     Fraction,
     LivingArea,
     Money,
@@ -32,6 +33,7 @@ from .enums import (
     EntityType,
     ExtractionKind,
     OperatingCostsTerms,
+    PriceSplitSource,
     PropertyKind,
     ProposalStatus,
     ProposalTargetMode,
@@ -167,6 +169,16 @@ class ProposalApplyBody(Schema):
 # --- Input of rules.prefill.build_proposal: the workspace's records as plain facts ------
 
 
+class ExistingPriceSplit(Schema):
+    """A recorded split of the property (phase 10 §7.6 (e)): what a read split is compared
+    with."""
+
+    id: UUID
+    source: PriceSplitSource
+    building_share: BuildingShare
+    inputs: dict[str, JsonValue] | None = None
+
+
 class ExistingProperty(Schema):
     id: UUID
     kind: PropertyKind
@@ -182,6 +194,9 @@ class ExistingProperty(Schema):
     # of a Wohnflächenberechnung. None when not stated, or when two contracts disagree.
     contract_mea: Fraction | None = None
     contract_unit_label: str | None = None
+    # Phase 10 §7.6 (e): the property's recorded splits, so a re-read contract whose split is
+    # one of them proposes no second one.
+    price_splits: list[ExistingPriceSplit] = Field(default_factory=list)
 
 
 class ExistingUnit(Schema):

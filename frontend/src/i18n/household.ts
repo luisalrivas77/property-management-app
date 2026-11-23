@@ -33,6 +33,20 @@ const de = {
   noMeansText: (n: number) =>
     `Die Durchschnitte erscheinen ab 3 abgeschlossenen Monaten in Folge; bisher ${n === 1 ? "ist es 1" : `sind es ${n}`}.`,
 
+  budgetLineTitle: "Budget",
+  budgetLineBasis: (n: number) => `Ø je Monat über ${n} abgeschlossene ${n === 1 ? "Monat" : "Monate"}`,
+  budgetOf: (label: string, amount: string, target: string) => `${label} ${amount} von ${target}`,
+  budgetOfMinimum: (label: string, amount: string, target: string) => `${label} ${amount} von mindestens ${target}`,
+
+  differencesTitle: "Was diesen Monat anders ist",
+  differencesBasis: (month: string, n: number) =>
+    `${month}, verglichen mit dem Schnitt der ${n} abgeschlossenen Monate davor`,
+  differenceMore: (group: string, amount: string) => `${group}: ${amount} mehr als üblich`,
+  differenceLess: (group: string, amount: string) => `${group}: ${amount} weniger als üblich`,
+  differenceMean: (n: number) => `Ø ${n} ${n === 1 ? "Monat" : "Monate"} davor`,
+  differencePayments: "Zahlungen",
+  differenceNoPayments: "Keine einzelne Zahlung in diesem Monat.",
+
   surplusTitle: "Überschuss je Monat",
   surplusHow: "Einnahmen minus Ausgaben",
   investedOf: (amount: string) => `Davon angelegt: ${amount}`,
@@ -108,6 +122,19 @@ const en: Messages = {
   basis: (n, range) => `Basis of the averages: ${n} closed months, ${range}.`,
   noMeansTitle: "No averages yet",
   noMeansText: (n) => `The averages appear from 3 closed months in a row; so far there ${n === 1 ? "is 1" : `are ${n}`}.`,
+
+  budgetLineTitle: "Budget",
+  budgetLineBasis: (n) => `Monthly average over ${n} closed ${n === 1 ? "month" : "months"}`,
+  budgetOf: (label, amount, target) => `${label} ${amount} of ${target}`,
+  budgetOfMinimum: (label, amount, target) => `${label} ${amount} of at least ${target}`,
+
+  differencesTitle: "What is different this month",
+  differencesBasis: (month, n) => `${month}, compared with the average of the ${n} closed months before it`,
+  differenceMore: (group, amount) => `${group}: ${amount} more than usual`,
+  differenceLess: (group, amount) => `${group}: ${amount} less than usual`,
+  differenceMean: (n) => `Ø ${n} ${n === 1 ? "month" : "months"} before`,
+  differencePayments: "Payments",
+  differenceNoPayments: "No single payment in this month.",
 
   surplusTitle: "Surplus per month",
   surplusHow: "Income minus spending",

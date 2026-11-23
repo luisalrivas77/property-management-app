@@ -365,16 +365,18 @@
 }
 
 .kind-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.25rem 1rem;
   margin-bottom: 0.75rem;
 }
 
-.kind-total strong {
-  font-size: 1.25rem;
+.kind-summary p {
+  margin: 0;
+}
+
+.kind-total {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 
 .account-list {

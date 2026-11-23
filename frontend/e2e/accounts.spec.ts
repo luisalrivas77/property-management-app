@@ -82,6 +82,9 @@ test("a camt ZIP imports reconciled, a second upload adds nothing, Umsätze by m
   const kinds = page.getByRole("navigation", { name: "Kontoarten" });
   await expect(kinds.getByRole("link", { name: "Bank 1" })).toHaveAttribute("aria-current", "page");
   await expect(kinds.getByRole("link")).toHaveCount(1); // no other kind is held
+  // The tab's total as the net worth sums it today (§7.6 Konten (2)), its count under it.
+  await expect(page.locator(".kind-total")).toHaveText("-3.028,51 €");
+  await expect(page.getByText("1 Konto · heute", { exact: true })).toBeVisible();
   const account = page.getByRole("link").filter({ hasText: "Mietkonto" });
   await expect(account).toContainText("-3.028,51 €");
   await account.click();

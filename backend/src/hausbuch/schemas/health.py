@@ -22,7 +22,7 @@ from .allocation import AllocationCategory
 from .common import _STRING_ONLY, Money, Schema, _string_schema
 from .common import Fraction as ExactShare
 from .enums import AccountKind
-from .household import NetWorthClass
+from .household import HouseholdGroup, NetWorthClass
 from .household import SavingsRate as Ratio  # signed, four places (numeric(9,4))
 
 # A calendar month, "2027-05".
@@ -639,6 +639,119 @@ class Light(Schema):
     texts: list[str] = Field(default_factory=list)
 
 
+# --- Finanzielle Gesundheit: one word from three questions (phase 10 §7.6, 23 Nov 2026) -----
+
+
+class VerdictWord(StrEnum):
+    """The household's financial health in one word (rules/verdict)."""
+
+    VERY_GOOD = "very_good"  # „Sehr gut“: all three questions good
+    GOOD = "good"  # „Gut“: none strained, not all good
+    STRAINED = "strained"  # „Angespannt“: at least one strained
+    TOO_LITTLE_DATA = "too_little_data"  # „Noch zu wenig Daten“: a figure cannot be computed
+
+
+class VerdictState(StrEnum):
+    GOOD = "good"
+    OK = "ok"
+    STRAINED = "strained"
+    MISSING = "missing"  # the figure cannot be computed yet
+
+
+class VerdictOrigin(StrEnum):
+    HOUSEHOLD = "household"  # the household's confirmed limit (levers.bands, D250)
+    DEFAULT = "default"  # Hausbuch's standard limit (rules/verdict/verdict.yaml, bands.yaml)
+
+
+class VerdictPart(Schema):
+    """One of the three questions: its figure, its state against the limits used, and where
+    each limit came from. The savings rate and the Schuldendienstquote are ratios (`value`,
+    `good`, `strained`); the reserve is compared in euros (`amount` against `target`, good at
+    or above it, strained below `strained_amount` = `strained` × target). Texts are German,
+    figure-free, from verdict.yaml; the English is swapped in on read (services/read_texts)."""
+
+    figure: MarkedFigure  # reserve, savings_rate or debt_service_ratio
+    state: VerdictState
+    value: Ratio | None = None  # the savings rate or the Schuldendienstquote
+    amount: Money | None = None  # the reserve
+    months: ReserveMonths | None = None
+    target: Money | None = None  # the reserve target, its good limit
+    target_months: TargetMonths | None = None
+    good: LimitValue | None = None  # a ratio's good limit (None for the reserve: its target)
+    strained: LimitValue | None = None  # a ratio's strained limit; the reserve's share
+    strained_amount: Money | None = None  # the reserve's strained limit in euros
+    good_origin: VerdictOrigin | None = None
+    strained_origin: VerdictOrigin | None = None
+    origin: VerdictOrigin | None = None  # household when either limit used is the household's
+    no_loan: bool = False
+    question: str
+    headline: str
+    why: str
+    reference: str
+
+
+class Verdict(Schema):
+    """GET /health's `verdict`: computed on read from the same figures, never stored."""
+
+    word: VerdictWord
+    weakest: MarkedFigure | None = None  # the part `line` names
+    line: str
+    parts: list[VerdictPart] = Field(default_factory=list)
+    todos: list[HealthTodo] = Field(default_factory=list)  # what is missing (too little data)
+
+
+# --- Phase 10 §7.6 Haushalt (3): „Was diesen Monat anders ist“ --------------------------------
+
+
+class DifferenceWords(StrEnum):
+    MORE = "more"  # „<Betrag> mehr als üblich“
+    LESS = "less"  # „<Betrag> weniger als üblich“
+
+
+class GroupPayment(Schema):
+    """One confirmed allocation of a private line behind a group's month, `amount` signed as
+    the group's spending (money out positive, a refund negative), so a group's payments add
+    up to its month."""
+
+    allocation_id: UUID
+    transaction_id: UUID
+    account_id: UUID
+    account_label: str
+    booked_on: date
+    payee: str | None = None
+    purpose: str = ""
+    category: AllocationCategory
+    amount: Money
+
+
+class GroupDifference(Schema):
+    """A spending group whose month differs from its own mean over the closed months before
+    it (phase 10 §7.6 Haushalt (3), build decision (a)); `difference` = `amount` − `mean`."""
+
+    group: HouseholdGroup
+    amount: Money
+    mean: Money
+    difference: Money
+    words: DifferenceWords
+    payments: list[GroupPayment] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _difference(self) -> Self:
+        if self.difference != self.amount - self.mean:
+            raise ValueError("difference = amount − mean")
+        return self
+
+
+class MonthDifferences(Schema):
+    """The newest closed month (`month`) against the mean of the closed months before it
+    (`baseline`, three to twelve, oldest first): at most three groups, the largest difference
+    first; empty when none crosses both thresholds. Figures only: no colour, no advice."""
+
+    month: YearMonth
+    baseline: list[YearMonth]
+    groups: list[GroupDifference] = Field(default_factory=list)
+
+
 # --- GET /health, the stored month, the closing check -----------------------------------
 
 
@@ -662,6 +775,13 @@ class Health(Schema):
     # it for that month, so Übersicht's cash flow tile reads its savings rate from this answer
     # instead of a second read of the months; None before the first ended month.
     last_ended: HouseholdMonth | None = None
+    # Phase 10 §7.6 (23 Nov 2026): the one-word verdict „Finanzielle Gesundheit“ from the
+    # savings rate, the reserve and the Schuldendienstquote (rules/verdict); None only in a
+    # Health built without it.
+    verdict: Verdict | None = None
+    # Phase 10 §7.6 Haushalt (3): the newest closed month's spending groups that differ most
+    # from their mean over the closed months before it; None below three such months.
+    differences: MonthDifferences | None = None
 
 
 class HealthSnapshotFigures(Schema):

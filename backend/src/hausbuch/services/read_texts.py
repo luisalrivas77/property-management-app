@@ -24,8 +24,9 @@ from pydantic import BaseModel
 
 from hausbuch import i18n
 from hausbuch.rules.health.bands import proposals
+from hausbuch.rules.verdict.verdict import data as verdict_data
 from hausbuch.schemas.budget import BudgetMark, BudgetReference, BudgetThreshold, BudgetView
-from hausbuch.schemas.health import DebtGap, Light, MarkedFigure
+from hausbuch.schemas.health import DebtGap, Light, MarkedFigure, Verdict, VerdictPart
 from hausbuch.schemas.net_worth import NetWorthLine
 from hausbuch.schemas.plan import ComparisonWords, SpendingComparisonRow
 
@@ -409,6 +410,79 @@ def _reference(ref: BudgetReference) -> BudgetReference:
     )
 
 
+# --- Finanzielle Gesundheit (rules/verdict/verdict.yaml) ---------------------------------------
+
+# The verdict's texts by code; verdict.yaml stays German. Every code of the file has its English
+# here (tests/rules/test_verdict.py).
+VERDICT: Mapping[str, str] = {
+    "savings_rate.question": "Do you spend less than you earn?",
+    "savings_rate.why": (
+        "What you do not spend in a month is left for savings and investments; whoever keeps"
+        " spending more than comes in lives off savings or loans."
+    ),
+    "savings_rate.reference": (
+        "For comparison: the 50/30/20 rule of thumb (Warren and Tyagi, 2005) puts 20 % of net"
+        " income aside for saving; the Federal Statistical Office publishes the savings rate of"
+        " private households as an average, not as a limit. The standard limit for “good” is a"
+        " suggestion by Hausbuch that you can change."
+    ),
+    "savings_rate.good": "You save enough",
+    "savings_rate.ok": "You save, but little",
+    "savings_rate.strained": "You save too little",
+    "savings_rate.negative": "You spend more than you earn",
+    "savings_rate.missing": "Savings rate cannot be calculated yet",
+    "reserve.question": "Could you absorb a surprise?",
+    "reserve.why": (
+        "A reserve on the account absorbs a repair, a back-payment or a few months with less"
+        " income, without you having to borrow money or sell investments."
+    ),
+    "reserve.reference": (
+        "The reserve is good from your reserve target, which you set in months of your needs;"
+        " strained below a part of it. No source sets a limit for a household; both limits are"
+        " your own."
+    ),
+    "reserve.good": "Reserve reaches your target",
+    "reserve.ok": "Reserve below your target",
+    "reserve.strained": "Reserve far below your target",
+    "reserve.missing": "Reserve cannot be calculated yet",
+    "debt_service_ratio.question": "Can you carry your loan comfortably?",
+    "debt_service_ratio.why": (
+        "The larger the part of your income that goes to the bank for interest and repayment,"
+        " the less is left for everything else, and the harder a higher rate hits you when the"
+        " fixed-rate period ends."
+    ),
+    "debt_service_ratio.reference": (
+        "Consumer guides (Verbraucherzentrale, Stiftung Warentest) name 30 to 40 % of net income"
+        " for the instalment on an owner-occupied home; for a rented flat that is a guide, not a"
+        " limit."
+    ),
+    "debt_service_ratio.good": "Loan payments easy to carry",
+    "debt_service_ratio.ok": "Loan payments noticeable",
+    "debt_service_ratio.strained": "Loan payments weigh heavily",
+    "debt_service_ratio.no_loan": "No loan",
+    "debt_service_ratio.missing": "Loan burden cannot be calculated yet",
+    "overall.very_good": "Saving, reserve and loan: all in the good range",
+    "overall.too_few_months": "The assessment needs three closed months in a row",
+}
+
+
+def _verdict_english() -> dict[str, str]:
+    """German → English for every verdict text (verdict.yaml's codes)."""
+    return {german: VERDICT[code] for code, german in verdict_data().texts.items()}
+
+
+def _verdict_part(part: VerdictPart) -> VerdictPart:
+    table = _verdict_english()
+    names = ("question", "headline", "why", "reference")
+    return part.model_copy(
+        update={name: table.get(getattr(part, name), getattr(part, name)) for name in names}
+    )
+
+
+def _verdict(found: Verdict) -> Verdict:
+    return found.model_copy(update={"line": _verdict_english().get(found.line, found.line)})
+
+
 # What `todo_texts.english()` swaps besides the to-dos: each type's English copy, applied after
 # the walk has gone through the value's own fields (a BudgetView's marks and references).
 SWAPS: Mapping[type[BaseModel], Callable[[Any], BaseModel]] = {
@@ -419,4 +493,6 @@ SWAPS: Mapping[type[BaseModel], Callable[[Any], BaseModel]] = {
     BudgetMark: _budget_mark,
     BudgetView: _budget_view,
     BudgetReference: _reference,
+    VerdictPart: _verdict_part,
+    Verdict: _verdict,
 }

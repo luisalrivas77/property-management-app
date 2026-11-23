@@ -122,6 +122,17 @@ const PATCH_RECORDS = [
     current: { label: "WE 3" },
     notes: [],
   },
+  // Phase 10 §7.6 (e): the contract's split equals one already recorded.
+  {
+    key: "price_split",
+    entity_type: "price_split",
+    mode: "unchanged",
+    target_id: "00000000-0000-4000-8000-0000000000b3",
+    fields: {
+      building_share: { value: "0.800000", source: null, derived_from: ["purchase_price", "land_value"], checks: ["derived", "validates"], confidence: "high" },
+    },
+    notes: [],
+  },
 ];
 
 interface Mock {
@@ -274,6 +285,9 @@ test("an existing property: übernehmen / behalten per field, unchanged records 
   await expect(property.getByLabel("Baujahr", { exact: true })).toHaveValue("1995");
   await expect(property).toContainText("Gespeichert: 1994");
   await expect(form.getByRole("region", { name: "Einheit WE 3" })).toContainText("Stimmt mit dem Gespeicherten überein");
+  const split = form.getByRole("region", { name: "Kaufpreisaufteilung" });
+  await expect(split).toContainText("Diese Aufteilung ist schon erfasst.");
+  await expect(split).not.toContainText("Stimmt mit dem Gespeicherten überein");
 
   // Keep the stored build year; take the city.
   await property.getByRole("radiogroup", { name: "Baujahr: übernehmen oder behalten" }).getByLabel("behalten").check();
@@ -285,6 +299,7 @@ test("an existing property: übernehmen / behalten per field, unchanged records 
   expect(sent.records).toEqual([
     { key: "property", skip: false, values: { "address.city": "Berlin-Mitte" }, decisions: { build_year: "skipped" } },
     { key: "unit", skip: true },
+    { key: "price_split", skip: true },
   ]);
 });
 

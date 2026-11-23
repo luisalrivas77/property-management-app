@@ -1,0 +1,121 @@
+/* Finanzielle Gesundheit (phase 10 §7.6): the word with its dot, and the three questions as
+ * cards, side by side where there is room (Haushalt on the computer), one under the other in the
+ * detail panel and on the phone. A state is a dot, never a colour word. */
+
+.verdict-dot {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid var(--mark-empty);
+  background: transparent;
+}
+
+.verdict-dot[data-mark="green"] {
+  background: var(--mark-green);
+  border-color: var(--mark-green);
+}
+.verdict-dot[data-mark="amber"] {
+  background: var(--mark-amber);
+  border-color: var(--mark-amber);
+}
+.verdict-dot[data-mark="red"] {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.verdict-word p {
+  margin: 0;
+}
+
+.verdict-word-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.verdict-word-big .verdict-word-text {
+  font-size: 1.75rem;
+}
+
+.verdict-word-big .verdict-dot {
+  width: 14px;
+  height: 14px;
+}
+
+.verdict-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.verdict-cards > .verdict-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.verdict-card p {
+  margin: 0;
+}
+
+.verdict-question {
+  font-weight: 700;
+}
+
+.verdict-figure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.verdict-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.verdict-value {
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.verdict-headline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.verdict-limits {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.verdict-origin {
+  margin-left: 8px;
+  font-size: 12px;
+}
+
+.verdict-reference > summary {
+  cursor: pointer;
+  color: var(--accent-strong);
+  font-weight: 600;
+  min-height: 32px;
+}

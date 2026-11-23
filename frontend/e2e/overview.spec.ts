@@ -3,7 +3,7 @@
 // button into its section. The account and its balance are invented sample data.
 import { apiCall, expect, test } from "./support";
 
-test("Übersicht: tiles, an empty mark before its limit, a tile's summary opens beside the page", async ({ page, signedIn }) => {
+test("Übersicht: tiles, Finanzielle Gesundheit before any data, a tile's summary opens beside the page", async ({ page, signedIn }) => {
   void signedIn;
   await apiCall(page, "POST", "/api/accounts", {
     label: "Girokonto A",
@@ -19,10 +19,12 @@ test("Übersicht: tiles, an empty mark before its limit, a tile's summary opens 
   const bank = tiles.getByRole("link", { name: /^Bank/ });
   await expect(bank).toContainText("1 Konto");
 
-  // No limit confirmed yet: the dot is an empty ring, read out as such, and no colour word.
-  const rate = tiles.getByRole("link", { name: /Sparquote/ });
-  await expect(rate.locator(".tile-dot")).toHaveAttribute("data-mark", "none");
-  await expect(rate).toContainText("noch keine eigene Grenze festgelegt");
+  // Finanzielle Gesundheit (phase 10 §7.6) before any closed month: one word with an empty dot,
+  // no colour word, and the key figures' old tiles gone.
+  const health = tiles.getByRole("link", { name: /Finanzielle Gesundheit/ });
+  await expect(health.locator(".tile-dot")).toHaveAttribute("data-mark", "none");
+  await expect(health).toContainText("Noch zu wenig Daten");
+  await expect(tiles.getByRole("link", { name: /^Sparquote/ })).toHaveCount(0);
   await expect(tiles.getByText(/^(Grün|Gelb|Rot)$/)).toHaveCount(0);
 
   // A tapped tile opens its summary beside the page (the URL hash keeps it), with a button into

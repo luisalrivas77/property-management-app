@@ -16,6 +16,7 @@ from hausbuch.rules.loan_schedule import build_schedule
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.household import NetWorthClass, Position, PricePoint
 from hausbuch.schemas.loan import LoanTerms
+from hausbuch.schemas.net_worth import AccountTab
 
 FIXTURE = phase6.load("net_worth")
 C = NetWorthClass
@@ -133,3 +134,29 @@ def test_a_loans_balance_by_its_schedule():
     )
     may = balance(entries, terms.principal, terms.disbursed_on, date(2026, 5, 31))
     assert may == entries[1].closing_balance < entries[0].closing_balance < terms.principal
+
+
+def test_the_konten_tabs_sum_their_accounts_lines():
+    """Phase 10 §7.6 Konten (2): both bank kinds are one tab, an exchange and a wallet each
+    their own (they shared `by_class.crypto` before), a credit card's debt its tab's negative
+    total; a line without a value counts nowhere, and a tab with no line is absent."""
+    K = AccountKind
+    tabs = net_worth.tab_totals(
+        [
+            (K.WALLET, Decimal("300.00")),
+            (K.BANK_SAVINGS, Decimal("1000.00")),
+            (K.BANK_CURRENT, Decimal("250.50")),
+            (K.EXCHANGE, Decimal("120.00")),
+            (K.EXCHANGE, None),
+            (K.CREDIT_CARD, Decimal("-40.00")),
+            (K.WALLET, Decimal("5.00")),
+        ]
+    )
+    assert list(tabs.items()) == [
+        (AccountTab.BANK, Decimal("1250.50")),
+        (AccountTab.CARD, Decimal("-40.00")),
+        (AccountTab.EXCHANGE, Decimal("120.00")),
+        (AccountTab.WALLET, Decimal("305.00")),
+    ]
+    assert net_worth.tab_totals([(K.DEPOT, None)]) == {AccountTab.DEPOT: Decimal("0.00")}
+    assert net_worth.tab_totals([]) == {}
