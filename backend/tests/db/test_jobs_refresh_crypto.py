@@ -1,12 +1,15 @@
 """The refresh_crypto job (docs/phases/phase-10.md §7.7, D291) on the database, with mocked
 HTTP: a failed wallet read never stops the prices, each price is stored as `spot` with its
 moment and pair, the CoinGecko key stays in its header, the write moves the data version
-(§7.4), and the log carries counts only. Invented coin and amounts only."""
+(§7.4), the log carries counts only, and each finished run leaves its counts in one
+workspace.crypto_refreshed event (the addresses not read, the coins without a current price).
+Invented coin and amounts only."""
 
 import json
 import logging
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 from db.test_services_prices_fetch import _setup
@@ -14,9 +17,12 @@ from pydantic import SecretStr
 from sqlalchemy import select
 
 from hausbuch.api.kept_answers import read_data_version
+from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import price as price_table
 from hausbuch.jobs import refresh_crypto as job
 from hausbuch.jobs.document_read import JobDeps
+from hausbuch.schemas.chain import Chain, WalletSyncStatus
+from hausbuch.services.chain.sync import SyncOutcome
 from hausbuch.services.prices import overview
 from hausbuch.settings import Settings
 
@@ -71,6 +77,18 @@ def _spot_rows(read, ws):
     return read(ws, query)
 
 
+def _runs(read, ws) -> list[dict]:
+    """The workspace.crypto_refreshed payloads, oldest first."""
+
+    def query(conn):
+        e = event_table.c
+        return conn.execute(
+            select(e.payload).where(e.type == "workspace.crypto_refreshed").order_by(e.seq)
+        ).scalars()
+
+    return list(read(ws, lambda conn: list(query(conn))))
+
+
 def test_a_failed_wallet_read_does_not_stop_the_prices(
     run, read, app_engine, blob_store, fresh_workspaces, monkeypatch, caplog
 ):
@@ -84,9 +102,11 @@ def test_a_failed_wallet_read_does_not_stop_the_prices(
     before = read_data_version(app_engine, ws)
     fake = Fake({"Ticker?pair=INVEUR": (200, TICKER)})
     with caplog.at_level(logging.INFO, logger="hausbuch.jobs.refresh_crypto"):
-        result = job.run_refresh_crypto(_deps(app_engine, blob_store), workspace_id=ws, fetch=fake)
+        result = job.run_refresh_crypto(
+            _deps(app_engine, blob_store), workspace_id=ws, fetch=fake, job_id=41
+        )
 
-    assert result.wallets_failed is True
+    assert (result.wallets_aborted, result.wallets_failed) == (True, 0)
     assert (result.prices.coins, result.prices.kraken, result.prices.stored) == (1, 1, 1)
     [row] = _spot_rows(read, ws)
     assert row.asset_id == held["coin"] and row.on == TODAY
@@ -109,7 +129,19 @@ def test_a_failed_wallet_read_does_not_stop_the_prices(
     assert "private" not in text and "120.5" not in text and "INVEUR" not in text
     assert any(r.fields.get("event") == "crypto_refresh_wallets_failed" for r in caplog.records)
     [done] = [r for r in caplog.records if r.fields.get("event") == "crypto_refreshed"]
-    assert done.fields["stored"] == 1 and done.fields["wallets_failed"] is True
+    assert done.fields["stored"] == 1 and done.fields["wallets_aborted"] is True
+    assert _runs(read, ws) == [
+        {
+            "job_id": 41,
+            "coins": 1,
+            "stored": 1,
+            "unpriced": 0,
+            "addresses": 0,
+            "wallets_failed": 0,
+            "wallets_aborted": True,
+        }
+    ]
+    assert _runs(read, other) == []
 
 
 def test_kraken_down_coingecko_with_the_key_and_a_second_read_the_same_day(
@@ -127,7 +159,8 @@ def test_kraken_down_coingecko_with_the_key_and_a_second_read_the_same_day(
     with caplog.at_level(logging.INFO, logger="hausbuch.jobs.refresh_crypto"):
         first = job.run_refresh_crypto(deps, workspace_id=ws, fetch=fake)
         second = job.run_refresh_crypto(deps, workspace_id=ws, fetch=fake)
-    assert first.wallets_failed is False  # no address: nothing to read, nothing failed
+    # No address: nothing to read, nothing failed.
+    assert (first.wallets_failed, first.wallets_aborted) == (0, False)
     assert (first.prices.coingecko, second.prices.coingecko) == (1, 1)
     rows = _spot_rows(read, ws)
     assert len(rows) == 2  # several a day (migration 0053)
@@ -138,3 +171,60 @@ def test_kraken_down_coingecko_with_the_key_and_a_second_read_the_same_day(
     assert KEY not in caplog.text
     [errors, _] = [r.fields["errors"] for r in caplog.records if "errors" in r.fields]
     assert errors == {"kraken_ticker:HTTPError:503": 1}
+
+
+def test_the_run_counts_addresses_not_read_and_coins_without_a_current_price(
+    run, read, app_engine, blob_store, fresh_workspaces, monkeypatch, caplog
+):
+    ws, _ = fresh_workspaces
+    _setup(run, ws)
+    outcomes = [
+        SyncOutcome(uuid4(), Chain.SOLANA, uuid4(), WalletSyncStatus.SUCCEEDED),
+        SyncOutcome(uuid4(), Chain.SOLANA, uuid4(), WalletSyncStatus.FAILED),
+        SyncOutcome(uuid4(), Chain.BITCOIN, uuid4(), WalletSyncStatus.THROTTLED),
+        SyncOutcome(uuid4(), Chain.BITCOIN, None, None, error_code="wallet.key_missing"),
+    ]
+    monkeypatch.setattr(job, "sync_wallets", lambda *a, **k: outcomes)
+
+    def broken_relink(*args, **kwargs):
+        raise RuntimeError("relink")
+
+    monkeypatch.setattr(job, "relink_after_sync", broken_relink)
+    fake = Fake({"Ticker?pair=INVEUR": (503, b"")})  # and no CoinGecko key: no price
+    with caplog.at_level(logging.INFO, logger="hausbuch.jobs.refresh_crypto"):
+        result = job.run_refresh_crypto(
+            _deps(app_engine, blob_store), workspace_id=ws, fetch=fake, job_id=42
+        )
+
+    # A relink that fails after the reads is logged; it is not a failed read.
+    assert (result.addresses, result.wallets_failed, result.wallets_aborted) == (4, 3, False)
+    assert any(r.fields.get("event") == "crypto_refresh_relink_failed" for r in caplog.records)
+    assert (result.prices.coins, result.prices.stored, result.prices.unpriced) == (1, 0, 1)
+    assert _spot_rows(read, ws) == []
+    assert _runs(read, ws) == [
+        {
+            "job_id": 42,
+            "coins": 1,
+            "stored": 0,
+            "unpriced": 1,
+            "addresses": 4,
+            "wallets_failed": 3,
+            "wallets_aborted": False,
+        }
+    ]
+
+
+def test_a_failed_price_step_records_no_run(
+    run, read, app_engine, blob_store, fresh_workspaces, monkeypatch
+):
+    ws, _ = fresh_workspaces
+    _setup(run, ws)
+    monkeypatch.setattr(job, "sync_wallets", lambda *a, **k: [])
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("prices")
+
+    monkeypatch.setattr(job, "refresh_prices", broken)
+    with pytest.raises(RuntimeError):
+        job.run_refresh_crypto(_deps(app_engine, blob_store), workspace_id=ws, job_id=43)
+    assert _runs(read, ws) == []

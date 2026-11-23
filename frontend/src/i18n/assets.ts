@@ -34,6 +34,13 @@ const de = {
   refreshFailed: "Aktualisierung fehlgeschlagen. Die Kurse von gestern gelten weiter.",
   refreshJustRan: "Eben aktualisiert; in zwei Minuten wieder möglich.",
   refreshedAt: (time: string) => `Kurse aktualisiert um ${time}`,
+  refreshUnpriced: (n: number) =>
+    `Für ${n} ${n === 1 ? "Coin" : "Coins"} kein aktueller Kurs gefunden – es gilt der Schlusskurs von gestern.`,
+  refreshWalletsFailed: (n: number) =>
+    n === 1
+      ? "1 Wallet-Adresse konnte nicht gelesen werden."
+      : `${n} Wallet-Adressen konnten nicht gelesen werden.`,
+  refreshWalletsAborted: "Die Wallets konnten nicht neu gelesen werden.",
   spotAt: (time: string) => `Stand ${time}`,
   yesterdaysPrice: "Kurs von gestern",
   priceOf: (source: string, day: string) => `${source} vom ${day}`,
@@ -261,6 +268,11 @@ const en: Messages = {
   refreshFailed: "The refresh failed. Yesterday's prices still apply.",
   refreshJustRan: "Just refreshed; possible again in two minutes.",
   refreshedAt: (time) => `Prices refreshed at ${time}`,
+  refreshUnpriced: (n) =>
+    `No current price found for ${n} ${n === 1 ? "coin" : "coins"} – yesterday's closing price applies.`,
+  refreshWalletsFailed: (n) =>
+    n === 1 ? "1 wallet address could not be read." : `${n} wallet addresses could not be read.`,
+  refreshWalletsAborted: "The wallets could not be read again.",
   spotAt: (time) => `as of ${time}`,
   yesterdaysPrice: "yesterday's price",
   priceOf: (source, day) => `${source} of ${day}`,

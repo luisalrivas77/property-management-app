@@ -8,7 +8,9 @@ the database clock), nothing is queued and that job's state is returned. Otherwi
 is queued in the caller's transaction.
 
 Procrastinate's tables have no row-level security (phase 2 D20), so the job is found by its
-`workspace_id` argument, as tax_export does. The job itself writes the prices and movements,
+`workspace_id` argument, as tax_export does. A succeeded run's counts come from its own
+workspace.crypto_refreshed event (jobs.refresh_crypto), found by the job's id; an older run's
+event is never shown for a newer job. The job itself writes the prices and movements,
 which move the data version (§7.4); queueing it writes no workspace table.
 """
 
@@ -17,9 +19,11 @@ from uuid import UUID
 
 from sqlalchemy import Connection, func, select, text
 
+from hausbuch.db.tables import event as event_table
 from hausbuch.jobs.enqueue import _DEFER_APP
 from hausbuch.jobs.refresh_crypto import REFRESH_CRYPTO_LOCK, REFRESH_CRYPTO_TASK
 from hausbuch.schemas.crypto_refresh import CryptoRefreshState
+from hausbuch.schemas.events import CryptoRefreshed, EventType
 from hausbuch.services.context import CommandContext
 from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.services.prices.overview import newest_spot
@@ -43,6 +47,21 @@ def _today(now: datetime) -> date:
     return now.astimezone(LOCAL_TIME_ZONE).date()
 
 
+def _counts(conn: Connection, job_id: int) -> CryptoRefreshed | None:
+    """The run's counts from its workspace.crypto_refreshed event, or None (none written)."""
+    e = event_table.c
+    payload = conn.execute(
+        select(e.payload)
+        .where(
+            e.type == EventType.WORKSPACE_CRYPTO_REFRESHED.value,
+            e.payload["job_id"].astext == str(job_id),
+        )
+        .order_by(e.seq.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    return None if payload is None else CryptoRefreshed.model_validate(payload)
+
+
 def _state(conn: Connection, workspace_id: UUID, now: datetime) -> tuple[CryptoRefreshState, bool]:
     """The newest run's state, and whether a press now is refused (one runs, or one finished
     within REFUSE_FOR)."""
@@ -54,11 +73,17 @@ def _state(conn: Connection, workspace_id: UUID, now: datetime) -> tuple[CryptoR
         return CryptoRefreshState(status="idle", spot_read_at=spot), False
     if job.status in ("todo", "doing"):
         return CryptoRefreshState(job_id=job.id, status="running", spot_read_at=spot), True
+    succeeded = job.status == "succeeded"
+    counts = _counts(conn, job.id) if succeeded else None
     state = CryptoRefreshState(
         job_id=job.id,
-        status="succeeded" if job.status == "succeeded" else "failed",
+        status="succeeded" if succeeded else "failed",
         finished_at=job.finished_at,
         spot_read_at=spot,
+        stored=None if counts is None else counts.stored,
+        unpriced=None if counts is None else counts.unpriced,
+        wallets_failed=None if counts is None else counts.wallets_failed,
+        wallets_aborted=None if counts is None else counts.wallets_aborted,
     )
     return state, bool(job.recent)
 

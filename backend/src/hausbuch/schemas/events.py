@@ -1363,6 +1363,26 @@ class PricesFetched(Schema):
     sold_stretches: list[SoldStretchNote] = Field(default_factory=list)
 
 
+class CryptoRefreshed(Schema):
+    """workspace.crypto_refreshed (phase 10 D291): one finished press of „Jetzt
+    aktualisieren“, counts only (never an address, a pair, a price or an amount), so GET
+    /crypto/refresh can say what the run did not read. `job_id`: the refresh_crypto job.
+    `coins`: held coins with a price source (a Kraken pair or a CoinGecko id); `stored`:
+    those that got a current price, `unpriced`: those that kept their daily close.
+    `addresses`: wallet addresses read again; `wallets_failed`: those whose run did not
+    succeed; `wallets_aborted`: the wallet step stopped as a whole (no count known). Not
+    the daily fetch's workspace.prices_fetched: a press never counts in a source's failure
+    streak (D174)."""
+
+    job_id: int | None = None
+    coins: int = Field(ge=0)
+    stored: int = Field(ge=0)
+    unpriced: int = Field(ge=0)
+    addresses: int = Field(ge=0)
+    wallets_failed: int = Field(ge=0)
+    wallets_aborted: bool = False
+
+
 class ValuationSnapshotWritten(Schema):
     """workspace.valuation_snapshot_written (D167): one month-end run."""
 
@@ -1511,6 +1531,7 @@ class EventType(StrEnum):
     WORKSPACE_AI_CONSENT_RECORDED = "workspace.ai_consent_recorded"
     WORKSPACE_PRICES_FETCHED = "workspace.prices_fetched"
     WORKSPACE_VALUATION_SNAPSHOT_WRITTEN = "workspace.valuation_snapshot_written"
+    WORKSPACE_CRYPTO_REFRESHED = "workspace.crypto_refreshed"  # phase 10 D291
     WORKSPACE_BANK_PIN_SET = "workspace.bank_pin_set"  # D196
     WORKSPACE_BANK_PIN_DELETED = "workspace.bank_pin_deleted"  # D196
     WORKSPACE_APP_SECRET_SET = "workspace.app_secret_set"  # D260
@@ -1715,6 +1736,9 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
         AiConsentRecorded, "forbidden", "Second owner's consent to the model recorded"
     ),
     E.WORKSPACE_PRICES_FETCHED: EventSpec(PricesFetched, "forbidden", "Daily prices fetched"),
+    E.WORKSPACE_CRYPTO_REFRESHED: EventSpec(
+        CryptoRefreshed, "forbidden", "Crypto values refreshed on demand"
+    ),
     E.WORKSPACE_VALUATION_SNAPSHOT_WRITTEN: EventSpec(
         ValuationSnapshotWritten, "forbidden", "Month-end net worth snapshot written"
     ),

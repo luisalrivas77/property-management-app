@@ -311,7 +311,8 @@ def refresh_crypto(context: JobContext, *, workspace_id: str) -> None:
     """Phase 10 D291, „Jetzt aktualisieren“: the household's wallets read again, then a
     current price for every held coin."""
     deps: JobDeps = context.additional_context[DEPS_KEY]
-    run_refresh_crypto(deps, workspace_id=UUID(workspace_id))
+    assert context.job is not None
+    run_refresh_crypto(deps, workspace_id=UUID(workspace_id), job_id=context.job.id)
 
 
 def register_tasks(app: procrastinate.App) -> procrastinate.App:

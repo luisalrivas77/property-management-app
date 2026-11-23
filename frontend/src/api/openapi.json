@@ -17662,6 +17662,50 @@
               }
             ],
             "title": "Spot Read At"
+          },
+          "stored": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stored"
+          },
+          "unpriced": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpriced"
+          },
+          "wallets_failed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wallets Failed"
+          },
+          "wallets_aborted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wallets Aborted"
           }
         },
         "additionalProperties": false,
@@ -17670,7 +17714,7 @@
           "status"
         ],
         "title": "CryptoRefreshState",
-        "description": "GET /crypto/refresh, and POST's answer.\n\nstatus: `idle` (never pressed), `running` (queued or reading), `succeeded`, `failed`.\nqueued (POST only): whether this press queued a new run; false while one runs or one\nfinished less than two minutes ago, whose state is then returned (one at a time per\nhousehold). spot_read_at: the moment of the newest price read on demand today (Berlin),\nnull when none was read today."
+        "description": "GET /crypto/refresh, and POST's answer.\n\nstatus: `idle` (never pressed), `running` (queued or reading), `succeeded`, `failed`.\nqueued (POST only): whether this press queued a new run; false while one runs or one\nfinished less than two minutes ago, whose state is then returned (one at a time per\nhousehold). spot_read_at: the moment of the newest price read on demand today (Berlin),\nnull when none was read today.\n\nThe counts of the newest run when it succeeded (its workspace.crypto_refreshed event),\nelse null: `stored`, the held coins that got a current price; `unpriced`, those with a\nprice source (a Kraken pair or a CoinGecko id) that kept their daily close;\n`wallets_failed`, the wallet addresses that could not be read; `wallets_aborted`, the\nwallet read stopped as a whole, so no address count is known."
       },
       "Currency": {
         "type": "string",
@@ -20402,6 +20446,7 @@
           "workspace.ai_consent_recorded",
           "workspace.prices_fetched",
           "workspace.valuation_snapshot_written",
+          "workspace.crypto_refreshed",
           "workspace.bank_pin_set",
           "workspace.bank_pin_deleted",
           "workspace.app_secret_set",

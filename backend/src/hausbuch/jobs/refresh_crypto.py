@@ -13,7 +13,14 @@ Queued by POST /crypto/refresh (services.crypto_refresh) for one workspace:
 Step 1 failing as a whole (its first read, say) never stops step 2: it is logged by its
 exception class and the prices are still read. A failure of step 2 is logged the same way and
 raised, so the job ends `failed` and GET /crypto/refresh says so. No retry: the household
-presses again. The lock is the wallet syncs' own (`wallets:sync`), so the daily run, „Jetzt
+presses again.
+
+A run whose step 2 finished appends one `workspace.crypto_refreshed` event with its counts
+(schemas.events.CryptoRefreshed, tied to its job id), so GET /crypto/refresh can name the
+coins that got no current price and the addresses that were not read (principle 7). An
+address counts as not read when its run did not end `succeeded` (failed, refused, throttled,
+or no run at all, wallet.key_missing); a failure of the relink after the reads is logged and
+is not a failed read. The lock is the wallet syncs' own (`wallets:sync`), so the daily run, „Jetzt
 abrufen“ and this job never read one address at once.
 
 Logged: one line per run with counts and the failed price sources by name, error class and
@@ -28,11 +35,14 @@ from pydantic import SecretStr
 
 from hausbuch.db.session import workspace_transaction
 from hausbuch.schemas.app_secrets import AppSecretName
+from hausbuch.schemas.chain import WalletSyncStatus
 from hausbuch.schemas.enums import ActorType
+from hausbuch.schemas.events import CryptoRefreshed, EventType
 from hausbuch.services import app_secrets
 from hausbuch.services.chain.sync import sync_wallets
 from hausbuch.services.chain.transfers import relink_after_sync
-from hausbuch.services.context import Actor
+from hausbuch.services.context import Actor, new_command
+from hausbuch.services.events import append_event
 from hausbuch.services.prices.http import Fetch, urllib_fetch
 from hausbuch.services.prices.spot import SpotResult, refresh_prices
 
@@ -49,7 +59,8 @@ logger = logging.getLogger("hausbuch.jobs.refresh_crypto")
 @dataclass
 class RefreshResult:
     addresses: int = 0
-    wallets_failed: bool = False
+    wallets_failed: int = 0  # addresses whose run did not succeed
+    wallets_aborted: bool = False  # the wallet step stopped as a whole
     key_unreadable: bool = False
     prices: SpotResult = field(default_factory=SpotResult)
 
@@ -74,6 +85,7 @@ def _log(result: RefreshResult) -> None:
         "event": "crypto_refreshed",
         "addresses": result.addresses,
         "wallets_failed": result.wallets_failed,
+        "wallets_aborted": result.wallets_aborted,
         "coins": p.coins,
         "kraken": p.kraken,
         "coingecko": p.coingecko,
@@ -85,11 +97,39 @@ def _log(result: RefreshResult) -> None:
     logger.info("crypto values refreshed", extra={"fields": fields})
 
 
+def record_run(
+    deps: JobDeps, workspace_id: UUID, result: RefreshResult, job_id: int | None
+) -> None:
+    """The run's counts as one workspace.crypto_refreshed event, in its own transaction."""
+    p = result.prices
+    with workspace_transaction(deps.engine, workspace_id) as conn:
+        ctx = new_command(conn, workspace_id, SYSTEM_ACTOR, now=deps.clock())
+        append_event(
+            ctx,
+            EventType.WORKSPACE_CRYPTO_REFRESHED,
+            workspace_id,
+            CryptoRefreshed(
+                job_id=job_id,
+                coins=p.coins,
+                stored=p.stored,
+                unpriced=p.unpriced,
+                addresses=result.addresses,
+                wallets_failed=result.wallets_failed,
+                wallets_aborted=result.wallets_aborted,
+            ),
+        )
+
+
 def run_refresh_crypto(
-    deps: JobDeps, *, workspace_id: UUID, fetch: Fetch = urllib_fetch
+    deps: JobDeps,
+    *,
+    workspace_id: UUID,
+    fetch: Fetch = urllib_fetch,
+    job_id: int | None = None,
 ) -> RefreshResult:
     """One press of „Jetzt aktualisieren“. `fetch` is for tests (the price sources only; the
-    chain sources come from the settings as in every wallet sync)."""
+    chain sources come from the settings as in every wallet sync); `job_id` is the
+    refresh_crypto job's, kept in the run's event."""
     result = RefreshResult()
     try:
         outcomes = sync_wallets(
@@ -100,12 +140,18 @@ def run_refresh_crypto(
             actor=SYSTEM_ACTOR,
             clock=deps.clock,
         )
-        result.addresses = len(outcomes)
-        relink_after_sync(deps.engine, workspace_id, actor=SYSTEM_ACTOR, clock=deps.clock)
     except Exception as exc:  # noqa: BLE001 - class name only: a message can quote data
-        result.wallets_failed = True
+        result.wallets_aborted = True
         fields = {"event": "crypto_refresh_wallets_failed", "exc_type": type(exc).__name__}
         logger.error("the wallets were not read again", extra={"fields": fields})
+    else:
+        result.addresses = len(outcomes)
+        result.wallets_failed = sum(o.status is not WalletSyncStatus.SUCCEEDED for o in outcomes)
+        try:
+            relink_after_sync(deps.engine, workspace_id, actor=SYSTEM_ACTOR, clock=deps.clock)
+        except Exception as exc:  # noqa: BLE001 - class name only; the reads stand
+            fields = {"event": "crypto_refresh_relink_failed", "exc_type": type(exc).__name__}
+            logger.error("the coin transfers were not relinked", extra={"fields": fields})
     try:
         key = _coingecko_key(deps, workspace_id, result)
         result.prices = refresh_prices(
@@ -117,4 +163,5 @@ def run_refresh_crypto(
         raise
     finally:
         _log(result)
+    record_run(deps, workspace_id, result, job_id)
     return result
