@@ -27443,6 +27443,18 @@
             "type": "string",
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Value Eur"
+          },
+          "cash": {
+            "items": {
+              "$ref": "#/components/schemas/NetWorthLine"
+            },
+            "type": "array",
+            "title": "Cash"
+          },
+          "total_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Total Eur"
           }
         },
         "additionalProperties": false,
@@ -27451,7 +27463,8 @@
           "account_id",
           "label",
           "kind",
-          "value_eur"
+          "value_eur",
+          "total_eur"
         ],
         "title": "OverviewAccount"
       },

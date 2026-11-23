@@ -34,6 +34,7 @@ import { assets } from "@/i18n/assets";
 
 import { CryptoTab } from "./Crypto";
 import { OverviewTab } from "./Overview";
+import { PortfolioParts } from "./PortfolioParts";
 import { gainClass, priceText, readingLabel, signed } from "./words";
 
 type T = Translation<(typeof assets)["de"]>;
@@ -162,7 +163,7 @@ function Positions({ account, linkProps }: { account: EtfAccount; linkProps: (as
         <span className="spacer" />
         <Link href={`/accounts/${account.account_id}`}>{account.label} ›</Link>
       </div>
-      {cash.length > 0 ? <PortfolioParts account={account} /> : null}
+      {cash.length > 0 ? <PortfolioParts label={account.label} funds={account.value_eur} cash={cash} /> : null}
       <ul className="asset-rows" data-cols="etf">
         <li className="asset-rows-head asset-col" aria-hidden="true">
           <span>{t.colEtf}</span>
@@ -180,31 +181,6 @@ function Positions({ account, linkProps }: { account: EtfAccount; linkProps: (as
       </ul>
       <p className="muted hint">{t.todayHint}</p>
     </section>
-  );
-}
-
-/** Funds + the depot's cash + money on its way = the total, each part as the net worth on
- * Übersicht counts it (the server's `cash` lines), so the card matches the depot's own app. */
-function PortfolioParts({ account }: { account: EtfAccount }) {
-  const t = useT(assets);
-  const f = useFormat();
-  const cash = (account.cash ?? []).filter((line) => line.value_eur != null);
-  return (
-    <dl className="portfolio-parts" aria-label={t.partsOf(account.label)}>
-      <div>
-        <dt>{t.partFunds}</dt>
-        <dd className="num">{f.money(account.value_eur)}</dd>
-      </div>
-      {cash.map((line, index) => (
-        <div key={`${line.in_transit ? "transit" : "cash"}-${index}`}>
-          <dt>
-            {line.in_transit ? t.partTransit : line.as_of ? t.partCash(f.date(line.as_of)) : t.kindCash}
-            {line.in_transit && line.note ? <span className="muted"> · {line.note}</span> : null}
-          </dt>
-          <dd className="num">{f.money(line.value_eur)}</dd>
-        </div>
-      ))}
-    </dl>
   );
 }
 
