@@ -4,11 +4,11 @@ is counted as unbooked and is no payment, and money on its way to the depot (pha
 paid in on its payment day, so the depot's value (its net-worth balance and the money in
 transit) and the money paid in agree. Invented IBANs and amounts only."""
 
-from datetime import date
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 
 import pytest
-from db.test_services_net_worth import ON, _account, _import
+from db.test_services_net_worth import ON, _account, _asset, _import, _price
 from db.test_services_net_worth_transit import (
     CURRENT_IBAN,
     DEPOT_IBAN,
@@ -16,7 +16,9 @@ from db.test_services_net_worth_transit import (
     _book,
     _line,
 )
+from sqlalchemy import insert
 
+from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.portfolio import NoRateReason, PortfolioFlowKind
@@ -80,3 +82,64 @@ def test_a_depots_cash_transfers_and_money_in_transit_are_paid_in(run, read, fre
     assert seen.crypto.value_eur == Decimal("0.00")
 
     assert read(other, assets_performance, ON).portfolios == []
+
+
+def _moved(ctx, depot, fund, kind, units, on, eur=None):
+    ctx.conn.execute(
+        insert(movement_table).values(
+            workspace_id=ctx.workspace_id,
+            account_id=depot,
+            asset_id=fund,
+            kind=kind,
+            quantity=Decimal(units),
+            eur_amount=None if eur is None else Decimal(eur),
+            occurred_at=datetime.combine(on, time(10), UTC),
+            source="user",
+            status="confirmed",
+            created_at=ctx.now,
+        )
+    )
+
+
+def test_a_depots_start_value_holds_what_came_before_its_first_statement(
+    run, read, fresh_workspaces
+):
+    """A depot whose cash balance is anchored at 300 € on 30 Jun, holding 12 units of a fund
+    (10 bought, 2 moved in from another depot, both before that day) worth 110 € each then:
+    its first money in is 300 + 12 × 110 = 1,620 €, and neither the earlier purchase nor the
+    earlier move is counted again. A 500 € Einlage on the statement is paid in; a purchase
+    on 1 Aug is the depot's own business and no payment (its cash line is left out of this
+    invented statement, so the cash stays 800 €). Today one unit costs 120 €:
+      value 800 + 13 × 120 = 2,360; paid in 1,620 + 500 = 2,120 → gain 240."""
+    ws, _ = fresh_workspaces
+    depot = _account(
+        run, ws, "Depot", AccountKind.DEPOT, iban=DEPOT_IBAN, opening="300.00", on=date(2026, 6, 30)
+    )
+
+    def stored(ctx):
+        fund = _asset(ctx, kind="etf", isin="IE00BEISPL09", name="Fonds Welt")
+        _moved(ctx, depot, fund, "acquisition", "10", date(2026, 6, 15), eur="-1000.00")
+        _moved(ctx, depot, fund, "internal_transfer_in", "2", date(2026, 6, 20))
+        _moved(ctx, depot, fund, "acquisition", "1", date(2026, 8, 1), eur="-115.00")
+        _price(ctx, fund, date(2026, 6, 30), "110", "user")
+        _price(ctx, fund, ON, "120", "user")
+        cash = _import(ctx, depot, date(2026, 7, 1), date(2026, 10, 20))
+        return _line(ctx, depot, cash, date(2026, 7, 15), "500.00")
+
+    deposit = run(ws, stored)
+    _book(run, ws, deposit, "500.00", C.INTERNAL_TRANSFER_IN)
+
+    [portfolio] = read(ws, assets_performance, ON).portfolios
+    [overview] = read(ws, assets_overview, ON, today=ON).accounts
+    assert portfolio.figures.value_eur == overview.total_eur == Decimal("2360.00")
+    assert [(f.kind, f.on, f.amount_eur) for f in portfolio.flows] == [
+        (K.START, date(2026, 6, 30), Decimal("1620.00")),
+        (K.TRANSFER, date(2026, 7, 15), Decimal("500.00")),
+    ]
+    figures = portfolio.figures
+    assert (figures.start, figures.paid_in_eur, figures.taken_out_eur, figures.gain_eur) == (
+        date(2026, 6, 30),
+        Decimal("2120.00"),
+        Decimal("0.00"),
+        Decimal("240.00"),
+    )
