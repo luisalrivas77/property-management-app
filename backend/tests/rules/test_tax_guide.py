@@ -16,7 +16,7 @@ from hausbuch.schemas.checklist import (
     DocumentChecklistItem,
     RequirementCode,
 )
-from hausbuch.schemas.tax import WarningCode
+from hausbuch.schemas.tax import SourceRef, WarningCode
 from hausbuch.services.health import rule_version
 
 TODOS_TSX = Path(__file__).resolve().parents[3] / "frontend" / "src" / "components" / "todos.tsx"
@@ -271,6 +271,17 @@ def test_the_same_warning_twice_is_one_point():
     assert len([p for p in result.points if p.code == "return.benefit_booked"]) == 2  # two forms
     result = rule.guide(facts(estimate_warnings=[same, same]))
     assert len(result.points) == 1
+
+
+def test_two_payments_with_equal_params_are_two_points():
+    def other_income():
+        ref = SourceRef(kind="allocation", id=uuid4())
+        return warning(WarningCode.INCOME_OTHER_REVIEW, [ref], amount="500.00")
+
+    result = rule.guide(
+        facts(properties=[rule.PropertyFacts(P1, [], [other_income(), other_income()])])
+    )
+    assert [p.code for p in result.points] == ["income.other_review", "income.other_review"]
 
 
 def test_two_owners_each_get_their_wage_certificate():

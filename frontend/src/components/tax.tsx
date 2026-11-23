@@ -735,6 +735,7 @@ function OpenPoints({
                           code: warning.code,
                           property_id: ctx.propertyId,
                           params: warning.params,
+                          refs: warning.refs,
                         })}
                       >
                         {t.openPointInGuide}

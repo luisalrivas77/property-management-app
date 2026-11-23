@@ -1,10 +1,11 @@
 "use client";
 
-// Steuern › one tax year (phase-3.md §11, phase-4b.md §10, docs/mockups/04-tax-year.png): the
-// Gesamt card of the whole return above the tabs, then Anlage V (?immobilie=…, the first one
-// when absent; its selector is hidden with one property), Anlage N (?tab=anlage-n,
-// ?eigentuemer=…) or Eure Angaben (?tab=angaben, ?eigentuemer=…; phase 10 D281). KAP and SO
-// are tabs of phase 8 and stay disabled.
+// Steuern › one tax year (phase-3.md §11, phase-4b.md §10, phase 10 D290, mockup 22b).
+// /tax/<year> alone is the guided start page; ?schritt=immobilie|belege|pruefen opens one step
+// (?immobilie=… for the Immobilie step). The forms are views: Anlage V (?tab=anlage-v, or a
+// legacy ?immobilie=… without a tab or step; the first property when absent), Anlage N
+// (?tab=anlage-n, ?eigentuemer=…). Eure Angaben (?tab=angaben, ?eigentuemer=…; D281) holds the
+// owners' and household's inputs. KAP and SO are tabs of phase 8 and stay disabled.
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense } from "react";

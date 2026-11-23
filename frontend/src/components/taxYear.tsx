@@ -66,6 +66,23 @@ export interface GuidePointKeyParts {
   /** The checklist item's scope id, for a point that is a checklist item. */
   item_scope_id?: string | null;
   params?: { [key: string]: string } | null;
+  /** The warning's sources: two payments with equal params are two points (rules/tax_guide.py). */
+  refs?: readonly { kind: string; id?: string | null }[] | null;
+}
+
+/** A short, stable digest (FNV-1a, 32 bit) of the refs, so the URL stays readable. */
+function refsDigest(refs: GuidePointKeyParts["refs"]): string {
+  if (!refs || refs.length === 0) return "";
+  const text = refs
+    .map((r) => `${r.kind}:${r.id ?? ""}`)
+    .sort()
+    .join(",");
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
 }
 
 export function guidePointKey(point: GuidePointKeyParts): string {
@@ -74,7 +91,7 @@ export function guidePointKey(point: GuidePointKeyParts): string {
     .sort()
     .map((k) => `${k}=${params[k]}`)
     .join("&");
-  return `${point.code}~${point.property_id ?? ""}~${point.owner_id ?? ""}~${point.item_scope_id ?? ""}~${sorted}`;
+  return `${point.code}~${point.property_id ?? ""}~${point.owner_id ?? ""}~${point.item_scope_id ?? ""}~${sorted}~${refsDigest(point.refs)}`;
 }
 
 /** Prüfen und abgeben with one point open in the panel. */

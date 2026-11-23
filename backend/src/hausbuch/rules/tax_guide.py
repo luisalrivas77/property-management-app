@@ -274,7 +274,16 @@ def points(facts: GuideInput, docs: list[GuideDocument]) -> list[GuidePoint]:
             if _covered(warning.code.value, docs, property_id, owner_id):
                 return
             step = "review"
-        key = (warning.code.value, tuple(sorted(warning.params.items())), property_id, owner_id)
+        # The refs belong to the key: two payments of the same amount from the same IBAN raise
+        # two warnings with equal params, and each is its own point.
+        refs = tuple(sorted((r.kind, str(r.id)) for r in warning.refs))
+        key = (
+            warning.code.value,
+            tuple(sorted(warning.params.items())),
+            refs,
+            property_id,
+            owner_id,
+        )
         if key in seen:
             return
         seen.add(key)

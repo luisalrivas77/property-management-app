@@ -357,6 +357,7 @@ function pointKey(point: GuidePoint): string {
     owner_id: point.owner_id,
     item_scope_id: point.item?.scope.id,
     params: point.warning?.params,
+    refs: point.warning?.refs,
   });
 }
 
