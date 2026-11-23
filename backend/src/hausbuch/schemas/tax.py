@@ -259,6 +259,9 @@ class TaxInputKind(StrEnum):
     PRIVATE_COST = "private_cost"  # a rental cost paid privately, per year (phase 4b D111)
     # Phase 5 D126: the Grundsteuerbescheid's instalments, per property from its first year
     GRUNDSTEUER_SCHEDULE = "grundsteuer_schedule"
+    # Phase 3 D287: the seller's renovation inside the purchase price, claimed as the
+    # household's own; per property, one current row, document required (the Kaufvertrag)
+    PRICE_RENOVATION = "price_renovation"
 
 
 class Spread82b(Schema):
@@ -452,6 +455,54 @@ class GrundsteuerSchedule(Schema):
         return self
 
 
+PriceRenovationStatus = Literal["claimed", "accepted", "declined"]
+
+
+class PriceRenovation(Schema):
+    """Phase 3 D287 (Q-O180, Luis 23 Nov 2026): the Kaufvertrag obliges the seller to renovate
+    the flat after the handover, paid inside the price; the household claims that part as its
+    own renovation, openly (BFH IX R 34/03 points the other way, so the Finanzamt may refuse).
+
+    While `claimed` (or `accepted`, after the Finanzamt's assessment said yes) the gross
+    `amount` leaves the building's share of the AfA basis (never the land's), counts in the
+    15 % test at `amount_net` as work done on `period_end` (D76), and within the limit is
+    Erhaltungsaufwand in the year of `paid_on` (§11 EStG, the day the price was paid). Over the
+    limit it returns to the basis (limit_exceeded). `declined` (the Finanzamt's „Nein“) and no
+    row leave the draft exactly as without the claim.
+
+    document_id on the row is the Kaufvertrag; `clause` quotes its renovation clause (free text:
+    it stays in the row and never enters the event payload). The row has no tax_year."""
+
+    status: PriceRenovationStatus
+    amount: PositiveMoney  # gross, VAT included, as the price contains it
+    amount_net: PositiveMoney
+    period_start: date
+    period_end: date
+    paid_on: date
+    clause: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("amount_net")
+    @classmethod
+    def _net_within_amount(cls, net: Decimal, info: ValidationInfo) -> Decimal:
+        amount = info.data.get("amount")
+        if amount is not None and net > amount:
+            raise ValueError("Der Nettobetrag kann nicht höher sein als der Betrag.")
+        return net
+
+    @field_validator("period_end")
+    @classmethod
+    def _end_after_start(cls, end: date, info: ValidationInfo) -> date:
+        start = info.data.get("period_start")
+        if start is not None and end < start:
+            raise ValueError("Das Ende der Arbeiten liegt nicht vor ihrem Beginn.")
+        return end
+
+    @property
+    def counts(self) -> bool:
+        """The claim stands: claimed, or accepted by the Finanzamt."""
+        return self.status != "declined"
+
+
 TaxInputValue = (
     Spread82b
     | RenovationTreatment
@@ -464,6 +515,7 @@ TaxInputValue = (
     | MovableAsset
     | PrivateCostValue
     | GrundsteuerSchedule
+    | PriceRenovation
 )
 
 K = TaxInputKind
@@ -479,6 +531,7 @@ TAX_INPUT_VALUES: dict[TaxInputKind, type[Schema]] = {
     K.MOVABLE_ASSET: MovableAsset,
     K.PRIVATE_COST: PrivateCostValue,
     K.GRUNDSTEUER_SCHEDULE: GrundsteuerSchedule,
+    K.PRICE_RENOVATION: PriceRenovation,
 }
 # The scope each kind needs; migration 0013's CHECKs say the same.
 ALLOCATION_SCOPED = frozenset({K.SPREAD_82B, K.RENOVATION_TREATMENT, K.EXCLUDE_FROM_15PCT})
@@ -494,9 +547,16 @@ YEAR_SCOPED = frozenset(
     }
 )
 # A document required: the certificate, the Abrechnung, the Gutachten (D79). A movable asset's
-# evidence is optional (D80: its value is often an estimate).
+# evidence is optional (D80: its value is often an estimate). The seller's renovation needs
+# the Kaufvertrag (D287).
 DOCUMENT_REQUIRED = frozenset(
-    {K.RUECKLAGE_SPENT, K.INTEREST_CERTIFIED, K.USEFUL_LIFE, K.GRUNDSTEUER_SCHEDULE}
+    {
+        K.RUECKLAGE_SPENT,
+        K.INTEREST_CERTIFIED,
+        K.USEFUL_LIFE,
+        K.GRUNDSTEUER_SCHEDULE,
+        K.PRICE_RENOVATION,
+    }
 )
 # The yearly kinds a row may be confirmed from last year's (the questionnaire's copy, D110).
 CARRIED_KINDS = frozenset({K.PRIVATE_COST})
@@ -574,7 +634,8 @@ class TaxInputCreate(Schema):
             problems.append("carried_from_id belongs to private_cost only")
         if k in DOCUMENT_REQUIRED and self.document_id is None:
             problems.append(
-                "a certificate figure, a useful life or a Grundsteuer schedule needs its document"
+                "a certificate figure, a useful life, a Grundsteuer schedule or the seller's"
+                " renovation needs its document"
             )
         if self.withdrawn and self.supersedes_id is None:
             problems.append("a withdrawal supersedes the row it withdraws")
