@@ -77,10 +77,10 @@ test("a camt ZIP imports reconciled, a second upload adds nothing, Umsätze by m
   await expect(page.getByRole("button", { name: "Alle 5" })).toBeVisible();
 
   // Konten (phase 10 D279) lists one kind of account at a time: the one bank account under
-  // „Bankkonten“, its stored closing balance, and a tap opens it in the detail panel.
+  // „Bank“, its stored closing balance, and a tap opens it in the detail panel.
   await page.goto("/accounts");
   const kinds = page.getByRole("navigation", { name: "Kontoarten" });
-  await expect(kinds.getByRole("link", { name: "Bankkonten 1" })).toHaveAttribute("aria-current", "page");
+  await expect(kinds.getByRole("link", { name: "Bank 1" })).toHaveAttribute("aria-current", "page");
   await expect(kinds.getByRole("link")).toHaveCount(1); // no other kind is held
   const account = page.getByRole("link").filter({ hasText: "Mietkonto" });
   await expect(account).toContainText("-3.028,51 €");
