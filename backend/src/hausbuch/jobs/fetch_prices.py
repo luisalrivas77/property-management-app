@@ -1,6 +1,7 @@
 """The fetch_prices periodic task (docs/phases/phase-6.md D167 (3), D174).
 
-At 07:00 UTC, after the ECB published the previous day's rates (around 16:00 CET), the
+Each morning once the wallets were read (jobs.morning; 07:30 UTC the clock's fallback, 07:00
+until 23 Nov 2026), after the ECB published the previous day's rates (around 16:00 CET), the
 worker runs services.prices.fetch for every provisioned workspace: the ECB rates first, then
 each held coin (CoinGecko with the Demo key HAUSBUCH_COINGECKO_KEY, Kraken as the fallback and
 alone without the key), then each held ETF's NAV from its issuer's file. One run asks each
@@ -44,7 +45,9 @@ from hausbuch.services.prices.http import Fetch, urllib_fetch
 from .document_read import JobDeps
 
 FETCH_PRICES_TASK = "fetch_prices"
-FETCH_PRICES_CRON = "0 7 * * *"  # D167 (3): 07:00, the worker's clock (UTC in the container)
+# The clock's fallback (jobs.morning queues the run after the wallets; 07:00 until 23 Nov 2026),
+# the worker's clock (UTC in the container).
+FETCH_PRICES_CRON = "30 7 * * *"
 FETCH_PRICES_LOCK = "prices:fetch"
 SYSTEM_ACTOR = Actor(ActorType.SYSTEM, FETCH_PRICES_TASK)
 

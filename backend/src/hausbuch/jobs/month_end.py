@@ -11,7 +11,8 @@ left any stored month-end alone, so an early press froze an early figure). The m
 the last day of the month before the run's day in UTC; at 08:00 UTC that is the same day in
 Berlin.
 
-It runs after the 06:30 bank fetch and the 07:00 price fetch, so the month's last lines and
+It runs once the morning's bank runs and the price fetch have ended (jobs.morning queues it;
+08:00 on the 1st the clock's fallback), so the month's last lines and
 the last day's prices fetched that morning are in the stored run; a statement or a price that
 arrives later still is stored by „Monatsabschluss neu speichern“ on the Übersicht, which
 offers it when today's reading of the month-end differs from the stored one.

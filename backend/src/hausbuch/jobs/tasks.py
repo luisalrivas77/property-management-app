@@ -18,13 +18,7 @@ from procrastinate.retry import BaseRetryStrategy, RetryDecision
 
 from hausbuch.schemas.tax import TaxExportKind
 
-from .bank_sync import run_bank_sync
-from .bank_sync_schedule import (
-    SCHEDULE_CRON,
-    SCHEDULE_LOCK,
-    SCHEDULE_TASK,
-    run_bank_sync_scheduled,
-)
+from .bank_sync_schedule import SCHEDULE_CRON, SCHEDULE_LOCK, SCHEDULE_TASK
 from .document_read import TASK_NAME, JobDeps, RetryLater, run_document_read
 from .enqueue import (
     BANK_SYNC_TASK,
@@ -38,19 +32,9 @@ from .enqueue import (
     TAX_EXPORT_TASK,
 )
 from .explain_plan import run_explain_plan
-from .fetch_prices import (
-    FETCH_PRICES_CRON,
-    FETCH_PRICES_LOCK,
-    FETCH_PRICES_TASK,
-    run_fetch_prices,
-)
+from .fetch_prices import FETCH_PRICES_CRON, FETCH_PRICES_LOCK, FETCH_PRICES_TASK
 from .follow_accounts import run_follow_accounts
-from .health_daily import (
-    HEALTH_DAILY_CRON,
-    HEALTH_DAILY_LOCK,
-    HEALTH_DAILY_TASK,
-    run_health_daily,
-)
+from .health_daily import HEALTH_DAILY_CRON, HEALTH_DAILY_LOCK, HEALTH_DAILY_TASK
 from .inbound_mail import POLL_CRON, POLL_LOCK, POLL_TASK, run_poll_inbox
 from .kept_answers import (
     CHECK_CRON,
@@ -60,7 +44,6 @@ from .kept_answers import (
     WARM_LOCK,
     WARM_TASK,
     run_check,
-    run_warm,
 )
 from .lamports_repair import run_repair_solana_lamports
 from .matching import (
@@ -69,7 +52,20 @@ from .matching import (
     run_rematch_on_evidence,
     run_rematch_waiting,
 )
-from .month_end import MONTH_END_CRON, MONTH_END_LOCK, MONTH_END_TASK, run_month_end
+from .month_end import MONTH_END_CRON, MONTH_END_LOCK, MONTH_END_TASK
+from .morning import (
+    GATE_LOCK,
+    GATE_TASK,
+    run_bank_sync_step,
+    run_gate,
+    run_health_step,
+    run_month_end_step,
+    run_prices_step,
+    run_schedule_step,
+    run_wallet_retry_step,
+    run_wallets_step,
+    run_warm_step,
+)
 from .notify import NOTIFY_CRON, NOTIFY_LOCK, NOTIFY_TASK, run_send_reminders
 from .refresh_crypto import REFRESH_CRYPTO_LOCK, REFRESH_CRYPTO_TASK, run_refresh_crypto
 from .scrub import SCRUB_CRON, SCRUB_TASK, run_scrub_proposals
@@ -77,9 +73,9 @@ from .sync_wallets import (
     SYNC_WALLET_TASK,
     SYNC_WALLETS_CRON,
     SYNC_WALLETS_LOCK,
+    SYNC_WALLETS_RETRY_TASK,
     SYNC_WALLETS_TASK,
     run_sync_wallet,
-    run_sync_wallets,
 )
 from .tax_export import run_tax_export
 
@@ -221,11 +217,16 @@ def tax_export(
     )
 
 
+def _job_id(context: JobContext) -> int | None:
+    return None if context.job is None else context.job.id
+
+
 def bank_sync(context: JobContext, *, workspace_id: str, sync_id: str) -> None:
-    """Phase 5 §4.3: one FinTS run. Retried (RetryLater) only for bank.unreachable."""
+    """Phase 5 §4.3: one FinTS run. Retried (RetryLater) only for bank.unreachable. Once its
+    row has ended it queues the morning gate (jobs.morning)."""
     deps: JobDeps = context.additional_context[DEPS_KEY]
     assert context.job is not None
-    run_bank_sync(
+    run_bank_sync_step(
         deps,
         workspace_id=UUID(workspace_id),
         sync_id=UUID(sync_id),
@@ -256,37 +257,47 @@ def send_reminders(context: JobContext, *, timestamp: int) -> None:
 
 def bank_sync_scheduled(context: JobContext, *, timestamp: int) -> None:
     """D120, daily at 06:30: one scheduled bank_sync per account whose connection has
-    auto_sync on. Off (one log line) until the FinTS PIN and product id are set."""
+    auto_sync on. Off (one log line) until the FinTS PIN and product id are set. Then the
+    morning gate (jobs.morning)."""
     deps: JobDeps = context.additional_context[DEPS_KEY]
-    run_bank_sync_scheduled(deps)
+    run_schedule_step(deps, job_id=_job_id(context))
 
 
 def fetch_prices(context: JobContext, *, timestamp: int) -> None:
-    """D167 (3), daily at 07:00: the ECB rates, then the held coins' and ETFs' prices for
-    every workspace. CoinGecko only with HAUSBUCH_COINGECKO_KEY; Kraken and the rest without."""
+    """D167 (3): the ECB rates, then the held coins' and ETFs' prices for every workspace.
+    CoinGecko only with HAUSBUCH_COINGECKO_KEY; Kraken and the rest without. Queued after
+    the morning wallet run (jobs.morning), 07:30 the clock's fallback; once a day."""
     deps: JobDeps = context.additional_context[DEPS_KEY]
-    run_fetch_prices(deps)
+    run_prices_step(deps, job_id=_job_id(context))
+
+
+def morning_gate(context: JobContext, *, timestamp: int, finished: str = "") -> None:
+    """jobs.morning: queue today's month_end once the prices and the morning's bank runs
+    have ended. `finished`: the job id of the finisher that queued it."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    run_gate(deps, finished=int(finished) if finished else None)
 
 
 def month_end(context: JobContext, *, timestamp: int) -> None:
-    """D167 (5), at 08:00 on the 1st: the previous month-end's net worth stored once per
-    workspace (a month-end that has a run already is left alone)."""
+    """D167 (5): the previous month-end's net worth stored once per workspace (a month-end
+    that has a run already is left alone), on the 1st only. Queued by the morning gate;
+    08:00 on the 1st the clock's fallback. Then health_daily."""
     deps: JobDeps = context.additional_context[DEPS_KEY]
-    run_month_end(deps)
+    run_month_end_step(deps, job_id=_job_id(context))
 
 
 def health_daily(context: JobContext, *, timestamp: int) -> None:
-    """Phase 9 §11.5, daily at 08:30: a health_snapshot for every closed month with a
-    month-end run and no snapshot yet, per workspace."""
+    """Phase 9 §11.5: a health_snapshot for every closed month with a month-end run and no
+    snapshot yet, per workspace. Queued after month_end; 08:30 the clock's fallback."""
     deps: JobDeps = context.additional_context[DEPS_KEY]
-    run_health_daily(deps)
+    run_health_step(deps, job_id=_job_id(context))
 
 
 async def warm_kept_answers(context: JobContext, *, timestamp: int) -> None:
-    """Phase 10 §7.4, daily at 09:00: the kept routes of Übersicht and Zu prüfen asked once
-    per enrolled member, on the API's event loop."""
+    """Phase 10 §7.4: the kept routes of Übersicht and Zu prüfen asked once per enrolled
+    member, on the API's event loop. Queued after health_daily; 09:00 the clock's fallback."""
     deps: JobDeps = context.additional_context[DEPS_KEY]
-    await run_warm(deps)
+    await run_warm_step(deps, job_id=_job_id(context))
 
 
 async def check_kept_answers(context: JobContext, *, timestamp: int) -> None:
@@ -296,9 +307,17 @@ async def check_kept_answers(context: JobContext, *, timestamp: int) -> None:
 
 
 def sync_wallets(context: JobContext, *, timestamp: int) -> None:
-    """Phase 7 D182 (1), daily at 06:45: every active wallet address, oldest sync first."""
+    """Phase 7 D182 (1), daily at 06:30: every active wallet address, oldest sync first;
+    then the one retry or the price fetch (jobs.morning)."""
     deps: JobDeps = context.additional_context[DEPS_KEY]
-    run_sync_wallets(deps)
+    run_wallets_step(deps)
+
+
+def sync_wallets_retry(context: JobContext, *, timestamp: int, addresses: list[str]) -> None:
+    """The morning run's one retry of the addresses that failed with wallet.source_failed;
+    then the price fetch."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    run_wallet_retry_step(deps, addresses)
 
 
 def sync_wallet(context: JobContext, *, workspace_id: str, account_id: str) -> None:
@@ -377,8 +396,8 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
     app.periodic(cron=WARM_CRON, periodic_id=WARM_TASK)(warm)
     check = app.task(name=CHECK_TASK, pass_context=True, lock=CHECK_LOCK)(check_kept_answers)
     app.periodic(cron=CHECK_CRON, periodic_id=CHECK_TASK)(check)
-    # No retry: a failed address is read again the next day from the same cursor. One lock
-    # for the daily run and „Jetzt abrufen“, so no address is read twice at once.
+    # No retry here: the morning run queues its own one retry (sync_wallets_retry). One lock
+    # for the daily run, its retry and „Jetzt abrufen“, so no address is read twice at once.
     wallets = app.task(name=SYNC_WALLETS_TASK, pass_context=True, lock=SYNC_WALLETS_LOCK)(
         sync_wallets
     )
@@ -386,4 +405,10 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
     app.task(name=SYNC_WALLET_TASK, pass_context=True, lock=SYNC_WALLETS_LOCK)(sync_wallet)
     # No retry: the household presses again. The wallet syncs' lock (D291).
     app.task(name=REFRESH_CRYPTO_TASK, pass_context=True, lock=REFRESH_CRYPTO_LOCK)(refresh_crypto)
+    # The morning chain (jobs.morning). No retry for either: the clock's fallback runs are the
+    # backstop. The retry shares the wallets' lock; the gates run one at a time.
+    app.task(name=SYNC_WALLETS_RETRY_TASK, pass_context=True, lock=SYNC_WALLETS_LOCK)(
+        sync_wallets_retry
+    )
+    app.task(name=GATE_TASK, pass_context=True, lock=GATE_LOCK)(morning_gate)
     return app

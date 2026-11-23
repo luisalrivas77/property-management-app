@@ -390,7 +390,7 @@ def test_the_task_is_registered_at_seven_with_a_lock():
     task = app.tasks[job.FETCH_PRICES_TASK]
     assert task.lock == job.FETCH_PRICES_LOCK
     periodic = [p for p in app.periodic_registry.periodic_tasks.values() if p.task is task]
-    assert [p.cron for p in periodic] == [job.FETCH_PRICES_CRON] == ["0 7 * * *"]
+    assert [p.cron for p in periodic] == [job.FETCH_PRICES_CRON] == ["30 7 * * *"]  # fallback
 
 
 def _settings(key: str | None) -> Settings:

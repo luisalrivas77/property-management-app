@@ -50,7 +50,7 @@ valuation_snapshot row per valued figure, all under one net_worth_run_id: per ac
 and per position (asset null for a balance), per property (its estimate) and per loan (its
 balance, negative), and the event workspace.valuation_snapshot_written. The table is
 immutable, so a run is never changed. The periodic task `month_end` (1st, 08:00 UTC, after
-the 06:30 bank fetch and the 07:00 price fetch) and „Monatsabschluss festhalten“ both write a
+the 06:30 bank fetch and the price fetch, from 07:00) and „Monatsabschluss festhalten“ both write a
 new run for the month-end when the figures read now differ from the newest stored run (a
 statement or a price that arrived late, or a button press before the morning's fetches), and
 nothing when they are the same; the newest run of a month-end is the one shown, the older

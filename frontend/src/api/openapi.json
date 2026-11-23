@@ -5303,7 +5303,7 @@
     "/api/assets/{asset_id}": {
       "patch": {
         "summary": "Asset Update",
-        "description": "„Kursquelle wählen“: the next daily fetch (07:00 UTC) prices the coin by these ids.",
+        "description": "„Kursquelle wählen“: the next price fetch (from 07:00 UTC) prices the coin by these ids.",
         "operationId": "asset_update_api_assets__asset_id__patch",
         "parameters": [
           {
@@ -27637,6 +27637,18 @@
             "type": "string",
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Value Eur"
+          },
+          "cash": {
+            "items": {
+              "$ref": "#/components/schemas/NetWorthLine"
+            },
+            "type": "array",
+            "title": "Cash"
+          },
+          "total_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Total Eur"
           }
         },
         "additionalProperties": false,
@@ -27645,7 +27657,8 @@
           "account_id",
           "label",
           "kind",
-          "value_eur"
+          "value_eur",
+          "total_eur"
         ],
         "title": "OverviewAccount"
       },

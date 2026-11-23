@@ -44,7 +44,7 @@ def assets_list(cmd: Cmd) -> list[AssetRow]:
 
 @router.patch("/assets/{asset_id}")
 def asset_update(asset_id: UUID, body: AssetPatch, cmd: Cmd) -> AssetRow:
-    """„Kursquelle wählen“: the next daily fetch (07:00 UTC) prices the coin by these ids."""
+    """„Kursquelle wählen“: the next price fetch (from 07:00 UTC) prices the coin by these ids."""
     return cmd.run(overview.update_asset, asset_id, body)
 
 
