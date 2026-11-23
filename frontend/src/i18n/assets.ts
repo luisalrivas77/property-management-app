@@ -61,6 +61,11 @@ const de = {
     n === 1 ? "1 Position hat einen Kurs, der älter als 7 Tage ist" : `${n} Positionen haben einen Kurs, der älter als 7 Tage ist`,
   coverageEnd: "Bei der Position steht, was zu tun ist.",
   positionsOf: (label: string) => `Positionen ${label}`,
+  portfolioTotal: "Gesamt",
+  partsOf: (label: string) => `So setzt sich ${label} zusammen`,
+  partFunds: "Fonds",
+  partCash: (day: string) => `Guthaben im Depot, Stand ${day}`,
+  partTransit: "Unterwegs, noch nicht im Kontoauszug",
   noValue: "kein Kurs",
   todoNotValued:
     "Der letzte Depotbericht nennt eine andere Stückzahl als die gebuchten Abrechnungen; bis das geklärt ist, zählt diese Position nicht mit.",
@@ -272,6 +277,11 @@ const en: Messages = {
   staleCount: (n) => (n === 1 ? "1 position has a price older than 7 days" : `${n} positions have a price older than 7 days`),
   coverageEnd: "Each position says what to do.",
   positionsOf: (label) => `Positions ${label}`,
+  portfolioTotal: "Total",
+  partsOf: (label) => `What ${label} is made of`,
+  partFunds: "Funds",
+  partCash: (day) => `Cash in the depot, as of ${day}`,
+  partTransit: "On its way, not yet on a statement",
   noValue: "no price",
   todoNotValued:
     "The latest depot report names a different number of units than the booked confirmations; until that is resolved, this position is not counted.",

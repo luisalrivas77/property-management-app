@@ -152,15 +152,17 @@ type LinkProps = ReturnType<ReturnType<typeof useDetail>["linkProps"]>;
 function Positions({ account, linkProps }: { account: EtfAccount; linkProps: (assetId: string) => LinkProps }) {
   const t = useT(assets);
   const f = useFormat();
+  const cash = (account.cash ?? []).filter((line) => line.value_eur != null);
   return (
     <section className="card stack" aria-label={t.positionsOf(account.label)}>
       <div className="asset-section-head">
         <h2>
-          {t.positions} · {f.money(account.value_eur)}
+          {cash.length > 0 ? t.portfolioTotal : t.positions} · {f.money(account.total_eur)}
         </h2>
         <span className="spacer" />
         <Link href={`/accounts/${account.account_id}`}>{account.label} ›</Link>
       </div>
+      {cash.length > 0 ? <PortfolioParts account={account} /> : null}
       <ul className="asset-rows" data-cols="etf">
         <li className="asset-rows-head asset-col" aria-hidden="true">
           <span>{t.colEtf}</span>
@@ -178,6 +180,31 @@ function Positions({ account, linkProps }: { account: EtfAccount; linkProps: (as
       </ul>
       <p className="muted hint">{t.todayHint}</p>
     </section>
+  );
+}
+
+/** Funds + the depot's cash + money on its way = the total, each part as the net worth on
+ * Übersicht counts it (the server's `cash` lines), so the card matches the depot's own app. */
+function PortfolioParts({ account }: { account: EtfAccount }) {
+  const t = useT(assets);
+  const f = useFormat();
+  const cash = (account.cash ?? []).filter((line) => line.value_eur != null);
+  return (
+    <dl className="portfolio-parts" aria-label={t.partsOf(account.label)}>
+      <div>
+        <dt>{t.partFunds}</dt>
+        <dd className="num">{f.money(account.value_eur)}</dd>
+      </div>
+      {cash.map((line, index) => (
+        <div key={`${line.in_transit ? "transit" : "cash"}-${index}`}>
+          <dt>
+            {line.in_transit ? t.partTransit : line.as_of ? t.partCash(f.date(line.as_of)) : t.kindCash}
+            {line.in_transit && line.note ? <span className="muted"> · {line.note}</span> : null}
+          </dt>
+          <dd className="num">{f.money(line.value_eur)}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 

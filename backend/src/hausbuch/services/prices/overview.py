@@ -389,9 +389,12 @@ def etf_today(conn: Connection, on: date) -> EtfToday:
     its valued rows, which is the Übersicht's value of that account, since every position
     the Übersicht holds on a depot is a row here (the ETF tab lists every asset with a
     confirmed movement)."""
+    from hausbuch.services.net_worth import depot_cash  # net_worth reads this module
+
     seen = assets_overview(conn, on)
     today = {(acc.account_id, p.asset_id): p for acc in seen.accounts for p in acc.positions}
     tab = etf_overview(conn)
+    cash = depot_cash(conn, on)
     accounts = []
     for account in tab.accounts:
         rows = []
@@ -423,15 +426,19 @@ def etf_today(conn: Connection, on: date) -> EtfToday:
                     from_report=match.from_report,
                 )
             )
+        funds = sum(
+            (r.value_today_eur for r in rows if r.value_today_eur is not None), Decimal("0.00")
+        )
+        lines = cash.get(account.account_id, [])
         accounts.append(
             EtfAccountToday(
                 account_id=account.account_id,
                 label=account.label,
                 positions=rows,
-                value_eur=sum(
-                    (r.value_today_eur for r in rows if r.value_today_eur is not None),
-                    Decimal("0.00"),
-                ),
+                value_eur=funds,
+                cash=lines,
+                total_eur=funds
+                + sum((x.value_eur for x in lines if x.value_eur is not None), Decimal("0.00")),
             )
         )
     return EtfToday(
