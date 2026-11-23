@@ -29,8 +29,10 @@
 //   the backend's, only reformatted (principle 1).
 // - The list survives going to a document page and back: the captured documents are kept in
 //   sessionStorage (this tab only; a convenience, nothing depends on it).
+// - The strip (`usePageStrip`, `PhotoInput`, `PageStripCard`) is shared with „Foto“ on Zu prüfen
+//   (phase 10 §7.6), which shows it in its detail panel; this page's list stays its own.
 import Link from "next/link";
-import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
 import { aiErrorText } from "@/api/errors";
@@ -80,15 +82,27 @@ function isUploadResult(data: Document | DocumentUploadResult): data is Document
   return "document" in data;
 }
 
+/** What a capture upload answers: the document, whether its bytes were already in the vault
+ * (200 instead of 201, D9), and the proposal the server queued (null when it read nothing). */
+export interface CaptureUpload {
+  document: Document;
+  existed: boolean;
+  proposalId: string | null;
+}
+
 /** POST /documents as multipart with source = photo (§9). Without `ai` the server's default
- * decides; the proposal is found by the row, so only the document is kept here. */
-async function uploadCapture(file: File): Promise<{ document: Document; existed: boolean }> {
+ * decides; the capture page's row finds the proposal itself, Zu prüfen names it. */
+export async function uploadCapture(file: File): Promise<CaptureUpload> {
   const form = new FormData();
   form.append("file", file, file.name);
   form.append("source", "photo");
   const { data, response } = await api.POST("/api/documents", { body: form as unknown as UploadBody });
   if (!data) throw new Error("POST /documents answered without a body");
-  return { document: isUploadResult(data) ? data.document : data, existed: response.status === 200 };
+  return {
+    document: isUploadResult(data) ? data.document : data,
+    existed: response.status === 200,
+    proposalId: isUploadResult(data) ? (data.proposal_id ?? null) : null,
+  };
 }
 
 function readStored(): Captured[] {
@@ -302,7 +316,7 @@ function CapturedRow({ entry, properties }: { entry: Captured; properties: Prope
 
 // --- pages: photo → upright, downscaled JPEG → one PDF ------------------------------------
 
-interface StripPage {
+export interface StripPage {
   key: string;
   jpeg: Blob;
   width: number;
@@ -377,33 +391,46 @@ export async function buildPdf(pages: readonly Pick<StripPage, "jpeg" | "width" 
 }
 
 /** "Beleg 2026-11-07 14-05.pdf": phones name every photo alike (image.jpg), so the time. */
-function captureName(): string {
+export function captureName(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `Beleg ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}-${pad(now.getMinutes())}.pdf`;
 }
 
-/** The page strip and the session's list. */
-export function CaptureScreen() {
+// --- the strip: shared by the capture page and „Foto“ on Zu prüfen (phase 10 §7.6) ------
+
+/** The page strip's pages and what can be done with them. The state lives in the caller, so on
+ * Zu prüfen the strip survives its detail panel being closed and opened again. */
+export interface PageStrip {
+  pages: StripPage[];
+  preparing: boolean;
+  uploading: boolean;
+  /** Preparing, uploading or turning a page: every strip button waits. */
+  busy: boolean;
+  /** MAX_PAGES reached. */
+  full: boolean;
+  /** A warning to show (too many pages, an unreadable photo, a page that did not turn). */
+  notice: string | null;
+  /** Adds photos as pages, up to MAX_PAGES. */
+  addPages(files: readonly File[]): Promise<void>;
+  move(index: number, by: -1 | 1): void;
+  rotate(key: string): Promise<void>;
+  remove(key: string): void;
+  clear(): void;
+  /** One PDF of the strip, uploaded with source = photo; the strip is cleared on success and
+   * kept when it throws, so the same pages can be sent again. */
+  upload(fileName?: string): Promise<CaptureUpload>;
+}
+
+export function usePageStrip(): PageStrip {
   const t = useT(captureText);
-  const inputId = useId();
-  const input = useRef<HTMLInputElement>(null);
-  const [captured, setCaptured] = useState<Captured[]>([]);
-  const [pending, setPending] = useState<Pending[]>([]);
   const [pages, setPages] = useState<StripPage[]>([]);
   const [preparing, setPreparing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [rotating, setRotating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const properties = useLoad(loadProperties);
   const counter = useRef(0);
   const pagesRef = useRef(pages);
-
-  // sessionStorage exists only in the browser, so the stored list is read after mount.
-  useEffect(() => {
-    const stored = readStored();
-    if (stored.length > 0) setCaptured(stored);
-  }, []);
 
   // The thumbnails' object URLs are freed when the page is left.
   useEffect(() => {
@@ -416,10 +443,8 @@ export function CaptureScreen() {
     return `${Date.now()}-${counter.current}`;
   }
 
-  async function addPages(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    const chosen = Array.from(files);
-    if (input.current) input.current.value = "";
+  async function addPages(chosen: readonly File[]) {
+    if (chosen.length === 0) return;
     setNotice(null);
     const room = MAX_PAGES - pages.length;
     const taken = chosen.slice(0, Math.max(0, room));
@@ -483,34 +508,199 @@ export function CaptureScreen() {
     });
   }
 
-  function clearStrip() {
+  function clear() {
     pages.forEach((page) => URL.revokeObjectURL(page.url));
     setPages([]);
     setNotice(null);
   }
 
-  async function upload() {
-    if (pages.length === 0) return;
-    const key = nextKey();
-    const fileName = captureName();
+  async function upload(fileName: string = captureName()): Promise<CaptureUpload> {
     setUploading(true);
     setNotice(null);
-    setPending((current) => [{ key, fileName, error: null }, ...current]);
     try {
       const pdf = await buildPdf(pages);
-      const { document, existed } = await uploadCapture(new File([pdf], fileName, { type: "application/pdf" }));
+      const result = await uploadCapture(new File([pdf], fileName, { type: "application/pdf" }));
+      clear();
+      return result;
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return {
+    pages,
+    preparing,
+    uploading,
+    busy: preparing || uploading || rotating,
+    full: pages.length >= MAX_PAGES,
+    notice,
+    addPages,
+    move,
+    rotate,
+    remove,
+    clear,
+    upload,
+  };
+}
+
+/** A hidden photo input whose label is the button: the phone's camera (`capture="environment"`),
+ * a computer's file picker. The files are copied out before the input is cleared, so the same
+ * photo can be chosen again. */
+export function PhotoInput({
+  className,
+  disabled,
+  onFiles,
+  children,
+}: {
+  /** The label's classes: the label is the button. */
+  className: string;
+  disabled?: boolean;
+  onFiles: (files: File[]) => void;
+  children: ReactNode;
+}) {
+  const inputId = useId();
+  return (
+    <>
+      <input
+        id={inputId}
+        className="visually-hidden capture-input"
+        type="file"
+        accept={CAPTURE_ACCEPT}
+        capture="environment"
+        multiple
+        disabled={disabled}
+        onChange={(event: ChangeEvent<HTMLInputElement>) => {
+          const files = Array.from(event.target.files ?? []);
+          event.target.value = "";
+          onFiles(files);
+        }}
+      />
+      <label htmlFor={inputId} className={className}>
+        {children}
+      </label>
+    </>
+  );
+}
+
+/** The camera of the photo buttons. */
+export function CameraIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 8h3l2-3h6l2 3h3v11H4z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </svg>
+  );
+}
+
+/** The strip's card: its pages with ← → ↻ ✕, „Als ein Dokument hochladen“ and „Alle Seiten
+ * verwerfen“; nothing while it is empty. `onUpload` runs the upload, so each caller keeps its
+ * own record of the result. */
+export function PageStripCard({ strip, onUpload }: { strip: PageStrip; onUpload: () => void }) {
+  const t = useT(captureText);
+  const titleId = useId();
+  const { pages, busy } = strip;
+  if (pages.length === 0) return null;
+  return (
+    <section className="card capture-strip" aria-labelledby={titleId}>
+      <h2 id={titleId}>
+        {t.pageCount(pages.length)}
+        <span className="muted">{t.atMost(MAX_PAGES)}</span>
+      </h2>
+      <ol className="capture-pages" aria-label={t.pages}>
+        {pages.map((page, index) => (
+          <li key={page.key} className="capture-page">
+            {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL, nothing for next/image to optimise */}
+            <img src={page.url} alt={t.page(index + 1)} />
+            <span className="capture-page-number">{t.page(index + 1)}</span>
+            <div className="capture-page-actions">
+              <button
+                type="button"
+                className="secondary"
+                aria-label={t.pageForward(index + 1)}
+                disabled={busy || index === 0}
+                onClick={() => strip.move(index, -1)}
+              >
+                ←
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                aria-label={t.pageBack(index + 1)}
+                disabled={busy || index === pages.length - 1}
+                onClick={() => strip.move(index, 1)}
+              >
+                →
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                aria-label={t.pageRotate(index + 1)}
+                disabled={busy}
+                onClick={() => void strip.rotate(page.key)}
+              >
+                ↻
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                aria-label={t.pageRemove(index + 1)}
+                disabled={busy}
+                onClick={() => strip.remove(page.key)}
+              >
+                ✕
+              </button>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <div className="capture-strip-actions">
+        <button type="button" disabled={busy} onClick={onUpload}>
+          {strip.uploading ? t.uploading : t.uploadAsOne}
+        </button>
+        <button type="button" className="link" disabled={busy} onClick={strip.clear}>
+          {t.discardAll}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/** The page strip and the session's list. */
+export function CaptureScreen() {
+  const t = useT(captureText);
+  const strip = usePageStrip();
+  const [captured, setCaptured] = useState<Captured[]>([]);
+  const [pending, setPending] = useState<Pending[]>([]);
+  const properties = useLoad(loadProperties);
+  const counter = useRef(0);
+
+  // sessionStorage exists only in the browser, so the stored list is read after mount.
+  useEffect(() => {
+    const stored = readStored();
+    if (stored.length > 0) setCaptured(stored);
+  }, []);
+
+  function nextKey(): string {
+    counter.current += 1;
+    return `${Date.now()}-${counter.current}`;
+  }
+
+  async function upload() {
+    if (strip.pages.length === 0) return;
+    const key = nextKey();
+    const fileName = captureName();
+    setPending((current) => [{ key, fileName, error: null }, ...current]);
+    try {
+      const { document, existed } = await strip.upload(fileName);
       setPending((current) => current.filter((entry) => entry.key !== key));
       setCaptured((current) => {
         const next = [{ key, document, existed }, ...current];
         writeStored(next);
         return next;
       });
-      clearStrip();
     } catch (caught) {
       // The strip stays, so the same pages can be sent again.
       setPending((current) => current.map((entry) => (entry.key === key ? { ...entry, error: caught } : entry)));
-    } finally {
-      setUploading(false);
     }
   }
 
@@ -518,109 +708,33 @@ export function CaptureScreen() {
     setPending((current) => current.filter((entry) => entry.key !== key));
   }
 
-  const busy = preparing || uploading || rotating;
-  const full = pages.length >= MAX_PAGES;
+  const { pages, busy, full } = strip;
   const empty = captured.length === 0 && pending.length === 0;
-  const buttonText = preparing ? t.preparing : pages.length === 0 ? t.takePhoto : t.addPage;
+  const buttonText = strip.preparing ? t.preparing : pages.length === 0 ? t.takePhoto : t.addPage;
 
   return (
     <div className="capture">
       <div className="capture-action">
-        <input
-          ref={input}
-          id={inputId}
-          className="visually-hidden capture-input"
-          type="file"
-          accept={CAPTURE_ACCEPT}
-          capture="environment"
-          multiple
-          disabled={busy || full}
-          onChange={(event: ChangeEvent<HTMLInputElement>) => void addPages(event.target.files)}
-        />
-        <label
-          htmlFor={inputId}
+        <PhotoInput
           className={["capture-button", pages.length > 0 ? "secondary" : "", busy || full ? "busy" : ""].filter(Boolean).join(" ")}
+          disabled={busy || full}
+          onFiles={(files) => void strip.addPages(files)}
         >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
-            <path d="M4 8h3l2-3h6l2 3h3v11H4z" />
-            <circle cx="12" cy="13" r="3.5" />
-          </svg>
+          <CameraIcon />
           {buttonText}
-        </label>
+        </PhotoInput>
         <p className="muted hint">
           {full ? t.pagesReached(MAX_PAGES) : t.onePhotoPerPage}
         </p>
       </div>
 
-      {notice ? (
+      {strip.notice ? (
         <div className="notice notice-warn" role="alert">
-          <p>{notice}</p>
+          <p>{strip.notice}</p>
         </div>
       ) : null}
 
-      {pages.length > 0 ? (
-        <section className="card capture-strip" aria-labelledby="capture-strip-title">
-          <h2 id="capture-strip-title">
-            {t.pageCount(pages.length)}
-            <span className="muted">{t.atMost(MAX_PAGES)}</span>
-          </h2>
-          <ol className="capture-pages" aria-label={t.pages}>
-            {pages.map((page, index) => (
-              <li key={page.key} className="capture-page">
-                {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL, nothing for next/image to optimise */}
-                <img src={page.url} alt={t.page(index + 1)} />
-                <span className="capture-page-number">{t.page(index + 1)}</span>
-                <div className="capture-page-actions">
-                  <button
-                    type="button"
-                    className="secondary"
-                    aria-label={t.pageForward(index + 1)}
-                    disabled={busy || index === 0}
-                    onClick={() => move(index, -1)}
-                  >
-                    ←
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    aria-label={t.pageBack(index + 1)}
-                    disabled={busy || index === pages.length - 1}
-                    onClick={() => move(index, 1)}
-                  >
-                    →
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    aria-label={t.pageRotate(index + 1)}
-                    disabled={busy}
-                    onClick={() => void rotate(page.key)}
-                  >
-                    ↻
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    aria-label={t.pageRemove(index + 1)}
-                    disabled={busy}
-                    onClick={() => remove(page.key)}
-                  >
-                    ✕
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ol>
-          <div className="capture-strip-actions">
-            <button type="button" disabled={busy} onClick={() => void upload()}>
-              {uploading ? t.uploading : t.uploadAsOne}
-            </button>
-            <button type="button" className="link" disabled={busy} onClick={clearStrip}>
-              {t.discardAll}
-            </button>
-          </div>
-        </section>
-      ) : null}
+      <PageStripCard strip={strip} onUpload={() => void upload()} />
 
       <section className="card capture-session" aria-labelledby="capture-session-title">
         <h2 id="capture-session-title">{t.thisSession}</h2>

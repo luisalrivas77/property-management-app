@@ -85,7 +85,8 @@
 // shown, as before.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState } from "react";
+import { createContext, useContext, useEffect, useId, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { api, ok } from "@/api/client";
 import { ruleCodeText } from "@/api/errors";
@@ -100,6 +101,7 @@ import { notifyInboxChanged } from "@/lib/inboxCount";
 import { BalanceForm, DuplicateCard, OpeningFromClosing } from "./accounts";
 import { documentLabel, ImportStoredStatement, UploadControl } from "./documents";
 import { ConfirmWithdrawals, ExchangeUnreconciledActions, formatUnits, MovementAnswers } from "./exchange";
+import { FieldDescription, InfoToggle } from "./form";
 import { ALLOCATION_CATEGORY, APP_SECRETS_ANCHOR, CHAIN, INBOX_ITEM_KIND } from "./labels";
 import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
 import { reminderTodo } from "./todos";
@@ -512,7 +514,6 @@ export function InboxList({
                           <LineEntry
                             item={item}
                             line={data.transactions.get(item.transaction_id ?? "")}
-                            account={privateAccount(data.accounts, item.account_id)}
                             pressed={selected === item.transaction_id}
                             onSelect={onSelect}
                           />
@@ -621,6 +622,8 @@ function BulkConfirm({
   onSelect: (transactionId: string) => void;
 }) {
   const t = useT(inbox);
+  const introId = useId();
+  const [introOpen, setIntroOpen] = useState(false);
   const [result, setResult] = useState<ConfirmCategoryResult | null>(null);
   const [shown, setShown] = useState<ReadonlySet<AllocationCategory>>(new Set());
   const [unticked, setUnticked] = useState<ReadonlySet<string>>(new Set());
@@ -658,7 +661,14 @@ function BulkConfirm({
     <div className="inbox-section-action stack">
       {listed.length > 0 ? (
         <>
-          <p className="muted">{t.bulkIntro}</p>
+          {/* phase 10 §7.6: the introduction behind ⓘ; the categories and counts stay */}
+          <div className="inbox-bulk-head">
+            <strong>{t.bulkHeading}</strong>
+            <InfoToggle open={introOpen} onToggle={() => setIntroOpen((open) => !open)} controls={introId} label={t.bulkHeading} />
+          </div>
+          <FieldDescription id={introId} open={introOpen}>
+            {t.bulkIntro}
+          </FieldDescription>
           <ul className="inbox-bulk" aria-label={t.bulkListLabel}>
             {listed.map(([category, group]) => {
               const open = shown.has(category);
@@ -791,7 +801,7 @@ function BulkConfirmList({
               const id = item.transaction_id;
               if (!id) return null;
               const line = data.transactions.get(id);
-              const question = item.question && !GENERIC_PROPOSED_QUESTIONS.has(item.question) ? item.question : null;
+              const question = ownQuestion(item);
               const payee = line?.counterparty_name ?? line?.booking_text ?? t.noCounterparty;
               const amount = line ? signedMoney(line.amount) : "–";
               const account = line ? data.accounts.get(line.account_id) : undefined;
@@ -830,57 +840,103 @@ function BulkConfirmList({
   );
 }
 
-function Why({ item }: { item: InboxItem }) {
+/** Where a card's explanations go: the body of its „Warum?“ fold (phase 10 §7.6). Undefined
+ * outside a card, null until the fold is mounted. */
+const WhySlot = createContext<HTMLElement | null | undefined>(undefined);
+
+/** „Warum?“, closed by default: an explanation is read on a tap, never as a paragraph on the
+ * page (phase 10 §7.6, the second rule for the whole app). */
+function WhyFold({ children }: { children: ReactNode }) {
+  const t = useT(inbox);
   return (
-    <span className="inbox-why">
-      <span className={PILL_CLASS[item.kind]}>{INBOX_ITEM_KIND[item.kind]}</span>
-      {item.reasoning ? <span className="inbox-reasoning">{item.reasoning}</span> : null}
-      {item.question ? <span className="inbox-question">{item.question}</span> : null}
-    </span>
+    <details className="inbox-why-fold">
+      <summary>{t.why}</summary>
+      {children}
+    </details>
   );
 }
 
-/** A bank line: the whole row is the button that opens the panel (mockup 03). */
-/** The line's account when it is a private one (phase 6 D158), which its card names. */
-function privateAccount(accounts: Map<string, Account>, accountId: string | null | undefined): Account | undefined {
+/** An explanation inside a card's action (what a re-booking does, why a pair waits): it is
+ * placed in the card's „Warum?“ fold, so the card shows its title and its action only. Outside
+ * a card it gets a fold of its own. */
+function WhyNote({ children }: { children: ReactNode }) {
+  const slot = useContext(WhySlot);
+  if (slot === undefined) return <WhyFold>{children}</WhyFold>;
+  return slot ? createPortal(children, slot) : null;
+}
+
+/** The cards whose action can add an explanation of its own (WhyNote). */
+const NOTE_KINDS: ReadonlySet<InboxItemKind> = new Set<InboxItemKind>([
+  "transfer_link",
+  "transfer_unmatched",
+  "returned_payment",
+  "property_cost_year",
+]);
+
+/** The line's account when it is a private one (phase 6 D158); its detail panel names it. */
+export function privateAccount(accounts: Map<string, Account>, accountId: string | null | undefined): Account | undefined {
   const account = accountId ? accounts.get(accountId) : undefined;
   return account?.purpose === "private" ? account : undefined;
 }
 
+/** The model's own question, or null for the API's fallback „Stimmt diese Zuordnung?“. */
+function ownQuestion(item: InboxItem): string | null {
+  return item.question && !GENERIC_PROPOSED_QUESTIONS.has(item.question) ? item.question : null;
+}
+
+/** A bank line in two rows (phase 10 §7.6): date, payee and amount; then the kind,
+ * „Vorschlag: <Kategorie>“ (or the kind, when there is none) and the model's question, cut to one line. The whole row is the
+ * button that opens the detail panel, which keeps the purpose, the private account, the
+ * reasoning and the whole question. */
 function LineEntry({
   item,
   line,
-  account,
   pressed,
   onSelect,
 }: {
   item: InboxItem;
   line: Transaction | undefined;
-  /** Set for a line of a private account (phase 6 D158): the card names the account. */
-  account: Account | undefined;
   pressed: boolean;
   onSelect: (transactionId: string) => void;
 }) {
   const t = useT(inbox);
   const id = item.transaction_id ?? "";
+  const question = ownQuestion(item);
   return (
     <button type="button" className="inbox-entry inbox-line" aria-pressed={pressed} onClick={() => onSelect(id)}>
       <span className="inbox-when">{line ? formatDate(line.booking_date) : formatDateTime(item.created_at)}</span>
       <span className="inbox-main">
         <strong>{line?.counterparty_name ?? line?.booking_text ?? t.noCounterparty}</strong>
-        <span className="inbox-detail">{line ? line.purpose || t.noPurpose : t.line}</span>
-        {account ? <span className="inbox-detail">{t.privateAccount(account.label)}</span> : null}
       </span>
       <span className={line && isCredit(line.amount) ? "inbox-amount amount-in" : "inbox-amount"}>
         {line ? signedMoney(line.amount) : "–"}
       </span>
-      <Why item={item} />
+      <span className="inbox-line-second">
+        {/* „Vorschlag: <Kategorie>“ says what „Vorschlag prüfen“ would; the kind shows when there
+            is no suggestion („Nicht zugeordnet“). */}
+        {item.category ? (
+          <span className="inbox-suggestion">{t.suggestion(ALLOCATION_CATEGORY[item.category])}</span>
+        ) : (
+          <span className={PILL_CLASS[item.kind]}>{INBOX_ITEM_KIND[item.kind]}</span>
+        )}
+        {question ? (
+          <span className="inbox-line-question" title={question}>
+            {question}
+          </span>
+        ) : null}
+      </span>
     </button>
   );
 }
 
-/** Everything that is not a bank line: what it is about, then its own action. */
+/** Everything that is not a bank line: what it is about, its kind and question, its own action,
+ * and „Warum?“ (phase 10 §7.6), closed, holding the reasoning, a reminder's „Was tun“ and the
+ * action's own explanations (WhyNote). */
 function OtherEntry({ item, data, onChanged }: { item: InboxItem; data: InboxData; onChanged: () => void }) {
+  const [slot, setSlot] = useState<HTMLDivElement | null>(null);
+  const reminder = item.kind === "reminder" && item.reminder_id ? data.reminders.get(item.reminder_id) : undefined;
+  const todo = reminder ? reminderTodo(reminder) : null;
+  const why = !!item.reasoning || !!todo || NOTE_KINDS.has(item.kind);
   return (
     <div className="inbox-entry">
       <span className="inbox-when">{formatDateTime(item.created_at)}</span>
@@ -888,10 +944,26 @@ function OtherEntry({ item, data, onChanged }: { item: InboxItem; data: InboxDat
         <EntryTitle item={item} data={data} />
       </span>
       <span />
-      <Why item={item} />
+      <span className="inbox-why">
+        <span className={PILL_CLASS[item.kind]}>{INBOX_ITEM_KIND[item.kind]}</span>
+        {item.question ? <span className="inbox-question">{item.question}</span> : null}
+      </span>
       <div className="inbox-actions">
-        <EntryAction item={item} data={data} onChanged={onChanged} />
+        <WhySlot.Provider value={why ? slot : undefined}>
+          <EntryAction item={item} data={data} onChanged={onChanged} />
+        </WhySlot.Provider>
       </div>
+      {why ? (
+        <WhyFold>
+          {item.reasoning ? <p className="muted">{item.reasoning}</p> : null}
+          {todo ? (
+            <p className="muted todo-text">
+              {translate(todosText).whatToDo} {todo}
+            </p>
+          ) : null}
+          <div ref={setSlot} />
+        </WhyFold>
+      ) : null}
     </div>
   );
 }
@@ -984,7 +1056,6 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
       <>
         <strong>{reminderLabel(reminder)}</strong>
         <span className="inbox-detail">{t.dueOn(formatDate(reminder.due_on))}</span>
-        {reminderTodo(reminder) ? <span className="inbox-detail todo-text">{translate(todosText).whatToDo} {reminderTodo(reminder)}</span> : null}
       </>
     ) : (
       <strong>{t.deadline}</strong>
@@ -1570,7 +1641,11 @@ function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accoun
           {candidate.deposit_fee_text ? <span className="muted"> {candidate.deposit_fee_text}</span> : null}
         </label>
       ))}
-      {rebook && chosen ? <p className="muted">{rebookText(chosen, open.leg)}</p> : null}
+      {rebook && chosen ? (
+        <WhyNote>
+          <p className="muted">{rebookText(chosen, open.leg)}</p>
+        </WhyNote>
+      ) : null}
       {learn ? (
         <label>
           <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> {learn.text}
@@ -1632,19 +1707,17 @@ function OwnWalletPick({ open, onLinked }: { open: OpenTransfer; onLinked: () =>
   return (
     <fieldset className="stack">
       <legend className="visually-hidden">{t.ownWallet}</legend>
-      {paired ? (
-        <p className="muted">{t.pairedWaits(open.leg.account_label, paired.account_label)}</p>
-      ) : null}
-      {(open.paired_addresses ?? 0) > 1 ? (
-        <p className="muted">{t.pairedMany(open.leg.account_label, open.paired_addresses ?? 0)}</p>
-      ) : null}
+      <WhyNote>
+        {paired ? <p className="muted">{t.pairedWaits(open.leg.account_label, paired.account_label)}</p> : null}
+        {(open.paired_addresses ?? 0) > 1 ? <p className="muted">{t.pairedMany(open.leg.account_label, open.paired_addresses ?? 0)}</p> : null}
+        <p className="muted">{t.walletBooks}</p>
+      </WhyNote>
       {wallets.map((wallet) => (
         <label key={wallet.address_id}>
           <input type="radio" name={name} value={wallet.address_id} checked={choice === wallet.address_id} onChange={() => setChoice(wallet.address_id)} />{" "}
           {t.toOwnWallet(wallet.account_label, chainName(wallet.chain), wallet.address_masked)}
         </label>
       ))}
-      <p className="muted">{t.walletBooks}</p>
       <label>
         <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />{" "}
         {t.rememberPair(open.leg.account_label)}
@@ -1698,10 +1771,12 @@ function ReturnBook({ open, onBooked }: { open: OpenReturn; onBooked: () => void
           </label>
         ))
       )}
-      <p className="muted">
-        {t.returnCancels}
-        {chosen?.booked_category && !chosen.booked_as_transfer ? t.returnRebooked(ALLOCATION_CATEGORY[chosen.booked_category]) : ""}
-      </p>
+      <WhyNote>
+        <p className="muted">
+          {t.returnCancels}
+          {chosen?.booked_category && !chosen.booked_as_transfer ? t.returnRebooked(ALLOCATION_CATEGORY[chosen.booked_category]) : ""}
+        </p>
+      </WhyNote>
       <button type="button" onClick={() => void book()} disabled={busy || !chosen}>
         {busy ? t.booking : t.bookReturn}
       </button>
@@ -1775,7 +1850,9 @@ function YearPaidApply({ transactionId, year, onApplied }: { transactionId: stri
       <button type="button" onClick={() => void apply()} disabled={busy}>
         {busy ? t.moving : t.countIn(year)}
       </button>
-      <p className="muted">{t.yearPaid}</p>
+      <WhyNote>
+        <p className="muted">{t.yearPaid}</p>
+      </WhyNote>
       <ErrorNotice error={error} />
     </>
   );

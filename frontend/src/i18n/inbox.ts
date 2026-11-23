@@ -7,10 +7,15 @@ import { defineMessages } from "./core";
 const de = {
   title: "Zu prüfen",
   heading: "Hochladen, bestätigen, fertig",
-  photo: "Beleg fotografieren",
-  upload: "Rechnungen, Bescheide und Briefe hochladen",
-  statementsAt: "Kontoauszüge werden beim jeweiligen Konto importiert: ",
-  accounts: "Konten",
+  // the page head (phase 10 §7.6): „Hochladen“ and „Foto“; the photos open the page strip in the
+  // detail panel
+  uploadButton: "Hochladen",
+  uploadingButton: "Lädt hoch …",
+  photoButton: "Foto",
+  photos: "Fotos",
+  photosWaiting: (n: number) => `Fotos (${n})`,
+  addPage: "Seite hinzufügen",
+  preparing: "Wird vorbereitet …",
   existed: "Bereits vorhanden: ",
   uploaded: "Hochgeladen: ",
   reading: " – wird automatisch ausgelesen; der Vorschlag erscheint hier, sobald er fertig ist.",
@@ -44,9 +49,9 @@ const de = {
   matchCount: (shown: number, all: number) => `${shown} von ${all}`,
   noMatch: (needle: string) => `Keine Zahlung passt zu „${needle}“.`,
   noCounterparty: "Ohne Gegenseite",
-  noPurpose: "Kein Verwendungszweck",
-  line: "Buchung",
   privateAccount: (label: string) => `Privatkonto · ${label}`,
+  suggestion: (category: string) => `Vorschlag: ${category}`,
+  why: "Warum?",
 
   // „KI-Vorschläge holen“
   aiFetch: "KI-Vorschläge holen",
@@ -60,6 +65,7 @@ const de = {
 
   // the bulk confirm list
   bulkIntro: "Vorschläge für private Konten, nach Kategorie: eine ganze Gruppe lässt sich auf einmal bestätigen.",
+  bulkHeading: "Nach Kategorie bestätigen",
   bulkListLabel: "Vorschläge privater Konten nach Kategorie",
   hidePayments: "Zahlungen ausblenden",
   showPayments: "Zahlungen ansehen",
@@ -191,10 +197,13 @@ type Messages = typeof de;
 const en: Messages = {
   title: "To review",
   heading: "Upload, confirm, done",
-  photo: "Photograph a receipt",
-  upload: "Upload invoices, notices and letters",
-  statementsAt: "Statements are imported at their account: ",
-  accounts: "Accounts",
+  uploadButton: "Upload",
+  uploadingButton: "Uploading …",
+  photoButton: "Photo",
+  photos: "Photos",
+  photosWaiting: (n) => `Photos (${n})`,
+  addPage: "Add a page",
+  preparing: "Preparing …",
   existed: "Already there: ",
   uploaded: "Uploaded: ",
   reading: " – being read automatically; the suggestion appears here once it is ready.",
@@ -227,9 +236,9 @@ const en: Messages = {
   matchCount: (shown, all) => `${shown} of ${all}`,
   noMatch: (needle) => `No payment matches “${needle}”.`,
   noCounterparty: "No counterparty",
-  noPurpose: "No payment reference",
-  line: "Transaction",
   privateAccount: (label) => `Private account · ${label}`,
+  suggestion: (category) => `Suggestion: ${category}`,
+  why: "Why?",
 
   aiFetch: "Get AI suggestions",
   aiSent: (n) => `Sent ${n === 1 ? "1 payment" : `${n} payments`} to the AI.`,
@@ -241,6 +250,7 @@ const en: Messages = {
   aiHeldBackAfter: " › “Categorise private accounts with AI”, then “Get AI suggestions” here again.",
 
   bulkIntro: "Suggestions for private accounts, by category: a whole group can be confirmed at once.",
+  bulkHeading: "Confirm by category",
   bulkListLabel: "Private accounts' suggestions by category",
   hidePayments: "Hide payments",
   showPayments: "Show payments",

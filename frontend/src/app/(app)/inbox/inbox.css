@@ -8,3 +8,175 @@
 .inbox-page-list .card.inbox-queue {
   flex: none;
 }
+
+/* --- the page head: „Hochladen“ and „Foto“ (phase 10 §7.6) ---
+   Each is the label of a hidden file input, styled as a button; the label shows the input's
+   focus ring. */
+
+.inbox-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+label.inbox-head-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+label.inbox-head-button:hover {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+
+label.inbox-head-button.secondary {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+}
+
+label.inbox-head-button.secondary:hover {
+  border-color: var(--muted);
+  background: var(--bg);
+}
+
+label.inbox-head-button.busy {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.capture-input:focus-visible + label.inbox-head-button {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* An upload notice is one line (§7.6 (2)); the document's link comes first, so it stays
+   visible and tappable when the rest is cut. */
+.inbox-head-notices > .notice p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-head-error {
+  flex-basis: 100%;
+}
+
+/* The photos' panel: „Seite hinzufügen“ above the strip of components/capture.tsx. */
+.inbox-photos {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* --- a bank line in two rows (phase 10 §7.6) ---
+   Date, payee and amount; then the kind, „Vorschlag: …“ and the model's question on one line.
+   The purpose, the account and the reasoning are in the detail panel. */
+
+/* About 54 px a line (two text rows), so ten lines take about 540 px of a phone screen. */
+.inbox-page-list button.inbox-line {
+  align-items: center;
+  gap: 2px 12px;
+  min-height: 52px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.inbox-page-list .inbox-line .inbox-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-line-second {
+  grid-column: 2 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 0 8px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
+.inbox-line-second .badge {
+  flex: none;
+  margin-left: 0;
+  padding: 0 8px;
+}
+
+.inbox-suggestion {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inbox-line-question {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 700;
+}
+
+/* --- „Warum?“ on the other cards, closed by default --- */
+
+.inbox-page-list .inbox-why-fold,
+.inbox-why-fold {
+  grid-column: 2 / -1;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.inbox-why-fold summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--accent);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.inbox-why-fold p {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+
+/* „Nach Kategorie bestätigen“ with its ⓘ. */
+.inbox-bulk-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 559px) {
+  /* The date stays on the first row beside the payee. */
+  .inbox-page-list .inbox-entry.inbox-line {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .inbox-page-list .inbox-line .inbox-when {
+    grid-column: auto;
+  }
+  .inbox-line-second,
+  .inbox-page-list .inbox-why-fold,
+  .inbox-why-fold {
+    grid-column: 1 / -1;
+  }
+}
