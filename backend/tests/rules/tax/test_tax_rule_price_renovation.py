@@ -124,13 +124,39 @@ def test_a_taxable_sale_reads_the_price_without_the_claim():
     """§23 (phase 4 sale.py): while the claim counts, its gross is not an acquisition cost, so
     the gain rises by it within the limit; over the limit it is back as a basis addition and
     the gain is as without the claim, counted once either way."""
-    from test_perf_sale import SALE, facts_of
+    # The phase 4 sale fixture, read here (not imported from test_perf_sale, whose folder is
+    # on sys.path only when that file is collected in the same run or shard).
+    from fixture_models_phase4 import load
 
     from hausbuch.rules.performance.sale import SaleFacts, sale
     from hausbuch.rules.tax import registry
+    from hausbuch.schemas.performance import OwnerTaxProfile
+    from hausbuch.schemas.tax import TaxOwner
 
-    case = next(c for c in SALE.cases if c.id == "scenario_c_sale")
-    f = facts_of(case)
+    case = next(c for c in load("sale").cases if c.id == "scenario_c_sale")
+    g = case.facts
+    f = SaleFacts(
+        sale_year=g.sale_year,
+        purchase_date=g.purchase_date,
+        tax_free_from=g.tax_free_from,
+        purchase_price=g.purchase_price,
+        cost_rows=g.cost_rows,
+        loan_principal=g.loan_principal,
+        value=g.value,
+        selling_costs_rate=g.selling_costs_rate,
+        afa_claimed_building=g.afa_claimed,
+        afa_claimed_movable=g.afa_claimed_movable,
+        loan_balance=g.loan_balance,
+        zve_base=g.zve_base,
+        result_sale_year=g.result_sale_year,
+        shares=[TaxOwner(owner_id=o.owner_id, share=o.share) for o in g.owners],
+        profiles=[
+            OwnerTaxProfile(owner_id=o.owner_id, church_tax=o.church_tax, tax_state=o.tax_state)
+            for o in g.owners
+        ],
+        cash_flows=g.cash_flows,
+        freigrenze=registry.rule_set_or_latest(g.sale_year).speculation_freigrenze,
+    )
     tariff = registry.tariff(2030)
     base = sale(f, tariff).gain
     within = sale(SaleFacts(**{**f.__dict__, "price_renovation": Decimal("11900.00")}), tariff)
