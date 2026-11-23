@@ -257,3 +257,32 @@ def test_a_purchase_settled_after_the_anchor_day_is_not_counted_twice(run, read,
         (K.START, date(2026, 6, 30), Decimal("800.00")),
     ]
     assert portfolio.figures.gain_eur == Decimal("0.00")
+
+
+def test_a_start_priced_only_a_month_before_the_anchor_is_unknown(run, read, fresh_workspaces):
+    """A depot anchored at 300 € on 30 Jun holding 10 units bought on 15 May; the fund's only
+    price before the anchor is of 31 May, 30 days earlier (stale, D167 (2)). The start value
+    would be priced on another day than the anchor, so it is unknown: no gain, the start
+    counted as a payment whose euros are missing."""
+    ws, _ = fresh_workspaces
+    depot = _account(
+        run, ws, "Depot", AccountKind.DEPOT, iban=DEPOT_IBAN, opening="300.00", on=date(2026, 6, 30)
+    )
+
+    def stored(ctx):
+        fund = _asset(ctx, kind="etf", isin="IE00BEISPL09", name="Fonds Welt")
+        _moved(ctx, depot, fund, "acquisition", "10", date(2026, 5, 15), eur="-1000.00")
+        _price(ctx, fund, date(2026, 5, 31), "100", "user")
+        _price(ctx, fund, ON, "120", "user")
+        cash = _import(ctx, depot, date(2026, 7, 1), date(2026, 10, 20))
+        return _line(ctx, depot, cash, date(2026, 7, 15), "500.00")
+
+    credit = run(ws, stored)
+    _book(run, ws, credit, "500.00", C.INTERNAL_TRANSFER_IN)
+    [portfolio] = read(ws, assets_performance, ON).portfolios
+    assert (K.START, date(2026, 6, 30), None) in [
+        (f.kind, f.on, f.amount_eur) for f in portfolio.flows
+    ]
+    figures = portfolio.figures
+    assert figures.gain_eur is None and figures.paid_in_eur is None
+    assert figures.no_rate is NoRateReason.UNPRICED and figures.unpriced_flows == 1

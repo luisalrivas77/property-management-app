@@ -317,7 +317,9 @@ def _depot_start(
     conn: Connection, windows: dict[UUID, tuple[Decimal, date, date]]
 ) -> dict[UUID, Decimal | None]:
     """Per depot with a cash balance, its value on the anchor day: the anchor plus the funds
-    held that day at that day's price; None when a fund held that day has no value."""
+    held that day at that day's price; None when a fund held that day has no value or only a
+    stale one (a price more than seven days before the anchor day, D167 (2)): the start would
+    otherwise be priced on another day than the anchor."""
     by_day: dict[date, list[UUID]] = defaultdict(list)
     for account_id, (_, anchor_on, _) in windows.items():
         by_day[anchor_on].append(account_id)
@@ -328,7 +330,7 @@ def _depot_start(
         for account_id in ids:
             anchor = windows[account_id][0]
             held = seen.get(account_id)
-            if held is not None and any(p.value_eur is None for p in held.positions):
+            if held is not None and any(p.value_eur is None or p.stale for p in held.positions):
                 out[account_id] = None
             else:
                 out[account_id] = anchor + (held.value_eur if held is not None else ZERO)
