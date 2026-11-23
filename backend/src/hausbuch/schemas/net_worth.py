@@ -60,6 +60,17 @@ class NetWorthLine(Schema):
     not_valued_reason: str | None = None
 
 
+class AccountTab(StrEnum):
+    """The Konten page's tabs (phase 10 D279, §7.6 Konten (2)) by the account's kind: both
+    bank kinds are one tab; the loans' tab reads `loan_balances`."""
+
+    BANK = "bank"  # bank_current and bank_savings
+    CARD = "card"  # credit_card
+    DEPOT = "depot"
+    EXCHANGE = "exchange"
+    WALLET = "wallet"
+
+
 class NetWorthTodoCode(StrEnum):
     BALANCE_UNRECONCILED = "net_worth.balance_unreconciled"
     # A balance older than the day, nothing waiting: the next statement (review 15 Nov 2026).
@@ -114,6 +125,12 @@ class NetWorth(Schema):
     property_estimate: Money
     loan_balances: Money  # positive: what is owed on the properties' loans
     property_net: Money
+    # Phase 10 §7.6 Konten (2): Σ of the account and position lines (a depot's cash, an
+    # account's „unterwegs“ line and every position included) per Konten tab, by the account's
+    # kind; a tab only when one of its accounts has a line, a line without a value counted
+    # nowhere. Not split by owner shares, like the lines. The tabs add up to `total` less the
+    # property's estimate plus the loans' balance.
+    by_account_tab: dict[AccountTab, Money] = Field(default_factory=dict)
     lines: list[NetWorthLine] = Field(default_factory=list)
     todos: list[NetWorthTodo] = Field(default_factory=list)
     stale_positions: int = Field(default=0, ge=0)

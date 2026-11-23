@@ -24,6 +24,18 @@ Definitions:
                       paid_in ≤ 0 (nothing to earn back) and when the projection failed
                       (projection_error_code: the actual years alone cannot say it is not
                       reached).
+    arrived         = the part of cash_back that has arrived (phase 10 §7.6 (d), Luis 23 Nov
+                      2026): Σ cash before tax of the actual years (net_cash + the tax
+                      effect) + the tax refund of the years whose effect is that year's own
+                      Einkommensteuerbescheid (source bescheid, not carried forward from an
+                      earlier year's).
+    expected_tax_refund = the tax refund of the other actual years (an estimate, an override,
+                      or a Bescheid carried from an earlier year): signed, positive for a
+                      refund, negative for an expected back-payment. A year's tax refund is
+                      −tax effect (a saving is a negative effect), 0 without an effect
+                      (income missing). arrived + expected_tax_refund = cash_back exactly,
+                      every part being whole cents. percent and break_even_year stay on
+                      cash_back, both parts together.
     profit_today    = sale().net_proceeds (value − selling costs − §23 tax − loan balance,
                       for a sale in today's year at today's value and balance) + cash_back
                       − paid_in. sale().profit is not used: its E₀ lacks the loan costs paid
@@ -61,14 +73,49 @@ def percent(cash_back: Decimal, paid_in: Decimal) -> Decimal | None:
     return one_decimal(cash_back * HUNDRED / paid_in)
 
 
+def tax_refund(y: YearFigures) -> Decimal:
+    """The money a year's tax effect brings: −effect (a saving is a negative effect), so
+    positive for a refund and negative for a back-payment; 0 without an effect."""
+    return ZERO if y.tax_effect is None else -y.tax_effect.effect
+
+
+def tax_assessed(y: YearFigures) -> bool:
+    """The year's tax effect is its own Einkommensteuerbescheid's: the money has arrived. An
+    estimate, an override or an earlier year's Bescheid carried forward is still expected."""
+    effect = y.tax_effect
+    return effect is not None and effect.source == "bescheid" and not effect.carried_forward
+
+
 def series(actual: Sequence[YearFigures], projected: Sequence[YearFigures]) -> list[PaybackYear]:
-    """Every year's net cash, actual then projected, with its running sum."""
+    """Every year's net cash, actual then projected, with its running sum, its cash before tax
+    and its tax refund (net_cash = cash_before_tax + tax_refund)."""
     out = []
     running = ZERO
     for y in [*actual, *projected]:
         running += y.net_cash
-        out.append(PaybackYear(year=y.year, kind=y.kind, net_cash=y.net_cash, cumulative=running))
+        refund = tax_refund(y)
+        out.append(
+            PaybackYear(
+                year=y.year,
+                kind=y.kind,
+                net_cash=y.net_cash,
+                cumulative=running,
+                cash_before_tax=y.net_cash - refund,
+                tax_refund=refund if y.tax_effect is not None else None,
+                tax_assessed=tax_assessed(y),
+            )
+        )
     return out
+
+
+def arrived_and_expected(actual: Sequence[YearFigures]) -> tuple[Decimal, Decimal]:
+    """(arrived, expected_tax_refund) of the actual years (the module doc)."""
+    arrived = sum(
+        (y.net_cash - tax_refund(y) + (tax_refund(y) if tax_assessed(y) else ZERO) for y in actual),
+        ZERO,
+    )
+    expected = sum((tax_refund(y) for y in actual if not tax_assessed(y)), ZERO)
+    return cents(arrived), cents(expected)
 
 
 def break_even(years: Sequence[PaybackYear], paid_in: Decimal) -> int | None:
@@ -109,12 +156,15 @@ def payback(
         raise ValueError("payback needs the property's paid_in")
     paid_in = paid.paid_in
     cash_back = cents(sum((y.net_cash for y in actual), ZERO))
+    arrived, expected = arrived_and_expected(actual)
     years = series(actual, projected)
     return PropertyPayback(
         property_id=paid.property_id,
         label=paid.label,
         paid_in=paid_in,
         cash_back=cash_back,
+        arrived=arrived,
+        expected_tax_refund=expected,
         percent=percent(cash_back, paid_in),
         years=years,
         break_even_year=None if projection_error_code else break_even(years, paid_in),
@@ -164,6 +214,8 @@ def total(properties: Sequence[PropertyPayback]) -> PropertiesPayback:
     counted = [p for p in properties if p.reason is None and p.paid_in is not None]
     paid_in = cents(sum((p.paid_in for p in counted if p.paid_in is not None), ZERO))
     cash_back = cents(sum((p.cash_back or ZERO for p in counted), ZERO))
+    arrived = cents(sum((p.arrived or ZERO for p in counted), ZERO))
+    expected = cents(sum((p.expected_tax_refund or ZERO for p in counted), ZERO))
     profit = cents(sum((p.sale_today.profit for p in counted if p.sale_today is not None), ZERO))
     year_set = sorted({y.year for p in counted for y in p.years})
     reached = None
@@ -184,6 +236,8 @@ def total(properties: Sequence[PropertyPayback]) -> PropertiesPayback:
         properties=list(properties),
         paid_in=paid_in,
         cash_back=cash_back,
+        arrived=arrived,
+        expected_tax_refund=expected,
         percent=percent(cash_back, paid_in) if counted else None,
         profit_today=profit,
         break_even_year=reached,

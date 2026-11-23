@@ -191,6 +191,9 @@ def test_payback_is_served_per_property_with_totals(client_a, client_b):
         "properties": [],
         "paid_in": "0.00",
         "cash_back": "0.00",
+        # Phase 10 §7.6 (d): the cash back split into what arrived and the expected tax.
+        "arrived": "0.00",
+        "expected_tax_refund": "0.00",
         "percent": None,
         "profit_today": "0.00",
         "break_even_year": None,

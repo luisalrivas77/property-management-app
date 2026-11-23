@@ -258,6 +258,7 @@ def mark(
         target=target,
         gap_points=gap_points,
         gap_monthly=gap_monthly,
+        at_target=at_target,
         text=text,
     )
 

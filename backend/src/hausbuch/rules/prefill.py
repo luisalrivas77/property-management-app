@@ -126,6 +126,7 @@ from hausbuch.schemas.enums import (
     DocumentSubtype,
     ExtractionKind,
     OperatingCostsTerms,
+    PriceSplitSource,
     PropertyKind,
     RentModel,
 )
@@ -1370,7 +1371,7 @@ class _Builder:
                 keyed={"address.street": _street_key, "address.house_number": _house_number_key},
             )
         self._unit(prop)
-        self._price_split()
+        self._price_split(prop)
         self._ownership()
         self._price_renovation()
         self.link("link:property", None if prop is None else prop.id)
@@ -1449,7 +1450,11 @@ class _Builder:
         else:
             self._match_record("unit", "unit", unit.id, proposed, _unit_current(unit))
 
-    def _price_split(self) -> None:
+    def _price_split(self, prop: ExistingProperty | None) -> None:
+        """The building share from the read price and land value. Phase 10 §7.6 (e): when the
+        property already holds a contract split of that share, the record is `unchanged` on
+        that split (the card says it is recorded; applying it selects it when none is
+        selected yet, D133), never a second split."""
         price, land = self.ev("purchase_price"), self.ev("land_value")
         if price.value is None or land.value is None:
             return
@@ -1460,6 +1465,27 @@ class _Builder:
             share = share if Decimal(0) < share < Decimal(1) else None
         value = None if share is None else str(share)
         derived = _derived(value, [("purchase_price", price), ("land_value", land)])
+        recorded = None
+        if prop is not None and share is not None:
+            recorded = next(
+                (
+                    s
+                    for s in sorted(prop.price_splits, key=lambda s: str(s.id))
+                    if s.source is PriceSplitSource.PURCHASE_CONTRACT
+                    and s.inputs is None
+                    and Decimal(s.building_share) == share
+                ),
+                None,
+            )
+        if recorded is not None:
+            self.add(
+                "price_split",
+                "price_split",
+                "unchanged",
+                {"building_share": derived},
+                target_id=recorded.id,
+            )
+            return
         self.add("price_split", "price_split", "create", {"building_share": derived})
 
     def _price_renovation(self) -> None:

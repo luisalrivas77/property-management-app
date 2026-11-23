@@ -11718,6 +11718,18 @@
         "title": "AccountSource",
         "description": "account.source (migration 0006). Only `upload` in phase 2."
       },
+      "AccountTab": {
+        "type": "string",
+        "enum": [
+          "bank",
+          "card",
+          "depot",
+          "exchange",
+          "wallet"
+        ],
+        "title": "AccountTab",
+        "description": "The Konten page's tabs (phase 10 D279, §7.6 Konten (2)) by the account's kind: both\nbank kinds are one tab; the loans' tab reads `loan_balances`."
+      },
       "AcquisitionCost": {
         "properties": {
           "id": {
@@ -15537,6 +15549,11 @@
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Gap Monthly"
           },
+          "at_target": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "At Target"
+          },
           "text": {
             "type": "string",
             "title": "Text"
@@ -15549,6 +15566,7 @@
           "target",
           "gap_points",
           "gap_monthly",
+          "at_target",
           "text"
         ],
         "title": "BudgetMark",
@@ -18341,6 +18359,14 @@
         "type": "object",
         "title": "DepotReportExtraction",
         "description": "Quartalsbericht (depot_report, D165 (3)): the positions on a date and the trades the\nreport lists, from which code proposes holding_statement rows. The list of trades runs\nfrom the mandate's start, so a later report repeats the earlier ones."
+      },
+      "DifferenceWords": {
+        "type": "string",
+        "enum": [
+          "more",
+          "less"
+        ],
+        "title": "DifferenceWords"
       },
       "Direction": {
         "type": "string",
@@ -21822,6 +21848,49 @@
         "title": "GeneralExtraction",
         "description": "The general reading (D130): title and date for every document without a reader of its\nown, plus the one field set its subtype's group needs to find its link (D131): the\nproperty's address for the property, WEG, running-costs and tenancy groups, the lender and\ncontract number for the loan group. A request asks only those (asked_fields); an\nowner's home address is never asked. A Wohnflächenberechnung (building_records) is also\nasked its list of dwellings (D139), a Gutachten (appraisal) its remaining useful life and\nStichtag (D147)."
       },
+      "GroupDifference": {
+        "properties": {
+          "group": {
+            "$ref": "#/components/schemas/HouseholdGroup"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "mean": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Mean"
+          },
+          "difference": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Difference"
+          },
+          "words": {
+            "$ref": "#/components/schemas/DifferenceWords"
+          },
+          "payments": {
+            "items": {
+              "$ref": "#/components/schemas/GroupPayment"
+            },
+            "type": "array",
+            "title": "Payments"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "group",
+          "amount",
+          "mean",
+          "difference",
+          "words"
+        ],
+        "title": "GroupDifference",
+        "description": "A spending group whose month differs from its own mean over the closed months before\nit (phase 10 §7.6 Haushalt (3), build decision (a)); `difference` = `amount` − `mean`."
+      },
       "GroupKind": {
         "type": "string",
         "enum": [
@@ -21841,6 +21910,71 @@
         ],
         "title": "GroupKind",
         "description": "movement_group.kind (D183 (2)): the thirteen shapes a transaction is classified as."
+      },
+      "GroupPayment": {
+        "properties": {
+          "allocation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Allocation Id"
+          },
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Transaction Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "account_label": {
+            "type": "string",
+            "title": "Account Label"
+          },
+          "booked_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Booked On"
+          },
+          "payee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payee"
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose",
+            "default": ""
+          },
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "allocation_id",
+          "transaction_id",
+          "account_id",
+          "account_label",
+          "booked_on",
+          "category",
+          "amount"
+        ],
+        "title": "GroupPayment",
+        "description": "One confirmed allocation of a private line behind a group's month, `amount` signed as\nthe group's spending (money out positive, a refund negative), so a group's payments add\nup to its month."
       },
       "GroupStatus": {
         "type": "string",
@@ -22232,6 +22366,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/HouseholdMonth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "differences": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonthDifferences"
               },
               {
                 "type": "null"
@@ -26295,6 +26439,38 @@
         "type": "object",
         "title": "MonthAndYtd"
       },
+      "MonthDifferences": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Month"
+          },
+          "baseline": {
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+            },
+            "type": "array",
+            "title": "Baseline"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/GroupDifference"
+            },
+            "type": "array",
+            "title": "Groups"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month",
+          "baseline"
+        ],
+        "title": "MonthDifferences",
+        "description": "The newest closed month (`month`) against the mean of the closed months before it\n(`baseline`, three to twelve, oldest first): at most three groups, the largest difference\nfirst; empty when none crosses both thresholds. Figures only: no colour, no advice."
+      },
       "MonthRate": {
         "properties": {
           "month": {
@@ -26774,6 +26950,17 @@
             "type": "string",
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Property Net"
+          },
+          "by_account_tab": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/AccountTab"
+            },
+            "type": "object",
+            "title": "By Account Tab"
           },
           "lines": {
             "items": {
@@ -28597,6 +28784,35 @@
             "type": "string",
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Cumulative"
+          },
+          "cash_before_tax": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cash Before Tax"
+          },
+          "tax_refund": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Refund"
+          },
+          "tax_assessed": {
+            "type": "boolean",
+            "title": "Tax Assessed",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -30299,6 +30515,16 @@
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Cash Back"
           },
+          "arrived": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Arrived"
+          },
+          "expected_tax_refund": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Expected Tax Refund"
+          },
           "percent": {
             "anyOf": [
               {
@@ -30367,6 +30593,8 @@
           "properties",
           "paid_in",
           "cash_back",
+          "arrived",
+          "expected_tax_refund",
           "profit_today"
         ],
         "title": "PropertiesPayback",
@@ -30799,6 +31027,30 @@
               }
             ],
             "title": "Cash Back"
+          },
+          "arrived": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arrived"
+          },
+          "expected_tax_refund": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Tax Refund"
           },
           "percent": {
             "anyOf": [

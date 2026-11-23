@@ -17,7 +17,7 @@
 // button (principle 7); a month-end to-do is the button „Monatsabschluss festhalten“ itself.
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
@@ -115,10 +115,19 @@ function useScrollToHash(ready: boolean) {
   }, [ready]);
 }
 
-/** Haushalt's key figures (phase 10 §7.6): the reserve, the limits and the Kennzahlen. */
-export function HouseholdHealthSection({ onChanged }: { onChanged?: () => void } = {}) {
+/** Haushalt's key figures (phase 10 §7.6): the reserve, the limits and the Kennzahlen. A change
+ * of `refresh` reads them again in place (phase 10 §7.6 (f): a month-end captured from Haushalt's
+ * „Noch keine Durchschnitte“ above moves the reserve and the Kennzahlen without a reload). */
+export function HouseholdHealthSection({ onChanged, refresh = 0 }: { onChanged?: () => void; refresh?: number } = {}) {
   const state = useLoad(loadHouseholdHealth);
   useScrollToHash(state.data !== undefined);
+  const { reload } = state;
+  const seen = useRef(refresh);
+  useEffect(() => {
+    if (seen.current === refresh) return;
+    seen.current = refresh;
+    reload();
+  }, [refresh, reload]);
   const changed = () => {
     state.reload();
     onChanged?.();
@@ -152,9 +161,11 @@ function HealthFigures({ data, onChanged }: { data: HealthData; onChanged: () =>
   const current = currentDefault(scenarios);
   const confirmed = (current?.levers?.bands ?? []).length > 0;
   const showCard = !confirmed || editing;
-  // The bands' own to-do is the card itself on this page, and Haushalt's „Noch keine
-  // Durchschnitte“ above already shows „too few closed months“ with its buttons.
-  const otherTodos = todos.filter((todo) => todo.code !== "bands_unconfirmed" && todo.code !== "too_few_months");
+  // The bands' own to-do is the card itself on this page. Below three closed months Haushalt's
+  // „Noch keine Durchschnitte“ above shows „too few closed months“ and what holds the next month
+  // open (its month-end to-do included) with their buttons, so they are not listed here a second
+  // time (phase 10 §7.6 (f)); GET /health has no other to-dos (rules/health/window, bands).
+  const otherTodos = health.window.enough ? todos.filter((todo) => todo.code !== "bands_unconfirmed" && todo.code !== "too_few_months") : [];
   const t = useT(healthFigures);
   return (
     <>
