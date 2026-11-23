@@ -75,7 +75,7 @@ const performance: AssetsPerformance = {
   property_estimate_eur: "300000.00",
   property_loans_eur: "200000.00",
   property_equity_eur: "100000.00",
-  total_eur: "130000.00",
+  total_eur: "129000.00",
   distributions_year: 2026,
   distributions_eur: "120.00",
   distributions_tax_eur: "0.00",
@@ -104,8 +104,9 @@ const overview: AssetsOverview = {
       total_eur: "24000.00",
     },
   ],
-  total_eur: "30000.00",
-  by_kind: { etf: "24000.00", crypto: "5000.00", cash: "1000.00" },
+  // The invested value of GET /assets/performance: the overview's total, cash included.
+  total_eur: "29000.00",
+  by_kind: { etf: "24000.00", crypto: "4000.00", cash: "1000.00" },
   stale_positions: 0,
   unvalued_positions: 0,
   waiting: [],
@@ -178,7 +179,7 @@ test("Übersicht shows the total with its split, a card per kind and no fund", a
   await page.goto("/assets");
 
   const total = page.getByRole("region", { name: "Vermögen in Anlagen" });
-  await expect(total).toContainText("130.000,00 €");
+  await expect(total).toContainText("129.000,00 €");
   // The split sits inside the total card; the old card is gone.
   await expect(total).toContainText("Immobilie (Eigenkapital)");
   await expect(total).toContainText("100.000,00 €");
@@ -200,8 +201,12 @@ test("Anlagen has no sideways scroll on a phone, „Vermögen im Verlauf“ incl
   await holdings(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/assets");
-  await expect(page.getByRole("region", { name: "Vermögen im Verlauf" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Vermögen in Anlagen" })).toContainText("130.000,00 €");
+  const series = page.getByRole("region", { name: "Vermögen im Verlauf" });
+  await expect(series).toBeVisible();
+  // The months as a list on the phone; the table that scrolled sideways inside its card is hidden.
+  await expect(series.getByRole("list", { name: "Vermögen im Verlauf" })).toBeVisible();
+  await expect(series.getByRole("table")).toBeHidden();
+  await expect(page.getByRole("region", { name: "Vermögen in Anlagen" })).toContainText("129.000,00 €");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 
   for (const tab of ["etf", "krypto"]) {

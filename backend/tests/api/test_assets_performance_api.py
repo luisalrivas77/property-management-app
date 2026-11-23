@@ -150,6 +150,9 @@ def test_each_portfolio_its_flows_and_the_crypto_total(app_engine, auth_a, clien
     assert seen["invested"] == crypto
     assert seen["etf"]["value_eur"] == "0.00" and seen["etf"]["no_rate"] == "no_flows"
     assert seen["total_eur"] == "1400.00"  # no property
+    # Anlagen › Übersicht shows this total above the split read from GET /assets/overview, so the
+    # invested value is the overview's total (its cash and money in transit included).
+    assert seen["invested"]["value_eur"] == overview["total_eur"]
     assert (seen["distributions_year"], seen["distributions_eur"]) == (TODAY.year, "0.00")
 
     assert ok(client_b.get("/api/assets/performance"))["portfolios"] == []
