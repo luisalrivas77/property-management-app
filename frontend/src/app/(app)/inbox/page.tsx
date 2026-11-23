@@ -107,7 +107,8 @@ function Inbox() {
     setPhotoError(null);
     try {
       const { document, existed, proposalId } = await strip.upload();
-      photos.close();
+      // Only the photos' own panel: a line opened meanwhile keeps its panel.
+      if (window.location.hash === photos.href(PHOTOS)) photos.close();
       noteUpload({ document, existed, proposalId, aiUnavailable: false });
     } catch (caught) {
       setPhotoError(caught);

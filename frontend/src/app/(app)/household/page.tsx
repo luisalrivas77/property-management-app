@@ -68,6 +68,7 @@ type AllocationCategory = components["schemas"]["AllocationCategory"];
 type TransferLinkView = components["schemas"]["TransferLinkView"];
 type HealthMonthView = components["schemas"]["HealthMonthView"];
 type Health = components["schemas"]["Health"];
+type HealthTodo = components["schemas"]["HealthTodo"];
 type HouseholdMonthFigures = components["schemas"]["HouseholdMonth"];
 type SpendingComparison = components["schemas"]["SpendingComparison"];
 type SpendingComparisonRow = components["schemas"]["SpendingComparisonRow"];
@@ -111,6 +112,17 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 function chosenMonth(raw: string | null, current: string): string {
   if (raw && MONTH.test(raw) && monthsUpTo(current, MONTHS_OFFERED).includes(raw)) return raw;
   return lastFullMonth();
+}
+
+/** Each to-do once, by its code, link and text, in the order first given. */
+function uniqueTodos(todos: readonly HealthTodo[]): HealthTodo[] {
+  const seen = new Set<string>();
+  return todos.filter((todo) => {
+    const key = `${todo.code}\n${todo.href}\n${todo.text}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** The Geldanlage group's fallback („Sonstige Geldanlage“), listed last when the group opens. */
@@ -242,10 +254,13 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
   // What holds the month after the window open (its own closing to-dos), when it is loaded.
   const after = health.find((h) => (last === undefined || h.month > last) && !h.closed.closed);
   const tooFew = (overall.todos ?? []).filter((todo) => todo.code === "too_few_months");
-  // What holds the next month open: from the months shown, else (a month chosen before it) GET
-  // /health's own, which the Kennzahlen below no longer repeat (phase 10 §7.6 (f)).
-  const holding =
-    after?.closed.todos ?? (overall.todos ?? []).filter((todo) => todo.code !== "too_few_months" && todo.code !== "bands_unconfirmed");
+  // What holds the next month open: the months shown and GET /health's own (the same month's,
+  // unless the chosen month is before it or no month is closed yet), each once; the Kennzahlen
+  // below no longer repeat them (phase 10 §7.6 (f)).
+  const holding = uniqueTodos([
+    ...(after?.closed.todos ?? []),
+    ...(overall.todos ?? []).filter((todo) => todo.code !== "too_few_months" && todo.code !== "bands_unconfirmed"),
+  ]);
 
   let panel = null;
   if (view?.stored && closingDetail.id === month.month) {
