@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "kaufvertrag",
  "synthetic": false,
- "recorded_on": "2026-11-11",
+ "recorded_on": "2026-11-23",
  "sdk_version": "2.6.0",
  "classify": {
   "prompt_version": "1a1f1775ce7fd623",
   "request_sha256": "d65e52c902008cd99fbf7a399ccf378e018a1c782b34ae57f13e72f6f6861b8a",
   "message": {
-   "id": "msg_011CgwihcQfKFAT7sYP5tpS4",
+   "id": "msg_011ChL1aidLPD5LLPra7m7nD",
    "container": null,
    "content": [
     {
@@ -46,9 +46,9 @@
  "extract": [
   {
    "prompt_version": "5a4e4a41623c9f1a",
-   "request_sha256": "4156fd2b7537a64451ef799cffed38f77a1ae5939d2388ba77fc47e46320b6ef",
+   "request_sha256": "aac94b7d7658f2ce7f101f2ba12825b6a30996df520d269e7e328ce2f32172c3",
    "message": {
-    "id": "msg_011CgwihPABpi8Nw52MHELwx",
+    "id": "msg_011ChL1aSPnYSLXnhKBwu43p",
     "container": null,
     "content": [
      {
@@ -248,7 +248,7 @@
         "type": "page_location"
        }
       ],
-      "text": "325.000,00 EUR",
+      "text": "325.000,00 €",
       "type": "text"
      },
      {
@@ -268,7 +268,7 @@
         "type": "page_location"
        }
       ],
-      "text": "65.000,00 EUR",
+      "text": "65.000,00 €",
       "type": "text"
      },
      {
@@ -370,6 +370,11 @@
       ],
       "text": "je zur Hälfte",
       "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nrenovation_clause: unbekannt\nrenovation_amount: unbekannt\nrenovation_amount_net: unbekannt\nrenovation_vat_rate: unbekannt\nrenovation_start: unbekannt\nrenovation_end: unbekannt",
+      "type": "text"
      }
     ],
     "diagnostics": null,
@@ -387,8 +392,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 7411,
-     "output_tokens": 522,
+     "input_tokens": 7646,
+     "output_tokens": 605,
      "output_tokens_details": {
       "thinking_tokens": 0
      },
