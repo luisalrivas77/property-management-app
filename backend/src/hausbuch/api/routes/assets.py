@@ -3,6 +3,8 @@
 - GET /assets/overview?on=: the Anlagen Übersicht tab (mockup 09): per depot, exchange and
   wallet account its positions on `on` (today, Berlin time, by default) with units, the
   price, its source and day, the value, the stale marker and „Kurs aus dem letzten Bericht“.
+- GET /assets/performance: each portfolio's gain since the start and its yearly return, and the
+  ETF, Krypto and Anlagen totals (phase 10 §7.6, services/portfolio_performance.py).
 - GET /assets: every asset with how it is priced (`has_source` false: „Kursquelle wählen“)
   and its latest price.
 - PATCH /assets/{id}: the name, and a coin's CoinGecko id and Kraken pair. 422
@@ -16,8 +18,10 @@ from datetime import date, datetime
 from uuid import UUID
 
 from hausbuch.schemas.household import AssetPatch
+from hausbuch.schemas.portfolio import AssetsPerformance
 from hausbuch.schemas.prices import AssetPriceRow, AssetRow, AssetsOverview, TypedPriceBody
 from hausbuch.services.documents import LOCAL_TIME_ZONE
+from hausbuch.services.portfolio_performance import assets_performance
 from hausbuch.services.prices import overview
 from hausbuch.services.todo_texts import english
 
@@ -35,6 +39,12 @@ def assets_overview(cmd: Cmd, on: date | None = None) -> AssetsOverview:
     """Valued on read from the stored prices; every figure names its source and day."""
     today = _today()  # D291: a price read on demand values today only
     return english(cmd.read(overview.assets_overview, on or today, today=today))
+
+
+@router.get("/assets/performance")
+def assets_performance_read(cmd: Cmd) -> AssetsPerformance:
+    """Today's (Berlin) figures; every payment names the rows it was read from."""
+    return cmd.read(assets_performance, _today())
 
 
 @router.get("/assets")

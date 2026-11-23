@@ -1943,6 +1943,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assets/performance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assets Performance Read
+         * @description Today's (Berlin) figures; every payment names the rows it was read from.
+         */
+        get: operations["assets_performance_read_api_assets_performance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assets": {
         parameters: {
             query?: never;
@@ -5258,6 +5278,40 @@ export interface components {
             unvalued_positions: number;
             /** Waiting */
             waiting?: components["schemas"]["WalletWaiting"][];
+        };
+        /**
+         * AssetsPerformance
+         * @description The Anlagen tabs' figures on `as_of` (today, Berlin). Each portfolio's value is its
+         *     `total_eur` on GET /assets/overview (positions, a depot's cash and money on its way);
+         *     `etf` sums the depots, `crypto` the exchanges and wallets, `invested` both, each with the
+         *     money from or to outside the set only. `total_eur` adds the property's equity (its
+         *     estimated value less its loans, the net worth's own figures), an estimate.
+         */
+        AssetsPerformance: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Portfolios */
+            portfolios?: components["schemas"]["PortfolioPerformance"][];
+            etf: components["schemas"]["PortfolioFigures"];
+            crypto: components["schemas"]["PortfolioFigures"];
+            invested: components["schemas"]["PortfolioFigures"];
+            /** Property Estimate Eur */
+            property_estimate_eur: string;
+            /** Property Loans Eur */
+            property_loans_eur: string;
+            /** Property Equity Eur */
+            property_equity_eur: string;
+            /** Total Eur */
+            total_eur: string;
+            /** Distributions Year */
+            distributions_year: number;
+            /** Distributions Eur */
+            distributions_eur: string;
+            /** Distributions Tax Eur */
+            distributions_tax_eur: string;
         };
         /** AssociationFact */
         AssociationFact: {
@@ -10622,6 +10676,12 @@ export interface components {
          *     parental leave). The row is the statement; its value carries nothing.
          */
         NoPayFact: Record<string, never>;
+        /**
+         * NoRateReason
+         * @description Why a portfolio shows no yearly return (rules.performance.portfolio.NoRate).
+         * @enum {string}
+         */
+        NoRateReason: "short_history" | "unpriced" | "no_flows" | "no_rate";
         /** NotarizedOnCorrection */
         NotarizedOnCorrection: {
             /**
@@ -11444,6 +11504,93 @@ export interface components {
             planned: string;
             /** Delta */
             delta: string;
+        };
+        /**
+         * PortfolioFigures
+         * @description Gain since the start = value + taken out − paid in; `gain_ratio` = gain ÷ paid in;
+         *     `yearly_return` the money-weighted return (xirr), None for less than a year of history
+         *     (`no_rate`). Every figure None (but the value) when a payment's euros are unknown.
+         */
+        PortfolioFigures: {
+            /** Start */
+            start?: string | null;
+            /** Value Eur */
+            value_eur: string;
+            /** Paid In Eur */
+            paid_in_eur?: string | null;
+            /** Taken Out Eur */
+            taken_out_eur?: string | null;
+            /** Gain Eur */
+            gain_eur?: string | null;
+            /** Gain Ratio */
+            gain_ratio?: string | null;
+            /** Yearly Return */
+            yearly_return?: string | null;
+            no_rate?: components["schemas"]["NoRateReason"] | null;
+            /**
+             * Unpriced Flows
+             * @default 0
+             */
+            unpriced_flows: number;
+        };
+        /**
+         * PortfolioFlow
+         * @description One payment in (+) or out (−) of a portfolio, with the rows it was read from.
+         */
+        PortfolioFlow: {
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            /** Amount Eur */
+            amount_eur: string | null;
+            kind: components["schemas"]["PortfolioFlowKind"];
+            /**
+             * Internal
+             * @default false
+             */
+            internal: boolean;
+            /** Counterpart Account Id */
+            counterpart_account_id?: string | null;
+            /** Transaction Id */
+            transaction_id?: string | null;
+            /** Movement Id */
+            movement_id?: string | null;
+            /** Asset Id */
+            asset_id?: string | null;
+            /** Units */
+            units?: string | null;
+        };
+        /**
+         * PortfolioFlowKind
+         * @description What a payment in or out of a portfolio is (decision (b)).
+         * @enum {string}
+         */
+        PortfolioFlowKind: "start" | "transfer" | "in_transit" | "units" | "trade" | "distribution";
+        /** PortfolioPerformance */
+        PortfolioPerformance: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Label */
+            label: string;
+            kind: components["schemas"]["AccountKind"];
+            figures: components["schemas"]["PortfolioFigures"];
+            /** Flows */
+            flows?: components["schemas"]["PortfolioFlow"][];
+            /**
+             * Unbooked Lines
+             * @default 0
+             */
+            unbooked_lines: number;
+            /**
+             * Waiting
+             * @default false
+             */
+            waiting: boolean;
         };
         /**
          * PositionHoldings
@@ -20116,6 +20263,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssetsOverview"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    assets_performance_read_api_assets_performance_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetsPerformance"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

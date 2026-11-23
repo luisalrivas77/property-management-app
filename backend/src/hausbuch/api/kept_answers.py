@@ -169,6 +169,7 @@ KEPT_ROUTES: tuple[str, ...] = (
     "/api/net-worth/snapshots/{run_id}",
     "/api/assets",
     "/api/assets/overview",
+    "/api/assets/performance",
     "/api/assets/etf",
     "/api/holdings/crypto",
     "/api/wallets/holdings",
