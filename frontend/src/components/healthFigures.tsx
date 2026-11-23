@@ -156,8 +156,9 @@ function HealthFigures({ data, onChanged }: { data: HealthData; onChanged: () =>
   const current = currentDefault(scenarios);
   const confirmed = (current?.levers?.bands ?? []).length > 0;
   const showCard = !confirmed || editing;
-  // The bands' own to-do is the card itself on this page.
-  const otherTodos = todos.filter((todo) => todo.code !== "bands_unconfirmed");
+  // The bands' own to-do is the card itself on this page, and Haushalt's „Noch keine
+  // Durchschnitte“ above already shows „too few closed months“ with its buttons.
+  const otherTodos = todos.filter((todo) => todo.code !== "bands_unconfirmed" && todo.code !== "too_few_months");
   const t = useT(healthFigures);
   return (
     <>

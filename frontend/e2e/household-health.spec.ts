@@ -488,6 +488,7 @@ test("the month-end card, the split and the net worth over time are on Anlagen, 
   await page.route(
     (url) => url.pathname === "/api/net-worth/snapshots",
     (route: Route) => {
+      if (route.request().method() !== "POST") return route.fallback();
       snapshots.push(route.request().postDataJSON());
       const result: SnapshotResult = { outcome: "written", as_of: "2026-10-31", unvalued_positions: 0 };
       return route.fulfill({ status: 201, json: result });

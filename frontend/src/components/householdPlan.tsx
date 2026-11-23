@@ -390,7 +390,7 @@ function PlanBody({
     setBusy(true);
     setError(null);
     try {
-      // The limits of the key figures stay as the default holds them (they are set on Übersicht).
+      // The limits of the key figures stay as the default holds them (they are set on Haushalt since phase 10 §7.6).
       const posted = { ...draft, bands: current?.levers?.bands ?? draft.bands ?? [] };
       const row = await saveDefaultScenario(posted, current);
       onSaved(posted, row);
