@@ -2,7 +2,11 @@
 
 // Anlagen (phase 10 mockup 20): three sections as chips, ?tab=… links. Übersicht (phase 6 step
 // 5b, ./Overview.tsx) values every position by its daily price; `?kurs=<asset id>` opens its
-// price forms in the detail panel.
+// price forms in the detail panel. Since phase 10 §7.6 (Luis, 23 Nov 2026) the tab also holds
+// what Übersicht showed of the net worth over time (components/healthFigures.tsx,
+// AssetsHealthSection): `?month_end=YYYY-MM-DD` opens the card „Monatsabschluss festhalten“ for
+// that month-end above the positions, and the split of the assets and „Vermögen im Verlauf“
+// follow them.
 //
 // Anlagen › ETF (phase 6 step 4, §13): every depot account with its funds, from GET /assets/etf.
 // Since phase 10 D280 Anteile, Kurs and Wert are the Übersicht's (the net worth's valuation,
@@ -25,6 +29,7 @@ import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { todayIso } from "@/components/format";
+import { AssetsHealthSection } from "@/components/healthFigures";
 import { DOCUMENT_SUBTYPE } from "@/components/labels";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -66,7 +71,8 @@ function Assets() {
   const priceFor = search.get("kurs");
   const priceDay = search.get("tag");
   const asked = search.get("tab");
-  const tab: TabKey = priceFor ? "uebersicht" : asked === "etf" ? "etf" : asked === "krypto" ? "krypto" : "uebersicht";
+  const monthEnd = search.get("month_end");
+  const tab: TabKey = priceFor || monthEnd ? "uebersicht" : asked === "etf" ? "etf" : asked === "krypto" ? "krypto" : "uebersicht";
   const tabs: { key: TabKey; label: string; href: string }[] = [
     { key: "uebersicht", label: t.tabOverview, href: "/assets" },
     { key: "etf", label: t.tabEtf, href: "/assets?tab=etf" },
@@ -87,7 +93,15 @@ function Assets() {
           </Link>
         ))}
       </nav>
-      {tab === "etf" ? <EtfTab /> : tab === "krypto" ? <CryptoTab /> : <OverviewTab priceFor={priceFor} priceDay={priceDay} />}
+      {tab === "etf" ? (
+        <EtfTab />
+      ) : tab === "krypto" ? (
+        <CryptoTab />
+      ) : (
+        <AssetsHealthSection>
+          <OverviewTab priceFor={priceFor} priceDay={priceDay} />
+        </AssetsHealthSection>
+      )}
     </section>
   );
 }

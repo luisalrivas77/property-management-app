@@ -10,6 +10,9 @@
 // - Below three closed months both screens show what holds the next month open, as to-dos whose
 //   buttons work (D231, 12c).
 // - Every figure opens what it is made of: its months, each a link to that month on Haushalt.
+// - Since phase 10 §7.6 the reserve, the limits and the Kennzahlen are on Haushalt, and the
+//   month-end card, the split of the assets and „Vermögen im Verlauf“ on Anlagen › Übersicht; an
+//   old link `/?month_end=…` is forwarded there.
 //
 // §15.2's worked example (the figures of health_worked.yaml on screen) is not here: it needs the
 // fixture's ledger seeded through the API, and the backend test of that fixture covers the
@@ -257,7 +260,7 @@ test("no key figure has a colour before „Übernehmen“, and the confirmed lim
   await serve(page, "/api/health", () => health(window, { coloured: posted.length > 0 }));
   await serve(page, "/api/health/net-worth-series", () => []);
 
-  await page.goto("/");
+  await page.goto("/household");
   const figure = page.locator('div.health-figure[aria-label="Sparquote"]');
   await expect(figure).toContainText("25,0 %");
   await expect(page.locator(".health-mark")).toHaveCount(0);
@@ -274,7 +277,7 @@ test("no key figure has a colour before „Übernehmen“, and the confirmed lim
   await expect(page.getByText("Eure Ampel-Grenzen sind übernommen.")).toBeVisible();
 });
 
-test("„Übernehmen“ on Übersicht keeps the default's budget targets and class moves", async ({ page, signedIn }) => {
+test("„Übernehmen“ on Haushalt keeps the default's budget targets and class moves", async ({ page, signedIn }) => {
   void signedIn;
   const window = [monthsBack(4), monthsBack(3), monthsBack(2)];
   const saved = scenario("00000000-0000-4000-8000-000000000900", {
@@ -296,7 +299,7 @@ test("„Übernehmen“ on Übersicht keeps the default's budget targets and cla
   await serve(page, "/api/health", () => health(window, { coloured: posted.length > 0 }));
   await serve(page, "/api/health/net-worth-series", () => []);
 
-  await page.goto("/");
+  await page.goto("/household");
   await page.getByRole("region", { name: "Ampel-Grenzen festlegen" }).getByRole("button", { name: "Übernehmen" }).click();
   await expect.poll(() => posted.length).toBe(1);
   expect(posted[0]?.supersedes_id).toBe(saved.id);
@@ -371,7 +374,11 @@ test("below three closed months both screens show what holds the next month open
   await monthsOf(page, (from, to) =>
     [...new Set([...window, shown])]
       .filter((month) => month >= from && month <= to)
-      .map((month) => (month === shown ? monthView(month, false, [monthEnd]) : monthView(month, true))),
+      .map((month) =>
+        // GET /health/months writes the month-end to-do's link to Anlagen (phase 10 §7.6); the
+        // plan's (rules/plan) keeps `/?month_end=`. Both are the button.
+        month === shown ? monthView(month, false, [{ ...monthEnd, href: "/assets?month_end=2026-10-31" }]) : monthView(month, true),
+      ),
   );
   await serve(page, "/api/household-plan", () => ({ ...plan(window, null, null), surplus: null, todos: [TOO_FEW, monthEnd] }));
 
@@ -420,8 +427,8 @@ test("every figure opens what it is made of, and a month opens Haushalt with its
   );
   await serve(page, "/api/household-plan", () => plan(window, null, null));
 
-  // Übersicht: the savings rate's months, each a link to that month on Haushalt.
-  await page.goto("/");
+  // Haushalt's Kennzahlen: the savings rate's months, each a link to that month on Haushalt.
+  await page.goto("/household");
   const rate = page.locator('div.health-figure[aria-label="Sparquote"]');
   await rate.getByText("Monate ansehen").click();
   for (const month of window) {
@@ -469,4 +476,43 @@ test("every figure opens what it is made of, and a month opens Haushalt with its
   const chip = page.getByRole("complementary", { name: "Seit dem Abschluss geändert" });
   await expect(chip.getByRole("row", { name: /Einnahmen mit der Wohnung/ })).toContainText("5.000");
   await expect(chip.getByRole("row", { name: /Einnahmen mit der Wohnung/ })).toContainText("5.200");
+});
+
+test("the month-end card, the split and the net worth over time are on Anlagen, and an old link lands there", async ({
+  page,
+  signedIn,
+}) => {
+  void signedIn;
+  const window = [monthsBack(4), monthsBack(3), monthsBack(2)];
+  const snapshots: unknown[] = [];
+  await page.route(
+    (url) => url.pathname === "/api/net-worth/snapshots",
+    (route: Route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      snapshots.push(route.request().postDataJSON());
+      const result: SnapshotResult = { outcome: "written", as_of: "2026-10-31", unvalued_positions: 0 };
+      return route.fulfill({ status: 201, json: result });
+    },
+  );
+  await scenarios(page);
+  await serve(page, "/api/health", () => ({
+    ...health(window),
+    split: { property: "0.9615", bank: "0.0385" },
+    series: [{ month_end: "2026-09-30", total: "112000.00", change: "1300.00", saved: "1300.00", other: "0.00" }],
+  }));
+
+  // A month-end to-do's old link on Übersicht opens the card on Anlagen › Übersicht.
+  await page.goto("/?month_end=2026-10-31");
+  await expect(page).toHaveURL("/assets?month_end=2026-10-31");
+  const card = page.getByRole("region", { name: /^Monatsabschluss zum / });
+  await card.getByRole("button", { name: "Monatsabschluss festhalten" }).click();
+  await expect.poll(() => snapshots).toEqual([{ as_of: "2026-10-31" }]);
+
+  // The split of the assets and „Vermögen im Verlauf“ follow the positions, and leave Übersicht.
+  await page.goto("/assets");
+  await expect(page.getByRole("region", { name: "Aufteilung des Vermögens" })).toContainText("96,2 %");
+  await expect(page.getByRole("region", { name: "Vermögen im Verlauf" })).toContainText("112.000");
+  await page.goto("/");
+  await expect(page.getByRole("region", { name: "Vermögen im Verlauf" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Liquiditätsreserve" })).toHaveCount(0);
 });

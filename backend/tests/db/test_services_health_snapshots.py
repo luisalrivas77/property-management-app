@@ -224,7 +224,7 @@ def test_a_month_changed_since_its_snapshot_shows_both(world):
     assert views[1].snapshot_id is not None and views[1].stored is None
     # February is closed but its month-end has no run: the to-do that lets it be stored.
     assert views[0].todo.code is HealthTodoCode.MONTH_END_MISSING
-    assert views[0].todo.href == "/?month_end=2027-02-28" and views[1].todo is None
+    assert views[0].todo.href == "/assets?month_end=2027-02-28" and views[1].todo is None
     _booked(world, date(2027, 3, 25), "-100.00", C.INSURANCE)
     views = world.query(health.health_months, "2027-03", "2027-03", date(2027, 4, 10))
     assert views[0].stored is not None

@@ -1,4 +1,5 @@
-// The household's key figures on Übersicht (phase 10 D284, step 4c): components/healthFigures.tsx,
+// The household's key figures on Haushalt and Anlagen › Übersicht (phase 10 D284, step 4c;
+// §7.6): components/healthFigures.tsx,
 // with the figure and colour names of components/healthShared.ts. German first, English beside it
 // (glossary.md). A mark's sentences and a to-do's text come from the server and are shown as sent.
 import { defineMessages } from "./core";

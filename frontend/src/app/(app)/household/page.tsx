@@ -27,6 +27,12 @@
 // card's line „Davon angelegt: <saved> ›“ opens it in the panel (`#d-angelegt-<month>`). On the
 // phone the groups are rows (name and amount, a thin bar under it), the six largest first and
 // „Alle <N> anzeigen“, with no table; the mean and the plan are in a tapped group's panel.
+//
+// Phase 10 §7.6 (Luis, 23 Nov 2026: „They should be moved to their respective sections as
+// Planung will be removed“): below the month, the household's key figures that were on
+// Übersicht: „Liquiditätsreserve“, „Ampel-Grenzen festlegen“ (`/household#ampel-grenzen`) and
+// „Kennzahlen“ (`/household#figures-title`), from components/healthFigures.tsx unchanged. They are
+// the window's figures, not the chosen month's, so they sit outside the month's own read.
 import "./household.css";
 
 import Link from "next/link";
@@ -49,7 +55,7 @@ import {
 } from "@/components/cashflow";
 import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { todayIso } from "@/components/format";
-import { HealthTodoList } from "@/components/healthFigures";
+import { HealthTodoList, HouseholdHealthSection } from "@/components/healthFigures";
 import { ALLOCATION_CATEGORY, HOUSEHOLD_GROUP, HOUSEHOLD_SPENDING_GROUPS } from "@/components/labels";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -191,6 +197,9 @@ function Household() {
         </label>
       </div>
       <HouseholdYear month={month} />
+      <div className="stack household-health">
+        <HouseholdHealthSection />
+      </div>
     </section>
   );
 }

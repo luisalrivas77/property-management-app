@@ -799,9 +799,11 @@ def health_months(conn: Connection, first: str, last: str, today: date) -> list[
 
 def _month_end_todo(end: date) -> HealthTodo:
     """A closed month whose complete month-end has no run yet: the daily task captures it and
-    stores the key figures beside it the next morning; the Übersicht's Nettovermögen card
-    holds the button that captures it at once (POST /net-worth/snapshots {as_of} takes a past
-    month-end, D241)."""
+    stores the key figures beside it the next morning; the button that captures it at once
+    (POST /net-worth/snapshots {as_of} takes a past month-end, D241) is the to-do itself, and
+    its link opens Anlagen › Übersicht, where the month-end card lives since phase 10 §7.6
+    (the same to-do from rules/health/figures and rules/plan/projection keeps `/?month_end=`,
+    since those folders feed rule_version(); Übersicht forwards that link to Anlagen)."""
     return HealthTodo(
         code=HealthTodoCode.MONTH_END_MISSING,
         text=(
@@ -810,7 +812,7 @@ def _month_end_todo(end: date) -> HealthTodo:
             "festhalten“ sofort."
         ),
         action="Monatsabschluss festhalten",
-        href=f"/?month_end={end.isoformat()}",
+        href=f"/assets?month_end={end.isoformat()}",
     )
 
 
