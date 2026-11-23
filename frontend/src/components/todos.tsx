@@ -1709,20 +1709,29 @@ export interface TodoEntry {
   context?: string;
 }
 
-/** The to-do card: a count, each entry with its Was tun and action; an empty list says so. */
+/** The to-do card: a count, each entry with its title, its context and its action; its Was tun
+ * (the guide's text) behind „Warum?“, closed by default (phase 10 §7.6: „reduce the text of the
+ * still missing cards“; no guide text is deleted). `limit` shows the first entries only, with
+ * „Alle N anzeigen“ for the rest (Übersicht: five); the count is always the whole list's. An
+ * empty list says so. */
 export function TodoList({
   entries,
   empty,
   loading,
   titleId,
+  limit,
 }: {
   entries: TodoEntry[];
   empty: string;
   loading?: boolean;
   titleId: string;
+  limit?: number;
 }) {
   const t = useT(todosText);
   const c = useT(common);
+  const [showAll, setShowAll] = useState(false);
+  const cut = limit !== undefined && !showAll && entries.length > limit;
+  const shown = cut ? entries.slice(0, limit) : entries;
   return (
     <section className="card todo-card" aria-labelledby={titleId}>
       <div className="row todo-head">
@@ -1736,18 +1745,30 @@ export function TodoList({
       {entries.length === 0 ? (
         <p className="muted">{loading ? c.loading : empty}</p>
       ) : (
-        <ol className="todo-list">
-          {entries.map((entry) => (
-            <li key={entry.key} className="todo-item">
-              <p className="todo-title">
-                {entry.title}
-                {entry.context ? <span className="muted"> · {entry.context}</span> : null}
-              </p>
-              {entry.text ? <p className="todo-text">{entry.text}</p> : null}
-              {entry.action ? <div className="row todo-actions">{entry.action}</div> : null}
-            </li>
-          ))}
-        </ol>
+        <>
+          <ol className="todo-list">
+            {shown.map((entry) => (
+              <li key={entry.key} className="todo-item">
+                <p className="todo-title">
+                  {entry.title}
+                  {entry.context ? <span className="muted"> · {entry.context}</span> : null}
+                </p>
+                {entry.action ? <div className="row todo-actions">{entry.action}</div> : null}
+                {entry.text ? (
+                  <details className="todo-why">
+                    <summary>{t.why}</summary>
+                    <p className="todo-text">{entry.text}</p>
+                  </details>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+          {cut ? (
+            <button type="button" className="link todo-more" onClick={() => setShowAll(true)}>
+              {t.showAll(entries.length)}
+            </button>
+          ) : null}
+        </>
       )}
     </section>
   );

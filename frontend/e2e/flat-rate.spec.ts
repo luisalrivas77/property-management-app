@@ -4,6 +4,7 @@
 // backend's new Pauschale, and the letter downloaded as a PDF; once that change is saved (from
 // a later month), the to-do is gone and the card says the change is recorded. Synthetic data
 // only.
+import { overviewTodos } from "./overviewTodos";
 import { apiCall, expect, test } from "./support";
 
 const address = { street: "Teststraße", house_number: "11", postal_code: "10115", city: "Berlin", country_code: "DE" };
@@ -69,7 +70,8 @@ test("a Grundsteuer rise shows the card, the to-do, the pre-filled change and th
 
   // Übersicht: the to-do with its link to the pre-filled „Mietänderung“.
   await page.goto("/");
-  const todo = page.getByRole("listitem").filter({ hasText: "Nebenkostenpauschale Zimmer 1 kann steigen" });
+  const todos = await overviewTodos(page);
+  const todo = todos.getByRole("listitem").filter({ hasText: "Nebenkostenpauschale Zimmer 1 kann steigen" });
   await expect(todo).toContainText("+22,00 € pro Monat");
   await todo.getByRole("link", { name: "Mietänderung" }).click();
   await expect(page).toHaveURL(`/tenancies/${tenancy.id}?mietaenderung=pauschale`);
@@ -104,7 +106,7 @@ test("a Grundsteuer rise shows the card, the to-do, the pre-filled change and th
   await expect(room).not.toContainText("kann steigen");
 
   await page.goto("/");
-  const overview = page.getByRole("region", { name: "Was noch fehlt" });
+  const overview = await overviewTodos(page);
   // The list is loaded once the property's other to-dos are in (it loads all at once).
   await expect(
     overview.getByRole("listitem").filter({ hasText: "Gebäudeanteil am Kaufpreis fehlt" }).filter({ hasText: "Wohnung Pauschale" }),

@@ -230,6 +230,9 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
   return entries;
 }
 
+/** Übersicht shows the first five to-dos and „Alle N anzeigen“ (phase 10 §7.6). */
+const OVERVIEW_LIMIT = 5;
+
 /** `reminders` and `onRemindersChanged` are the page's (the Nächste Termine card shares them). */
 const NOW: Promise<unknown> = Promise.resolve();
 
@@ -258,6 +261,7 @@ export function OverviewTodos({
     <TodoList
       titleId="overview-todos"
       entries={entries}
+      limit={OVERVIEW_LIMIT}
       loading={data.data === undefined && data.error == null}
       empty={
         data.data === undefined && data.error != null
