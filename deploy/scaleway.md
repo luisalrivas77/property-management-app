@@ -1174,7 +1174,7 @@ contacted. The other logins go on.
 ## Step 18: The CoinGecko key for coin prices (phase 6, D167)
 
 From phase 6 step 5b the app fetches a price for every held fund and coin each morning at
-07:00 UTC. The ETF issuers, Kraken and the ECB need no key. CoinGecko, which covers the
+07:00 UTC (since 23 Nov 2026 right after the morning's wallet read, never before 07:00 and by 07:30 at the latest). The ETF issuers, Kraken and the ECB need no key. CoinGecko, which covers the
 coins Kraken does not list and the days before Kraken's 720-day reach, needs a free **Demo
 key**. Without it CoinGecko is skipped and nothing fails; a coin with no other source then
 shows the to-do „Kursquelle wählen“ (choose a price source) on the Anlagen page.

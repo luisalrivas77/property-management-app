@@ -1,8 +1,9 @@
 """The warm step and the daily check of the kept answers (phase 10 §7.4, api/kept_answers.py).
 
-Warm, daily at 09:00 UTC: after the morning jobs (scrub 03:15, reminders 06:00, the bank
-sync 06:30, the wallets 06:45, the prices 07:00, the month-end on the 1st at 08:00, the key
-figures at 08:30), so the day's first load of Übersicht and Zu prüfen finds its answers kept.
+Warm, queued after the key figures by the morning chain (jobs.morning; 09:00 UTC the clock's
+fallback): after the bank sync and the wallets at 06:30, the prices once the wallets are read,
+the month-end and the key figures (scrub 03:15 and reminders 06:00 before), so the day's first
+load of Übersicht and Zu prüfen finds its answers kept.
 Once per enrolled member (a user with a passkey) of every provisioned workspace, the page's
 kept routes are asked through the whole app (KeptAnswers.internal_get) in the language the
 member last asked in. Nothing is warmed after a person's own change: the first load after it

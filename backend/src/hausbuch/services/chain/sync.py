@@ -93,7 +93,7 @@ import json
 import logging
 import re
 import unicodedata
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Collection, Iterator
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -1952,14 +1952,19 @@ def sync_wallets(
     clock: Clock,
     account_id: UUID | None = None,
     budgets: dict | None = None,
+    address_ids: Collection[UUID] | None = None,
 ) -> list[SyncOutcome]:
     """Every active address of one wallet (account_id) or of the workspace, oldest sync
     first, each in its own run; the budgets are shared per source kind (D182 (1)). The
     addresses of one account and chain run one after another, so the last of them reconciles
-    an account-scope source with every address's movements stored."""
+    an account-scope source with every address's movements stored. `address_ids` (the
+    morning run's one retry, jobs.sync_wallets): only those of them still active."""
     budgets = {} if budgets is None else budgets
     with workspace_transaction(engine, workspace_id) as conn:
         ids = addresses_to_sync(conn, account_id)
+        if address_ids is not None:
+            wanted = set(address_ids)
+            ids = [i for i in ids if i in wanted]
         keys = (
             {
                 r.id: (r.account_id, r.chain)
