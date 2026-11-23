@@ -4,7 +4,8 @@
 // GET /properties/{id}/checklist computes them (rules.document_checklist). Status, labels and
 // hints only; nothing is decided here. The title, hint, Was tun and fix of each requirement
 // code live in components/todos.tsx (REQUIREMENT_GUIDE, phase-3.md D136), shared with the
-// "Was noch fehlt" lists. Styled like the "Paperwork for this return" card of
+// "Was noch fehlt" lists; like there, the Was tun text waits behind a closed „Warum?“ while the
+// title, the hint and the button stay in view (phase 10 §7.6 (f)). Styled like the "Paperwork for this return" card of
 // docs/mockups/04-tax-year.png.
 import Link from "next/link";
 import { useCallback, useId, useState } from "react";
@@ -189,11 +190,6 @@ function ChecklistRow({
           <span className="visually-hidden">: {statusLabel(item.status)}</span>
         </p>
         <p className="checklist-hint">{hintFor(item)}</p>
-        {todo ? (
-          <p className="checklist-hint todo-text">
-            <strong>{t.whatToDo}</strong> {todo}
-          </p>
-        ) : null}
         {item.documents.length > 0 || bankLines.length > 0 || action ? (
           <p className="checklist-links">
             {item.documents.map((ref) => (
@@ -212,6 +208,12 @@ function ChecklistRow({
             )}
             {action}
           </p>
+        ) : null}
+        {todo ? (
+          <details className="todo-why">
+            <summary>{t.why}</summary>
+            <p className="checklist-hint todo-text">{todo}</p>
+          </details>
         ) : null}
       </div>
     </li>
