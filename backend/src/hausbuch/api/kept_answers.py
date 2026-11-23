@@ -51,7 +51,8 @@ the data version covers.
 §7.5 (a) applied that audit to every other GET route and kept those that read only the
 workspace's rows, the day and the code. Left out, besides the above: `/api/events` and the
 property History routes (they show the sign-in and passkey events, which since migration 0051
-move no version); every route that reads
+move no version, and the sign-out events, which since migration 0055 move none either); every
+route that reads
 the clock finer than the day (`/api/inbound-mail`, signed URLs: `/api/exports/holdings`,
 `/api/tax-exports/{id}`, which also reads the job queue), settings or typed secrets
 (`/api/app-secrets`, `/api/bank-credential-slots`, `/api/inbound-mail/address`,

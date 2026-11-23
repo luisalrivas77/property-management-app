@@ -40,7 +40,14 @@ from hausbuch.auth.events import append_user_event
 from hausbuch.db.session import workspace_transaction
 from hausbuch.jobs.document_read import JobDeps
 from hausbuch.jobs.kept_answers import enrolled_members, run_check, run_warm
-from hausbuch.schemas.events import EventType, UserPasskeyEnrolled, UserPasskeyRef, UserSignedIn
+from hausbuch.schemas.events import (
+    Empty,
+    EventType,
+    UserPasskeyEnrolled,
+    UserPasskeyRef,
+    UserSessionsRevoked,
+    UserSignedIn,
+)
 
 pytestmark = pytest.mark.db
 
@@ -484,13 +491,14 @@ _UNVERSIONED_TABLES = ("auth_session", "auth_passkey")
 
 
 def _exempt_types() -> tuple[str, ...]:
-    """Migration 0051's own list, so this test and the migration cannot drift apart."""
+    """The newest migration's own list (0055, which extends 0051's), so this test and the
+    migration cannot drift apart."""
     import importlib.util
     from pathlib import Path
 
     versions = Path(__file__).parents[2] / "migrations" / "versions"
     spec = importlib.util.spec_from_file_location(
-        "m0051", versions / "0051_sign_in_keeps_data_version.py"
+        "m0055", versions / "0055_sign_out_keeps_data_version.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -498,12 +506,15 @@ def _exempt_types() -> tuple[str, ...]:
 
 
 def _sign_in_events(passkey_id: uuid.UUID):
-    """One event of each type migration 0051 exempts from the data version (EXEMPT_TYPES)."""
+    """One event of each type migrations 0051 and 0055 exempt from the data version
+    (EXEMPT_TYPES)."""
     return (
         (EventType.USER_SIGNED_IN, UserSignedIn(passkey_id=passkey_id)),
         (EventType.USER_PASSKEY_ENROLLED, UserPasskeyEnrolled(passkey_id=passkey_id, label="A")),
         (EventType.USER_PASSKEY_RENAMED, UserPasskeyRef(passkey_id=passkey_id)),
         (EventType.USER_PASSKEY_REMOVED, UserPasskeyRef(passkey_id=passkey_id)),
+        (EventType.USER_SIGNED_OUT, Empty()),
+        (EventType.USER_SESSIONS_REVOKED, UserSessionsRevoked(count=1)),
     )
 
 
@@ -517,9 +528,10 @@ def test_no_kept_route_reads_the_session_or_passkey_tables(
 ):
     """Every KEPT_ROUTES entry is requested as the warm step requests it (`internal_get`), and
     no SQL statement it sends names a table outside the data version. Between its two
-    computations the test writes what the version does not cover (one of each sign-in and
-    passkey event migration 0051 exempts, a session and a passkey row), and the second answer
-    must be the same bytes: a route that read any of it, by any name, would serve it stale."""
+    computations the test writes what the version does not cover (one of each sign-in,
+    passkey and sign-out event migrations 0051 and 0055 exempt, a session and a passkey row),
+    and the second answer must be the same bytes: a route that read any of it, by any name,
+    would serve it stale."""
     from db.db_support import _admin
     from sqlalchemy import event
 
@@ -548,10 +560,10 @@ def test_no_kept_route_reads_the_session_or_passkey_tables(
     assert exempt == set(_exempt_types())
 
     def unversioned_writes(n: int) -> None:
-        """What a sign-in and the passkey screens write and the data version does not cover
-        (migration 0051's exempt events and the two auth tables): each exempt event of the
-        member, a session slide and a passkey sign count. A kept answer that read any of it
-        would differ on its second computation."""
+        """What a sign-in, a sign-out and the passkey screens write and the data version does
+        not cover (the events migrations 0051 and 0055 exempt, and the two auth tables): each
+        exempt event of the member, a session slide and a passkey sign count. A kept answer
+        that read any of it would differ on its second computation."""
         with workspace_transaction(app_engine, ws) as conn:
             for type, payload in _sign_in_events(passkey):
                 append_user_event(
