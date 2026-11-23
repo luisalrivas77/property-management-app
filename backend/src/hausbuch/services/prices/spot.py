@@ -50,6 +50,8 @@ from .fetch import held_assets, stored_rates
 from .http import Fetch, SourceError, get
 
 PLACES = Decimal("0.00000001")
+# price.price_eur is numeric(20, 8): a price must stay below 10^12 to be stored at all.
+PRICE_LIMIT = Decimal(10) ** 12
 # The quote currencies a Kraken pair may end in, its legacy names with a leading Z first.
 QUOTES = ("EUR", "USD", "GBP", "CHF", "JPY", "CAD", "AUD")
 
@@ -72,16 +74,19 @@ def quote_currency(pair: str) -> str | None:
 
 
 def _price(value: Any) -> Decimal | None:
+    """A price that can be stored: above 0 once quantized to 8 places and below 10^12 (the
+    column's limit), else None, so the coin is left to the next source or keeps its close."""
     try:
         price = Decimal(str(value)).quantize(PLACES, rounding=ROUND_HALF_UP)
     except (InvalidOperation, ValueError, TypeError):
         return None
-    return price if price.is_finite() and price > 0 else None
+    return price if price.is_finite() and 0 < price < PRICE_LIMIT else None
 
 
 def parse_ticker(body: bytes, pair: str) -> Decimal:
     """The last trade of one ticker answer. SourceError("parse") for an answer that is not
-    Kraken's shape, reports an error (an unknown pair) or carries no positive last trade."""
+    Kraken's shape (the entry an object, its `c` a list), reports an error (an unknown pair)
+    or carries no last trade that can be stored (_price)."""
     try:
         data = json.loads(body)
     except ValueError:
@@ -96,17 +101,18 @@ def parse_ticker(body: bytes, pair: str) -> Decimal:
         if len(result) != 1:
             raise SourceError("parse")
         (entry,) = result.values()
-    try:
-        last = _price(entry["c"][0])
-    except (KeyError, IndexError, TypeError):
-        raise SourceError("parse") from None
+    trade = entry.get("c") if isinstance(entry, dict) else None
+    if not isinstance(trade, list | tuple) or not trade:
+        raise SourceError("parse")
+    last = _price(trade[0])
     if last is None:
         raise SourceError("parse")
     return last
 
 
 def parse_simple(body: bytes) -> dict[str, Decimal]:
-    """CoinGecko id → EUR price; an id without a positive price is left out."""
+    """CoinGecko id → EUR price; an id without a price that can be stored (_price) is left
+    out."""
     try:
         data = json.loads(body, parse_float=Decimal, parse_int=Decimal)
     except ValueError:
@@ -199,7 +205,8 @@ def read_prices(
                 converted = valuation.to_eur(
                     last, read_at.astimezone(LOCAL_TIME_ZONE).date(), rates.get(currency, [])
                 )
-                eur = None if converted is None else converted[1]
+                # Bounded again after the conversion: a tiny price may round to 0 in euros.
+                eur = None if converted is None else _price(converted[1])
         if eur is None:
             left.append(coin)
             continue

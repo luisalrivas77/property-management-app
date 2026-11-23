@@ -6,15 +6,17 @@ instead of once a day“. „Jetzt aktualisieren“ fetches a current price for 
 moment it was read (docs/phases/phase-10.md §7.7, D291). A `spot` price is read for today
 only; every past day keeps its daily close (rules/valuation.py).
 
-The value joins the CHECKs of `price.source` and `valuation_snapshot.price_source` (0025's
-inline column CHECKs, named `price_source_check` and `valuation_snapshot_price_source_check`,
-as 0049 last rebuilt them). The partial unique index `price_daily_key` is rebuilt over the same
-daily sources as 0049 left it, so `spot` stays outside it and may be stored several times a
-day; the daily fetch's ON CONFLICT DO NOTHING still infers the index.
+The value joins the CHECK of `price.source` only (0025's inline column CHECK, named
+`price_source_check`, as 0049 last rebuilt it). `valuation_snapshot.price_source` keeps 0049's
+list without `spot` (`valuation_snapshot_price_source_check` is not touched), so the database
+itself refuses a stored month-end priced by a price read on demand (D291: a month-end keeps
+the daily close). The partial unique index `price_daily_key` is rebuilt over the same daily
+sources as 0049 left it, so `spot` stays outside it and may be stored several times a day; the
+daily fetch's ON CONFLICT DO NOTHING still infers the index.
 
-Both tables are append-only (0025's triggers refuse UPDATE and DELETE), so the downgrade
+The price table is append-only (0025's triggers refuse UPDATE and DELETE), so the downgrade
 refuses while any `spot` row exists instead of dropping data, as 0049's does, and then restores
-0049's CHECKs and index exactly.
+0049's CHECK and index exactly.
 
 Revision ID: 0053_spot_price
 Revises: 0052_depot_statement_trades
@@ -52,9 +54,6 @@ def _set(sources: tuple[str, ...]) -> None:
 ALTER TABLE price DROP CONSTRAINT price_source_check;
 ALTER TABLE price ADD CONSTRAINT price_source_check
     CHECK (source IN ({_sql_list(sources)}));
-ALTER TABLE valuation_snapshot DROP CONSTRAINT valuation_snapshot_price_source_check;
-ALTER TABLE valuation_snapshot ADD CONSTRAINT valuation_snapshot_price_source_check
-    CHECK (price_source IN ({_sql_list(sources)}));
 DROP INDEX price_daily_key;
 CREATE UNIQUE INDEX price_daily_key ON price (workspace_id, asset_id, "on", source)
     WHERE source IN ({_sql_list(DAILY)});
@@ -64,15 +63,12 @@ CREATE UNIQUE INDEX price_daily_key ON price (workspace_id, asset_id, "on", sour
 REFUSE_IF_DATA = f"""DO $$
 BEGIN
     ALTER TABLE price NO FORCE ROW LEVEL SECURITY;
-    ALTER TABLE valuation_snapshot NO FORCE ROW LEVEL SECURITY;
-    IF EXISTS (SELECT 1 FROM price WHERE source = '{NEW_SOURCE}')
-       OR EXISTS (SELECT 1 FROM valuation_snapshot WHERE price_source = '{NEW_SOURCE}') THEN
+    IF EXISTS (SELECT 1 FROM price WHERE source = '{NEW_SOURCE}') THEN
         RAISE EXCEPTION 'downgrade of {revision} refused: a spot price exists'
             USING ERRCODE = 'restrict_violation',
                   HINT = 'Export and remove the data first; a downgrade never drops data.';
     END IF;
     ALTER TABLE price FORCE ROW LEVEL SECURITY;
-    ALTER TABLE valuation_snapshot FORCE ROW LEVEL SECURITY;
 END
 $$;"""
 

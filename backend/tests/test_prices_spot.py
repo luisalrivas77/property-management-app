@@ -77,6 +77,13 @@ def test_the_ticker_answer_gives_the_last_trade():
         json.dumps({"error": [], "result": {"INVTEUR": {"c": []}}}).encode(),
         json.dumps({"error": [], "result": {"INVTEUR": {"c": ["0", "1"]}}}).encode(),
         json.dumps({"error": [], "result": {"INVTEUR": {"c": ["abc", "1"]}}}).encode(),
+        # `c` a string, not a list: its first character must never become the price.
+        json.dumps({"error": [], "result": {"INVTEUR": {"c": "95000.1"}}}).encode(),
+        json.dumps({"error": [], "result": {"INVTEUR": "95000.1"}}).encode(),
+        json.dumps({"error": [], "result": {"INVTEUR": ["95000.1"]}}).encode(),
+        # Above the column's limit (numeric(20, 8)) or 0 once quantized to 8 places.
+        json.dumps({"error": [], "result": {"INVTEUR": {"c": ["1000000000000", "1"]}}}).encode(),
+        json.dumps({"error": [], "result": {"INVTEUR": {"c": ["0.000000001", "1"]}}}).encode(),
     ],
 )
 def test_a_ticker_answer_not_in_krakens_shape_is_a_parse_error(body):
@@ -167,6 +174,40 @@ def test_a_pair_in_dollars_is_converted_at_the_newest_ecb_rate():
     # Without a stored rate of its currency: no price, the coin keeps its close.
     rows, result = _read([a], fake)
     assert rows == [] and result.unpriced == 1
+
+
+def test_a_price_that_cannot_be_stored_leaves_that_coin_unpriced_while_the_others_return():
+    big = _coin("BIGEUR", "big-coin")  # 10^12 from Kraken, falls to CoinGecko
+    tiny = _coin("TINYUSD")  # 0E-8 in euros after the conversion, no CoinGecko id
+    fine = _coin("INVTEUR")
+    gecko_big = _coin(None, "huge-coin")  # 10^12 from CoinGecko too: unpriced
+    rates = {"USD": [FxRate(on=date(2026, 11, 21), per_eur=Decimal("3"))]}
+    fake = Fake(
+        {
+            "Ticker?pair=BIGEUR": (200, _ticker("BIGEUR", "1000000000000")),
+            "Ticker?pair=TINYUSD": (200, _ticker("TINYUSD", "0.00000001")),
+            "Ticker?pair=INVTEUR": (200, _ticker("INVTEUR", "5")),
+            "simple/price": (
+                200,
+                b'{"big-coin": {"eur": 42}, "huge-coin": {"eur": 1000000000000}}',
+            ),
+        }
+    )
+    rows, result = _read([big, tiny, fine, gecko_big], fake, key=KEY, rates=rates)
+    assert {r.asset_id: (r.price_eur, r.pair) for r in rows} == {
+        big.asset_id: (Decimal("42.00000000"), "big-coin"),
+        fine.asset_id: (Decimal("5.00000000"), "INVTEUR"),
+    }
+    assert (result.kraken, result.coingecko, result.unpriced) == (1, 1, 2)
+    assert result.errors == {("kraken_ticker", "parse", None): 1}  # the 10^12 ticker
+
+
+def test_coingecko_prices_that_cannot_be_stored_are_left_out():
+    body = (
+        b'{"a": {"eur": 1000000000000}, "b": {"eur": 0.000000001},'
+        b' "c": {"eur": 999999999999.5}, "d": {"eur": "7"}}'
+    )
+    assert spot.parse_simple(body) == {"c": Decimal("999999999999.50000000")}
 
 
 def test_the_refresh_task_is_registered_under_the_wallets_lock_with_no_schedule_or_retry():
