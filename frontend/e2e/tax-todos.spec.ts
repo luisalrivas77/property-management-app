@@ -1,10 +1,14 @@
-// Was noch fehlt (docs/phases/phase-3.md D136): every gap is a plain to-do with an action. A
-// flat without a Kaufpreisaufteilung shows the gap at the top of the Anlage V tab with what to
-// do and the upload, and Übersicht lists it with the property's name; with one Kaufvertrag
-// split recorded but not selected (a state that exists only from before phase 2 D133, so it is
-// mocked here) the button selects it through the existing command; a real split, recorded
-// through the API, closes the to-do. Synthetic data only.
+// Was noch fehlt (docs/phases/phase-3.md D136): every gap is a plain to-do with an action. Since
+// phase 10 D290 Steuern is one guided path: a flat without a Kaufpreisaufteilung shows the gap
+// in its Immobilie step with what to do and the upload, the missing Grundsteuerbescheid under
+// Belege › Fehlt noch, and the Anlage V view names the gap and opens it as a point on Prüfen
+// und abgeben; Übersicht lists it with the property's name. With one Kaufvertrag split recorded
+// but not selected (a state that exists only from before phase 2 D133, so it is mocked here)
+// the button selects it through the existing command; a real split, recorded through the API,
+// closes the to-do. Synthetic data only.
 import path from "node:path";
+
+import type { Page } from "@playwright/test";
 
 import { overviewTodos, showAllTodos } from "./overviewTodos";
 import { apiCall, expect, test } from "./support";
@@ -12,6 +16,11 @@ import { apiCall, expect, test } from "./support";
 const YEAR = 2026;
 const address = { street: "Teststraße", house_number: "9", postal_code: "10115", city: "Berlin", country_code: "DE" };
 const GAP = "Gebäudeanteil am Kaufpreis fehlt";
+
+/** The point panel of Prüfen und abgeben: beside the list on the computer, a sheet on the phone. */
+function pointPanel(page: Page, name: string | RegExp) {
+  return page.getByRole("complementary", { name }).or(page.getByRole("dialog", { name }));
+}
 
 test("a missing price split is a to-do with its button, and recording one closes it", async ({ page, signedIn }) => {
   void signedIn;
@@ -24,8 +33,9 @@ test("a missing price split is a to-do with its button, and recording one closes
     purchase_date: "2024-05-01",
     purchase_price: "289000.00",
   });
+  const step = `/tax/${YEAR}?schritt=immobilie&immobilie=${property.id}`;
 
-  await page.goto(`/tax/${YEAR}`);
+  await page.goto(step);
   const todos = page.getByRole("region", { name: "Was noch fehlt" });
   const split = todos.getByRole("listitem").filter({ hasText: GAP });
   await expect(split).toContainText("er steht meist im Kaufvertrag");
@@ -34,13 +44,27 @@ test("a missing price split is a to-do with its button, and recording one closes
     "href",
     `/properties/${property.id}?tab=kauf#card-aufteilung`,
   );
-  // One gap, one entry: once the checklist is in (the flat has no Grundsteuerbescheid), its
-  // Kaufpreisaufteilung is not listed beside the draft's gap.
-  await expect(todos.getByRole("listitem").filter({ hasText: "Grundsteuerbescheid: fehlt" })).toBeVisible();
-  await expect(todos.getByRole("listitem").filter({ hasText: "Kaufpreisaufteilung: fehlt" })).toHaveCount(0);
-  // The Offene Punkte entry says what to do as well.
+  // One gap, one entry: the checklist's Kaufpreisaufteilung is not listed beside the draft's gap.
+  await expect(todos.getByRole("listitem").filter({ hasText: "Kaufpreisaufteilung" })).toHaveCount(0);
+
+  // The flat has no Grundsteuerbescheid: a Beleg, so it is under Belege › Fehlt noch with who
+  // sends it; the price split is a value, not a Beleg, so it is not listed there.
+  await page.goto(`/tax/${YEAR}?schritt=belege`);
+  const missing = page.getByRole("region", { name: "Fehlt noch" });
+  await expect(missing.getByRole("listitem").filter({ hasText: "Grundsteuerbescheid" })).toContainText("von der Gemeinde");
+  await expect(missing.getByRole("listitem").filter({ hasText: "Kaufpreisaufteilung" })).toHaveCount(0);
+
+  // The Anlage V view names the gap with what to do and opens it as a point on Prüfen und
+  // abgeben, alone in the panel with its button.
+  await page.goto(`/tax/${YEAR}?tab=anlage-v&immobilie=${property.id}`);
   const open = page.getByRole("region", { name: "Offene Punkte" });
-  await expect(open.getByRole("listitem").filter({ hasText: "Gebäudeanteil" }).first()).toContainText("Was tun:");
+  const named = open.getByRole("listitem").filter({ hasText: "Gebäudeanteil" }).first();
+  await expect(named).toContainText("Was tun:");
+  await named.getByRole("link", { name: "Im Schritt klären" }).click();
+  await expect(page).toHaveURL(new RegExp(`/tax/${YEAR}\\?schritt=pruefen#d-punkt-`));
+  const panel = pointPanel(page, GAP);
+  await expect(panel.getByRole("button", { name: "Kaufvertrag hochladen" })).toBeVisible();
+  await expect(panel).toContainText("Anlage V · Wohnung To-do");
 
   // Übersicht gathers the household's to-dos, each with its property and the same action.
   await page.goto("/");
@@ -63,7 +87,7 @@ test("a missing price split is a to-do with its button, and recording one closes
     selected.push(new URL(route.request().url()).pathname);
     return route.fulfill({ json: {} });
   });
-  await page.goto(`/tax/${YEAR}`);
+  await page.goto(step);
   await todos
     .getByRole("listitem")
     .filter({ hasText: GAP })
@@ -72,21 +96,23 @@ test("a missing price split is a to-do with its button, and recording one closes
   await expect.poll(() => selected).toEqual([`/api/properties/${property.id}/price-splits/${SPLIT_ID}/select`]);
   await page.unrouteAll({ behavior: "ignoreErrors" });
 
-  // A real split, recorded through the API (selected on record, D133): the to-do is gone.
+  // A real split, recorded through the API (selected on record, D133): the to-do is gone. The
+  // step's list renders only from the loaded guide, so the check is not vacuous.
   await apiCall(page, "POST", "/api/price-splits", {
     property_id: property.id,
     source: "purchase_contract",
     building_share: "0.8",
   });
   await page.reload();
-  await expect(page.getByRole("region", { name: "Offene Punkte" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Angaben zur Immobilie" })).toBeVisible();
   await expect(todos).toBeVisible();
   await expect(todos.getByRole("listitem").filter({ hasText: GAP })).toHaveCount(0);
 });
 
 // One gap, one entry: a let flat without a Mietspiegel value is shown by the draft's warning
-// ("Ortsübliche Miete fehlt", with its button), and the checklist's Ortsübliche Miete is not
-// listed beside it, neither on the Anlage V tab nor on Übersicht.
+// ("Ortsübliche Miete fehlt", with its button) in its Immobilie step, and the checklist's
+// Ortsübliche Miete is listed neither beside it, nor under Belege (a value, not a Beleg), nor
+// twice on Übersicht.
 test("a missing market rent is one to-do, not two", async ({ page, signedIn }) => {
   void signedIn;
   const label = "Wohnung Mietspiegel";
@@ -127,13 +153,17 @@ test("a missing market rent is one to-do, not two", async ({ page, signedIn }) =
     initial_rent: { cold_rent: "950.00", operating_costs_prepayment: "220.00", effective_from: null, document_id: null },
   });
 
-  await page.goto(`/tax/${YEAR}?immobilie=${property.id}`);
+  await page.goto(`/tax/${YEAR}?schritt=immobilie&immobilie=${property.id}`);
   const todos = page.getByRole("region", { name: "Was noch fehlt" });
   const gap = todos.getByRole("listitem").filter({ hasText: "Ortsübliche Miete fehlt" });
   await expect(gap).toHaveCount(1);
   await expect(gap.getByRole("link", { name: "Mietspiegel-Wert eintragen" })).toBeVisible();
-  await expect(todos.getByRole("listitem").filter({ hasText: "Grundsteuerbescheid: fehlt" })).toBeVisible();
   await expect(todos.getByRole("listitem").filter({ hasText: "Ortsübliche Miete: fehlt" })).toHaveCount(0);
+
+  await page.goto(`/tax/${YEAR}?schritt=belege`);
+  const missing = page.getByRole("region", { name: "Fehlt noch" });
+  await expect(missing.getByRole("listitem").filter({ hasText: "Grundsteuerbescheid" })).toBeVisible();
+  await expect(missing.getByRole("listitem").filter({ hasText: "Ortsübliche Miete" })).toHaveCount(0);
 
   await page.goto("/");
   const overview = await overviewTodos(page);
@@ -203,12 +233,27 @@ test("an Einnahme ohne Zuordnung is booked as rent from its to-do", async ({ pag
   });
   expect(put.status()).toBe(200);
 
-  await page.goto(`/tax/${YEAR}?immobilie=${property.id}`);
-  const todos = page.getByRole("region", { name: "Was noch fehlt" });
-  const entry = todos.getByRole("listitem").filter({ hasText: "Einnahme ohne Zuordnung" });
-  await expect(entry).toHaveCount(2);
-  await expect(entry.first().getByRole("link", { name: "Zahlung öffnen" })).toHaveAttribute("href", `/inbox?umsatz=${transactionId}`);
-  await entry.first().getByRole("button", { name: "Als Miete buchen" }).click();
+  // A review point of Prüfen und abgeben (phase 10 D290): the two parts are two points (equal
+  // codes, different payments), each opened alone in the panel with its action.
+  await page.goto(`/tax/${YEAR}?schritt=pruefen`);
+  const points = page.getByRole("region", { name: /noch zu klären$/ });
+  const rows = points.getByRole("link").filter({ hasText: "Einnahme ohne Zuordnung" });
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText("Anlage V · Wohnung Verkäufermiete");
+  // The Prüfen head counts the list it shows, whichever step clears a point.
+  const listed = await page.getByRole("region", { name: /noch zu klären$/ }).getByRole("link").count();
+  await expect(page.locator(".page-head .badge")).toHaveText(`${listed} offen`);
+  await rows.first().click();
+  const panel = pointPanel(page, "Einnahme ohne Zuordnung");
+  await expect(panel).toContainText(/Punkt \d+ von \d+/);
+  const [, at, of] = /Punkt (\d+) von (\d+)/.exec((await panel.textContent()) ?? "") ?? [];
+  // „Nächster Punkt“ from an open point opens the one after it: the second part, its own point.
+  await panel.getByRole("button", { name: "Nächster Punkt ›" }).click();
+  await expect(panel).toContainText(`Punkt ${Number(at) + 1} von ${of}`);
+  await rows.first().click();
+  await expect(panel).toContainText(`Punkt ${at} von ${of}`);
+  await expect(panel.getByRole("link", { name: "Zahlung öffnen" })).toHaveAttribute("href", `/inbox?umsatz=${transactionId}`);
+  await panel.getByRole("button", { name: "Als Miete buchen" }).click();
   const dialog = page.getByRole("dialog", { name: "Einnahme als Miete buchen" });
   await expect(dialog).toContainText("28.09.2026");
   await expect(dialog).toContainText(/(700,00|40,18) €/);
@@ -216,20 +261,31 @@ test("an Einnahme ohne Zuordnung is booked as rent from its to-do", async ({ pag
   const saved = page.waitForResponse((r) => r.url().endsWith(allocationsPath) && r.request().method() === "PUT");
   await dialog.getByRole("button", { name: "Ja, als Miete buchen" }).click();
   expect((await saved).status()).toBe(200);
-  // No page.reload(): the remaining part's to-do keeps its button.
-  await expect(entry).toHaveCount(1);
-  await expect(entry.getByRole("button", { name: "Als Miete buchen" })).toBeVisible();
+  // No page.reload(): the point is cleared, the panel says so and „Nächster Punkt“ opens the
+  // remaining part, whose button still works (it cites a new row of the same line).
+  await expect(rows).toHaveCount(1);
+  const cleared = pointPanel(page, "Dieser Punkt ist erledigt.");
+  await cleared.getByRole("button", { name: "Nächster Punkt ›" }).click();
+  await expect(panel.getByRole("button", { name: "Als Miete buchen" })).toBeVisible();
+  // „Später“ closes the panel and leaves the point open.
+  await panel.getByRole("button", { name: "Später" }).click();
+  await expect(panel).toBeHidden();
+  await expect(rows).toHaveCount(1);
 
   const stored = await apiCall<{ allocations: { amount: string; category: string; status: string }[] }>(page, "GET", allocationsPath);
   expect(stored.allocations.map((a) => a.status)).toEqual(["confirmed", "confirmed"]);
   expect(stored.allocations.map((a) => a.category).sort()).toEqual(["other_income", "rent_cold"]);
 
-  // In English (phase 10 D284) the remaining to-do's dialog reads from i18n/todos.ts
+  // In English (phase 10 D284) the remaining point's dialog reads from i18n/todos.ts
   // (todoActions), its date and amount in English format; cancelling changes nothing.
   await page.evaluate(() => window.localStorage.setItem("hausbuch.locale", "en"));
   await page.reload();
-  const missing = page.getByRole("region", { name: "Still missing" });
-  await missing.getByRole("button", { name: "Book as rent" }).click();
+  await page
+    .getByRole("region", { name: /still to clear$/ })
+    .getByRole("link")
+    .filter({ hasText: "Income without a category" })
+    .click();
+  await pointPanel(page, "Income without a category").getByRole("button", { name: "Book as rent" }).click();
   const english = page.getByRole("dialog", { name: "Book income as rent" });
   await expect(english).toContainText("28 Sep 2026");
   await expect(english).toContainText(/€(700\.00|40\.18)/);
@@ -329,9 +385,10 @@ test("one deposit line is split to three tenancies from the to-do", async ({ pag
   await expect(first).toContainText(label);
   await expect(first.getByRole("button", { name: "Kaution aus Bankumsatz zuordnen" })).toBeVisible();
 
-  await page.goto(`/tax/${YEAR}?immobilie=${property.id}`);
-  const todos = page.getByRole("region", { name: "Was noch fehlt" });
-  const deposits = todos.getByRole("listitem").filter({ hasText: "Kautionsnachweis" });
+  // A deposit record is a Beleg (phase 10 D290): under Belege › Fehlt noch, with the same button.
+  await page.goto(`/tax/${YEAR}?schritt=belege`);
+  const missing = page.getByRole("region", { name: "Fehlt noch" });
+  const deposits = missing.getByRole("listitem").filter({ hasText: "Kautionsnachweis" });
   await expect(deposits).toHaveCount(3);
   await deposits.first().getByRole("button", { name: "Kaution aus Bankumsatz zuordnen" }).click();
   const dialog = page.getByRole("dialog", { name: "Kaution zuordnen" });
@@ -355,8 +412,11 @@ test("one deposit line is split to three tenancies from the to-do", async ({ pag
     [...rooms.map(({ tenancy, unit }) => `200.00 deposit_in ${tenancy} ${unit}`), "140.18 rent_cold  "].sort(),
   );
 
-  // No page.reload(): the three to-dos close, and Unterlagen names the bank line as the proof.
+  // No page.reload(): the three move to Schon da, and the property's full checklist (behind „Alle
+  // Unterlagen“) names the bank line as the proof.
   await expect(deposits).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Schon da" }).getByRole("listitem").filter({ hasText: "Kautionsnachweis" })).toHaveCount(3);
+  await page.getByText(`Alle Unterlagen: ${label}`).click();
   const unterlagen = page.getByRole("region", { name: "Unterlagen für die Steuererklärung" });
   const proven = unterlagen.getByRole("listitem").filter({ hasText: "Kautionsnachweis · Zimmer 2" });
   await expect(proven).toContainText("Nachgewiesen durch die Zahlung auf dem Konto");
@@ -407,7 +467,13 @@ test("a bill without a bank line asks for its payment proof, and the upload clos
     document_id: billId,
   });
 
-  await page.goto(`/tax/${YEAR}`);
+  // A review point that is a Beleg too (phase 10 D290): on Prüfen und abgeben, and uploaded under
+  // Belege.
+  await page.goto(`/tax/${YEAR}?schritt=pruefen`);
+  await expect(
+    page.getByRole("region", { name: /noch zu klären$/ }).getByRole("link").filter({ hasText: "Zahlungsnachweis fehlt" }),
+  ).toHaveCount(1);
+  await page.goto(`/tax/${YEAR}?schritt=belege`);
   const todos = page.getByRole("region", { name: "Was noch fehlt" });
   const proof = todos.getByRole("listitem").filter({ hasText: "Zahlungsnachweis fehlt: Die Rechnung Notar" });
   await expect(proof).toContainText("Überweisungsbeleg");

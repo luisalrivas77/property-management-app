@@ -1,0 +1,144 @@
+/* Steuern as one guided path (phase 10 §7.6, D290, mockup 22b): the start page with its
+   progress, „Jetzt dran“ and the numbered steps; each step's short rows; one column on a phone. */
+
+.tax-guide-head strong {
+  font-size: 15px;
+}
+
+.tax-guide-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+}
+
+.tax-guide-estimate {
+  font-weight: 600;
+}
+
+.tax-guide-now {
+  border-left: 4px solid var(--accent);
+}
+
+.tax-guide-now h2 {
+  margin: 0;
+}
+
+.tax-guide-now p {
+  margin: 4px 0 10px;
+}
+
+.tax-guide-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.tax-guide-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--divider);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.tax-guide-steps a[aria-current="step"] .tax-guide-number {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.tax-guide-forms {
+  margin: 0;
+  font-size: 14px;
+}
+
+.tax-guide-inputs,
+.tax-guide-docs,
+.tax-guide-present,
+.tax-guide-ready {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tax-guide-ready {
+  counter-reset: ready;
+}
+
+.tax-guide-ready > li {
+  counter-increment: ready;
+  padding: 10px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.tax-guide-ready > li > strong::before {
+  content: counter(ready) ". ";
+}
+
+.tax-guide-input,
+.tax-guide-doc {
+  padding: 10px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.tax-guide-input:first-child,
+.tax-guide-doc:first-child {
+  border-top: 0;
+}
+
+.tax-guide-input-head,
+.tax-guide-doc-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.tax-guide-input-head .detail-row-text,
+.tax-guide-doc-head .detail-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tax-guide-why > summary,
+.tax-guide-change > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tax-guide-why[open] {
+  flex-basis: 100%;
+}
+
+.tax-guide-change {
+  margin-top: 6px;
+}
+
+.tax-guide-change[open] > summary {
+  margin-bottom: 8px;
+}
+
+.tax-guide-present li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.tax-guide-all > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+@media (max-width: 799px) {
+  .tax-guide-input-head,
+  .tax-guide-doc-head {
+    flex-wrap: wrap;
+  }
+}

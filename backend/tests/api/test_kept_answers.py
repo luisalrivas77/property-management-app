@@ -597,6 +597,7 @@ def test_no_kept_route_reads_the_session_or_passkey_tables(
         "loan_id": create(client_a, "/api/loans", loan)["id"],
         "owner_id": create(client_a, "/api/owners", {"full_name": "Owner A"})["id"],
         "document_id": ok(upload(client_a), 201)["id"],
+        "tax_year": "2026",  # /api/tax/{tax_year}/guide (phase 10 D290)
     }
     whole = {"owner_id": ids["owner_id"], "share": {"numerator": 1, "denominator": 1}}
     ownership = f"/api/properties/{ids['property_id']}/ownership"

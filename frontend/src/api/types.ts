@@ -3481,6 +3481,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tax/{tax_year}/guide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Tax Guide
+         * @description The year's five steps with their states, „Jetzt dran“, the Belege with their sender and
+         *     usual month, every open point with the step and form it belongs to, each form's result and
+         *     the whole-return estimate's. A source that cannot be read for the year is named in
+         *     `unavailable`; the rest is served.
+         */
+        get: operations["get_tax_guide_api_tax__tax_year__guide_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}/tax-inputs": {
         parameters: {
             query?: never;
@@ -8586,6 +8609,127 @@ export interface components {
             due_dates?: components["schemas"]["ExtractedValue"];
             /** @description the Stadtkasse's IBAN, if stated */
             iban?: components["schemas"]["ExtractedValue"];
+        };
+        /**
+         * GuideDocument
+         * @description One Beleg of the Belege step: a checklist item (kind = its requirement code, `item`
+         *     the row) or an owner's Lohnsteuerbescheinigung (kind wage_certificate).
+         */
+        GuideDocument: {
+            /** Kind */
+            kind: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "present" | "missing" | "expected";
+            /** Property Id */
+            property_id?: string | null;
+            /** Owner Id */
+            owner_id?: string | null;
+            item?: components["schemas"]["DocumentChecklistItem"] | null;
+            /** Due On */
+            due_on?: string | null;
+            /** Sender */
+            sender?: ("employer" | "bank" | "management" | "municipality" | "notary" | "issuer" | "lease_parties" | "tenant") | null;
+            /** Usual From */
+            usual_from?: string | null;
+            /** Usual To */
+            usual_to?: string | null;
+        };
+        /**
+         * GuideEstimate
+         * @description The whole-return estimate's result (phase 4b D101): positive a back-payment, negative a
+         *     refund, as GET /tax/return-estimate states it.
+         */
+        GuideEstimate: {
+            /** Result */
+            result: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "estimate" | "certified";
+        };
+        /**
+         * GuideFormResult
+         * @description One card of „Prüfen und abgeben“: the form's result as its draft states it (Anlage V:
+         *     totals.result; Anlage N: result = gross − Werbungskosten), None when no draft exists for
+         *     the year (`reason` the draft's error code).
+         */
+        GuideFormResult: {
+            /**
+             * Form
+             * @enum {string}
+             */
+            form: "anlage_v" | "anlage_n";
+            /** Property Id */
+            property_id?: string | null;
+            /** Owner Id */
+            owner_id?: string | null;
+            /** Result */
+            result?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Open */
+            open: number;
+        };
+        /**
+         * GuidePoint
+         * @description One open point: a draft's to-do warning, an owner without any pay source
+         *     (`anlage_n.no_pay`), an owner whose wage-replacement benefit, announced in the
+         *     Jahresfragen, is not typed yet (`anlage_n.benefit_letter`), or a checklist gap that is a
+         *     value to type (price_split, market_rent).
+         */
+        GuidePoint: {
+            /**
+             * Step
+             * @enum {string}
+             */
+            step: "angaben" | "property" | "review";
+            /**
+             * Form
+             * @enum {string}
+             */
+            form: "anlage_v" | "anlage_n" | "return";
+            /** Code */
+            code: string;
+            /** Property Id */
+            property_id?: string | null;
+            /** Owner Id */
+            owner_id?: string | null;
+            warning?: components["schemas"]["DraftWarning"] | null;
+            item?: components["schemas"]["DocumentChecklistItem"] | null;
+        };
+        /** GuideStep */
+        GuideStep: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "angaben" | "property" | "questions" | "documents" | "review";
+            /** Property Id */
+            property_id?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "done" | "open" | "waiting";
+            /** Open */
+            open: number;
+            /**
+             * Waiting
+             * @default 0
+             */
+            waiting: number;
+            /** Done */
+            done?: number | null;
+            /** Total */
+            total?: number | null;
+            /** Waiting From */
+            waiting_from?: string | null;
         };
         /**
          * HandFields
@@ -14532,6 +14676,35 @@ export interface components {
             /** Download Url */
             download_url?: string | null;
             export?: components["schemas"]["TaxExport"] | null;
+        };
+        /** TaxGuide */
+        TaxGuide: {
+            /** Tax Year */
+            tax_year: number;
+            /**
+             * Filing Deadline
+             * Format: date
+             */
+            filing_deadline: string;
+            /** Steps */
+            steps: components["schemas"]["GuideStep"][];
+            /** Steps Done */
+            steps_done: number;
+            /** Next Step */
+            next_step?: number | null;
+            /** Waiting From */
+            waiting_from?: string | null;
+            /** Ready */
+            ready: boolean;
+            estimate?: components["schemas"]["GuideEstimate"] | null;
+            /** Forms */
+            forms?: components["schemas"]["GuideFormResult"][];
+            /** Points */
+            points?: components["schemas"]["GuidePoint"][];
+            /** Documents */
+            documents?: components["schemas"]["GuideDocument"][];
+            /** Unavailable */
+            unavailable?: string[];
         };
         /**
          * TaxInput
@@ -23267,6 +23440,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AllocationFact"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_tax_guide_api_tax__tax_year__guide_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tax_year: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaxGuide"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

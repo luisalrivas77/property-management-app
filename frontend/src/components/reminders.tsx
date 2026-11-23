@@ -21,6 +21,7 @@ import { notifyInboxChanged } from "@/lib/inboxCount";
 
 import { todayIso } from "./format";
 import { reminderTodo } from "./todos";
+import { taxStepHref } from "./taxYear";
 
 export type Reminder = components["schemas"]["Reminder"];
 
@@ -98,7 +99,7 @@ export function reminderLink(reminder: Reminder): { href: string; label: string 
   const dueYear = yearOf(reminder.due_on);
   switch (reminder.kind) {
     case "grundsteuer.instalment":
-      return { href: `/tax/${dueYear}?immobilie=${encodeURIComponent(id)}#tax-grundsteuer`, label: t.seeGrundsteuer };
+      return { href: `${taxStepHref(Number(dueYear), "immobilie", id)}#tax-grundsteuer`, label: t.seeGrundsteuer };
     case "checklist.due":
       return reminder.scope === "loan"
         ? { href: `/loans/${id}`, label: t.openLoan }

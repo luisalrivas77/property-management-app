@@ -411,6 +411,10 @@ def section_requests(
     for template in templates:
         path, label, missing = template, template, None
         for name in _PLACEHOLDER.findall(template):
+            if name == "tax_year":  # a year, not an id: the year the screens open
+                path = path.replace("{tax_year}", str(today.year), 1)
+                label = label.replace("{tax_year}", str(today.year), 1)
+                continue
             kind = _id_kind(template, name)
             value = ids.get(kind)
             thing, prefix = _ID_KINDS[kind]

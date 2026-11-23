@@ -9101,6 +9101,48 @@
         }
       }
     },
+    "/api/tax/{tax_year}/guide": {
+      "get": {
+        "summary": "Get Tax Guide",
+        "description": "The year's five steps with their states, „Jetzt dran“, the Belege with their sender and\nusual month, every open point with the step and form it belongs to, each form's result and\nthe whole-return estimate's. A source that cannot be read for the year is named in\n`unavailable`; the rest is served.",
+        "operationId": "get_tax_guide_api_tax__tax_year__guide_get",
+        "parameters": [
+          {
+            "name": "tax_year",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 2100,
+              "minimum": 2000,
+              "title": "Tax Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaxGuide"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}/tax-inputs": {
       "get": {
         "summary": "Tax Inputs List",
@@ -22126,6 +22168,400 @@
         "type": "object",
         "title": "GrundsteuerbescheidExtraction",
         "description": "Grundsteuerbescheid (bescheid / grundsteuerbescheid)."
+      },
+      "GuideDocument": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "present",
+              "missing",
+              "expected"
+            ],
+            "title": "Status"
+          },
+          "property_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property Id"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentChecklistItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "due_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due On"
+          },
+          "sender": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "employer",
+                  "bank",
+                  "management",
+                  "municipality",
+                  "notary",
+                  "issuer",
+                  "lease_parties",
+                  "tenant"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender"
+          },
+          "usual_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usual From"
+          },
+          "usual_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usual To"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "status"
+        ],
+        "title": "GuideDocument",
+        "description": "One Beleg of the Belege step: a checklist item (kind = its requirement code, `item`\nthe row) or an owner's Lohnsteuerbescheinigung (kind wage_certificate)."
+      },
+      "GuideEstimate": {
+        "properties": {
+          "result": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Result"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "estimate",
+              "certified"
+            ],
+            "title": "Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "result",
+          "status"
+        ],
+        "title": "GuideEstimate",
+        "description": "The whole-return estimate's result (phase 4b D101): positive a back-payment, negative a\nrefund, as GET /tax/return-estimate states it."
+      },
+      "GuideFormResult": {
+        "properties": {
+          "form": {
+            "type": "string",
+            "enum": [
+              "anlage_v",
+              "anlage_n"
+            ],
+            "title": "Form"
+          },
+          "property_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property Id"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "open": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Open"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "form",
+          "open"
+        ],
+        "title": "GuideFormResult",
+        "description": "One card of „Prüfen und abgeben“: the form's result as its draft states it (Anlage V:\ntotals.result; Anlage N: result = gross − Werbungskosten), None when no draft exists for\nthe year (`reason` the draft's error code)."
+      },
+      "GuidePoint": {
+        "properties": {
+          "step": {
+            "type": "string",
+            "enum": [
+              "angaben",
+              "property",
+              "review"
+            ],
+            "title": "Step"
+          },
+          "form": {
+            "type": "string",
+            "enum": [
+              "anlage_v",
+              "anlage_n",
+              "return"
+            ],
+            "title": "Form"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "property_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property Id"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DraftWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentChecklistItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "step",
+          "form",
+          "code"
+        ],
+        "title": "GuidePoint",
+        "description": "One open point: a draft's to-do warning, an owner without any pay source\n(`anlage_n.no_pay`), an owner whose wage-replacement benefit, announced in the\nJahresfragen, is not typed yet (`anlage_n.benefit_letter`), or a checklist gap that is a\nvalue to type (price_split, market_rent)."
+      },
+      "GuideStep": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "angaben",
+              "property",
+              "questions",
+              "documents",
+              "review"
+            ],
+            "title": "Kind"
+          },
+          "property_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property Id"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "done",
+              "open",
+              "waiting"
+            ],
+            "title": "State"
+          },
+          "open": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Open"
+          },
+          "waiting": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Waiting",
+            "default": 0
+          },
+          "done": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          },
+          "waiting_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waiting From"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "state",
+          "open"
+        ],
+        "title": "GuideStep"
       },
       "HandFields": {
         "properties": {
@@ -36903,6 +37339,108 @@
         ],
         "title": "TaxExportState",
         "description": "GET /tax-exports/{id}. `export` and `download_url` once ready; the URL is signed and\nvalid DOWNLOAD_TTL_S seconds, so a client fetches it right before downloading. An Anlage\nN sheet names its owner, every other export its property (exactly one is set)."
+      },
+      "TaxGuide": {
+        "properties": {
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "filing_deadline": {
+            "type": "string",
+            "format": "date",
+            "title": "Filing Deadline"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/GuideStep"
+            },
+            "type": "array",
+            "title": "Steps"
+          },
+          "steps_done": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Steps Done"
+          },
+          "next_step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Step"
+          },
+          "waiting_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waiting From"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuideEstimate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "forms": {
+            "items": {
+              "$ref": "#/components/schemas/GuideFormResult"
+            },
+            "type": "array",
+            "title": "Forms"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/GuidePoint"
+            },
+            "type": "array",
+            "title": "Points"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/GuideDocument"
+            },
+            "type": "array",
+            "title": "Documents"
+          },
+          "unavailable": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unavailable"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tax_year",
+          "filing_deadline",
+          "steps",
+          "steps_done",
+          "ready"
+        ],
+        "title": "TaxGuide"
       },
       "TaxInput": {
         "properties": {

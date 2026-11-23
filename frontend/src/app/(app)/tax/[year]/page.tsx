@@ -1,10 +1,11 @@
 "use client";
 
-// Steuern › one tax year (phase-3.md §11, phase-4b.md §10, docs/mockups/04-tax-year.png): the
-// Gesamt card of the whole return above the tabs, then Anlage V (?immobilie=…, the first one
-// when absent; its selector is hidden with one property), Anlage N (?tab=anlage-n,
-// ?eigentuemer=…) or Eure Angaben (?tab=angaben, ?eigentuemer=…; phase 10 D281). KAP and SO
-// are tabs of phase 8 and stay disabled.
+// Steuern › one tax year (phase-3.md §11, phase-4b.md §10, phase 10 D290, mockup 22b).
+// /tax/<year> alone is the guided start page; ?schritt=immobilie|belege|pruefen opens one step
+// (?immobilie=… for the Immobilie step). The forms are views: Anlage V (?tab=anlage-v, or a
+// legacy ?immobilie=… without a tab or step; the first property when absent), Anlage N
+// (?tab=anlage-n, ?eigentuemer=…). Eure Angaben (?tab=angaben, ?eigentuemer=…; D281) holds the
+// owners' and household's inputs. KAP and SO are tabs of phase 8 and stay disabled.
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
@@ -14,7 +15,8 @@ import { AnlageNScreen } from "@/components/anlageN";
 import { ReturnEstimateSummary } from "@/components/returnEstimate";
 import { AnlageVScreen } from "@/components/tax";
 import { TaxInputsScreen } from "@/components/taxAngaben";
-import { ANGABEN_PARAM, ANLAGE_N_PARAM, TaxTabs } from "@/components/taxYear";
+import { TaxGuideScreen } from "@/components/taxGuide";
+import { ANGABEN_PARAM, ANLAGE_N_PARAM, ANLAGE_V_PARAM, type GuideStepParam, STEP_PARAM, TaxTabs } from "@/components/taxYear";
 import { Loading, LoadingLine } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 import { useT } from "@/i18n";
@@ -36,7 +38,18 @@ function TaxYear() {
   const requested = search.get("immobilie");
   const owner = search.get("eigentuemer");
   const tab = search.get("tab");
-  const form = tab === ANLAGE_N_PARAM ? "n" : tab === ANGABEN_PARAM ? "angaben" : "v";
+  const stepParam = search.get(STEP_PARAM);
+  const step: GuideStepParam | null = stepParam === "immobilie" || stepParam === "belege" || stepParam === "pruefen" ? stepParam : null;
+  // /tax/<year> alone is the guided start page (D290); ?tab=anlage-v, or a legacy
+  // ?immobilie=… without a tab or step, opens the Anlage V view.
+  const form =
+    tab === ANLAGE_N_PARAM
+      ? "n"
+      : tab === ANGABEN_PARAM
+        ? "angaben"
+        : tab === ANLAGE_V_PARAM || (requested && !step)
+          ? "v"
+          : "guide";
   const year = /^\d{4}$/.test(yearParam) ? Number(yearParam) : null;
   const t = useT(pages);
 
@@ -48,6 +61,8 @@ function TaxYear() {
         </p>
       ) : form === "angaben" ? (
         <TaxInputsScreen year={year} ownerParam={owner} propertyParam={requested} />
+      ) : form === "guide" ? (
+        <TaxGuideScreen year={year} step={step} propertyParam={requested} />
       ) : form === "n" ? (
         <AnlageNScreen year={year} ownerParam={owner} propertyParam={requested} />
       ) : (

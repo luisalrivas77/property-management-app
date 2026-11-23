@@ -7,7 +7,7 @@
 // category and amount, a counterparty only its masked IBAN.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createContext, useCallback, useContext, useEffect, useId, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useState, type MouseEvent, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
 import { RULE_CODE_TEXT } from "@/api/errors";
@@ -24,7 +24,6 @@ import type {
   TaxExportState,
   TaxSourceRef,
 } from "@/api/schemas";
-import { ChecklistTab } from "@/app/(app)/properties/[id]/ChecklistTab";
 import { formatter, localized, translate, useFormat, useT } from "@/i18n";
 import { common } from "@/i18n/common";
 import { taxDraft } from "@/i18n/taxDraft";
@@ -34,8 +33,8 @@ import { formatShare, todayIso } from "./format";
 import { TaxEffectLine } from "./income";
 import { ALLOCATION_CATEGORY, TAX_SOURCE_KIND, WARNING_TEXT, taxNote } from "./labels";
 import { ActionDialog, Loading } from "./ui";
-import { GrundsteuerSection, MovableAssetSection, UsefulLifeSection } from "./taxInputs";
-import { AnlageVTodos, type GuideContext, WarningActionView, WhatToDo, resolveAction } from "./todos";
+import { guidePointHref, propertyAnchorHref, taxFormHref, taxGuideHref, taxStepHref } from "./taxYear";
+import { type GuideContext, isTodo, WarningActionView, WhatToDo, resolveAction } from "./todos";
 import { useLoad, type Loaded } from "./useLoad";
 
 import "./tax.css";
@@ -119,7 +118,7 @@ export function AnlageVScreen({
   const ids = useId();
   const href = useCallback(
     (y: number, propertyId: string) =>
-      properties.length > 1 ? `/tax/${y}?immobilie=${encodeURIComponent(propertyId)}` : `/tax/${y}`,
+      taxFormHref("v", { year: y, propertyId: properties.length > 1 ? propertyId : null, ownerId: null }),
     [properties.length],
   );
 
@@ -142,6 +141,12 @@ export function AnlageVScreen({
     [property.id, year],
   );
   const draft = useLoad(loadDraft);
+  // A bookmark or an old link to one of the inputs this page held until D290 (#tax-useful-life,
+  // #tax-movable-asset, #tax-grundsteuer, #tax-limit) opens the Immobilie step at that input.
+  useEffect(() => {
+    const moved = propertyAnchorHref(year, property.id, window.location.hash);
+    if (moved) router.replace(moved);
+  }, [router, year, property.id]);
   const yearOptions = years.data && !years.data.includes(year) ? [...years.data, year].sort((a, b) => a - b) : (years.data ?? [year]);
 
   return (
@@ -196,14 +201,18 @@ export function AnlageVScreen({
           </span>
         </nav>
       )}
+      {/* The form is a view since phase 10 D290: its inputs (useful life, kitchen, Grundsteuer
+          schedule, the checklist) live in the guided steps, so a year without a draft still
+          reaches the Grundsteuer schedule through the Immobilie step. */}
+      <div className="notice notice-info" role="note">
+        <p>
+          {t.viewOnly}{" "}
+          <Link href={taxStepHref(year, "immobilie", property.id)}>{t.toPropertyStep}</Link>
+          {" · "}
+          <Link href={taxGuideHref(year)}>{t.toAllSteps}</Link>
+        </p>
+      </div>
       <Loading state={draft}>{(data) => <DraftView draft={data} propertyId={property.id} onChanged={draft.reload} />}</Loading>
-      {/* Outside the draft (PR #139 review): a reminder links here for a year whose rule set is
-          not published yet (2027 until the data PR, D124), and the schedule row is the only
-          place its amount is shown (D122). */}
-      <section className="card stack" aria-labelledby="tax-grundsteuer-title" id="tax-grundsteuer">
-        <h2 id="tax-grundsteuer-title">{t.grundsteuer}</h2>
-        <GrundsteuerSection propertyId={property.id} defaultYear={year} />
-      </section>
       <p className="muted tax-footer">{t.footer}</p>
     </>
   );
@@ -230,14 +239,11 @@ function DraftView({ draft, propertyId, onChanged }: { draft: AnlageVDraft; prop
     [propertyId, draft.tax_year],
   );
   const payments = useLoad(loadPayments);
-  // An action of a to-do (a split selected, a document read) changes the checklist and the
-  // questions too, which load on their own; the counter reloads them with the draft. The cited
-  // payments reload too: a re-booking (D140) supersedes every row of its bank line, so a to-do
-  // left on that line cites new allocation ids.
-  const [refresh, setRefresh] = useState(0);
+  // A note's action (a document read, a payment opened) reloads the draft and the cited
+  // payments: a re-booking (D140) supersedes every row of its bank line, so a point left on that
+  // line cites new allocation ids.
   const reloadPayments = payments.reload;
   const changed = useCallback(() => {
-    setRefresh((n) => n + 1);
     reloadPayments();
     onChanged();
   }, [onChanged, reloadPayments]);
@@ -246,14 +252,6 @@ function DraftView({ draft, propertyId, onChanged }: { draft: AnlageVDraft; prop
   return (
     <PaymentsContext.Provider value={payments}>
       <div className="stack">
-        <AnlageVTodos
-          propertyId={propertyId}
-          year={draft.tax_year}
-          draft={draft}
-          payments={payments.data}
-          refresh={refresh}
-          onChanged={changed}
-        />
         {draft.rule_set.form_status === "provisional" ? (
           <div className="notice notice-info" role="status">
             <p>{t.provisional(draft.tax_year, draft.rule_set.version)}</p>
@@ -278,29 +276,10 @@ function DraftView({ draft, propertyId, onChanged }: { draft: AnlageVDraft; prop
               draft={draft}
               propertyId={propertyId}
             />
-            <section className="card stack" aria-labelledby="tax-useful-life">
-              <h2 id="tax-useful-life">{t.usefulLife}</h2>
-              <UsefulLifeSection propertyId={propertyId} defaultYear={draft.tax_year} onChanged={changed} />
-            </section>
-            <section className="card stack" aria-labelledby="tax-movable-asset">
-              <h2 id="tax-movable-asset">{t.movableAsset}</h2>
-              <MovableAssetSection
-                propertyId={propertyId}
-                purchaseYear={Number(draft.header.transfer_date.slice(0, 4)) || draft.tax_year}
-                onChanged={changed}
-              />
-            </section>
             <NotDeductible draft={draft} propertyId={propertyId} />
           </div>
           <aside className="stack tax-side" aria-label={t.sideLabel}>
             <OpenPoints warnings={warnings} ctx={ctx} onChanged={changed} />
-            <ChecklistTab
-              propertyId={propertyId}
-              year={draft.tax_year}
-              refresh={refresh}
-              payments={payments.data}
-              onChanged={changed}
-            />
             <LimitCard limit={draft.limit_15 ?? null} />
             <HandOverCard key={draft.tax_year} propertyId={propertyId} taxYear={draft.tax_year} />
           </aside>
@@ -696,6 +675,16 @@ export function SourcesButton({ refs, title, propertyId }: { refs: TaxSourceRef[
 
 /** Offene Punkte: every warning with what the rule found, what to do (D136) and its action; a
  * to-do is also listed under "Was noch fehlt" at the top of the tab. */
+/** The to-do codes that are no point of Prüfen und abgeben (rules/tax_guide.py STEP_OF_WARNING):
+ * the Jahresfragen count them by their own progress, and a missing Beleg is the Belege step's
+ * while it is missing. Their action stays on the form, which leads to the same place. */
+const NOT_A_POINT: ReadonlySet<string> = new Set([
+  "return.questionnaire_open",
+  "tax_export.questions_open",
+  "anlage_n.certificate_missing",
+  "hausgeld.abrechnung_pending",
+]);
+
 function OpenPoints({
   warnings,
   ctx,
@@ -706,18 +695,30 @@ function OpenPoints({
   onChanged: () => void;
 }) {
   const t = useT(taxDraft);
+  const router = useRouter();
   // Warnings first, then information; within each, the order the draft gave.
   const sorted = [...warnings.filter((w) => w.severity === "warning"), ...warnings.filter((w) => w.severity === "info")];
+  // A note's link to an input that moved to the Immobilie step (D290) opens it there.
+  function retarget(event: MouseEvent<HTMLElement>) {
+    const href = (event.target as HTMLElement).closest("a")?.getAttribute("href");
+    const moved = href ? propertyAnchorHref(ctx.year, ctx.propertyId, href) : null;
+    if (!moved) return;
+    event.preventDefault();
+    router.push(moved);
+  }
   return (
-    <section className="card tax-open" aria-labelledby="tax-open-title">
+    <section className="card tax-open" aria-labelledby="tax-open-title" onClickCapture={retarget}>
       <h2 id="tax-open-title">{t.openPoints}</h2>
       {sorted.length === 0 ? (
         <p className="muted">{t.noOpenPoints}</p>
       ) : (
         <ul className="tax-open-list">
           {sorted.map((warning, index) => {
-            const guided = resolveAction(warning, ctx) !== null;
-            const fallback = guided ? null : refAction(warning, ctx.propertyId);
+            // A to-do is a point of the guided path (D290): the form names it and opens it on
+            // Prüfen und abgeben, where its action is. A note keeps its action here.
+            const point = isTodo(warning) && !NOT_A_POINT.has(warning.code);
+            const guided = !point && resolveAction(warning, ctx) !== null;
+            const fallback = point || guided ? null : refAction(warning, ctx.propertyId);
             const payments = (warning.refs ?? []).filter((ref) => ref.kind === "allocation");
             return (
               <li key={`${warning.code}-${index}`} className={`tax-open-item tax-open-${warning.severity}`}>
@@ -726,8 +727,20 @@ function OpenPoints({
                 </span>
                 <p>{WARNING_TEXT[warning.code](warning.params ?? {})}</p>
                 <WhatToDo warning={warning} />
-                {guided || fallback || payments.length > 0 ? (
+                {point || guided || fallback || payments.length > 0 ? (
                   <div className="row tax-open-actions">
+                    {point ? (
+                      <Link
+                        href={guidePointHref(ctx.year, {
+                          code: warning.code,
+                          property_id: ctx.propertyId,
+                          params: warning.params,
+                          refs: warning.refs,
+                        })}
+                      >
+                        {t.openPointInGuide}
+                      </Link>
+                    ) : null}
                     {guided ? <WarningActionView warning={warning} ctx={ctx} onChanged={onChanged} /> : null}
                     {fallback ? <Link href={fallback.href}>{fallback.label}</Link> : null}
                     {payments.length > 0 ? (
@@ -744,7 +757,7 @@ function OpenPoints({
   );
 }
 
-function LimitCard({ limit }: { limit: LimitStatus | null }) {
+export function LimitCard({ limit }: { limit: LimitStatus | null }) {
   const t = useT(taxDraft);
   const f = useFormat();
   if (!limit) return null;
@@ -989,7 +1002,15 @@ export function ExportCard({
   );
 }
 
-function HandOverCard({ propertyId, taxYear }: { propertyId: string; taxYear: number }) {
+export function HandOverCard({
+  propertyId,
+  taxYear,
+  titleId = "tax-handover-title",
+}: {
+  propertyId: string;
+  taxYear: number;
+  titleId?: string;
+}) {
   const t = useT(taxDraft);
   const buttons: ExportButton[] = [
     { kind: "field_sheet", label: t.fieldSheetButton },
@@ -1018,7 +1039,7 @@ function HandOverCard({ propertyId, taxYear }: { propertyId: string; taxYear: nu
   );
   return (
     <ExportCard
-      titleId="tax-handover-title"
+      titleId={titleId}
       taxYear={taxYear}
       buttons={buttons}
       note={t.handOverNote}
