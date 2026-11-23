@@ -28,6 +28,8 @@ the Anlagen overview's valuations and hands them here. Built in phase 6 step 6.
   whether a booked transfer to an own account counts as „unterwegs zu <Konto>“ on a day.
 - `transit_counted(amounts, card_balance)`: D292 amended (a), what each transfer in transit
   to one account counts; a credit card takes them only up to its known debt.
+- `tab_totals(lines)`: phase 10 §7.6 Konten (2), Σ per Konten tab of the account and position
+  lines by the account's kind (both bank kinds one tab), so the page never adds them up.
 """
 
 from collections.abc import Hashable, Iterable, Mapping, Sequence
@@ -44,6 +46,7 @@ from hausbuch.rules.errors import (
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.household import NetWorthClass
 from hausbuch.schemas.loan import ScheduleEntry
+from hausbuch.schemas.net_worth import AccountTab
 
 ZERO = Decimal("0.00")
 CENT = Decimal("0.01")
@@ -60,9 +63,35 @@ _CLASS_OF_KIND = {
 if set(_CLASS_OF_KIND) != set(AccountKind):  # pragma: no cover
     raise RuntimeError("every account kind needs a net worth class")
 
+_TAB_OF_KIND = {
+    AccountKind.BANK_CURRENT: AccountTab.BANK,
+    AccountKind.BANK_SAVINGS: AccountTab.BANK,
+    AccountKind.CREDIT_CARD: AccountTab.CARD,
+    AccountKind.DEPOT: AccountTab.DEPOT,
+    AccountKind.EXCHANGE: AccountTab.EXCHANGE,
+    AccountKind.WALLET: AccountTab.WALLET,
+}
+if set(_TAB_OF_KIND) != set(AccountKind):  # pragma: no cover
+    raise RuntimeError("every account kind needs a Konten tab")
+
 
 def class_of(kind: AccountKind) -> NetWorthClass:
     return _CLASS_OF_KIND[kind]
+
+
+def tab_of(kind: AccountKind) -> AccountTab:
+    return _TAB_OF_KIND[kind]
+
+
+def tab_totals(lines: Iterable[tuple[AccountKind, Decimal | None]]) -> dict[AccountTab, Decimal]:
+    """Σ per Konten tab of (account kind, value) of the account and position lines, in the
+    tabs' order. A tab appears once one of its lines does; a line without a value (not
+    valued) counts nowhere, as in `totals`."""
+    sums: dict[AccountTab, Decimal] = {}
+    for kind, value in lines:
+        tab = _TAB_OF_KIND[kind]
+        sums[tab] = sums.get(tab, ZERO) + (value if value is not None else ZERO)
+    return {tab: sums[tab] for tab in AccountTab if tab in sums}
 
 
 def bank_balance(

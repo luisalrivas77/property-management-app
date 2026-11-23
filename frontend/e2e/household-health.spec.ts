@@ -516,3 +516,145 @@ test("the month-end card, the split and the net worth over time are on Anlagen, 
   await expect(page.getByRole("region", { name: "Vermögen im Verlauf" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Liquiditätsreserve" })).toHaveCount(0);
 });
+
+test("„Was diesen Monat anders ist“ names the server's groups and opens their payments", async ({ page, signedIn }) => {
+  void signedIn;
+  const window = [monthsBack(5), monthsBack(4), monthsBack(3), monthsBack(2)];
+  const newest = window[window.length - 1] ?? "";
+  const payment = (id: string, day: string, payee: string, amount: string): components["schemas"]["GroupPayment"] => ({
+    allocation_id: `00000000-0000-4000-8000-00000000092${id}`,
+    transaction_id: `00000000-0000-4000-8000-00000000093${id}`,
+    account_id: SAVINGS,
+    account_label: "Girokonto A",
+    booked_on: `${newest}-${day}`,
+    payee,
+    purpose: "",
+    category: "hh_restaurant",
+    amount,
+  });
+  let differences: components["schemas"]["MonthDifferences"] | null = {
+    month: newest,
+    baseline: window.slice(0, -1),
+    groups: [
+      {
+        group: "dining",
+        amount: "180.00",
+        mean: "25.00",
+        difference: "155.00",
+        words: "more",
+        payments: [payment("1", "10", "Pizzeria Beispiel", "120.00"), payment("2", "11", "Café Muster", "60.00")],
+      },
+      { group: "mobility", amount: "20.00", mean: "100.00", difference: "-80.00", words: "less", payments: [] },
+    ],
+  };
+  await scenarios(page);
+  await serve(page, "/api/health", () => ({ ...health(window), differences }));
+  await serve(page, "/api/health/net-worth-series", () => []);
+  await monthsOf(page, (from, to) => window.filter((month) => month >= from && month <= to).map((month) => monthView(month, true)));
+  await serve(page, "/api/household-plan", () => plan(window, null, null));
+
+  await page.goto("/household");
+  const card = page.getByRole("region", { name: "Was diesen Monat anders ist" });
+  await expect(card).toContainText("verglichen mit dem Schnitt der 3 abgeschlossenen Monate davor");
+  await expect(card.getByRole("listitem")).toHaveCount(2);
+  await expect(card.getByRole("listitem").nth(0)).toContainText("Essen gehen & bestellen: 155,00 € mehr als üblich");
+  await expect(card.getByRole("listitem").nth(1)).toContainText("Mobilität: 80,00 € weniger als üblich");
+
+  // A group opens its month, its mean and the payments behind the month in the panel.
+  await card.getByRole("link", { name: /Essen gehen & bestellen/ }).click();
+  const panel = page.getByRole("complementary", { name: "Essen gehen & bestellen" });
+  await expect(panel).toContainText("Ø 3 Monate davor");
+  await expect(panel).toContainText("25,00 €");
+  await expect(panel.getByRole("listitem").filter({ hasText: "Pizzeria Beispiel" })).toContainText("120,00 €");
+  await expect(panel.getByRole("listitem").filter({ hasText: "Café Muster" })).toContainText("Girokonto A");
+
+  // No card when the server names no group, or compares nothing.
+  differences = { month: newest, baseline: window.slice(0, -1), groups: [] };
+  await page.goto("/household");
+  await expect(page.getByRole("region", { name: "Ausgaben nach Kategorie" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Was diesen Monat anders ist" })).toHaveCount(0);
+  differences = null;
+  await page.goto("/household");
+  await expect(page.getByRole("region", { name: "Ausgaben nach Kategorie" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Was diesen Monat anders ist" })).toHaveCount(0);
+});
+
+test("the Budget in one line on Haushalt: only once a target is saved, coloured as on Planung › Budget", async ({ page, signedIn }) => {
+  void signedIn;
+  const window = [monthsBack(4), monthsBack(3), monthsBack(2)];
+  type BudgetView = components["schemas"]["BudgetView"];
+  const mark = (colour: "green" | "amber", target: string, gapPoints: string, gapMonthly: string, atTarget: string) => ({
+    colour,
+    target,
+    gap_points: gapPoints,
+    gap_monthly: gapMonthly,
+    at_target: atTarget,
+    text: "",
+  });
+  let targets = true;
+  const budget = (): BudgetView => ({
+    as_of: "2026-11-18",
+    scenario_id: null,
+    window: { months: window, enough: true },
+    months: [],
+    income: { monthly: "5200.00", total: "15600.00", rental_monthly: "0.00", private_monthly: "5200.00" },
+    lines: [
+      {
+        key: "need",
+        monthly: "2600.00",
+        total: "7800.00",
+        share: "0.5000",
+        codes: [],
+        target: targets ? "45.0" : null,
+        mark: targets ? mark("amber", "45.0", "5.0", "260.00", "2340.00") : null,
+      },
+      {
+        key: "want",
+        monthly: "1300.00",
+        total: "3900.00",
+        share: "0.2500",
+        codes: [],
+        target: targets ? "30.0" : null,
+        mark: targets ? mark("green", "30.0", "-5.0", "-260.00", "1560.00") : null,
+      },
+      { key: "one_off", monthly: "0.00", total: "0.00", share: "0.0000", codes: [] },
+      {
+        key: "saving",
+        monthly: "1300.00",
+        total: "3900.00",
+        share: "0.2500",
+        target: targets ? "20.0" : null,
+        mark: targets ? mark("green", "20.0", "5.0", "260.00", "1040.00") : null,
+      },
+    ],
+    housing: null,
+    targets: targets ? { needs_max: "45.0", wants_max: "30.0", saving_min: "20.0" } : {},
+    references: [],
+    todos: [],
+  });
+  await scenarios(page);
+  await serve(page, "/api/health", () => health(window));
+  await serve(page, "/api/health/net-worth-series", () => []);
+  await monthsOf(page, (from, to) => window.filter((month) => month >= from && month <= to).map((month) => monthView(month, true)));
+  await serve(page, "/api/household-plan", () => plan(window, null, null));
+  await serve(page, "/api/household-budget", budget);
+
+  await page.goto("/household");
+  const line = page.getByRole("region", { name: "Budget", exact: true });
+  await expect(line).toContainText("Ø je Monat über 3 abgeschlossene Monate");
+  await expect(line).toContainText("Notwendiges 2.600 € von 2.340 €");
+  await expect(line).toContainText("Wünsche 1.300 € von 1.560 €");
+  await expect(line).toContainText("Sparen 1.300 € von mindestens 1.040 €");
+  await expect(line.getByRole("img", { name: "Ziel verfehlt" })).toHaveCount(1);
+  await expect(line.getByRole("img", { name: "Ziel erreicht" })).toHaveCount(2);
+  await expect(line.locator(".budget-dot-amber")).toHaveCount(1);
+  await expect(line.locator(".budget-dot-green")).toHaveCount(2);
+  await expect(line.locator(".budget-dot-red")).toHaveCount(0);
+  await expect(line.getByRole("link", { name: /Planung › Budget/ })).toHaveAttribute("href", "/planning?section=budget");
+
+  // Before a target is saved there is no line.
+  targets = false;
+  await page.goto("/household");
+  await expect(page.getByRole("region", { name: "Ausgaben nach Kategorie" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Budget", exact: true })).toHaveCount(0);
+});

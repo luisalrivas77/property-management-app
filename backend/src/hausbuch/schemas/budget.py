@@ -82,6 +82,9 @@ class BudgetMark(Schema):
     target: BudgetPercent
     gap_points: Points  # share − target, in points; signed
     gap_monthly: Money  # monthly amount − the target's amount of the monthly income; signed
+    # the target's amount of the monthly income, to the cent (Haushalt's Budget line, §7.6):
+    # „Notwendiges 1.900 von 2.000 €“; gap_monthly = monthly − at_target
+    at_target: Money
     text: str
 
 

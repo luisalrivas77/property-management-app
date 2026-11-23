@@ -426,6 +426,7 @@ function budget(targets: BudgetTargets, overrides: Record<string, "need" | "want
               target: wants,
               gap_points: "-5.0",
               gap_monthly: "-260.00",
+              at_target: "1560.00",
               text: "Wünsche liegen 5 Prozentpunkte unter eurem Ziel, rund 260 € im Monat.",
             }
           : null,
