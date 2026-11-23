@@ -1566,7 +1566,10 @@ function RecordCard({
           {t.willLink}<strong>{linkTarget(record, directory)}</strong>
         </p>
       ) : null}
-      {unchanged ? <p className="muted">{t.unchangedNote}</p> : null}
+      {unchanged ? (
+        // Phase 10 §7.6 (e): a re-read contract's split equal to one already recorded.
+        <p className="muted">{record.entity_type === "price_split" ? t.priceSplitRecorded : t.unchangedNote}</p>
+      ) : null}
       {fields.length > 0 ? (
         <div className="proposal-rows">
           {fields.map(([name, value]) => (

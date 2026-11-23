@@ -117,6 +117,43 @@ function negated(value: string): string {
   return value.startsWith("-") ? value.slice(1) : /^0+(\.0+)?$/.test(value) ? value : `-${value}`;
 }
 
+/** Phase 10 §7.6 (d): the server's parts of the money back. expected_tax_refund is signed (a
+ * refund positive, a back-payment negative). */
+interface BackParts {
+  cash_back?: string | null;
+  arrived?: string | null;
+  expected_tax_refund?: string | null;
+  percent?: string | null;
+}
+
+function hasExpected(back: BackParts): boolean {
+  const value = back.expected_tax_refund;
+  return value != null && !/^-?0+(\.0+)?$/.test(value);
+}
+
+/** The tile's line under „Zurück bisher“ when tax is still expected: the amount and the percent
+ * with it (the server's percent counts both parts); null when none is expected. */
+function expectedTileLine(t: T, f: Formatter, back: BackParts): string | null {
+  if (!hasExpected(back) || back.expected_tax_refund == null) return null;
+  const value = back.expected_tax_refund;
+  const percent = back.percent != null ? points(f, back.percent) : null;
+  return value.startsWith("-") ? t.backTilePayment(f.money(value.slice(1)), percent) : t.backTileRefund(f.money(value), percent);
+}
+
+/** „Zurück bisher“ (the money arrived) and, when tax is still expected, that tax and the sum of
+ * both, which is what the percent and the break-even year measure. */
+function backRows(t: T, f: Formatter, back: BackParts): [ReactNode, ReactNode][] {
+  const total = back.cash_back ?? "0.00";
+  const rows: [ReactNode, ReactNode][] = [[t.backSoFar, f.money(back.arrived ?? total)]];
+  if (hasExpected(back) && back.expected_tax_refund != null) {
+    const value = back.expected_tax_refund;
+    const payment = value.startsWith("-");
+    rows.push([payment ? t.expectedPayment : t.expectedRefund, f.money(payment ? value.slice(1) : value)]);
+    rows.push([payment ? t.backWithPayment : t.backWithRefund, f.money(total)]);
+  }
+  return rows;
+}
+
 function signed(f: Formatter, value: string): string {
   return `${value.startsWith("-") || /^0+(\.0+)?$/.test(value) ? "" : "+"}${f.money(value)}`;
 }
@@ -233,8 +270,10 @@ export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail
             {(back) =>
               back.properties.some((p) => p.reason == null) ? (
                 <>
-                  <span className="tile-value">{f.money(back.cash_back)}</span>
-                  <span className="tile-sub">{t.backTileLine(f.money(back.paid_in), back.percent != null ? points(f, back.percent) : null)}</span>
+                  <span className="tile-value">{f.money(back.arrived)}</span>
+                  <span className="tile-sub">
+                    {expectedTileLine(t, f, back) ?? t.backTileLine(f.money(back.paid_in), back.percent != null ? points(f, back.percent) : null)}
+                  </span>
                 </>
               ) : (
                 <>
@@ -443,19 +482,21 @@ function leftOutGap(p: PropertyPayback, t: T): { href: string | null; action?: s
   }
 }
 
-/** The years behind „Zurück bisher“ (the actual ones, which sum to it) and behind the break-even
- * year (the plan's), as the server sent them: no sum is made here. */
+/** The years behind „Zurück bisher“ and the expected tax (the actual ones, which sum to both
+ * together), each as its cash before tax and its tax, „erwartet“ without its Bescheid (phase 10
+ * §7.6 (d)), and behind the break-even year (the plan's), as the server sent them: no sum is
+ * made here. */
 function YearRows({ p, t, f }: { p: PropertyPayback; t: T; f: Formatter }) {
   const years = p.years ?? [];
-  const estimated = new Set(p.tax_estimated_years ?? []);
   const missing = new Set(p.income_missing_years ?? []);
   const actual = years.filter((y) => y.kind !== "projected");
   const planned = years.filter((y) => y.kind === "projected");
   const value = (y: (typeof years)[number]) => {
-    const money = f.money(y.net_cash);
-    if (missing.has(y.year)) return t.yearNoTax(money);
-    if (estimated.has(y.year)) return t.yearEstimated(money);
-    return money;
+    if (y.cash_before_tax == null || y.tax_refund == null) {
+      const money = f.money(y.net_cash);
+      return missing.has(y.year) ? t.yearNoTax(money) : money;
+    }
+    return t.yearSplit(f.money(y.cash_before_tax), signed(f, y.tax_refund), !y.tax_assessed);
   };
   return (
     <>
@@ -498,7 +539,7 @@ function PaybackRows({ state, t, f }: { state: Loaded<PropertiesPayback>; t: T; 
     }
     const sold = p.sale_today;
     const line = breakEvenText(t, p);
-    const rows: [ReactNode, ReactNode][] = [[t.backSoFar, f.money(p.cash_back)]];
+    const rows = backRows(t, f, p);
     if (p.percent != null) rows.push([t.backOf(f.money(p.paid_in), null), points(f, p.percent)]);
     if (line) rows.push([line, ""]);
     const tax: [ReactNode, ReactNode] = sold.tax_not_computed
@@ -509,7 +550,7 @@ function PaybackRows({ state, t, f }: { state: Loaded<PropertiesPayback>; t: T; 
       [t.saleCosts(f.percent(sold.selling_costs_rate)), f.money(negated(sold.selling_costs))],
       tax,
       [t.saleLoan, f.money(negated(sold.loan_balance))],
-      [t.saleBack, f.money(p.cash_back)],
+      [hasExpected(p) ? t.saleBackExpected : t.saleBack, f.money(p.cash_back)],
       [t.salePaidIn, f.money(negated(p.paid_in))],
       [sold.tax_not_computed ? `${t.saleProfit} (${t.profitNoTax})` : t.saleProfit, f.money(sold.profit)],
     ];
@@ -533,10 +574,8 @@ function PaybackRows({ state, t, f }: { state: Loaded<PropertiesPayback>; t: T; 
     );
   };
   const totalLine = breakEvenText(t, back);
-  const totals: [ReactNode, ReactNode][] = [
-    [t.backSoFar, f.money(back.cash_back)],
-    [t.backOf(f.money(back.paid_in), null), back.percent != null ? points(f, back.percent) : "–"],
-  ];
+  const totals = backRows(t, f, back);
+  totals.push([t.backOf(f.money(back.paid_in), null), back.percent != null ? points(f, back.percent) : "–"]);
   if (totalLine) totals.push([totalLine, ""]);
   totals.push([profitIncomplete(back) ? `${t.profitToday} (${t.profitNoTax})` : t.profitToday, f.money(back.profit_today)]);
   const years = (list: number[] | undefined) => (list ?? []).join(", ");
@@ -553,6 +592,7 @@ function PaybackRows({ state, t, f }: { state: Loaded<PropertiesPayback>; t: T; 
       {back.tax_estimated_years?.length ? <p className="muted">{t.taxEstimated(years(back.tax_estimated_years))}</p> : null}
       {missing.length ? <Gap text={t.incomeMissing(years(missing))} href={payInputsHref(missing[0] ?? thisYear)} action={t.enterIncome} /> : null}
       <p className="muted">{t.backYears}</p>
+      {hasExpected(back) || back.properties.some(hasExpected) ? <p className="muted">{t.backExpectedNote}</p> : null}
       <p className="muted">{t.backTilgung}</p>
       <p className="muted">{t.backBreakEven}</p>
       <p className="muted">{t.saleNote}</p>
