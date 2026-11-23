@@ -10,7 +10,10 @@ The order (UTC, the worker's clock):
 
 - The wallets end → fetch_prices is queued (a wallet read can add a held coin). When an
   address failed with wallet.source_failed, the one retry is queued instead, about ten
-  minutes later, and it queues fetch_prices (jobs.sync_wallets).
+  minutes later, and it queues fetch_prices (jobs.sync_wallets). The chained fetch is
+  scheduled no earlier than 07:00 UTC (PRICES_NOT_BEFORE), its clock time until 23 Nov 2026:
+  an issuer may not have published the previous day's price before then, so the chain only
+  ever moves the fetch later.
 - The month-end needs the day's bank lines and prices (phase 6 D167 (5)). It is queued by
   `morning_gate`, a small task each finisher queues when it ends: the price fetch, the bank
   schedule, and every bank_sync run. The gate queues month_end once all three hold:
@@ -28,13 +31,17 @@ The order (UTC, the worker's clock):
 Fallbacks: the clock times stay, as deadlines: fetch_prices 07:30 (07:00 until 23 Nov 2026),
 month_end 08:00 on the 1st, health_daily 08:30, kept_answers_warm 09:00. None of these tasks
 retries, so a broken link (a job that raised, a worker that was down) must never skip a step
-silently. Every run of
-these four, chained or by the clock, first asks `step_ran_today`: another job of the same
-task with today's timestamp has succeeded. If so it does nothing and hands nothing on (the
-run that did the work handed on already); prices are never fetched twice a day (issuers get
-one request a day per held fund). A run that did its work queues the next step, so a
-fallback month-end on the 1st is followed by its key figures at once. A job that raised is
-`failed` and does not count, so the clock's run does the step.
+silently. Every run of these four, chained or by the clock, first asks `step_ran_today`:
+another job of the same task with today's timestamp has succeeded. If so it hands nothing
+on (the run before handed on already). fetch_prices and the warm step then do nothing:
+prices are never fetched twice a day (issuers get one request a day per held fund).
+month_end and health_daily do their idempotent work again (review of 23 Nov 2026): the gate
+fires once the last bank run has ended, while its matching jobs may still be queued, so a
+payment on the month's last day can be booked after the chained capture; the 08:00 run
+recaptures it (capture_month_end writes a new run only when the figures changed). A run that
+did its work first queues the next step, so a fallback month-end on the 1st is followed by
+its key figures at once. A job that raised is `failed` and does not count, so the clock's
+run does the step and hands on.
 
 The day of a job is its `timestamp` argument (the scheduled time Procrastinate's periodic
 deferrer passes, and the time a chained defer was made), as a UTC date; the day compared is
@@ -115,6 +122,30 @@ def chain_timestamp(now: datetime) -> int:
     return int(now.timestamp())
 
 
+# The chained price fetch starts no earlier than this (UTC), its clock time until 23 Nov 2026:
+# an issuer may not have published the previous day's price before (review of 23 Nov 2026).
+PRICES_NOT_BEFORE = time(7, 0)
+
+
+def prices_floor(now: datetime) -> dict[str, datetime]:
+    """The defer option that holds a chained price fetch until PRICES_NOT_BEFORE of `now`'s
+    UTC day; nothing once that time has passed (the fetch then runs at once)."""
+    floor = datetime.combine(now.astimezone(UTC).date(), PRICES_NOT_BEFORE, tzinfo=UTC)
+    return {"schedule_at": floor} if now < floor else {}
+
+
+def defer_prices(engine: Engine, now: datetime) -> None:
+    """Queue the chained price fetch (its lock, a timestamp of now, the 07:00 floor)."""
+    with engine.begin() as conn:
+        _defer(
+            conn,
+            FETCH_PRICES_TASK,
+            FETCH_PRICES_LOCK,
+            kwargs={"timestamp": chain_timestamp(now)},
+            **prices_floor(now),
+        )
+
+
 def step_ran_today(engine: Engine, task: str, now: datetime, *, job_id: int | None) -> bool:
     """Whether another job of `task` with today's timestamp has succeeded. A succeeded job
     either did the step or skipped it because an earlier one had, so the first of the day
@@ -178,29 +209,24 @@ def after_wallets(engine: Engine, now: datetime, retry: list[tuple[UUID, UUID]])
     abrufen“'s priority, or else the price fetch."""
 
     def queue() -> None:
+        if not retry:
+            defer_prices(engine, now)
+            return
         with engine.begin() as conn:
-            if retry:
-                _defer(
-                    conn,
-                    SYNC_WALLETS_RETRY_TASK,
-                    SYNC_WALLETS_LOCK,
-                    schedule_in={"seconds": RETRY_DELAY_S},
-                    priority=RETRY_PRIORITY,
-                    kwargs={"timestamp": chain_timestamp(now), "addresses": encode_targets(retry)},
-                )
-            else:
-                _defer(
-                    conn,
-                    FETCH_PRICES_TASK,
-                    FETCH_PRICES_LOCK,
-                    kwargs={"timestamp": chain_timestamp(now)},
-                )
+            _defer(
+                conn,
+                SYNC_WALLETS_RETRY_TASK,
+                SYNC_WALLETS_LOCK,
+                schedule_in={"seconds": RETRY_DELAY_S},
+                priority=RETRY_PRIORITY,
+                kwargs={"timestamp": chain_timestamp(now), "addresses": encode_targets(retry)},
+            )
 
     _safely("after_wallets", queue)
 
 
 def after_wallet_retry(engine: Engine, now: datetime) -> None:
-    _safely(f"defer:{FETCH_PRICES_TASK}", defer_step, engine, FETCH_PRICES_TASK, now)
+    _safely(f"defer:{FETCH_PRICES_TASK}", defer_prices, engine, now)
 
 
 def _month_end_queued_today(conn: Any, now: datetime) -> bool:
@@ -381,28 +407,45 @@ def _is_first(now: datetime) -> bool:
     return now.astimezone(UTC).day == 1
 
 
+def log_again(task: str, job_id: int | None) -> None:
+    fields = {"event": "morning_step_again", "task": task, "job_id": job_id}
+    logger.info("morning step ran again, nothing handed on", extra={"fields": fields})
+
+
 def run_month_end_step(deps: JobDeps, *, job_id: int | None, workspace_ids: Any = None) -> bool:
     """The month-end, then health_daily. The capture runs on the 1st (UTC) only: on any other
-    day it would capture last month's month-end again, so the chained run only hands on."""
+    day it would capture last month's month-end again, so the chained run only hands on.
+
+    Unlike the prices, a second run the same day (the clock's, after the chained one) does
+    the capture again and hands nothing on: the gate fires once the last bank run has ended,
+    while that run's matching jobs may still be queued, so a payment on the month's last day
+    can be booked after the chained capture. capture_month_end writes a new run only when
+    the figures changed (`recaptured`), so the second run costs nothing otherwise. Whether
+    it handed on."""
     now = deps.clock()
-    if step_ran_today(deps.engine, MONTH_END_TASK, now, job_id=job_id):
-        log_skipped(MONTH_END_TASK, job_id)
-        return False
+    again = step_ran_today(deps.engine, MONTH_END_TASK, now, job_id=job_id)
     if _is_first(now):
         run_month_end(deps, workspace_ids=workspace_ids)
     else:
         fields = {"event": "month_end_not_due", "job_id": job_id}
         logger.info("no month-end today", extra={"fields": fields})
+    if again:
+        log_again(MONTH_END_TASK, job_id)
+        return False
     hand_on(deps.engine, MONTH_END_TASK, now)
     return True
 
 
 def run_health_step(deps: JobDeps, *, job_id: int | None, workspace_ids: Any = None) -> bool:
+    """The key figures, then the warm step. A second run the same day stores what the first
+    could not (a month that closed since; store_missing_snapshots leaves a stored month
+    alone) and hands nothing on. Whether it handed on."""
     now = deps.clock()
-    if step_ran_today(deps.engine, HEALTH_DAILY_TASK, now, job_id=job_id):
-        log_skipped(HEALTH_DAILY_TASK, job_id)
-        return False
+    again = step_ran_today(deps.engine, HEALTH_DAILY_TASK, now, job_id=job_id)
     run_health_daily(deps, workspace_ids=workspace_ids)
+    if again:
+        log_again(HEALTH_DAILY_TASK, job_id)
+        return False
     hand_on(deps.engine, HEALTH_DAILY_TASK, now)
     return True
 

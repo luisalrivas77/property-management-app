@@ -51,6 +51,14 @@ def test_the_day_is_the_utc_day_of_the_clock():
     assert not morning._is_first(datetime(2026, 12, 2, 6, 30, tzinfo=UTC))
 
 
+def test_the_chained_price_fetch_is_never_earlier_than_seven():
+    seven = datetime(2026, 12, 1, 7, 0, tzinfo=UTC)
+    assert morning.prices_floor(datetime(2026, 12, 1, 6, 31, tzinfo=UTC)) == {"schedule_at": seven}
+    assert morning.prices_floor(datetime(2026, 12, 1, 0, 5, tzinfo=UTC)) == {"schedule_at": seven}
+    assert morning.prices_floor(seven) == {}
+    assert morning.prices_floor(datetime(2026, 12, 1, 9, 0, tzinfo=UTC)) == {}
+
+
 def _outcome(status, code=None):
     return SyncOutcome(
         address_id=uuid.uuid4(), chain="bitcoin", sync_id=None, status=status, error_code=code

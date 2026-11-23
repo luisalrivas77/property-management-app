@@ -12,10 +12,13 @@ worker would run is run here by calling its step with the job's own id, the job 
 
 import asyncio
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from db.test_jobs_bank_sync import Bank, _good
+from db.test_services_net_worth import NOW, ON, _account, _import
+from db.test_services_net_worth_transit import CURRENT_IBAN, DEPOT_IBAN, _book, _line
 from db.test_wallet_sync_core import SETTINGS, SOL_A, wallet, world  # noqa: F401 - fixtures
 from fints_fake import factory
 from sqlalchemy import select, text
@@ -38,8 +41,11 @@ from hausbuch.jobs.sync_wallets import (
     WalletRunResult,
 )
 from hausbuch.rules.errors import WALLET_SOURCE_FAILED
+from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.bank_sync import SyncStatus
 from hausbuch.schemas.chain import WalletSyncStatus
+from hausbuch.schemas.enums import AccountKind
+from hausbuch.services import net_worth
 from hausbuch.services.chain.base import ChainSourceError
 
 pytestmark = pytest.mark.db
@@ -336,13 +342,25 @@ STEPS = [
 ]
 
 
+# What the clock's run does after a chained run of the same task succeeded today: the prices
+# nothing (never fetched twice a day); the month-end and the key figures their idempotent work
+# again (a last-day payment booked after the chained capture), handing nothing on.
+AGAIN = {
+    FETCH_PRICES_TASK: [],
+    MONTH_END_TASK: [MONTH_END_TASK],
+    HEALTH_DAILY_TASK: [HEALTH_DAILY_TASK],
+}
+
+
 @pytest.mark.parametrize(("task", "step", "following"), STEPS)
-def test_the_fallback_does_nothing_after_the_chained_run(app_engine, work, task, step, following):
+def test_the_fallback_hands_nothing_on_after_the_chained_run(
+    app_engine, work, task, step, following
+):
     deps = _deps(app_engine, FIRST + timedelta(hours=2))
     _add(app_engine, task, FIRST, status="succeeded")  # the chained run, done
     fallback = _add(app_engine, task, FIRST + timedelta(hours=1))
     assert step(deps, job_id=fallback) is False
-    assert work.calls == [] and _jobs(app_engine, following) == []
+    assert work.calls == AGAIN[task] and _jobs(app_engine, following) == []
 
 
 @pytest.mark.parametrize(("task", "step", "following"), STEPS)
@@ -378,6 +396,81 @@ def test_on_a_day_that_closes_no_month_the_month_end_only_hands_on(app_engine, w
     assert work.calls == []
     (health,) = _todo(app_engine, HEALTH_DAILY_TASK)
     assert health.lock == HEALTH_DAILY_LOCK
+
+
+def test_the_clocks_month_end_recaptures_a_last_day_payment_booked_after_the_chain(
+    app_engine, run, read, fresh_workspaces
+):
+    """The gate fires once the last bank run has ended, while its matching jobs may still be
+    queued: a transfer debited on the month's last day is booked after the chained capture.
+    The 08:00 run captures again (a new run, the money in transit to the depot counted) and
+    hands nothing on: health_daily was queued once, by the chained run."""
+    ws, _ = fresh_workspaces
+    current = _account(
+        run, ws, "Girokonto", AccountKind.BANK_CURRENT, iban=CURRENT_IBAN, opening="1000.00"
+    )
+    depot = _account(run, ws, "Depot", AccountKind.DEPOT, iban=DEPOT_IBAN)
+
+    def stored(ctx):
+        statement = _import(ctx, current, date(2026, 7, 1), ON)
+        debit = _line(ctx, current, statement, ON, "-500.00", iban=DEPOT_IBAN)
+        cash = _import(ctx, depot, date(2026, 7, 1), date(2026, 10, 20))
+        _line(ctx, depot, cash, date(2026, 10, 1), "200.00")
+        return debit
+
+    debit = run(ws, stored, now=NOW)  # the bank run imported it; its match job still waits
+    morning_at = datetime(2026, 11, 1, 6, 50, tzinfo=UTC)
+
+    chained = _add(app_engine, MONTH_END_TASK, morning_at)
+    deps = _deps(app_engine, morning_at)
+    assert morning.run_month_end_step(deps, job_id=chained, workspace_ids=[ws]) is True
+    _set(app_engine, chained, "succeeded")
+    early = read(ws, net_worth.latest_month_end)
+    assert early.total == Decimal("700.00")  # the 500 € sent on 31 Oct are in no line yet
+    assert len(_todo(app_engine, HEALTH_DAILY_TASK)) == 1
+
+    _book(run, ws, debit, "-500.00", AllocationCategory.INTERNAL_TRANSFER_OUT)  # the match
+
+    clock_at = datetime(2026, 11, 1, 8, 0, tzinfo=UTC)
+    fallback = _add(app_engine, MONTH_END_TASK, clock_at)
+    deps = _deps(app_engine, clock_at)
+    assert morning.run_month_end_step(deps, job_id=fallback, workspace_ids=[ws]) is False
+    late = read(ws, net_worth.latest_month_end)
+    assert late.total == Decimal("1200.00")  # recaptured: the money on its way to the depot
+    assert late.run.net_worth_run_id != early.run.net_worth_run_id
+    assert len(_jobs(app_engine, HEALTH_DAILY_TASK)) == 1  # no second hand-on
+
+
+# --- The prices' 07:00 floor ----------------------------------------------------------------
+
+
+def _scheduled_at(engine, job_id):
+    with engine.begin() as conn:
+        return conn.execute(
+            text("SELECT scheduled_at FROM procrastinate_jobs WHERE id = :id"), {"id": job_id}
+        ).scalar_one()
+
+
+def test_the_chained_price_fetch_waits_for_seven_and_not_after(app_engine, monkeypatch):
+    monkeypatch.setattr(morning, "run_sync_wallets", lambda deps, **kw: WalletRunResult())
+    morning.run_wallets_step(_deps(app_engine, FIRST), workspace_ids=[])  # 06:30
+    (early,) = _jobs(app_engine, FETCH_PRICES_TASK)
+    assert _scheduled_at(app_engine, early.id) == datetime(2026, 12, 1, 7, 0, tzinfo=UTC)
+    assert early.args["timestamp"] == int(FIRST.timestamp())
+
+    _delete_jobs(app_engine)
+    late_at = datetime(2026, 12, 1, 7, 10, tzinfo=UTC)
+    morning.run_wallets_step(_deps(app_engine, late_at), workspace_ids=[])
+    (late,) = _jobs(app_engine, FETCH_PRICES_TASK)
+    assert _scheduled_at(app_engine, late.id) is None  # at once
+
+
+def test_the_retry_queues_the_price_fetch_with_the_same_floor(app_engine, monkeypatch):
+    monkeypatch.setattr(morning, "run_retry_wallets", lambda deps, targets: WalletRunResult())
+    at = datetime(2026, 12, 1, 6, 41, tzinfo=UTC)
+    morning.run_wallet_retry_step(_deps(app_engine, at), [])
+    (prices,) = _jobs(app_engine, FETCH_PRICES_TASK)
+    assert _scheduled_at(app_engine, prices.id) == datetime(2026, 12, 1, 7, 0, tzinfo=UTC)
 
 
 # --- The wallets' one retry -----------------------------------------------------------------
