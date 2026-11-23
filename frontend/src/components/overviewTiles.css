@@ -90,42 +90,14 @@
   font-size: 2rem;
 }
 
+/* One line each (phase 10 §7.6 rule (1)): a longer line is cut, so no tile grows and stretches
+ * the others in its row; the whole text stays the link's name and is in the tile's panel. */
 .tile-sub {
+  max-width: 100%;
+  overflow: hidden;
   font-size: 0.875rem;
   color: var(--muted);
-}
-
-.tile-note {
-  align-self: flex-start;
-  margin-top: 4px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--info-bg);
-  color: var(--info-text);
-  font-size: 0.8125rem;
-  font-weight: 600;
-}
-
-.tile-pairs {
-  display: grid;
-  gap: 2px;
-  margin: 6px 0 0;
-  font-size: 0.875rem;
-}
-
-.tile-pairs > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.tile-pairs dt {
-  color: var(--muted);
-}
-
-.tile-pairs dd {
-  margin: 0;
-  font-weight: 700;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -160,63 +132,6 @@
 .tile-review .tile-name,
 .tile-review .tile-sub {
   color: var(--info-text);
-}
-
-.tile-split {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.tile-split-bar {
-  display: flex;
-  height: 10px;
-  border-radius: 5px;
-  overflow: hidden;
-  background: var(--divider);
-}
-
-.tile-split-bar > span,
-.tile-legend-swatch {
-  background: var(--kind-cash);
-}
-
-.tile-split-bar > span[data-kind="property"],
-.tile-legend-swatch[data-kind="property"] {
-  background: var(--kind-property);
-}
-.tile-split-bar > span[data-kind="depot"],
-.tile-legend-swatch[data-kind="depot"] {
-  background: var(--kind-funds);
-}
-.tile-split-bar > span[data-kind="crypto"],
-.tile-legend-swatch[data-kind="crypto"] {
-  background: var(--kind-crypto);
-}
-
-.tile-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 0.8125rem;
-  color: var(--muted);
-}
-
-.tile-legend li {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.tile-legend-swatch {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
 }
 
 .tiles-foot {

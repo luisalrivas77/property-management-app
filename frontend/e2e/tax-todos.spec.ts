@@ -6,6 +6,7 @@
 // through the API, closes the to-do. Synthetic data only.
 import path from "node:path";
 
+import { overviewTodos, showAllTodos } from "./overviewTodos";
 import { apiCall, expect, test } from "./support";
 
 const YEAR = 2026;
@@ -43,7 +44,7 @@ test("a missing price split is a to-do with its button, and recording one closes
 
   // Übersicht gathers the household's to-dos, each with its property and the same action.
   await page.goto("/");
-  const overview = page.getByRole("region", { name: "Was noch fehlt" });
+  const overview = await overviewTodos(page);
   const entry = overview.getByRole("listitem").filter({ hasText: GAP });
   await expect(entry).toContainText("Wohnung To-do");
   await expect(entry.getByRole("button", { name: "Kaufvertrag hochladen" })).toBeVisible();
@@ -135,7 +136,7 @@ test("a missing market rent is one to-do, not two", async ({ page, signedIn }) =
   await expect(todos.getByRole("listitem").filter({ hasText: "Ortsübliche Miete: fehlt" })).toHaveCount(0);
 
   await page.goto("/");
-  const overview = page.getByRole("region", { name: "Was noch fehlt" });
+  const overview = await overviewTodos(page);
   const mine = overview.getByRole("listitem").filter({ hasText: label });
   await expect(mine.filter({ hasText: "Ortsübliche Miete fehlt" })).toHaveCount(1);
   await expect(mine.filter({ hasText: "Ortsübliche Miete" })).toHaveCount(1);
@@ -323,7 +324,7 @@ test("one deposit line is split to three tenancies from the to-do", async ({ pag
 
   // Übersicht offers the same button beside the property's name.
   await page.goto("/");
-  const overview = page.getByRole("region", { name: "Was noch fehlt" });
+  const overview = await overviewTodos(page);
   const first = overview.getByRole("listitem").filter({ hasText: "Kautionsnachweis · Zimmer 1, ab 01.07.2024: fehlt" });
   await expect(first).toContainText(label);
   await expect(first.getByRole("button", { name: "Kaution aus Bankumsatz zuordnen" })).toBeVisible();
@@ -440,7 +441,7 @@ test("an owner without any pay this year is a to-do, and an expected gross pay c
   const owner = await apiCall<{ id: string }>(page, "POST", "/api/owners", { full_name: "A. Lohnlos", church_tax: false });
 
   await page.goto("/");
-  const overview = page.getByRole("region", { name: "Was noch fehlt" });
+  const overview = await overviewTodos(page);
   const entry = overview.getByRole("listitem").filter({ hasText: `Arbeitslohn ${year} fehlt` });
   await expect(entry).toContainText("A. Lohnlos");
   await expect(entry).toContainText("letzte Gehaltsabrechnung hochladen");
@@ -460,6 +461,6 @@ test("an owner without any pay this year is a to-do, and an expected gross pay c
     withdrawn: false,
   });
   await page.reload();
-  await expect(overview.getByText("Lädt …")).toHaveCount(0); // loaded, so the next check is not vacuous
+  await showAllTodos(overview); // loaded and opened in full, so the next check is not vacuous
   await expect(overview.getByRole("listitem").filter({ hasText: `Arbeitslohn ${year} fehlt` })).toHaveCount(0);
 });

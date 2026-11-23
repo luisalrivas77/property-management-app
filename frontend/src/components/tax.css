@@ -563,6 +563,22 @@ button.link.tax-sources-button {
   font-size: 14px;
 }
 
+/* The guide's text behind „Warum?“, closed by default (phase 10 §7.6). */
+.todo-why {
+  margin-top: 4px;
+}
+
+.todo-why > summary {
+  cursor: pointer;
+  width: fit-content;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.todo-more {
+  margin-top: 8px;
+}
+
 .todo-actions {
   margin-top: 6px;
   flex-wrap: wrap;

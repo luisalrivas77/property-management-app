@@ -3,7 +3,10 @@
 // Übersicht's tiles (mockup 15-B2, phase 10 D268): the net worth with the month's cash flow under
 // it, one tile per kind of asset (property, ETF depot, crypto, bank) with its colour as an edge
 // stripe, the three key figures with their mark as a dot before the name (an empty dot while no
-// limit is confirmed; never a colour word), and Zu prüfen. A tapped tile opens its summary in the
+// limit is confirmed; never a colour word), and Zu prüfen. Each tile is a name, one number and at
+// most one line (phase 10 §7.6 rule (1)): the Immobilie tile's break-even year, profit at a sale
+// today, value less loans and the properties left out, the net worth's split and its to-dos and
+// the credit card's balance are in their panels only. A tapped tile opens its summary in the
 // detail panel with one button into its section. Every euro figure and every share is the
 // server's (/net-worth/overview, /health, /household/cashflow, /inbox, /properties/equity,
 // /properties/payback; /health/months only when /health's last ended month is not the tile's);
@@ -103,11 +106,6 @@ function breakEvenText(
   return null;
 }
 
-/** How many properties the server left out of the totals (each with its reason in the panel). */
-function leftOut(back: PropertiesPayback): number {
-  return back.properties.filter((p) => p.reason != null).length;
-}
-
 /** The profit today misses a tax: a counted property's sale is taxable with a gain but no income
  * is entered (the server's tax_not_computed). */
 function profitIncomplete(back: PropertiesPayback): boolean {
@@ -184,36 +182,6 @@ function Wait<D>({ state, children }: { state: Loaded<D>; children: (data: D) =>
   return <span className="tile-sub">{state.error ? "–" : "…"}</span>;
 }
 
-/** The split of the gross assets by kind, from /health's shares (D240): a bar and its legend. */
-function SplitBar({ split, t, f }: { split: Record<string, string>; t: T; f: Formatter }) {
-  const parts = (
-    [
-      ["property", t.shareProperty],
-      ["depot", t.shareDepot],
-      ["crypto", t.shareCrypto],
-      ["bank", t.shareBank],
-    ] as const
-  ).filter(([key]) => split[key] != null && !/^0+(\.0+)?$/.test(split[key] ?? ""));
-  if (parts.length === 0) return null;
-  return (
-    <div className="tile-split">
-      <div className="tile-split-bar" role="img" aria-label={`${t.splitLabel}: ${parts.map(([key, label]) => `${label} ${f.percent(split[key])}`).join(", ")}`}>
-        {parts.map(([key]) => (
-          <span key={key} data-kind={key} style={{ flexGrow: 0, flexBasis: `calc(${split[key]} * 100%)` }} />
-        ))}
-      </div>
-      <ul className="tile-legend" aria-hidden="true">
-        {parts.map(([key, label]) => (
-          <li key={key}>
-            <span className="tile-legend-swatch" data-kind={key} />
-            {label} {f.percent(split[key])}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail }) {
   const t = useT(catalogue);
   const f = useFormat();
@@ -236,10 +204,6 @@ export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail
               <>
                 <span className="tile-value tile-value-big">{f.money(today.total)}</span>
                 <span className="tile-sub">{t.today}</span>
-                {(today.todos ?? []).length > 0 ? (
-                  <span className="tile-note">{t.netWorthTodos((today.todos ?? []).length)}</span>
-                ) : null}
-                {health.data?.split ? <SplitBar split={health.data.split} t={t} f={f} /> : null}
               </>
             )}
           </Wait>
@@ -270,50 +234,16 @@ export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail
               back.properties.some((p) => p.reason == null) ? (
                 <>
                   <span className="tile-value">{f.money(back.cash_back)}</span>
-                  <span className="tile-sub">{t.backSoFar}</span>
-                  <span className="tile-sub">{t.backOf(f.money(back.paid_in), back.percent != null ? points(f, back.percent) : null)}</span>
-                  {breakEvenText(t, back) ? (
-                    <span className="tile-sub">{breakEvenText(t, back)}</span>
-                  ) : back.properties.some((p) => p.reason == null && p.projection_error_code) ? (
-                    <span className="tile-note">{t.breakEvenCheckPlan}</span>
-                  ) : null}
-                  {leftOut(back) > 0 ? <span className="tile-note">{t.leftOutTile(leftOut(back))}</span> : null}
+                  <span className="tile-sub">{t.backTileLine(f.money(back.paid_in), back.percent != null ? points(f, back.percent) : null)}</span>
                 </>
               ) : (
                 <>
                   <span className="tile-value">–</span>
-                  <span className="tile-sub">{t.backSoFar}</span>
                   <span className="tile-sub">{t.backNone}</span>
-                  {leftOut(back) > 0 ? <span className="tile-note">{t.leftOutTile(leftOut(back))}</span> : null}
                 </>
               )
             }
           </Wait>
-          <dl className="tile-pairs">
-            <div>
-              <dt>{t.profitToday}</dt>
-              <dd>
-                <Wait state={payback}>
-                  {(back) =>
-                    back.properties.some((p) => p.reason == null) ? (
-                      <>
-                        {f.money(back.profit_today)}
-                        {profitIncomplete(back) ? <span className="tile-note"> ({t.profitNoTax})</span> : null}
-                      </>
-                    ) : (
-                      "–"
-                    )
-                  }
-                </Wait>
-              </dd>
-            </div>
-            <div>
-              <dt>{t.propertyNet}</dt>
-              <dd>
-                <Wait state={netWorth}>{(today) => f.money(today.property_net)}</Wait>
-              </dd>
-            </div>
-          </dl>
         </Tile>
         <Tile id="depot" detail={detail} stripe="funds" name={t.depot}>
           <Wait state={netWorth}>
@@ -344,14 +274,6 @@ export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail
                   {t.bankAccounts(bankAccounts(lines))}
                   {cards.length > 0 ? `, ${t.cards(cards.length)}` : ""}
                 </span>
-                {cards.length === 1 && cards[0]?.value_eur != null ? (
-                  <dl className="tile-pairs">
-                    <div>
-                      <dt>{t.creditCard}</dt>
-                      <dd>{f.money(cards[0].value_eur)}</dd>
-                    </div>
-                  </dl>
-                ) : null}
               </>
             )}
           </Wait>
