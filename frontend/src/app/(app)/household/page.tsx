@@ -173,6 +173,10 @@ function Household() {
   const current = todayIso().slice(0, 7);
   const month = chosenMonth(search.get("monat"), current);
   const setMonth = (next: string) => router.replace(`${pathname}?monat=${next}`, { scroll: false });
+  // A month-end captured in „Noch keine Durchschnitte“ reads the reserve and the Kennzahlen below
+  // again (phase 10 §7.6 (f)).
+  const [healthRefresh, setHealthRefresh] = useState(0);
+  const healthChanged = useCallback(() => setHealthRefresh((n) => n + 1), []);
 
   return (
     <section>
@@ -196,18 +200,23 @@ function Household() {
           </select>
         </label>
       </div>
-      <HouseholdYear month={month} />
+      <HouseholdYear month={month} onHealthChanged={healthChanged} />
       <div className="stack household-health">
-        <HouseholdHealthSection />
+        <HouseholdHealthSection refresh={healthRefresh} />
       </div>
     </section>
   );
 }
 
-function HouseholdYear({ month }: { month: string }) {
+function HouseholdYear({ month, onHealthChanged }: { month: string; onHealthChanged: () => void }) {
   const load = useCallback(() => loadYear(month), [month]);
   const year = useLoad(load);
-  return <Loading state={year}>{(data) => <HouseholdMonth year={data} onChanged={year.reload} />}</Loading>;
+  const { reload } = year;
+  const changed = useCallback(() => {
+    reload();
+    onHealthChanged();
+  }, [reload, onHealthChanged]);
+  return <Loading state={year}>{(data) => <HouseholdMonth year={data} onChanged={changed} />}</Loading>;
 }
 
 function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void }) {
@@ -233,6 +242,10 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
   // What holds the month after the window open (its own closing to-dos), when it is loaded.
   const after = health.find((h) => (last === undefined || h.month > last) && !h.closed.closed);
   const tooFew = (overall.todos ?? []).filter((todo) => todo.code === "too_few_months");
+  // What holds the next month open: from the months shown, else (a month chosen before it) GET
+  // /health's own, which the Kennzahlen below no longer repeat (phase 10 §7.6 (f)).
+  const holding =
+    after?.closed.todos ?? (overall.todos ?? []).filter((todo) => todo.code !== "too_few_months" && todo.code !== "bands_unconfirmed");
 
   let panel = null;
   if (view?.stored && closingDetail.id === month.month) {
@@ -299,7 +312,7 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
           <section className="card stack" aria-labelledby="window-title">
             <h2 id="window-title">{t.noMeansTitle}</h2>
             <p className="muted">{t.noMeansText(closed.length)}</p>
-            <HealthTodoList todos={[...tooFew, ...(after?.closed.todos ?? [])]} onChanged={onChanged} />
+            <HealthTodoList todos={[...tooFew, ...holding]} onChanged={onChanged} />
           </section>
         )}
         <SurplusBars months={months} windowMonths={means} savedLink={savedDetail.linkProps(month.month)} />
