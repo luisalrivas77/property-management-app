@@ -116,6 +116,8 @@ const payback: PropertiesPayback = {
   properties: [{ property_id: FLAT, label: "Wohnung Beispiel", paid_in: "60000.00", cash_back: "6000.00" }],
   paid_in: "60000.00",
   cash_back: "6000.00",
+  arrived: "6000.00",
+  expected_tax_refund: "0.00",
   profit_today: "0.00",
 };
 
