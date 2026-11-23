@@ -268,3 +268,51 @@
   margin: 0;
   white-space: nowrap;
 }
+
+/* Anlagen's headline figures (phase 10 §7.6, Luis 23 Nov 2026): each tab's total large, the
+   split of the assets inside the total card, a card per kind or portfolio. */
+.asset-total .planning-kpi-label {
+  margin: 0;
+}
+
+.asset-total-value,
+.planning-kpi p.asset-total-value {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.asset-kind-card,
+.asset-portfolio-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+}
+
+.asset-kind-card:hover,
+.asset-portfolio-card:hover,
+.asset-kind-card[aria-current="true"],
+.asset-portfolio-card[aria-current="true"] {
+  border-color: var(--border-strong);
+}
+
+.asset-portfolio-gain {
+  font-variant-numeric: tabular-nums;
+}
+
+.asset-gain-todos {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.asset-foot {
+  display: flex;
+  justify-content: flex-start;
+}
