@@ -109,16 +109,20 @@ export default function OverviewPage() {
         <OverviewTodos reminders={reminders.data ?? []} onRemindersChanged={reminders.reload} after={gate.promise} />
         <Loading state={reminders}>{(list) => <NextDates reminders={list} onChanged={reminders.reload} />}</Loading>
         <HealthSection health={health} after={gate.promise} />
-        {propertyList.data?.length === 0 ? (
-          <div className="card stack">
-            <p>{t.noProperty}</p>
-            <p className="muted">{t.noPropertyHint}</p>
-            <p className="row">
-              <Link href="/owners">{t.owners}</Link>
-              <Link href="/properties/new">{t.newProperty}</Link>
-            </p>
-          </div>
-        ) : null}
+        <Loading state={propertyList}>
+          {(list) =>
+            list.length === 0 ? (
+              <div className="card stack">
+                <p>{t.noProperty}</p>
+                <p className="muted">{t.noPropertyHint}</p>
+                <p className="row">
+                  <Link href="/owners">{t.owners}</Link>
+                  <Link href="/properties/new">{t.newProperty}</Link>
+                </p>
+              </div>
+            ) : null
+          }
+        </Loading>
       </section>
     </DetailLayout>
   );
