@@ -10771,7 +10771,7 @@ export interface components {
          * @description Why a portfolio shows no yearly return (rules.performance.portfolio.NoRate).
          * @enum {string}
          */
-        NoRateReason: "short_history" | "unpriced" | "no_flows" | "no_rate";
+        NoRateReason: "short_history" | "unpriced" | "unvalued" | "no_flows" | "no_rate";
         /** NotarizedOnCorrection */
         NotarizedOnCorrection: {
             /**
@@ -11608,7 +11608,9 @@ export interface components {
          * PortfolioFigures
          * @description Gain since the start = value + taken out − paid in; `gain_ratio` = gain ÷ paid in;
          *     `yearly_return` the money-weighted return (xirr), None for less than a year of history
-         *     (`no_rate`). Every figure None (but the value) when a payment's euros are unknown.
+         *     (`no_rate`). Every figure None (but the value) when a payment's euros are unknown
+         *     (`unpriced_flows`) or a position held today has no value (`unvalued_positions`, the value
+         *     then leaving it out); a total is None when one of its portfolios is.
          */
         PortfolioFigures: {
             /** Start */
@@ -11631,6 +11633,11 @@ export interface components {
              * @default 0
              */
             unpriced_flows: number;
+            /**
+             * Unvalued Positions
+             * @default 0
+             */
+            unvalued_positions: number;
         };
         /**
          * PortfolioFlow

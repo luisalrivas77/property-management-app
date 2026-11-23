@@ -7,7 +7,8 @@
 // (principle 1); a payment opens what it was read from (principle 2). A figure the server cannot
 // give is a plain to-do with its link (principle 7): a transfer without that day's price links
 // „Kurs eintragen“ for its coin and day, a wallet's waiting movements „Transaktionen prüfen“, a
-// depot's unassigned statement lines its account; never „0 €“ or a bare „–“.
+// depot's unassigned statement lines its account, a position held today without a value
+// (`unvalued_positions`) „Bestand prüfen“ on its account; never „0 €“ or a bare „–“.
 import Link from "next/link";
 import { type ReactNode, useId, useState } from "react";
 
@@ -116,6 +117,14 @@ export function GainTodos({ portfolios }: { portfolios: PortfolioPerformance[] }
         </li>,
       );
     }
+    if (portfolio.figures.unvalued_positions > 0) {
+      items.push(
+        <li key={`${portfolio.account_id}-unvalued`}>
+          {portfolio.label}: {t.gainUnvalued(portfolio.figures.unvalued_positions)}{" "}
+          <Link href={`/accounts/${portfolio.account_id}`}>{t.checkPositions}</Link>
+        </li>,
+      );
+    }
     if (portfolio.waiting) {
       items.push(
         <li key={`${portfolio.account_id}-waiting`}>
@@ -162,7 +171,9 @@ export function PortfolioCard({
       ? t.unbookedLines(portfolio.unbooked_lines)
       : unpriced > 0
         ? t.gainUnpriced(unpriced)
-        : null;
+        : figures.unvalued_positions > 0
+          ? t.gainUnvalued(figures.unvalued_positions)
+          : null;
   return (
     <a {...link} className="card asset-portfolio-card" aria-label={portfolio.label}>
       <span className="asset-section-head">

@@ -19,6 +19,7 @@ from db.test_services_net_worth_transit import (
 from sqlalchemy import insert
 
 from hausbuch.db.tables import asset_movement as movement_table
+from hausbuch.db.tables import holding_statement as holding_table
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.portfolio import NoRateReason, PortfolioFlowKind
@@ -143,3 +144,46 @@ def test_a_depots_start_value_holds_what_came_before_its_first_statement(
         Decimal("0.00"),
         Decimal("240.00"),
     )
+
+
+def _report(ctx, depot, fund, as_of, units):
+    """A current depot report's position, as finish_report stores it."""
+    ctx.conn.execute(
+        insert(holding_table).values(
+            workspace_id=ctx.workspace_id,
+            account_id=depot,
+            asset_id=fund,
+            as_of=as_of,
+            declared_units=Decimal(units),
+            source="report",
+            created_at=ctx.now,
+        )
+    )
+
+
+def test_a_fund_its_report_contradicts_leaves_no_gain(run, read, fresh_workspaces):
+    """A depot without cash statements bought 10 units for 1,000 €; its report says 12, so the
+    overview leaves the fund unvalued and the depot's value reads 0. Its gain would read
+    −1,000 €: no gain, no percent and no rate are shown, with the reason, on the depot and
+    on the ETF total; the value stays the overview's."""
+    ws, _ = fresh_workspaces
+    depot = _account(run, ws, "Depot", AccountKind.DEPOT)
+
+    def stored(ctx):
+        fund = _asset(ctx, kind="etf", isin="IE00BEISPL09", name="Fonds Welt")
+        _moved(ctx, depot, fund, "acquisition", "10", date(2026, 7, 1), eur="-1000.00")
+        _price(ctx, fund, ON, "110", "user")
+        _report(ctx, depot, fund, date(2026, 9, 30), "12")
+
+    run(ws, stored)
+    seen = read(ws, assets_performance, ON)
+    [portfolio] = seen.portfolios
+    [overview] = read(ws, assets_overview, ON, today=ON).accounts
+    assert portfolio.figures.value_eur == overview.total_eur == Decimal("0.00")
+    for figures in (portfolio.figures, seen.etf, seen.invested):
+        assert (figures.gain_eur, figures.gain_ratio, figures.yearly_return) == (None,) * 3
+        assert (figures.paid_in_eur, figures.taken_out_eur) == (None, None)
+        assert figures.no_rate is NoRateReason.UNVALUED
+        assert figures.unvalued_positions == 1 and figures.unpriced_flows == 0
+    # The crypto total holds no such portfolio.
+    assert seen.crypto.unvalued_positions == 0 and seen.crypto.no_rate is NoRateReason.NO_FLOWS

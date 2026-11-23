@@ -251,6 +251,11 @@ const de = {
       ? "Für 1 Übertrag fehlt der Kurs des Tages; ohne ihn ist der Gewinn nicht berechenbar."
       : `Für ${n} Überträge fehlt der Kurs des Tages; ohne ihn ist der Gewinn nicht berechenbar.`,
   typePriceOn: (day: string) => `Kurs für den ${day} eintragen`,
+  gainUnvalued: (n: number) =>
+    n === 1
+      ? "1 Position hat heute keinen Wert (kein Kurs, oder der Depotbericht nennt andere Stückzahlen); ohne ihn ist der Gewinn nicht berechenbar."
+      : `${n} Positionen haben heute keinen Wert (kein Kurs, oder der Depotbericht nennt andere Stückzahlen); ohne ihn ist der Gewinn nicht berechenbar.`,
+  checkPositions: "Bestand prüfen",
   gainWaiting: "Transaktionen warten auf Prüfung; bis dahin fehlen sie im Gewinn.",
   reviewTransactions: "Transaktionen prüfen",
   unbookedLines: (n: number) =>
@@ -540,6 +545,11 @@ const en: Messages = {
       ? "1 transfer has no price for its day; without it the gain cannot be computed."
       : `${n} transfers have no price for their day; without it the gain cannot be computed.`,
   typePriceOn: (day) => `Enter the price for ${day}`,
+  gainUnvalued: (n) =>
+    n === 1
+      ? "1 position has no value today (no price, or the depot report lists other units); without it the gain cannot be computed."
+      : `${n} positions have no value today (no price, or the depot report lists other units); without it the gain cannot be computed.`,
+  checkPositions: "Check holdings",
   gainWaiting: "Transactions wait for review; until then they are missing from the gain.",
   reviewTransactions: "Review transactions",
   unbookedLines: (n) =>

@@ -5,7 +5,9 @@ rules/performance/portfolio.py. Read only.
 **Today's value** of each portfolio (a depot, an exchange, a wallet) is its `total_eur` on
 GET /assets/overview (`prices.overview.assets_overview` on today with the live day), the
 figure Anlagen and the net worth show; an account the overview leaves out (nothing held, no
-cash) is worth 0.
+cash) is worth 0. A position the overview cannot value (no price, or units a depot report
+contradicts) is left out of that total, so the portfolio's gain, percent and rate are not
+computed (`unvalued`), nor those of a total that holds it.
 
 **Money in and out** (+ paid in, − taken out), from confirmed rows only, through today:
 
@@ -266,6 +268,7 @@ def _figures(p: R.Performance) -> PortfolioFigures:
         yearly_return=rate,
         no_rate=reason,
         unpriced_flows=p.unpriced,
+        unvalued_positions=p.unvalued,
     )
 
 
@@ -303,6 +306,11 @@ def assets_performance(conn: Connection, today: date) -> AssetsPerformance:
     kinds = {a.id: AccountKind(a.kind) for a in accounts}
     overview = assets_overview(conn, today, today=today)
     values = {a.account_id: a.total_eur for a in overview.accounts}
+    unvalued = {
+        a.account_id: n
+        for a in overview.accounts
+        if (n := sum(1 for p in a.positions if p.value_eur is None))
+    }
     waiting = {w.account_id for w in overview.waiting}
     flows = _Flows()
     other = _links(conn)
@@ -408,7 +416,7 @@ def assets_performance(conn: Connection, today: date) -> AssetsPerformance:
             account_id=r.id,
             label=r.label,
             kind=kinds[r.id],
-            figures=_figures(R.combined(flows.rule, values, {r.id}, today)),
+            figures=_figures(R.combined(flows.rule, values, {r.id}, today, unvalued)),
             flows=sorted(by_account.get(r.id, []), key=lambda f: f.on),
             unbooked_lines=unbooked.get(r.id, 0),
             waiting=r.id in waiting,
@@ -418,9 +426,9 @@ def assets_performance(conn: Connection, today: date) -> AssetsPerformance:
     ]
     etf_ids = {i for i in ids if kinds[i] in _ETF_KINDS}
     crypto_ids = {i for i in ids if kinds[i] in _CRYPTO_KINDS}
-    etf = _figures(R.combined(flows.rule, values, etf_ids, today))
-    crypto = _figures(R.combined(flows.rule, values, crypto_ids, today))
-    invested = _figures(R.combined(flows.rule, values, etf_ids | crypto_ids, today))
+    etf = _figures(R.combined(flows.rule, values, etf_ids, today, unvalued))
+    crypto = _figures(R.combined(flows.rule, values, crypto_ids, today, unvalued))
+    invested = _figures(R.combined(flows.rule, values, etf_ids | crypto_ids, today, unvalued))
     estimate, loans = property_net_on(conn, today)
     gross, tax = _distributions(conn, etf_ids, today)
     return AssetsPerformance(

@@ -30,6 +30,9 @@ class NoRateReason(StrEnum):
 
     SHORT_HISTORY = "short_history"  # less than a year since the start: euros and percent only
     UNPRICED = "unpriced"  # a payment's euros are unknown (units moved on a day with no price)
+    # A position held today has no value (no price, or units a depot report contradicts): the
+    # value would read too low while its purchase stays paid in, so no gain is shown.
+    UNVALUED = "unvalued"
     NO_FLOWS = "no_flows"  # nothing paid in or taken out
     NO_RATE = "no_rate"  # the payments have no rate
 
@@ -73,7 +76,9 @@ class PortfolioFlow(Schema):
 class PortfolioFigures(Schema):
     """Gain since the start = value + taken out − paid in; `gain_ratio` = gain ÷ paid in;
     `yearly_return` the money-weighted return (xirr), None for less than a year of history
-    (`no_rate`). Every figure None (but the value) when a payment's euros are unknown."""
+    (`no_rate`). Every figure None (but the value) when a payment's euros are unknown
+    (`unpriced_flows`) or a position held today has no value (`unvalued_positions`, the value
+    then leaving it out); a total is None when one of its portfolios is."""
 
     start: date | None = None
     value_eur: Money
@@ -84,6 +89,7 @@ class PortfolioFigures(Schema):
     yearly_return: ReturnRate | None = None
     no_rate: NoRateReason | None = None
     unpriced_flows: int = Field(default=0, ge=0)
+    unvalued_positions: int = Field(default=0, ge=0)
 
 
 class PortfolioPerformance(Schema):

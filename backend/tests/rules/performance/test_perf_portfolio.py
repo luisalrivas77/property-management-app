@@ -154,3 +154,21 @@ def test_a_pair_inside_one_portfolio_nets_out():
     ]
     p = combined(flows, {"w": D("1100.00")}, {"w"}, date(2026, 2, 1))
     assert (p.paid_in, p.taken_out, p.gain) == (D("1000.00"), D("0.00"), D("100.00"))
+
+
+def test_a_position_without_a_value_leaves_the_figures_unknown():
+    # 1,000 paid in; today's value 400 leaves out a fund with no value: no gain of −600, no
+    # percent, no rate, and a set holding that portfolio is unknown too.
+    flows = [
+        Flow("a", date(2025, 1, 1), D("1000.00"), "t1"),
+        Flow("b", date(2025, 1, 1), D("500.00"), "t2"),
+    ]
+    p = performance(flows[:1], D("400.00"), date(2026, 6, 1), unvalued=1)
+    assert (p.paid_in, p.taken_out, p.gain, p.gain_ratio, p.yearly_return) == (None,) * 5
+    assert (p.no_rate, p.unvalued, p.unpriced, p.value) == (NoRate.UNVALUED, 1, 0, D("400.00"))
+    values = {"a": D("400.00"), "b": D("550.00")}
+    total = combined(flows, values, {"a", "b"}, date(2026, 6, 1), {"a": 1})
+    assert total.gain is None and total.no_rate is NoRate.UNVALUED and total.unvalued == 1
+    assert total.value == D("950.00")
+    alone = combined(flows, values, {"b"}, date(2026, 6, 1), {"a": 1})
+    assert alone.gain == D("50.00") and alone.unvalued == 0

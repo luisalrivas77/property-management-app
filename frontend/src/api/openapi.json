@@ -27579,6 +27579,7 @@
         "enum": [
           "short_history",
           "unpriced",
+          "unvalued",
           "no_flows",
           "no_rate"
         ],
@@ -29470,6 +29471,12 @@
             "minimum": 0.0,
             "title": "Unpriced Flows",
             "default": 0
+          },
+          "unvalued_positions": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unvalued Positions",
+            "default": 0
           }
         },
         "additionalProperties": false,
@@ -29478,7 +29485,7 @@
           "value_eur"
         ],
         "title": "PortfolioFigures",
-        "description": "Gain since the start = value + taken out − paid in; `gain_ratio` = gain ÷ paid in;\n`yearly_return` the money-weighted return (xirr), None for less than a year of history\n(`no_rate`). Every figure None (but the value) when a payment's euros are unknown."
+        "description": "Gain since the start = value + taken out − paid in; `gain_ratio` = gain ÷ paid in;\n`yearly_return` the money-weighted return (xirr), None for less than a year of history\n(`no_rate`). Every figure None (but the value) when a payment's euros are unknown\n(`unpriced_flows`) or a position held today has no value (`unvalued_positions`, the value\nthen leaving it out); a total is None when one of its portfolios is."
       },
       "PortfolioFlow": {
         "properties": {

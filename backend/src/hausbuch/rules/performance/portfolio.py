@@ -4,7 +4,10 @@ and 3, build decision (b)). Pure, Decimal; services/portfolio_performance.py pic
 A **flow** is one payment into or out of a portfolio (a depot, an exchange, a wallet), dated,
 in euros, signed from the portfolio's side: + paid in, − taken out. Its `amount` is None when
 the euros are unknown (units moved on a day with no price): the portfolio's figures are then
-not computed (None with the reason `unpriced`), never computed as if it were 0.
+not computed (None with the reason `unpriced`), never computed as if it were 0. Likewise a
+portfolio holding a position today's value leaves out (no price, or units a depot report
+contradicts) is `unvalued`: its value would read too low while the purchase stays paid in, so a
+gain would read as a loss; its figures are None, and so are a set's that holds it.
 
 - gain since the start = today's value + everything taken out − everything paid in;
 - percent = gain ÷ everything paid in (None when nothing was paid in);
@@ -20,7 +23,7 @@ other leg's flow) are both in the set; a counterpart that is no flow (a bank lin
 confirmed) leaves it external.
 """
 
-from collections.abc import Collection, Hashable, Iterable, Sequence
+from collections.abc import Collection, Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
@@ -38,6 +41,7 @@ class NoRate(StrEnum):
 
     SHORT = "short_history"  # less than MIN_DAYS since the start
     UNPRICED = "unpriced"  # a flow's euros are unknown
+    UNVALUED = "unvalued"  # a position held today has no value, so today's value is short
     NO_FLOWS = "no_flows"  # nothing was paid in or taken out
     NO_RATE = "no_rate"  # the flows have no rate (xirr found none)
 
@@ -62,17 +66,21 @@ class Performance:
     yearly_return: Decimal | None  # xirr, six places
     no_rate: NoRate | None
     unpriced: int  # flows whose euros are unknown
+    unvalued: int = 0  # positions held today without a value
 
 
 def _ratio(numerator: Decimal, denominator: Decimal) -> Decimal:
     return (numerator / denominator).quantize(SIX, rounding=ROUND_HALF_UP) + 0
 
 
-def performance(flows: Sequence[Flow], value: Decimal, today: date) -> Performance:
-    """One portfolio's (or one set's) figures from its flows and today's value."""
+def performance(
+    flows: Sequence[Flow], value: Decimal, today: date, unvalued: int = 0
+) -> Performance:
+    """One portfolio's (or one set's) figures from its flows and today's value; `unvalued`
+    counts the positions held today that `value` leaves out for want of a value."""
     start = min((f.on for f in flows), default=None)
     unpriced = sum(1 for f in flows if f.amount is None)
-    if unpriced:
+    if unpriced or unvalued:
         return Performance(
             start=start,
             paid_in=None,
@@ -81,8 +89,9 @@ def performance(flows: Sequence[Flow], value: Decimal, today: date) -> Performan
             gain=None,
             gain_ratio=None,
             yearly_return=None,
-            no_rate=NoRate.UNPRICED,
+            no_rate=NoRate.UNVALUED if unvalued else NoRate.UNPRICED,
             unpriced=unpriced,
+            unvalued=unvalued,
         )
     amounts = [(f.on, f.amount) for f in flows if f.amount is not None and f.amount != 0]
     paid_in = sum((a for _, a in amounts if a > 0), ZERO)
@@ -130,10 +139,13 @@ def combined(
     values: dict[Hashable, Decimal],
     members: Collection[Hashable],
     today: date,
+    unvalued: Mapping[Hashable, int] | None = None,
 ) -> Performance:
-    """A set's figures: its external flows and the sum of its members' values."""
+    """A set's figures: its external flows and the sum of its members' values; a member with
+    a position without a value (`unvalued`, per portfolio) leaves the set's figures unknown."""
     value = sum((values.get(m, ZERO) for m in members), ZERO)
-    return performance(external(flows, members), value, today)
+    missing = sum((unvalued or {}).get(m, 0) for m in members)
+    return performance(external(flows, members), value, today, missing)
 
 
 __all__ = ["MIN_DAYS", "Flow", "NoRate", "Performance", "combined", "external", "performance"]

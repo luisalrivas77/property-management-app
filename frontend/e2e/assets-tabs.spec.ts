@@ -44,6 +44,7 @@ function figures(value: string, paidIn: string, gain: string, ratio: string, yea
     yearly_return: yearly,
     no_rate: null,
     unpriced_flows: 0,
+    unvalued_positions: 0,
   };
 }
 
