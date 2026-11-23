@@ -145,6 +145,8 @@ class Settings:
     # Phase 10 §7.5 (c): recompute the recorded kept answers after a change (api/kept_refresh.py).
     kept_refresh: bool = True
     kept_refresh_quiet_s: int = DEFAULT_KEPT_REFRESH_QUIET_S
+    # Phase 10 §7.4: warm the kept answers once right after a start (api/kept_start_warm.py).
+    kept_warm_at_start: bool = True
     # AI layer (phase 2). Off by default: production turns it on; the key is this variable or
     # typed in the app (D260, services.app_secrets), resolved per job.
     ai_enabled: bool = False
@@ -399,6 +401,7 @@ def load_settings(environ: Mapping[str, str] = os.environ) -> Settings:
         worker_concurrency=_int(environ, "HAUSBUCH_WORKER_CONCURRENCY", DEFAULT_WORKER_CONCURRENCY),
         shutdown_grace_s=_int(environ, "HAUSBUCH_SHUTDOWN_GRACE_S", DEFAULT_SHUTDOWN_GRACE_S),
         kept_refresh=_bool(environ, "HAUSBUCH_KEPT_REFRESH", True),
+        kept_warm_at_start=_bool(environ, "HAUSBUCH_KEPT_WARM_AT_START", True),
         kept_refresh_quiet_s=_int(
             environ, "HAUSBUCH_KEPT_REFRESH_QUIET_S", DEFAULT_KEPT_REFRESH_QUIET_S
         ),
