@@ -6,6 +6,7 @@ from decimal import Decimal
 import pytest
 
 from hausbuch.rules.budget.differences import differences, spending_group
+from hausbuch.rules.household.cashflow import month_cashflow
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.health import DifferenceWords
 from hausbuch.schemas.household import HouseholdGroup as G
@@ -106,3 +107,12 @@ def test_nothing_differs_enough():
 )
 def test_a_line_counts_under_the_group_month_cashflow_sums_it_under(category, group):
     assert spending_group(category) is group
+
+
+@pytest.mark.parametrize("category", list(C), ids=lambda c: c.value)
+def test_spending_group_is_the_group_month_cashflow_counts_a_line_under(category):
+    """For every code: a payment listed under a named group is exactly a line month_cashflow
+    sums into that group's spending, so a group's payments add up to its month, and a code
+    it does not count as spending (income, Geldanlage, transfers) is listed under none."""
+    counted = month_cashflow("2027-03", [(category, Decimal("-10.00"))], saved=Decimal("0.00"))
+    assert set(counted.spending_by_group) == ({spending_group(category)} - {None})
