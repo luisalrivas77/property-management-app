@@ -11,26 +11,38 @@
 // beside the list on the computer and sliding in from the right on the phone, with its
 // reasoning, question and every answer of the allocation panel. A link from another screen
 // (?umsatz=…) still opens it. Every other card keeps its own buttons in the list.
+//
+// Phase 10 §7.6: the page head holds „Hochladen“ and „Foto“, each the label of a hidden file
+// input. „Hochladen“ stores each file as a document that the AI reads; „Foto“ opens the phone's
+// camera at once (a computer's file picker), and the photos open the page strip of
+// components/capture.tsx in the detail panel. The strip lives in this page, so closing the panel
+// keeps the photos; „Fotos (n)“ opens it again. /capture keeps its own page.
 import "./inbox.css";
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 
 import { AllocationPanel, type TransactionAllocations } from "@/components/allocations";
 import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
-import { documentLabel, UploadControl, type Uploaded } from "@/components/documents";
+import { CameraIcon, PageStripCard, PhotoInput, usePageStrip } from "@/components/capture";
+import { documentLabel, storeAsDocument, UPLOAD_ACCEPT, type Uploaded } from "@/components/documents";
 import { api, ok } from "@/api/client";
-import { InboxList, isLineItem, loadInbox, type InboxItem } from "@/components/inbox";
+import { InboxList, isLineItem, loadInbox, privateAccount, type InboxItem } from "@/components/inbox";
 import { ALLOCATION_CATEGORY } from "@/components/labels";
 import { Loading, Notice } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { ErrorNotice } from "@/lib/ErrorNotice";
 import { useT, type Translation } from "@/i18n";
 import { common } from "@/i18n/common";
 import { inbox as messages } from "@/i18n/inbox";
 import { notifyInboxChanged, resetInbox } from "@/lib/inboxCount";
 
 type T = Translation<(typeof messages)["de"]>;
+
+/** What the notice after an upload names: the document, whether it was there already, and
+ * whether the AI reads it. */
+type UploadNote = Pick<Uploaded, "document" | "existed" | "proposalId" | "aiUnavailable">;
 
 export default function InboxPage() {
   return (
@@ -54,7 +66,10 @@ function Inbox() {
   const selected = detail.id ?? linked;
   const inbox = useLoad(loadInbox);
   const [saved, setSaved] = useState<TransactionAllocations | null>(null);
-  const [uploads, setUploads] = useState<Uploaded[]>([]);
+  const [uploads, setUploads] = useState<UploadNote[]>([]);
+  const strip = usePageStrip();
+  const [photosOpen, setPhotosOpen] = useState(false);
+  const [photoError, setPhotoError] = useState<unknown>(null);
 
   // The sidebar's count follows what this page lists, after every load and reload.
   const items = inbox.data?.items;
@@ -64,7 +79,33 @@ function Inbox() {
 
   function select(transactionId: string) {
     setSaved(null);
+    setPhotosOpen(false);
     detail.open(transactionId);
+  }
+
+  function noteUpload(note: UploadNote) {
+    setUploads((current) => [note, ...current].slice(0, 5));
+    inbox.reload();
+  }
+
+  function addPhotos(files: File[]) {
+    if (files.length === 0) return;
+    setPhotoError(null);
+    setPhotosOpen(true);
+    void strip.addPages(files);
+  }
+
+  /** „Als ein Dokument hochladen“: the strip as one PDF; it stays when the upload fails. */
+  async function uploadPhotos() {
+    if (strip.pages.length === 0) return;
+    setPhotoError(null);
+    try {
+      const { document, existed, proposalId } = await strip.upload();
+      setPhotosOpen(false);
+      noteUpload({ document, existed, proposalId, aiUnavailable: false });
+    } catch (caught) {
+      setPhotoError(caught);
+    }
   }
 
   /**
@@ -135,8 +176,34 @@ function Inbox() {
 
   const item = inbox.data?.items.find((entry) => isLineItem(entry) && entry.transaction_id === selected);
 
-  const panel = selected ? (
-    <DetailPanel title={t.selectedPayment} backLabel={t.title} onClose={close}>
+  // The line's private account (phase 6 D158) is named in its panel, no longer in the list.
+  const account = selected && inbox.data
+    ? privateAccount(inbox.data.accounts, item?.account_id ?? inbox.data.transactions.get(selected)?.account_id)
+    : undefined;
+
+  const panel = photosOpen ? (
+    <DetailPanel key="photos" title={t.photos} backLabel={t.title} onClose={() => setPhotosOpen(false)}>
+      <div className="inbox-photos">
+        <PhotoInput
+          className={["inbox-head-button", "secondary", strip.busy || strip.full ? "busy" : ""].filter(Boolean).join(" ")}
+          disabled={strip.busy || strip.full}
+          onFiles={(files) => void strip.addPages(files)}
+        >
+          <CameraIcon />
+          {strip.preparing ? t.preparing : t.addPage}
+        </PhotoInput>
+        {strip.notice ? (
+          <div className="notice notice-warn" role="alert">
+            <p>{strip.notice}</p>
+          </div>
+        ) : null}
+        <PageStripCard strip={strip} onUpload={() => void uploadPhotos()} />
+        <ErrorNotice error={photoError} />
+      </div>
+    </DetailPanel>
+  ) : selected ? (
+    <DetailPanel key="umsatz" title={t.selectedPayment} backLabel={t.title} onClose={close}>
+      {account ? <p className="muted">{t.privateAccount(account.label)}</p> : null}
       <AllocationPanel key={selected} transactionId={selected} reasoning={item?.reasoning} question={item?.question} onSaved={onSaved} />
     </DetailPanel>
   ) : null;
@@ -146,24 +213,21 @@ function Inbox() {
       <p className="eyebrow">{t.title}</p>
       <div className="page-head">
         <h1>{t.heading}</h1>
-        <Link className="button-link" href="/capture">
-          {t.photo}
-        </Link>
+        <div className="inbox-head-actions">
+          {strip.pages.length > 0 && !photosOpen ? (
+            <button type="button" className="secondary" onClick={() => setPhotosOpen(true)}>
+              {t.photosWaiting(strip.pages.length)}
+            </button>
+          ) : null}
+          <HeadUpload t={t} onUploaded={noteUpload} />
+          <PhotoInput className="inbox-head-button" disabled={strip.full} onFiles={addPhotos}>
+            <CameraIcon />
+            {t.photoButton}
+          </PhotoInput>
+        </div>
       </div>
 
-      <div className="stack">
-        <UploadControl
-          label={t.upload}
-          prefill
-          onUploaded={(result) => {
-            setUploads((current) => [result, ...current].slice(0, 5));
-            inbox.reload();
-          }}
-        />
-        <p className="muted">
-          {t.statementsAt}
-          <Link href="/accounts">{t.accounts}</Link>.
-        </p>
+      <div className="stack inbox-head-notices">
         {uploads.map(({ document, existed, proposalId, aiUnavailable }) => (
           <Notice key={`${document.id}-${existed}-${proposalId ?? ""}`}>
             {existed ? t.existed : t.uploaded}
@@ -201,6 +265,54 @@ function Inbox() {
         </DetailLayout>
       </div>
     </section>
+  );
+}
+
+/** „Hochladen“ in the page head (phase 10 §7.6): the label of a hidden file input. Each file is
+ * stored as a document that the AI reads (storeAsDocument), as „Dokumente hochladen“ does; a
+ * bank statement is imported at its account from there (phase 6 D165 (a), D176 (3)). */
+function HeadUpload({ t, onUploaded }: { t: T; onUploaded: (note: UploadNote) => void }) {
+  const inputId = useId();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  async function upload(files: File[]) {
+    if (files.length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      for (const file of files) onUploaded(await storeAsDocument(file));
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <input
+        id={inputId}
+        className="visually-hidden capture-input"
+        type="file"
+        accept={UPLOAD_ACCEPT}
+        multiple
+        disabled={busy}
+        onChange={(event: ChangeEvent<HTMLInputElement>) => {
+          const files = Array.from(event.target.files ?? []);
+          event.target.value = "";
+          void upload(files);
+        }}
+      />
+      <label htmlFor={inputId} className={busy ? "inbox-head-button secondary busy" : "inbox-head-button secondary"}>
+        {busy ? t.uploadingButton : t.uploadButton}
+      </label>
+      {error != null ? (
+        <div className="inbox-head-error">
+          <ErrorNotice error={error} />
+        </div>
+      ) : null}
+    </>
   );
 }
 

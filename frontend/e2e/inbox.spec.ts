@@ -11,6 +11,15 @@ import { apiCall, expect, mainNav, navigateTo, test } from "./support";
 
 const ZIP = path.resolve(import.meta.dirname, "..", "..", "backend", "tests", "fixtures", "phase2", "bank_samples", "camt052.zip");
 const CSV = path.resolve(import.meta.dirname, "..", "..", "backend", "tests", "fixtures", "phase2", "bank_samples", "csv_camt.csv");
+// A real 40×30 PNG, so the browser can decode it (the same as e2e/capture.spec.ts).
+const PHOTO = {
+  name: "beleg.png",
+  mimeType: "image/png",
+  buffer: Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAACgAAAAeCAIAAADRv8uKAAAAK0lEQVR4nO3NMQ0AAAgDsMmZfxXIQgYcTfo3056IWCwWi8VisVgsFov/xguJMCDM2TzTeAAAAABJRU5ErkJggg==",
+    "base64",
+  ),
+};
 
 /** A rental account with the camt sample imported through Konten; returns the account id. */
 async function importSample(page: Page): Promise<string> {
@@ -169,9 +178,13 @@ test("a line without an IBAN offers no rule box, only a purpose pattern", async 
   await openInbox(page);
 
   // The Rechnungsabschluss lines name no counterparty and no IBAN in camt; such a line is
-  // labelled by its booking text instead of „Ohne Gegenseite“.
+  // labelled by its booking text instead of „Ohne Gegenseite“. The list shows no purpose any
+  // more (phase 10 §7.6, it is in the detail panel), so the line is found by the search, which
+  // still matches the purpose.
   const queue = page.getByRole("list", { name: "Zahlungen zuordnen" });
-  const line = queue.getByRole("button").filter({ hasText: /Verwendungszweck 5\b/ });
+  await page.getByLabel("Empfänger suchen").fill("Verwendungszweck 5");
+  const line = queue.getByRole("button");
+  await expect(line).toHaveCount(1);
   await expect(line).toContainText("ABSCHLUSS");
   await line.click();
 
@@ -188,12 +201,13 @@ test("a line without an IBAN offers no rule box, only a purpose pattern", async 
   await pattern.fill("Abschluss (");
   await panel.getByRole("button", { name: "Bestätigen" }).click();
   await expect(panel.getByText("Das Muster ist kein gültiger Suchausdruck", { exact: false })).toBeVisible();
-  await expect(queue.getByRole("button").filter({ hasText: /Verwendungszweck 5\b/ })).toHaveCount(1);
+  await expect(queue.getByRole("button")).toHaveCount(1);
 
   await pattern.fill("Verwendungszweck 5");
   await panel.getByRole("button", { name: "Bestätigen" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Zuordnung bestätigt." })).toContainText("Regel gespeichert");
-  await expect(queue.getByRole("button").filter({ hasText: /Verwendungszweck 5\b/ })).toHaveCount(0);
+  // The booked line leaves the list, so the search finds nothing.
+  await expect(queue).toHaveCount(0);
 });
 
 test("the rule box follows the category until it is touched: on for bank fees, off for repairs", async ({ page, signedIn }) => {
@@ -355,4 +369,43 @@ test("the cards' lines come from /inbox/lines, and a card it lacks falls back to
   await expect(queue.getByRole("button")).toHaveCount(22);
   await expect(line).toContainText("+740,18 €");
   expect(perAccount.length).toBeGreaterThan(0);
+});
+
+// Phase 10 §7.6: the page head holds „Hochladen“ and „Foto“. „Foto“ is the label of the camera
+// input itself, so one tap opens the camera; the photos open the page strip in the detail panel,
+// which keeps them when it is closed, and „Als ein Dokument hochladen“ stores them as one PDF.
+test("Foto opens the camera and the page strip in the panel; Hochladen stores a document", async ({ page, signedIn }) => {
+  void signedIn;
+  await page.goto("/inbox");
+  await expect(page.getByRole("heading", { name: "Hochladen, bestätigen, fertig" })).toBeVisible();
+
+  const camera = page.getByLabel("Foto", { exact: true });
+  await expect(camera).toHaveAttribute("capture", "environment");
+  await expect(camera).toHaveAttribute("type", "file");
+  await camera.setInputFiles(PHOTO);
+
+  const panel = page.getByRole("complementary", { name: "Fotos" });
+  const strip = panel.getByRole("list", { name: "Seiten" });
+  await expect(strip.getByRole("listitem")).toHaveCount(1);
+  await panel.getByLabel("Seite hinzufügen").setInputFiles({ ...PHOTO, name: "zweite.png" });
+  await expect(strip.getByRole("listitem")).toHaveCount(2);
+
+  // Closing the panel keeps the photos; „Fotos (2)“ opens it again.
+  await panel.getByRole("button", { name: "Schließen" }).click();
+  await expect(panel).toHaveCount(0);
+  await page.getByRole("button", { name: "Fotos (2)" }).click();
+  await expect(strip.getByRole("listitem")).toHaveCount(2);
+
+  const uploaded = page.waitForResponse((r) => r.url().endsWith("/api/documents") && r.request().method() === "POST");
+  await panel.getByRole("button", { name: "Als ein Dokument hochladen" }).click();
+  expect((await uploaded).status()).toBe(201);
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: "Hochgeladen:" })).toBeVisible();
+
+  // „Hochladen“ stores any file as a document; the old upload box and its sentence are gone.
+  await expect(page.getByText("Kontoauszüge werden beim jeweiligen Konto importiert", { exact: false })).toHaveCount(0);
+  const stored = page.waitForResponse((r) => r.url().endsWith("/api/documents") && r.request().method() === "POST");
+  await page.getByLabel("Hochladen", { exact: true }).setInputFiles({ ...PHOTO, name: "brief.png" });
+  expect((await stored).status()).toBe(201);
+  await expect(page.getByRole("status").filter({ hasText: "brief.png" })).toBeVisible();
 });
