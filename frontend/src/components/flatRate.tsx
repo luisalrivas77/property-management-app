@@ -52,7 +52,8 @@ function unsigned(value: string): string {
 }
 
 export function flatRateCardHref(propertyId: string): string {
-  return `/planning?immobilie=${propertyId}#${FLAT_RATE_CARD_ID}`;
+  // On the property page beside the tenancies since phase 10 §7.6 (on Planung until then).
+  return `/properties/${propertyId}#${FLAT_RATE_CARD_ID}`;
 }
 
 export function rentChangeHref(tenancyId: string): string {

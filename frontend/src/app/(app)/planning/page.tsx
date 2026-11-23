@@ -2,21 +2,26 @@
 
 // Planung in five sections (phase 10 D270, mockup 17-C2): ?section=budget (the default),
 // reserve, anlegen, vermoegen or immobilie. Phase 9's links (?tab=haushalt, from rules/plan/ and
-// other screens) land on Budget; a link that names a property (?immobilie=…) without a section
-// opens Immobilie, the property's Planung (phase-4.md §9), whose levers live in the URL too.
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { Suspense } from "react";
+// other screens) land on Budget. The property's Planung (phase-4.md §9) moved to Anlagen ›
+// Immobilie (phase 10 §7.6, D288): ?section=immobilie and a link that names a property
+// (?immobilie=…) are sent there with the property and its levers.
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect } from "react";
 
-import { api, ok } from "@/api/client";
 import { HouseholdPlanScreen, PLAN_SECTIONS, type PlanSection } from "@/components/householdPlan";
-import { PlanningScreen } from "@/components/planning";
-import { Loading, LoadingLine } from "@/components/ui";
-import { useLoad } from "@/components/useLoad";
-import { useT } from "@/i18n";
-import { pages } from "@/i18n/pages";
+import { LoadingLine } from "@/components/ui";
 
-const loadProperties = () => ok(api.GET("/api/properties"));
+/** The query parameters Anlagen › Immobilie reads: the property and the projection's levers. */
+const PROPERTY_PARAMS = ["immobilie", "szenario", "wertsteigerung", "mieterhoehung", "verkauf"] as const;
+
+function propertyPlanningHref(search: URLSearchParams): string {
+  const query = new URLSearchParams({ tab: "immobilie" });
+  for (const name of PROPERTY_PARAMS) {
+    const value = search.get(name);
+    if (value !== null) query.set(name, value);
+  }
+  return `/assets?${query.toString()}`;
+}
 
 export default function PlanningPage() {
   return (
@@ -36,36 +41,17 @@ function sectionOf(search: URLSearchParams): PlanSection {
 
 function Planning() {
   const search = useSearchParams();
-  const section = sectionOf(new URLSearchParams(search.toString()));
+  const router = useRouter();
+  const params = new URLSearchParams(search.toString());
+  const section = sectionOf(params);
+  const target = section === "immobilie" ? propertyPlanningHref(params) : null;
+  useEffect(() => {
+    if (target) router.replace(target);
+  }, [router, target]);
+  if (target) return <LoadingLine />;
   return (
     <section>
-      <HouseholdPlanScreen
-        section={section}
-        property={section === "immobilie" ? <PropertyPlanning requested={search.get("immobilie")} /> : null}
-      />
+      <HouseholdPlanScreen section={section} property={null} />
     </section>
-  );
-}
-
-function PropertyPlanning({ requested }: { requested: string | null }) {
-  const properties = useLoad(loadProperties);
-  const t = useT(pages);
-
-  return (
-    <Loading state={properties}>
-      {(list) => {
-        if (list.length === 0) {
-          return (
-            <p className="muted">
-              {t.noProperty} <Link href="/properties/new">{t.createProperty}</Link>
-              {t.planningRest}
-            </p>
-          );
-        }
-        const property = list.find((p) => p.id === requested) ?? list[0];
-        if (!property) return null;
-        return <PlanningScreen key={property.id} property={property} properties={list} />;
-      }}
-    </Loading>
   );
 }

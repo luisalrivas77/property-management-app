@@ -130,8 +130,9 @@ export function HouseholdHealthSection({ onChanged, refresh = 0 }: { onChanged?:
 }
 
 /** Anlagen › Übersicht's part (phase 10 §7.6): the card a month-end to-do opens
- * (`?month_end=YYYY-MM-DD`) above the tab's own content (`children`), and the split of the assets
- * and „Vermögen im Verlauf“ below it. Inside a Suspense boundary (useSearchParams). */
+ * (`?month_end=YYYY-MM-DD`) above the tab's own content (`children`), and „Vermögen im Verlauf“
+ * below it. The split of the assets moved into the tab's total card (Luis, 23 Nov 2026), so the
+ * card „Aufteilung des Vermögens“ is gone. Inside a Suspense boundary (useSearchParams). */
 export function AssetsHealthSection({ children }: { children?: ReactNode }) {
   const health = useLoad(loadHealth);
   const requested = useSearchParams().get("month_end");
@@ -140,12 +141,7 @@ export function AssetsHealthSection({ children }: { children?: ReactNode }) {
       {requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? <MonthEndCard day={requested} onDone={health.reload} /> : null}
       {children}
       <Loading state={health}>
-        {(data) => (
-          <>
-            <SplitCard health={data} />
-            <SeriesCard series={data.series ?? []} onChanged={health.reload} />
-          </>
-        )}
+        {(data) => <SeriesCard series={data.series ?? []} onChanged={health.reload} />}
       </Loading>
     </div>
   );
@@ -654,22 +650,7 @@ function multiply(a: string, b: string): string {
   return `${negative ? "-" : ""}${whole}${fraction ? `.${fraction}` : ""}`;
 }
 
-// --- Kennzahlen and the split of the assets -----------------------------------------------
-
-function splitLabel(t: HealthText, key: string): string {
-  switch (key) {
-    case "property":
-      return t.splitProperty;
-    case "depot":
-      return t.splitDepot;
-    case "bank":
-      return t.splitBank;
-    case "crypto":
-      return t.splitCrypto;
-    default:
-      return key;
-  }
-}
+// --- Kennzahlen -----------------------------------------------------------------------------
 
 /** „Kennzahlen“ (`#figures-title`): the verdict's word and its three figures as cards, each with
  * its dot against the limits used, and what it is made of. */
@@ -725,35 +706,6 @@ function FiguresCard({
   );
 }
 
-/** The split of the assets on the newest closed month-end: never marked (D240). */
-function SplitCard({ health }: { health: Health }) {
-  const t = useT(healthFigures);
-  const p = usePlanFormat();
-  const split = Object.entries(health.split ?? {}).sort(([, a], [, b]) => Number(b) - Number(a));
-  if (split.length === 0) return null;
-  const months = health.window.months ?? [];
-  const newest = months[months.length - 1];
-  return (
-    <section className="card stack health-split" aria-labelledby="split-title">
-      <h2 id="split-title">{t.splitTitle}</h2>
-      <p className="muted">
-        {t.splitExplained(health.debt ? p.euro(health.debt.gross_assets) : null, newest ? p.longDate(monthEnd(newest)) : null)}
-      </p>
-      <ul className="health-split-rows">
-        {split.map(([key, share]) => (
-          <li key={key}>
-            <span>{splitLabel(t, key)}</span>
-            <span className="household-share" aria-hidden="true">
-              <span style={{ width: `${Math.max(0, Math.min(100, Number(share) * 100))}%` }} />
-            </span>
-            <span>{p.ratio(share)}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
 // --- Vermögen im Verlauf ------------------------------------------------------------------
 
 function SeriesCard({ series, onChanged }: { series: NetWorthPoint[]; onChanged: () => void }) {
@@ -764,7 +716,7 @@ function SeriesCard({ series, onChanged }: { series: NetWorthPoint[]; onChanged:
   const largest = Math.max(1, ...totals.map(Math.abs));
   const todos = series.map((point) => point.todo).filter((todo): todo is HealthTodo => todo != null);
   return (
-    <section className="card stack" aria-labelledby="series-title">
+    <section className="card stack health-series" aria-labelledby="series-title">
       <h2 id="series-title">{t.seriesTitle}</h2>
       <p className="muted">{t.seriesIntro}</p>
       <ul className="planning-bars" aria-hidden="true">
@@ -778,7 +730,25 @@ function SeriesCard({ series, onChanged }: { series: NetWorthPoint[]; onChanged:
           </li>
         ))}
       </ul>
-      <div className="table-wrap">
+      <ul className="health-series-list" aria-label={t.seriesTitle}>
+        {series.map((point) => (
+          <li key={point.month_end}>
+            <span className="health-series-line">
+              <Link href={`/household?monat=${point.month_end.slice(0, 7)}`}>{p.month(point.month_end.slice(0, 7))}</Link>
+              <strong>{point.total != null ? p.euro(point.total) : "–"}</strong>
+            </span>
+            <span className="health-series-line muted">
+              <span>
+                {t.changeColumn} {point.change != null ? p.signedEuro(point.change) : "–"}
+              </span>
+              <span>
+                {t.ofWhichSaved} {point.saved != null ? p.euro(point.saved) : "–"}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <div className="table-wrap health-series-table">
         <table>
           <thead>
             <tr>

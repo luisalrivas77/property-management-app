@@ -240,6 +240,11 @@ def _owner_ids(conn: Connection) -> list[UUID]:
 class _Item:
     line: NetWorthLine
     shares_ref: UUID  # the account or property whose shares split it
+    # Phase 10 §7.6 (Anlagen's money in and out, depot_cash_basis): a balance line's window
+    # (its anchor, the anchor's day and `through`, the lines bank_balance sums), and an
+    # „unterwegs“ line's transfer. Read by nothing else; the line is the same either way.
+    window: tuple[Decimal, date, date] | None = None
+    transit: "_Transit | None" = None
 
 
 @dataclass(frozen=True)
@@ -407,6 +412,57 @@ def depot_cash(conn: Connection, on: date) -> dict[UUID, list[NetWorthLine]]:
     return dict(out)
 
 
+@dataclass(frozen=True)
+class DepotCashBasis:
+    """Phase 10 §7.6 (Anlagen, decision (b)): what a depot's cash counts on a day in the net
+    worth, so its money in and out can be read from exactly those lines: its anchor (the
+    opening balance at the end of `opening_on`), `through` (the lines after the anchor's day up
+    to it are in the balance, rules.net_worth.bank_balance) and each transfer counted as
+    „unterwegs zu <Depot>“ with the euros it counts. `window` None: the depot has no balance
+    line (no cash statements and no opening balance)."""
+
+    window: tuple[Decimal, date, date] | None
+    transit: tuple[tuple[UUID, date, Decimal], ...]  # (bank transaction, paid on, counted)
+
+
+def depot_cash_basis(conn: Connection, on: date) -> dict[UUID, DepotCashBasis]:
+    """Per depot account with a balance line or money in transit on `on`, the basis of its
+    cash part (DepotCashBasis), from the same `_balances` that `depot_cash` and the net worth
+    read. Read only."""
+    items, _ = _balances(conn, on, _Reads(conn))
+    windows: dict[UUID, tuple[Decimal, date, date]] = {}
+    transit: dict[UUID, list[tuple[UUID, date, Decimal]]] = defaultdict(list)
+    for item in items:
+        line = item.line
+        if line.account_kind is not AccountKind.DEPOT or line.account_id is None:
+            continue
+        if item.window is not None:
+            windows[line.account_id] = item.window
+        if item.transit is not None and line.value_eur is not None:
+            move = item.transit
+            transit[line.account_id].append((move.transaction_id, move.paid_on, line.value_eur))
+    return {
+        account_id: DepotCashBasis(windows.get(account_id), tuple(transit.get(account_id, ())))
+        for account_id in windows.keys() | transit.keys()
+    }
+
+
+def property_net_on(conn: Connection, on: date) -> tuple[Decimal, Decimal]:
+    """The net worth's property estimate and its loans' balance on `on` (NetWorth's
+    `property_estimate` and `loan_balances`, summed from the same lines as `_figure`), for
+    Anlagen › Übersicht's total with the property's equity (phase 10 §7.6)."""
+    items, _, _ = _properties(conn, on)
+    estimate = sum(
+        (i.line.value_eur for i in items if i.line.kind is L.PROPERTY and i.line.value_eur),
+        ZERO,
+    )
+    loans = -sum(
+        (i.line.value_eur for i in items if i.line.kind is L.LOAN and i.line.value_eur),
+        ZERO,
+    )
+    return estimate, loans
+
+
 class _Reads:
     """What a net worth reads that does not depend on its day, read once per call and shared
     by the days one call computes (overview: the last month-end and today). Nothing is kept
@@ -513,6 +569,7 @@ def _balances(conn: Connection, on: date, reads: _Reads) -> tuple[list[_Item], l
                     stale=a.id not in idle and (on - through).days > valuation.STALE_AFTER_DAYS,
                 ),
                 a.id,
+                window=(a.opening_balance, a.opening_balance_on, through),
             )
         )
         if waiting:
@@ -599,6 +656,7 @@ def _in_transit(
                         in_transit=True,
                     ),
                     account.id,
+                    transit=move,
                 )
             )
     return out
@@ -1545,8 +1603,10 @@ def capture_last_month_end(ctx: CommandContext, as_of: date | None = None) -> Sn
 
 
 __all__ = [
+    "DepotCashBasis",
     "capture_last_month_end",
     "capture_month_end",
+    "depot_cash_basis",
     "last_month_end",
     "latest_month_end",
     "latest_run",
@@ -1556,6 +1616,7 @@ __all__ = [
     "month_end_figures",
     "net_worth",
     "overview",
+    "property_net_on",
     "shares_on",
     "stored_run",
     "transit_label",

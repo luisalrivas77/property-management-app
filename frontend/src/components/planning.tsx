@@ -14,9 +14,10 @@
 //   tariff: projection.no_rule_set, tariff.no_file) gets a plain notice, not an error.
 // - Every figure opens its sources (principle 2): the year's, the tax effect's or the bridge
 //   row's SourceRefs; a payment shows its bank line and Beleg, as on the Steuern screen.
-// - Above the actuals, the card „Nebenkostenpauschalen“ (D155 (5)): GET …/flat-rate-check, the
-//   costs when each Pauschale was set against today, per tenancy its share and verdict; it
-//   needs no rule set, so it shows even when the actuals are refused.
+// - The card „Nebenkostenpauschalen“ (D155 (5)): GET …/flat-rate-check, the costs when each
+//   Pauschale was set against today, per tenancy its share and verdict. Since phase 10 §7.6 it
+//   sits on the property page beside the tenancies (components/propertyFlatRate.tsx), no longer
+//   above the actuals here; the actuals' Pauschale coverage links to it there.
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
@@ -46,7 +47,7 @@ import { common } from "@/i18n/common";
 import { flatRateText } from "@/i18n/flatRate";
 import { propertyPlanning } from "@/i18n/propertyPlanning";
 
-import { FLAT_RATE_CARD_ID, FlatRateActions } from "./flatRate";
+import { FLAT_RATE_CARD_ID, FlatRateActions, flatRateCardHref } from "./flatRate";
 
 import { Field, FormBanner, Submit, useFormErrors } from "./form";
 import { shiftDecimal, todayIso } from "./format";
@@ -203,14 +204,15 @@ function readParams(search: { get(name: string): string | null }): LeverParams {
 }
 
 function planningHref(propertyId: string | null, params: LeverParams): string {
-  // Planung's Immobilie section (phase 10 D270): the section stays in the URL with the levers.
-  const query = new URLSearchParams({ section: "immobilie" });
+  // Anlagen › Immobilie (phase 10 §7.6, D288; Planung's Immobilie section until then): the tab
+  // stays in the URL with the levers.
+  const query = new URLSearchParams({ tab: "immobilie" });
   if (propertyId) query.set("immobilie", propertyId);
   if (params.scenario) query.set(PARAM.scenario, params.scenario);
   if (params.valueGrowth !== null) query.set(PARAM.valueGrowth, params.valueGrowth);
   if (params.rentGrowth !== null) query.set(PARAM.rentGrowth, params.rentGrowth);
   if (params.saleYear !== null) query.set(PARAM.saleYear, String(params.saleYear));
-  return `/planning?${query.toString()}`;
+  return `/assets?${query.toString()}`;
 }
 
 const RATE_PLACES = 6;
@@ -258,7 +260,16 @@ function useStickyLoad<T>(load: () => Promise<T>): Loaded<T> {
 
 // --- The screen -------------------------------------------------------------------------------
 
-export function PlanningScreen({ property, properties }: { property: Property; properties: Property[] }) {
+export function PlanningScreen({
+  property,
+  properties,
+  head,
+}: {
+  property: Property;
+  properties: Property[];
+  /** Cards above the actuals, given the projection once it is read (Anlagen › Immobilie). */
+  head?: (projection: Projection | undefined) => ReactNode;
+}) {
   const router = useRouter();
   const search = useSearchParams();
   const ids = useId();
@@ -282,11 +293,6 @@ export function PlanningScreen({ property, properties }: { property: Property; p
     [property.id],
   );
   const actuals = useLoad(loadActuals);
-  const loadFlatRate = useCallback(
-    () => ok(api.GET("/api/properties/{property_id}/flat-rate-check", { params: { path: { property_id: property.id } } })),
-    [property.id],
-  );
-  const flatRate = useLoad(loadFlatRate);
   const loadProjection = useCallback(
     () =>
       orRefused(
@@ -310,7 +316,6 @@ export function PlanningScreen({ property, properties }: { property: Property; p
 
   const actualsRefused = actuals.data !== undefined && isRefused(actuals.data);
   const actualYears = actuals.data !== undefined && !isRefused(actuals.data) ? actuals.data.years : undefined;
-  const hasFlatRateCard = (flatRate.data?.tenancies ?? []).length > 0;
 
   return (
     <>
@@ -339,17 +344,13 @@ export function PlanningScreen({ property, properties }: { property: Property; p
         ) : null}
       </div>
       <div className="stack planning">
-        {flatRate.data !== undefined || flatRate.error != null ? (
-          <Loading state={flatRate}>
-            {(check) => <FlatRateCard check={check} actualYears={actualYears} propertyId={property.id} />}
-          </Loading>
-        ) : null}
+        {head ? head(projection.data !== undefined && !isRefused(projection.data) ? projection.data : undefined) : null}
         <Loading state={actuals}>
           {(data) =>
             isRefused(data) ? (
               <RefusalNotice refusal={data.refused} />
             ) : (
-              <ActualsCard years={data.years} propertyId={property.id} flatRateCard={hasFlatRateCard} />
+              <ActualsCard years={data.years} propertyId={property.id} />
             )
           }
         </Loading>
@@ -433,7 +434,7 @@ function shownYear(years: YearFigures[]): YearFigures | undefined {
   return years.find((y) => (y.flags ?? []).includes("so_far")) ?? years[years.length - 1];
 }
 
-function ActualsCard({ years, propertyId, flatRateCard }: { years: YearFigures[]; propertyId: string; flatRateCard: boolean }) {
+function ActualsCard({ years, propertyId }: { years: YearFigures[]; propertyId: string }) {
   const t = useT(propertyPlanning);
   const year = shownYear(years);
   if (!year) {
@@ -487,7 +488,7 @@ function ActualsCard({ years, propertyId, flatRateCard }: { years: YearFigures[]
         {isZero(year.other_income) ? null : t.otherIncome(formatMoney(year.other_income))}
       </p>
       {year.flat_rate_gap_monthly != null && year.flat_rate_months != null ? (
-        <FlatRateCoverage year={year} gap={year.flat_rate_gap_monthly} months={year.flat_rate_months} linked={flatRateCard} />
+        <FlatRateCoverage year={year} gap={year.flat_rate_gap_monthly} months={year.flat_rate_months} propertyId={propertyId} />
       ) : null}
     </section>
   );
@@ -496,9 +497,9 @@ function ActualsCard({ years, propertyId, flatRateCard }: { years: YearFigures[]
 /** The Pauschale coverage (D91, D92): flat-rate charges received against the umlagefähige costs
  * paid (the flat's electricity included), per month the Pauschalen were in force. Information
  * only. Whether a Pauschale may rise is the card „Nebenkostenpauschalen“ (D155), which compares
- * the costs when each Pauschale was set with today and needs no second year; `linked` when that
- * card is on the screen. */
-function FlatRateCoverage({ year, gap, months, linked }: { year: YearFigures; gap: string; months: number; linked: boolean }) {
+ * the costs when each Pauschale was set with today and needs no second year; it sits on the
+ * property page since phase 10 §7.6, so the link goes there. */
+function FlatRateCoverage({ year, gap, months, propertyId }: { year: YearFigures; gap: string; months: number; propertyId: string }) {
   const t = useT(propertyPlanning);
   const verdict = isNegative(gap) ? t.coverageOver : isZero(gap) ? t.coverageExact : t.coverageCovered;
   return (
@@ -506,11 +507,9 @@ function FlatRateCoverage({ year, gap, months, linked }: { year: YearFigures; ga
       <strong>{t.coverageLabel}</strong> {t.coverageText(formatMoney(year.flat_rate_in), formatMoney(year.umlagen_out))}{" "}
       <span className={tone(gap)}>{t.coverageGap(signedMoney(gap), months)}</span>
       . {verdict}{" "}
-      {linked ? (
-        <span className="muted">
-          {t.coverageLinkBefore} <a href={`#${FLAT_RATE_CARD_ID}`}>{t.coverageLink}</a>.
-        </span>
-      ) : null}
+      <span className="muted">
+        {t.coverageLinkBefore} <Link href={flatRateCardHref(propertyId)}>{t.coverageLink}</Link>.
+      </span>
     </p>
   );
 }
@@ -569,8 +568,9 @@ function verdictText(t: Texts, tenancy: TenancyFlatRate, raiseAbove: string): st
 
 /** Per date a Pauschale was set: the costs then and now per category; per tenancy its share
  * of the change and the verdict; the coverage of the shown year; settlements as hints. Every
- * figure is the check's own (principle 1); nothing here adds or splits. */
-function FlatRateCard({
+ * figure is the check's own (principle 1); nothing here adds or splits. Shown on the property
+ * page (components/propertyFlatRate.tsx) since phase 10 §7.6. */
+export function FlatRateCard({
   check,
   actualYears,
   propertyId,

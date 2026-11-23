@@ -1,24 +1,29 @@
 "use client";
 
-// Anlagen (phase 10 mockup 20): three sections as chips, ?tab=… links. Übersicht (phase 6 step
-// 5b, ./Overview.tsx) values every position by its daily price; `?kurs=<asset id>` opens its
-// price forms in the detail panel. Since phase 10 §7.6 (Luis, 23 Nov 2026) the tab also holds
-// what Übersicht showed of the net worth over time (components/healthFigures.tsx,
-// AssetsHealthSection): `?month_end=YYYY-MM-DD` opens the card „Monatsabschluss festhalten“ for
-// that month-end above the positions, and the split of the assets and „Vermögen im Verlauf“
-// follow them.
+// Anlagen (phase 10 mockup 20, §7.6): four sections as chips, ?tab=… links (etf, krypto,
+// immobilie). Übersicht (./Overview.tsx) is the total, large, with the split of the assets inside
+// it, and one card per kind; no fund or coin is listed there (Luis, 23 Nov 2026). `?kurs=<asset
+// id>` opens a price form in the detail panel. The tab also holds what Übersicht showed of the
+// net worth over time (components/healthFigures.tsx, AssetsHealthSection): `?month_end=YYYY-MM-DD`
+// opens the card „Monatsabschluss festhalten“ for that month-end, and „Vermögen im Verlauf“
+// follows.
 //
-// Anlagen › ETF (phase 6 step 4, §13): every depot account with its funds, from GET /assets/etf.
+// Anlagen › ETF (phase 6 step 4, §13; phase 10 §7.6): „ETF gesamt“, the depots' gain since the
+// start (./Performance.tsx, GET /assets/performance), this year's distributions, the savings plans
+// into a depot (GET /household-plan's detected plans), one card per depot whose panel lists its
+// payments in and out and its funds (GET /assets/etf), and the depots' documents.
 // Since phase 10 D280 Anteile, Kurs and Wert are the Übersicht's (the net worth's valuation,
 // D167): the newest stored daily price with its source and day; a fund whose report disagrees
 // with the booked trades has no value (D165 (3)), and a fund no daily source prices shows „Kurs
 // aus dem Bericht vom …“ with the badge „kein Tageskurs“ (D174 (4)). The report's own price and
 // value appear only as „Zur Kontrolle“ in the position's panel (D267, `#d-fonds-<account>~<asset>`).
 // Einstand is the plain sum of the purchases while a fund was only bought (lots are phase 7).
-// The Sparer-Pauschbetrag and Vorabpauschale cards are phase 8 (D170) and carry no figure.
+// The Sparer-Pauschbetrag and Vorabpauschale cards (phase 8, D170, no figure) are gone (§7.6).
 //
 // Anlagen › Krypto (phase 7 step 6, ./Crypto.tsx): lots and the holding period; its „Kurs
 // eintragen“ opens Übersicht's price forms with `?kurs=<asset>&tag=<day>`.
+//
+// Anlagen › Immobilie (./Property.tsx): the property's Planung, moved here from Planung.
 import "./assets.css";
 
 import Link from "next/link";
@@ -39,6 +44,8 @@ import { assets } from "@/i18n/assets";
 
 import { CryptoTab } from "./Crypto";
 import { OverviewTab } from "./Overview";
+import { type AssetsPerformance, GainKpi, InfoNote, loadPerformance, PortfolioCard, PortfolioPayments } from "./Performance";
+import { PropertyTab } from "./Property";
 import { PortfolioParts } from "./PortfolioParts";
 import { gainClass, priceText, readingLabel, signed } from "./words";
 
@@ -48,8 +55,10 @@ type EtfAccount = components["schemas"]["EtfAccountToday"];
 type EtfPosition = components["schemas"]["EtfPositionToday"];
 type DepotDocumentStatus = components["schemas"]["DepotDocumentStatus"];
 type DocumentSubtype = components["schemas"]["DocumentSubtype"];
+type HouseholdPlan = components["schemas"]["HouseholdPlan"];
 
-type TabKey = "uebersicht" | "etf" | "krypto";
+type TabKey = "uebersicht" | "etf" | "krypto" | "immobilie";
+const TABS: readonly string[] = ["etf", "krypto", "immobilie"];
 
 export default function AssetsPage() {
   return (
@@ -72,11 +81,12 @@ function Assets() {
   const priceDay = search.get("tag");
   const asked = search.get("tab");
   const monthEnd = search.get("month_end");
-  const tab: TabKey = priceFor || monthEnd ? "uebersicht" : asked === "etf" ? "etf" : asked === "krypto" ? "krypto" : "uebersicht";
+  const tab: TabKey = priceFor || monthEnd ? "uebersicht" : asked && TABS.includes(asked) ? (asked as TabKey) : "uebersicht";
   const tabs: { key: TabKey; label: string; href: string }[] = [
     { key: "uebersicht", label: t.tabOverview, href: "/assets" },
     { key: "etf", label: t.tabEtf, href: "/assets?tab=etf" },
     { key: "krypto", label: t.tabCrypto, href: "/assets?tab=krypto" },
+    { key: "immobilie", label: t.tabProperty, href: "/assets?tab=immobilie" },
   ];
   return (
     <section>
@@ -97,6 +107,8 @@ function Assets() {
         <EtfTab />
       ) : tab === "krypto" ? (
         <CryptoTab />
+      ) : tab === "immobilie" ? (
+        <PropertyTab />
       ) : (
         <AssetsHealthSection>
           <OverviewTab priceFor={priceFor} priceDay={priceDay} />
@@ -107,25 +119,58 @@ function Assets() {
 }
 
 function EtfTab() {
-  const load = useCallback(() => ok(api.GET("/api/assets/etf")), []);
-  const overview = useLoad(load);
-  return <Loading state={overview}>{(data) => <Etf data={data} />}</Loading>;
+  const load = useCallback(async () => {
+    const [etf, performance, plan] = await Promise.all([
+      ok(api.GET("/api/assets/etf")),
+      loadPerformance(),
+      // „Sparpläne“ only; the tab shows without it (a plan needs three closed months).
+      ok(api.GET("/api/household-plan")).catch(() => null),
+    ]);
+    return { etf, performance, plan };
+  }, []);
+  const state = useLoad(load);
+  return <Loading state={state}>{(data) => <Etf {...data} />}</Loading>;
 }
 
 const fundKey = (accountId: string, assetId: string) => `${accountId}~${assetId}`;
 
-function Etf({ data }: { data: EtfOverview }) {
+function Etf({ etf, performance, plan }: { etf: EtfOverview; performance: AssetsPerformance; plan: HouseholdPlan | null }) {
   const t = useT(assets);
-  const detail = useDetail("fonds");
-  const accounts = data.accounts ?? [];
-  const selected = accounts
+  const f = useFormat();
+  const depot = useDetail("depot");
+  const fund = useDetail("fonds");
+  const accounts = etf.accounts ?? [];
+  const portfolios = (performance.portfolios ?? []).filter((portfolio) => portfolio.kind === "depot");
+  const selectedFund = accounts
     .flatMap((account) => (account.positions ?? []).map((position) => ({ account, position })))
-    .find(({ account, position }) => fundKey(account.account_id, position.asset_id) === detail.id);
-  const panel = selected ? (
-    <DetailPanel title={selected.position.name} backLabel={t.tabEtf} onClose={detail.close}>
-      <FundPanel account={selected.account} position={selected.position} />
+    .find(({ account, position }) => fundKey(account.account_id, position.asset_id) === fund.id);
+  const selectedDepot = portfolios.find((portfolio) => portfolio.account_id === depot.id);
+  const depotAccount = selectedDepot ? accounts.find((account) => account.account_id === selectedDepot.account_id) : undefined;
+  const panel = selectedFund ? (
+    <DetailPanel
+      title={selectedFund.position.name}
+      backLabel={selectedFund.account.label}
+      onClose={() => depot.open(selectedFund.account.account_id)}
+    >
+      <FundPanel account={selectedFund.account} position={selectedFund.position} />
+    </DetailPanel>
+  ) : selectedDepot ? (
+    <DetailPanel title={selectedDepot.label} backLabel={t.tabEtf} onClose={depot.close}>
+      <div className="stack">
+        <PortfolioPayments portfolio={selectedDepot} />
+        {depotAccount ? (
+          <Positions
+            account={depotAccount}
+            linkProps={(assetId) => fund.linkProps(fundKey(depotAccount.account_id, assetId))}
+          />
+        ) : null}
+        <Link href={`/accounts/${selectedDepot.account_id}`} className="button-link secondary">
+          {t.openAccount(selectedDepot.label)}
+        </Link>
+      </div>
     </DetailPanel>
   ) : null;
+  const plans = (plan?.plans ?? []).filter((row) => row.asset_class === "depot");
   return (
     <DetailLayout panel={panel}>
       <div className="stack">
@@ -138,25 +183,46 @@ function Etf({ data }: { data: EtfOverview }) {
             </p>
           </section>
         ) : (
-          accounts.map((account) => (
-            <Positions
-              key={account.account_id}
-              account={account}
-              linkProps={(assetId) => detail.linkProps(fundKey(account.account_id, assetId))}
-            />
-          ))
+          <>
+            <section className="card stack asset-total" aria-label={t.etfTotal}>
+              <p className="planning-kpi-label">{t.etfTotal}</p>
+              <p className="asset-total-value">{f.money(performance.etf.value_eur)}</p>
+              <p className="muted">
+                {t.depotsCount(portfolios.length)} · {t.onDay(f.date(performance.as_of))}
+              </p>
+            </section>
+            <div className="planning-kpis">
+              <GainKpi title={t.gainSince} figures={performance.etf} portfolios={portfolios} main />
+              <div className="planning-kpi" role="group" aria-label={t.distributionsTitle(performance.distributions_year)}>
+                <p className="planning-kpi-label">{t.distributionsTitle(performance.distributions_year)}</p>
+                <p className="planning-kpi-value">{f.money(performance.distributions_eur)}</p>
+                <p className="planning-kpi-sub">{t.distributionsSub(f.money(performance.distributions_tax_eur))}</p>
+              </div>
+              <div className="planning-kpi" role="group" aria-label={t.savingsPlansTitle}>
+                <p className="planning-kpi-label">{t.savingsPlansTitle}</p>
+                {plans.length === 0 ? (
+                  <p className="planning-kpi-sub">{t.noSavingsPlans}</p>
+                ) : (
+                  plans.map((row) => (
+                    <p key={row.key} className="planning-kpi-sub">
+                      <strong>{f.money(row.monthly)}</strong>{" "}
+                      {row.destination_payee ??
+                        accounts.find((account) => account.account_id === row.destination_account_id)?.label ??
+                        ""}
+                      {row.months.length > 0 ? ` · ${t.savingsPlansSub(f.month(row.months[row.months.length - 1]))}` : ""}
+                    </p>
+                  ))
+                )}
+              </div>
+            </div>
+            <div className="asset-pair">
+              {portfolios.map((portfolio) => (
+                <PortfolioCard key={portfolio.account_id} portfolio={portfolio} link={depot.linkProps(portfolio.account_id)} />
+              ))}
+            </div>
+          </>
         )}
-        <Postbox documents={data.documents ?? []} />
-        <div className="asset-pair">
-          <section className="card stack" aria-labelledby="pauschbetrag-title">
-            <h2 id="pauschbetrag-title">{t.allowance}</h2>
-            <p className="muted">{t.phase8}</p>
-          </section>
-          <section className="card stack" aria-labelledby="vorabpauschale-title">
-            <h2 id="vorabpauschale-title">{t.advanceLump}</h2>
-            <p className="muted">{t.phase8}</p>
-          </section>
-        </div>
+        <Postbox documents={etf.documents ?? []} />
       </div>
     </DetailLayout>
   );
@@ -193,7 +259,9 @@ function Positions({ account, linkProps }: { account: EtfAccount; linkProps: (as
           </li>
         ))}
       </ul>
-      <p className="muted hint">{t.todayHint}</p>
+      <p className="muted hint">
+        {t.todayValues} <InfoNote label={t.todayValues}>{t.todayHint}</InfoNote>
+      </p>
     </section>
   );
 }
@@ -311,7 +379,9 @@ function FundPanel({ account, position }: { account: EtfAccount; position: EtfPo
         <p>{reportLine(t, f, position)}</p>
         {position.report_on ? <p>{reportVerdict(t, position)}</p> : null}
       </div>
-      <p className="muted hint">{t.dailyHint}</p>
+      <p className="muted hint">
+        {t.priceSources} <InfoNote label={t.priceSources}>{t.dailyHint}</InfoNote>
+      </p>
       <Link href={`/accounts/${account.account_id}`} className="button-link secondary">
         {t.openAccount(account.label)}
       </Link>
