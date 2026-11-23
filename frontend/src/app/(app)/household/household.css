@@ -1,6 +1,7 @@
-/* Haushalt (phase 10 step 4b, mockup 19): the category table keeps its columns on the computer;
-   on the phone only the name, its share bar and the month's amount stay, and a tapped group
-   opens the detail panel with its subcategories and the plan. Tokens from globals.css only. */
+/* Haushalt (phase 10 step 4b, mockup 19; §7.6 Haushalt): the category table keeps its columns on
+   the computer; on the phone each group is one row (its name and the month's amount, a thin share
+   bar under it) and a tapped group opens the detail panel with its mean, its subcategories and the
+   plan. Tokens from globals.css only. */
 
 .household-sub {
   margin: 2px 0 0;
@@ -33,27 +34,76 @@ a.household-changed {
   background: var(--accent-tint);
 }
 
-.household-bar-phone,
-.household-plan-chip {
+/* „Davon angelegt: … ›“ under the surplus bars (§7.6 Haushalt (1)). */
+.household-invested {
+  margin: 12px 0 0;
+}
+
+.household-invested a {
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* The phone's group rows (§7.6 Haushalt (2)); hidden from 720 px, where the table is shown. */
+.household-groups {
   display: none;
 }
 
+.household-groups-month {
+  margin: 0 0 4px;
+}
+
+.household-groups-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.household-groups-list li {
+  border-bottom: 1px solid var(--divider);
+}
+
+a.household-group-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
+  color: var(--text);
+  text-decoration: none;
+}
+
+a.household-group-row[aria-current="true"] {
+  background: var(--accent-tint);
+}
+
+.household-group-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.household-group-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.household-group-line strong {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+a.household-group-row .household-share {
+  height: 4px;
+  min-width: 0;
+}
+
 @media (max-width: 719px) {
-  .household-table .household-wide {
-    display: none;
-  }
-  .household-table .household-bar-phone {
+  .household-groups {
     display: block;
-    max-width: 160px;
-    margin-top: 6px;
   }
-  .household-table .household-plan-chip {
-    display: inline-block;
-    margin-top: 4px;
-  }
-  .household-table th,
-  .household-table td {
-    white-space: normal;
+  .household-spending .household-table-wrap {
+    display: none;
   }
 }
 

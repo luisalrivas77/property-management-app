@@ -21,12 +21,17 @@
 //
 // Phase 10 (D267, mockup 19): a group's name opens the detail panel (`#d-gruppe-<group>`) with its
 // month, share and mean and its subcategories, each with its plan; the table still opens a group
-// in place on the computer. On the phone the table keeps the name, a share bar and the amount.
+// in place on the computer.
+//
+// Phase 10 §7.6 (Haushalt (1), (2)): „Gespart, nicht ausgegeben“ is no longer a card; the surplus
+// card's line „Davon angelegt: <saved> ›“ opens it in the panel (`#d-angelegt-<month>`). On the
+// phone the groups are rows (name and amount, a thin bar under it), the six largest first and
+// „Alle <N> anzeigen“, with no table; the mean and the plan are in a tapped group's panel.
 import "./household.css";
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useId, useState } from "react";
+import { Suspense, useCallback, useId, useState, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
@@ -201,6 +206,7 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
   const f = useFormat();
   const groupDetail = useDetail("gruppe");
   const closingDetail = useDetail("abschluss");
+  const savedDetail = useDetail("angelegt");
   const { months, transfers, health, overall, windowMonths, comparison } = year;
   const month = months[months.length - 1];
   if (!month) return null;
@@ -224,6 +230,12 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
     panel = (
       <DetailPanel title={t.changedTitle} backLabel={t.title} onClose={closingDetail.close}>
         <ChangedSinceClosing month={month.month} now={view.household} stored={view.stored} />
+      </DetailPanel>
+    );
+  } else if (savedDetail.id === month.month) {
+    panel = (
+      <DetailPanel title={t.savedTitle} backLabel={t.title} onClose={savedDetail.close}>
+        <SavedPanel month={month} transfers={transfers} />
       </DetailPanel>
     );
   } else if (groupDetail.id) {
@@ -281,7 +293,7 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
             <HealthTodoList todos={[...tooFew, ...(after?.closed.todos ?? [])]} onChanged={onChanged} />
           </section>
         )}
-        <SurplusBars months={months} windowMonths={means} />
+        <SurplusBars months={months} windowMonths={means} savedLink={savedDetail.linkProps(month.month)} />
         <SpendingTable
           months={months}
           windowMonths={means}
@@ -289,20 +301,28 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
           groupLink={groupDetail.linkProps}
           openGroup={groupDetail.id}
         />
-        <div className="planning-split">
-          <IncomeCard month={month} household={householdNow ?? null} />
-          <SavedBox month={month} transfers={transfers} />
-        </div>
+        <IncomeCard month={month} household={householdNow ?? null} />
       </div>
     </DetailLayout>
   );
 }
 
 /** Überschuss je Monat: income less spending per month, the chosen month in the strong
- * colour. The heights are the returned figures relative to the largest, for display only. */
-function SurplusBars({ months, windowMonths }: { months: HouseholdCashflow[]; windowMonths: HouseholdCashflow[] }) {
+ * colour. The heights are the returned figures relative to the largest, for display only.
+ * Under the bars one line „Davon angelegt: <the month's `saved`> ›“ (§7.6 Haushalt (1)), which
+ * opens what was saved, not spent, in the detail panel (`#d-angelegt-<month>`). */
+function SurplusBars({
+  months,
+  windowMonths,
+  savedLink,
+}: {
+  months: HouseholdCashflow[];
+  windowMonths: HouseholdCashflow[];
+  savedLink: LinkProps;
+}) {
   const t = useT(household);
   const f = useFormat();
+  const chosen = months[months.length - 1];
   const short = t.shortMonths.split(",");
   const largest = Math.max(0, ...months.map((m) => Math.abs(Number(m.surplus))));
   return (
@@ -335,6 +355,13 @@ function SurplusBars({ months, windowMonths }: { months: HouseholdCashflow[]; wi
           );
         })}
       </ul>
+      {chosen ? (
+        <p className="household-invested">
+          <a {...savedLink}>
+            {t.investedOf(f.money(chosen.saved))} <span aria-hidden="true">›</span>
+          </a>
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -398,8 +425,8 @@ function SpendingTable({
     const diff = toCents(now(b)) - toCents(now(a));
     return diff > 0n ? 1 : diff < 0n ? -1 : groupLabel(a).localeCompare(groupLabel(b));
   });
-  const bar = (amount: string, phone = false) => (
-    <span className={phone ? "household-share household-bar-phone" : "household-share"} aria-hidden="true">
+  const bar = (amount: string) => (
+    <span className="household-share" aria-hidden="true">
       <span style={{ width: `${Number(shareOf(amount, total)) * 100}%` }} />
     </span>
   );
@@ -423,103 +450,109 @@ function SpendingTable({
       {groups.length === 0 ? (
         <p className="muted">{t.noSpending}</p>
       ) : (
-        <div className="table-wrap">
-          <table className="household-table">
-            <thead>
-              <tr>
-                <th scope="col">{t.category}</th>
-                <th scope="col" className="household-wide">
-                  {t.share}
-                </th>
-                <th scope="col" className="num">
-                  {f.month(month.month)}
-                  {withPlan && !comparison.final ? t.soFar : ""}
-                </th>
-                {withPlan ? (
-                  <>
-                    <th scope="col" className="num household-wide">
-                      {t.planned}
-                    </th>
-                    <th scope="col" className="household-wide">
-                      {t.difference}
-                    </th>
-                  </>
-                ) : null}
-                <th scope="col" className="num household-wide">
-                  {windowMonths.length > 0 ? t.meanShort(windowMonths.length) : "Ø"}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {groups.flatMap((group) => {
-                const codes = orderedCodes(group, both, planned, month);
-                const expanded = open.has(group);
-                const rowId = `spending-${group}`;
-                const plans = planned.filter((row) => row.group === group).length;
-                const rows = [
-                  <tr key={group} aria-current={openGroup === group ? "true" : undefined}>
-                    <th scope="row">
-                      {codes.length > 0 ? (
-                        <button
-                          type="button"
-                          className="household-toggle"
-                          aria-expanded={expanded}
-                          aria-controls={codes.map((code) => `${rowId}-${code}`).join(" ")}
-                          aria-label={t.openGroup(groupLabel(group))}
-                          onClick={() => toggle(group)}
-                        >
-                          <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
-                        </button>
-                      ) : null}{" "}
-                      <a {...groupLink(group)} className="household-group">
-                        {groupLabel(group)}
-                      </a>
-                      {bar(now(group), true)}
-                      {plans > 0 ? <span className="badge badge-muted household-plan-chip">{t.plannedCount(plans)}</span> : null}
-                    </th>
-                    <td className="household-wide">{bar(now(group))}</td>
-                    <td className="num">{f.money(now(group))}</td>
-                    {planCells(plannedFor(planned, group, null))}
-                    <td className="num muted household-wide">{meanOf((m) => m.spending_by_group[group] ?? "0.00")}</td>
-                  </tr>,
-                ];
-                if (!expanded) return rows;
-                const codeNow = (code: string) => month.spending_by_category?.[group]?.[code] ?? "0.00";
-                for (const code of codes) {
-                  rows.push(
-                    <tr key={`${group}-${code}`} id={`${rowId}-${code}`} className="household-subrow">
-                      <th scope="row">
-                        {categoryLabel(code)}
-                        {bar(codeNow(code), true)}
+        <>
+          <PhoneGroups
+            groups={groups}
+            amountOf={now}
+            bar={bar}
+            plansOf={(group) => planned.filter((row) => row.group === group).length}
+            heading={`${f.month(month.month)}${withPlan && !comparison.final ? t.soFar : ""}`}
+            groupLink={groupLink}
+          />
+          <div className="table-wrap household-table-wrap">
+            <table className="household-table">
+              <thead>
+                <tr>
+                  <th scope="col">{t.category}</th>
+                  <th scope="col" className="household-wide">
+                    {t.share}
+                  </th>
+                  <th scope="col" className="num">
+                    {f.month(month.month)}
+                    {withPlan && !comparison.final ? t.soFar : ""}
+                  </th>
+                  {withPlan ? (
+                    <>
+                      <th scope="col" className="num household-wide">
+                        {t.planned}
                       </th>
-                      <td className="household-wide">{bar(codeNow(code))}</td>
-                      <td className="num">{f.money(codeNow(code))}</td>
-                      {planCells(plannedFor(planned, group, code))}
-                      <td className="num muted household-wide">{meanOf((m) => m.spending_by_category?.[group]?.[code] ?? "0.00")}</td>
+                      <th scope="col" className="household-wide">
+                        {t.difference}
+                      </th>
+                    </>
+                  ) : null}
+                  <th scope="col" className="num household-wide">
+                    {windowMonths.length > 0 ? t.meanShort(windowMonths.length) : "Ø"}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {groups.flatMap((group) => {
+                  const codes = orderedCodes(group, both, planned, month);
+                  const expanded = open.has(group);
+                  const rowId = `spending-${group}`;
+                  const rows = [
+                    <tr key={group} aria-current={openGroup === group ? "true" : undefined}>
+                      <th scope="row">
+                        {codes.length > 0 ? (
+                          <button
+                            type="button"
+                            className="household-toggle"
+                            aria-expanded={expanded}
+                            aria-controls={codes.map((code) => `${rowId}-${code}`).join(" ")}
+                            aria-label={t.openGroup(groupLabel(group))}
+                            onClick={() => toggle(group)}
+                          >
+                            <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+                          </button>
+                        ) : null}{" "}
+                        <a {...groupLink(group)} className="household-group">
+                          {groupLabel(group)}
+                        </a>
+                      </th>
+                      <td className="household-wide">{bar(now(group))}</td>
+                      <td className="num">{f.money(now(group))}</td>
+                      {planCells(plannedFor(planned, group, null))}
+                      <td className="num muted household-wide">{meanOf((m) => m.spending_by_group[group] ?? "0.00")}</td>
                     </tr>,
-                  );
-                }
-                return rows;
-              })}
-            </tbody>
-            <tfoot>
-              <tr>
-                <th scope="row">{withPlan && !comparison.final ? t.sumSoFar : t.sum}</th>
-                <td className="household-wide" />
-                <td className="num">
-                  <strong>{f.money(spent(month))}</strong>
-                </td>
-                {withPlan ? (
-                  <>
-                    <td className="household-wide" />
-                    <td className="household-wide" />
-                  </>
-                ) : null}
-                <td className="household-wide" />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+                  ];
+                  if (!expanded) return rows;
+                  const codeNow = (code: string) => month.spending_by_category?.[group]?.[code] ?? "0.00";
+                  for (const code of codes) {
+                    rows.push(
+                      <tr key={`${group}-${code}`} id={`${rowId}-${code}`} className="household-subrow">
+                        <th scope="row">
+                          {categoryLabel(code)}
+                        </th>
+                        <td className="household-wide">{bar(codeNow(code))}</td>
+                        <td className="num">{f.money(codeNow(code))}</td>
+                        {planCells(plannedFor(planned, group, code))}
+                        <td className="num muted household-wide">{meanOf((m) => m.spending_by_category?.[group]?.[code] ?? "0.00")}</td>
+                      </tr>,
+                    );
+                  }
+                  return rows;
+                })}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th scope="row">{withPlan && !comparison.final ? t.sumSoFar : t.sum}</th>
+                  <td className="household-wide" />
+                  <td className="num">
+                    <strong>{f.money(spent(month))}</strong>
+                  </td>
+                  {withPlan ? (
+                    <>
+                      <td className="household-wide" />
+                      <td className="household-wide" />
+                    </>
+                  ) : null}
+                  <td className="household-wide" />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </>
       )}
       {withPlan && !comparison.final ? (
         <p className="muted">
@@ -533,6 +566,63 @@ function SpendingTable({
         </p>
       ) : null}
     </section>
+  );
+}
+
+/** The groups shown on the phone before „Alle <N> anzeigen“ (§7.6 Haushalt (2)). */
+const PHONE_GROUPS = 6;
+
+/** On the phone (§7.6 Haushalt (2)): each group one row, its month's amount beside its name and
+ * a thin share bar under it, no table and no sideways scroll; the mean and the plan open with
+ * the group in the detail panel. The six largest first, the rest behind „Alle <N> anzeigen“.
+ * Hidden from 720 px, where the table is shown. */
+function PhoneGroups({
+  groups,
+  amountOf,
+  bar,
+  plansOf,
+  heading,
+  groupLink,
+}: {
+  /** Largest first, as the table orders them. */
+  groups: string[];
+  amountOf: (group: string) => string;
+  bar: (amount: string) => ReactNode;
+  plansOf: (group: string) => number;
+  /** The month's name, „bisher“ while it runs. */
+  heading: string;
+  groupLink: (group: string) => LinkProps;
+}) {
+  const t = useT(household);
+  const f = useFormat();
+  const [all, setAll] = useState(false);
+  const shown = all ? groups : groups.slice(0, PHONE_GROUPS);
+  return (
+    <div className="household-groups">
+      <p className="muted household-groups-month">{heading}</p>
+      <ul className="household-groups-list">
+        {shown.map((group) => {
+          const plans = plansOf(group);
+          return (
+            <li key={group}>
+              <a {...groupLink(group)} className="household-group-row">
+                <span className="household-group-line">
+                  <span className="household-group-name">{groupLabel(group)}</span>
+                  {plans > 0 ? <span className="badge badge-muted">{t.plannedCount(plans)}</span> : null}
+                  <strong>{f.money(amountOf(group))}</strong>
+                </span>
+                {bar(amountOf(group))}
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+      {groups.length > PHONE_GROUPS && !all ? (
+        <button type="button" className="secondary" onClick={() => setAll(true)}>
+          {t.showAllGroups(groups.length)}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -727,8 +817,10 @@ function ChangedSinceClosing({ month, now, stored }: { month: string; now: House
  * stayed on the current accounts. Since D159 amended (6) (migration 0036) the Geldanlage part
  * is its own row that opens to its subcategories (Immobilien, Wertpapiere & ETF, Krypto,
  * Sparen & Tagesgeld, „Sonstige Geldanlage“ last), as a spending group opens in the table;
- * only codes with an amount this month are listed. */
-function SavedBox({ month, transfers }: { month: HouseholdCashflow; transfers: TransferLinkView[] }) {
+ * only codes with an amount this month are listed. Since phase 10 §7.6 (Haushalt (1)) no longer a
+ * card on the page: the surplus card's line „Davon angelegt“ opens it in the detail panel, whose
+ * title is the card's former heading. */
+function SavedPanel({ month, transfers }: { month: HouseholdCashflow; transfers: TransferLinkView[] }) {
   const t = useT(household);
   const f = useFormat();
   const [open, setOpen] = useState(false);
@@ -744,8 +836,8 @@ function SavedBox({ month, transfers }: { month: HouseholdCashflow; transfers: T
   const opens = invested.length > 1 || (invested.length === 1 && invested[0]?.[0] !== INVESTMENT_FALLBACK);
   const rowId = "saved-investment";
   return (
-    <section className="card stack notice-info household-side" aria-labelledby="saved-title">
-      <h2 id="saved-title">{t.savedTitle}</h2>
+    <div className="stack">
+      <p className="muted">{f.month(month.month)}</p>
       <p>
         {t.savedText}
         {toCents(month.saved) > 0n ? t.savedAmount(f.money(month.saved)) : ""}
@@ -795,6 +887,6 @@ function SavedBox({ month, transfers }: { month: HouseholdCashflow; transfers: T
             : t.overInvested(f.money(stayed.replace(/^-/, "")))}
         </p>
       ) : null}
-    </section>
+    </div>
   );
 }
