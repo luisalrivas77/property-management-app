@@ -31080,6 +31080,36 @@
             "$ref": "#/components/schemas/ExtractedValue",
             "description": "e.g. je zur Hälfte",
             "value_kind": "text"
+          },
+          "renovation_clause": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the sentence obliging the seller to renovate or refurbish the flat after the handover, paid with the Kaufpreis, as written, if the contract has one",
+            "value_kind": "text"
+          },
+          "renovation_amount": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the part of the Kaufpreis for that renovation as printed (brutto, incl. USt.), if stated",
+            "value_kind": "money"
+          },
+          "renovation_amount_net": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "that renovation's net amount (netto, without USt.), only if printed",
+            "value_kind": "money"
+          },
+          "renovation_vat_rate": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the Umsatzsteuer rate the contract states for that renovation, if stated",
+            "value_kind": "rate"
+          },
+          "renovation_start": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date that renovation begins, only if printed as a date",
+            "value_kind": "date"
+          },
+          "renovation_end": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date that renovation is to be finished, only if printed as a date",
+            "value_kind": "date"
           }
         },
         "additionalProperties": false,

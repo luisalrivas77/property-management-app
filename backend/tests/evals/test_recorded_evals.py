@@ -101,6 +101,8 @@ def _check(doc: Doc, recording: dict) -> None:
         _check_useful_life(doc, result)
     if doc.expected_lease_terms:
         _check_lease_terms(doc, result)
+    if doc.expected_price_renovation:
+        _check_price_renovation(doc, result)
 
 
 def _check_cost_lines(doc: Doc, read, *, real: bool) -> None:
@@ -213,6 +215,28 @@ def _check_lease_terms(doc: Doc, result) -> None:
     )
     clauses = {name: result.values[name].value for name in doc.clauses}
     assert got == doc.expected_lease_terms, f"{doc.name}: lease terms {got} from {clauses}"
+
+
+def _check_price_renovation(doc: Doc, result) -> None:
+    """Phase 3 D287: the renovation clause comes back cited, and the pre-fill proposes the
+    seller's renovation in the price with the gross, the net computed by code from the gross
+    and the printed USt. rate, and the period; the day the price was paid is left to type."""
+    prefill = pytest.importorskip("hausbuch.rules.prefill", reason="proposals chunk not merged")
+    assert doc.expected_price_renovation is not None
+    uncited = [name for name in doc.clauses if result.values[name].source is None]
+    assert uncited == [], f"{doc.name}: clauses without a page and quote: {uncited}"
+    extraction = EXTRACTION_MODELS[ExtractionKind.PURCHASE_CONTRACT].model_validate(result.values)
+    context = PrefillContext(document_id=uuid.uuid4(), classification=result.classification)
+    records = prefill.build_proposal(ExtractionKind.PURCHASE_CONTRACT, extraction, context)
+    [claim] = [r for r in records if r.key == "tax_input:price_renovation"]
+    got = {name: claim.fields[name].value for name in doc.expected_price_renovation}
+    assert got == doc.expected_price_renovation, f"{doc.name}: price renovation {got}"
+    assert claim.fields["value.amount_net"].derived_from == [
+        "renovation_amount",
+        "renovation_vat_rate",
+    ]
+    assert "value.paid_on" not in claim.fields
+    assert "value.status" not in claim.fields
 
 
 def _build_proposal(doc: Doc, result) -> None:

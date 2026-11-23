@@ -61,6 +61,11 @@ class Doc:
     # tenancy the pre-fill proposes.
     clauses: dict[str, str] = field(default_factory=dict)
     expected_lease_terms: tuple[str, int] | None = None
+    # A Kaufvertrag whose seller renovates after the handover, paid inside the price (phase 3
+    # D287): the pre-fill must propose tax_input:price_renovation with these fields (value.*
+    # name -> value), the net computed by code from the gross and the printed USt. rate, and
+    # leave the day the price was paid to the user.
+    expected_price_renovation: dict[str, str] | None = None
 
 
 DOCS: list[Doc] = [
@@ -116,6 +121,82 @@ DOCS: list[Doc] = [
             "ownership_clause": "je zur Hälfte",
         },
         expected_missing=["build_year"],
+    ),
+    Doc(
+        # Phase 3 D287 (Q-O180): the seller renovates the flat after the handover, paid inside
+        # the price, with the gross and the USt. rate printed and the work's dates; no net.
+        name="kaufvertrag_renovierung",
+        type="contract",
+        subtype="purchase_contract",
+        kind="purchase_contract",
+        pages=[
+            [
+                "Urkundenrolle Nr. 0567/2026",
+                "Verhandelt zu Beispielstadt am 3. März 2026",
+                "vor der Notarin Dr. Ina Muster.",
+                "",
+                "Kaufvertrag über Wohnungseigentum",
+                "",
+                "Verkäufer: Bernd Altbesitz, Ulmenweg 2, 34117 Kassel",
+                "Käufer: Luis Testkauf und Ana Testkauf, je zur Hälfte",
+            ],
+            [
+                "§ 1 Kaufgegenstand",
+                "Miteigentumsanteil von 120/1000 an dem Grundstück",
+                "Ahornallee 14, 01067 Dresden,",
+                "verbunden mit dem Sondereigentum an der Wohnung WE 5",
+                "laut Teilungserklärung. Wohnfläche ca. 64,0 m².",
+                "",
+                "§ 2 Kaufpreis",
+                "Der Kaufpreis beträgt 248.000,00 EUR.",
+                "Davon entfallen auf Grund und Boden 37.200,00 EUR.",
+            ],
+            [
+                "§ 3 Besitzübergang",
+                "Besitz, Nutzen und Lasten gehen am 01.07.2026 auf den Käufer über.",
+                "",
+                "§ 4 Renovierung durch den Verkäufer",
+                "Der Verkäufer renoviert die Wohnung nach der Übergabe auf eigene Kosten.",
+                "Auf die Renovierung entfallen vom Kaufpreis 23.800,00 EUR",
+                "einschließlich Umsatzsteuer von 19 %.",
+                "Die Arbeiten beginnen am 06.07.2026 und enden spätestens am 30.09.2026.",
+                "",
+                "§ 5 Kosten",
+                "Die Kosten dieses Vertrags trägt der Käufer.",
+            ],
+        ],
+        clauses={
+            "renovation_clause": (
+                "Der Verkäufer renoviert die Wohnung nach der Übergabe auf eigene Kosten."
+            ),
+        },
+        expected_price_renovation={
+            "value.amount": "23800.00",
+            "value.amount_net": "20000.00",
+            "value.period_start": "2026-07-06",
+            "value.period_end": "2026-09-30",
+        },
+        expected={
+            "property_kind": "Wohnungseigentum",
+            "street": "Ahornallee",
+            "house_number": "14",
+            "postal_code": "01067",
+            "city": "Dresden",
+            "notarized_on": "2026-03-03",
+            "purchase_date": "2026-07-01",
+            "purchase_price": "248000.00",
+            "land_value": "37200.00",
+            "unit_label": "WE 5",
+            "mea": {"numerator": 120, "denominator": 1000},
+            "floor_area_m2": "64.0",
+            "buyers": ["Luis Testkauf", "Ana Testkauf"],
+            "ownership_clause": "je zur Hälfte",
+            "renovation_amount": "23800.00",
+            "renovation_vat_rate": "0.19",
+            "renovation_start": "2026-07-06",
+            "renovation_end": "2026-09-30",
+        },
+        expected_missing=["build_year", "renovation_amount_net"],
     ),
     Doc(
         name="darlehensvertrag",

@@ -12269,6 +12269,18 @@ export interface components {
             buyers?: components["schemas"]["ExtractedValue"];
             /** @description e.g. je zur Hälfte */
             ownership_clause?: components["schemas"]["ExtractedValue"];
+            /** @description the sentence obliging the seller to renovate or refurbish the flat after the handover, paid with the Kaufpreis, as written, if the contract has one */
+            renovation_clause?: components["schemas"]["ExtractedValue"];
+            /** @description the part of the Kaufpreis for that renovation as printed (brutto, incl. USt.), if stated */
+            renovation_amount?: components["schemas"]["ExtractedValue"];
+            /** @description that renovation's net amount (netto, without USt.), only if printed */
+            renovation_amount_net?: components["schemas"]["ExtractedValue"];
+            /** @description the Umsatzsteuer rate the contract states for that renovation, if stated */
+            renovation_vat_rate?: components["schemas"]["ExtractedValue"];
+            /** @description the date that renovation begins, only if printed as a date */
+            renovation_start?: components["schemas"]["ExtractedValue"];
+            /** @description the date that renovation is to be finished, only if printed as a date */
+            renovation_end?: components["schemas"]["ExtractedValue"];
         };
         /**
          * PurchaseSummary

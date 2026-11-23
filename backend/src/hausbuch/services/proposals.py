@@ -148,7 +148,13 @@ from hausbuch.schemas.proposal import (
     ProposalApplyRecord,
     ProposalRecord,
 )
-from hausbuch.schemas.tax import LIMIT_15_CATEGORIES, TaxInput, TaxInputCreate, TaxInputKind
+from hausbuch.schemas.tax import (
+    LIMIT_15_CATEGORIES,
+    PriceRenovation,
+    TaxInput,
+    TaxInputCreate,
+    TaxInputKind,
+)
 from hausbuch.schemas.tenancy import InitialRent, TenancyCreate, TenantCreate
 from hausbuch.storage import BlobStore
 
@@ -1744,6 +1750,9 @@ class _Apply:
         given = _undot({f: values[f] for f in _PREFILL_TAX_INPUTS[kind] if f in values})
         if kind is TaxInputKind.GRUNDSTEUER_SCHEDULE:
             given["value"] = grundsteuer_schedule_value(given.get("value", {}))
+        if kind is TaxInputKind.PRICE_RENOVATION:
+            # D287: saving the Kaufvertrag's card claims the renovation
+            given.setdefault("value", {})["status"] = "claimed"
         value = given.get("value")
         if kind is TaxInputKind.PRIVATE_COST and isinstance(value, dict) and value.get("category"):
             # The class follows the category the user confirmed or changed on the card
@@ -1786,6 +1795,12 @@ class _Apply:
         )
         if kind is TaxInputKind.PRIVATE_COST:
             current = self._replaced_private_cost(record, data, current)
+        if current and kind is TaxInputKind.PRICE_RENOVATION:
+            (row,) = current
+            if not (isinstance(row.value, PriceRenovation) and row.value.status == "claimed"):
+                # D287: the Finanzamt's answer (accepted or declined) is never replaced by a
+                # Kaufvertrag read again; a change after it goes through Eure Angaben
+                return row.id
         if current:
             (row,) = current  # one per year (and loan): create_tax_input refuses a second
             if row.value == data.value and row.document_id == data.document_id:
@@ -2018,6 +2033,16 @@ _PREFILL_TAX_INPUTS = {
     # phase 2 D147: a Gutachten's shorter useful life (phase 3 D79), the years and first year
     # derived by code (rules.prefill._useful_life); the Gutachten is the row's document
     TaxInputKind.USEFUL_LIFE: ("tax_year", "value.years"),
+    # phase 3 D287: the seller's renovation in the price from a Kaufvertrag's clause; the
+    # status is set by the apply (claimed), never taken from the values
+    TaxInputKind.PRICE_RENOVATION: (
+        "value.amount",
+        "value.amount_net",
+        "value.period_start",
+        "value.period_end",
+        "value.paid_on",
+        "value.clause",
+    ),
 }
 
 
