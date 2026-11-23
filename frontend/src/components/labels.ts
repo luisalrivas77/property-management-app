@@ -823,6 +823,8 @@ const PRICE_SOURCE_DE: Record<PriceSourceKind, string> = {
   kraken_daily: "Kraken",
   ecb_fx: "EZB-Referenzkurs",
   user: "von Hand eingetragen",
+  // D291: a price read on demand with „Jetzt aktualisieren“, for today only
+  spot: "Aktueller Kurs",
 };
 const PRICE_SOURCE_EN: Record<PriceSourceKind, string> = {
   trade: "Trade confirmation",
@@ -833,6 +835,7 @@ const PRICE_SOURCE_EN: Record<PriceSourceKind, string> = {
   kraken_daily: "Kraken",
   ecb_fx: "ECB reference rate",
   user: "entered by hand",
+  spot: "Current price",
 };
 export const PRICE_SOURCE: Record<PriceSourceKind, string> = localized(PRICE_SOURCE_DE, PRICE_SOURCE_EN);
 

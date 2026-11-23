@@ -8,7 +8,7 @@
 // Estimates (the property's value, a loan's balance by its schedule) are labelled as such, and
 // every gap the server names is a to-do with its button or link (principle 7).
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
@@ -17,8 +17,9 @@ import { netWorthText } from "@/i18n/netWorth";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { fromCents, signedMoney, toCents } from "./cashflow";
+import { CryptoRefresh } from "./cryptoRefresh";
 import { Loading } from "./ui";
-import { useLoad } from "./useLoad";
+import { useLoad, type Loaded as LoadState } from "./useLoad";
 
 type NetWorthLine = components["schemas"]["NetWorthLine"];
 type NetWorthTodo = components["schemas"]["NetWorthTodo"];
@@ -56,9 +57,24 @@ async function loadNetWorth(): Promise<Loaded> {
   };
 }
 
-/** The Übersicht's two net-worth sections; one request for both. */
-export function NetWorthSection() {
+/** The Übersicht's two net-worth sections; one request for both. With `onCryptoRefreshed`,
+ * „Jetzt aktualisieren“ (D291) above them reloads both and tells the caller. */
+export function NetWorthSection({ onCryptoRefreshed }: { onCryptoRefreshed?: () => void } = {}) {
   const state = useLoad(loadNetWorth);
+  const { reload } = state;
+  const refreshed = useCallback(() => {
+    reload();
+    onCryptoRefreshed?.();
+  }, [reload, onCryptoRefreshed]);
+  return (
+    <>
+      {onCryptoRefreshed ? <CryptoRefresh onRefreshed={refreshed} /> : null}
+      <NetWorthFigures state={state} />
+    </>
+  );
+}
+
+function NetWorthFigures({ state }: { state: LoadState<Loaded> }) {
   return (
     <Loading state={state}>
       {({ overview, owners }) => (
