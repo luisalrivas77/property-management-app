@@ -23,6 +23,18 @@ computed (`unvalued`), nor those of a total that holds it.
    - IN_TRANSIT: a bank payment the net worth counts „unterwegs zu <Depot>“, at the euros it
      counts there, on its payment day.
    - UNITS: funds moved in or out after the anchor day (an Einbuchung, an Ausbuchung).
+   - TRADE / DISTRIBUTION: a purchase, sale or distribution after the anchor day whose cash
+     is not inside the balance counts as on a depot without one (2.): the balance does not
+     hold its cash, while its units are in today's value. Its cash is inside when its own
+     cash line (`asset_movement.transaction_id`) is booked after the anchor day up to the day
+     the balance reaches; a movement with no linked line is inside when it is dated within
+     that span. A trade or distribution dated on or before the anchor day (so its units are
+     in START) whose linked line is booked inside the balance adds that line's amount to
+     START (a purchase's line takes it off): the anchor, a booking-date balance, does not
+     hold that cash yet, the balance after it does (a trade date before the anchor, its
+     settlement after). Residual: a trade without a
+     linked line, dated within the balance but settled after the day the balance reaches,
+     counts as inside until the next statement brings its cash line.
 2. *A depot without a cash balance* (its cash is in no figure): from its first movement,
    TRADE for each purchase (+) and sale (−) at its booked euros, DISTRIBUTION (−, net of the
    tax withheld) for each distribution, UNITS for funds moved.
@@ -164,6 +176,7 @@ def _movements(conn: Connection, account_ids: Sequence[UUID], today: date) -> li
                 m.eur_amount,
                 m.tax_withheld_eur,
                 m.occurred_at,
+                m.transaction_id,
             )
             .where(
                 m.account_id.in_(account_ids),
@@ -216,6 +229,34 @@ def _cash_lines(
         if transfer.get(r.id):
             lines[r.account_id].append((r.id, r.booking_date, transfer[r.id]))
     return lines, unbooked
+
+
+def _linked_lines(conn: Connection, movements: Iterable[Any]) -> dict[UUID, tuple[date, Decimal]]:
+    """Each cash line a movement is linked to (`asset_movement.transaction_id`), not merged
+    away as a duplicate: its booking date (the day the balance counts it) and its amount."""
+    ids = list({mv.transaction_id for mv in movements if mv.transaction_id is not None})
+    if not ids:
+        return {}
+    t = transaction_table.c
+    return {
+        r.id: (r.booking_date, r.amount)
+        for r in conn.execute(
+            select(t.id, t.booking_date, t.amount).where(
+                t.id.in_(ids), t.excluded_as_duplicate_of.is_(None)
+            )
+        )
+    }
+
+
+def _cash_inside(
+    mv: Any, on: date, window: tuple[Decimal, date, date], lines: dict[UUID, tuple[date, Decimal]]
+) -> bool:
+    """Whether a depot movement's cash is inside its balance (after the anchor day, up to the
+    day the balance reaches): by its linked line's booking date, else by its own date."""
+    _, anchor_on, through = window
+    line = lines.get(mv.transaction_id) if mv.transaction_id is not None else None
+    day = line[0] if line is not None else on
+    return anchor_on < day <= through
 
 
 class _Flows:
@@ -331,6 +372,17 @@ def assets_performance(conn: Connection, today: date) -> AssetsPerformance:
     basis = depot_cash_basis(conn, today)
     windows = {k: v.window for k, v in basis.items() if v.window is not None and k in kinds}
     starts = _depot_start(conn, windows)
+    linked = _linked_lines(conn, movements)
+    for mv in movements:  # a trade or distribution in START whose cash the balance holds
+        window = windows.get(mv.account_id)
+        cash = mv.kind in _TRADE or mv.kind == MovementKind.DISTRIBUTION.value
+        if window is None or not cash or mv.transaction_id not in linked:
+            continue
+        if mv.occurred_at.astimezone(UTC).date() > window[1]:
+            continue
+        start = starts[mv.account_id]
+        if start is not None and _cash_inside(mv, window[1], window, linked):
+            starts[mv.account_id] = start + linked[mv.transaction_id][1]
     lines, unbooked = _cash_lines(conn, windows)
     for account_id, (_, anchor_on, _) in windows.items():
         flows.add(account_id, anchor_on, starts[account_id], K.START, ("start", account_id))
@@ -362,7 +414,7 @@ def assets_performance(conn: Connection, today: date) -> AssetsPerformance:
                     mv.account_id, on, amount, K.UNITS, mv.id, pair,
                     movement_id=mv.id, asset_id=mv.asset_id, units=mv.quantity,
                 )  # fmt: skip
-            elif window is not None:
+            elif window is not None and _cash_inside(mv, on, window, linked):
                 continue  # a trade or a distribution moves the depot's own cash
             elif mv.kind in _TRADE:
                 sign = _TRADE[mv.kind]

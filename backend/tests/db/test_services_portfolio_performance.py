@@ -85,7 +85,7 @@ def test_a_depots_cash_transfers_and_money_in_transit_are_paid_in(run, read, fre
     assert read(other, assets_performance, ON).portfolios == []
 
 
-def _moved(ctx, depot, fund, kind, units, on, eur=None):
+def _moved(ctx, depot, fund, kind, units, on, eur=None, line=None):
     ctx.conn.execute(
         insert(movement_table).values(
             workspace_id=ctx.workspace_id,
@@ -96,6 +96,7 @@ def _moved(ctx, depot, fund, kind, units, on, eur=None):
             eur_amount=None if eur is None else Decimal(eur),
             occurred_at=datetime.combine(on, time(10), UTC),
             source="user",
+            transaction_id=line,
             status="confirmed",
             created_at=ctx.now,
         )
@@ -187,3 +188,72 @@ def test_a_fund_its_report_contradicts_leaves_no_gain(run, read, fresh_workspace
         assert figures.unvalued_positions == 1 and figures.unpriced_flows == 0
     # The crypto total holds no such portfolio.
     assert seen.crypto.unvalued_positions == 0 and seen.crypto.no_rate is NoRateReason.NO_FLOWS
+
+
+@pytest.mark.parametrize("sent", [False, True])
+def test_a_purchase_after_the_last_cash_statement_is_paid_in(run, read, fresh_workspaces, sent):
+    """A depot whose cash statement (300 € paid in on 30 Sep) reaches 30 Sep. A trade
+    confirmation buys 5 units for 500 € on 10 Oct; no statement holds its cash yet, so the
+    balance still reads 300 € while the 5 units are in today's value: the purchase is money
+    paid in, not the depot's own business. Today one unit costs 100 €:
+      value 300 + 500 = 800; paid in 300 + 500 = 800 → gain 0.
+    With a 500 € bank payment to the depot on 29 Oct (in transit, the statement ending
+    before it), both the value and the money paid in grow by 500 €: gain 0 again."""
+    ws, _ = fresh_workspaces
+    current = _account(
+        run, ws, "Girokonto", AccountKind.BANK_CURRENT, iban=CURRENT_IBAN, opening="1000.00"
+    )
+    depot = _account(run, ws, "Depot", AccountKind.DEPOT, iban=DEPOT_IBAN)
+
+    def stored(ctx):
+        fund = _asset(ctx, kind="etf", isin="IE00BEISPL09", name="Fonds Welt")
+        _moved(ctx, depot, fund, "acquisition", "5", date(2026, 10, 10), eur="-500.00")
+        _price(ctx, fund, ON, "100", "user")
+        cash = _import(ctx, depot, date(2026, 7, 1), date(2026, 9, 30))
+        credit = _line(ctx, depot, cash, date(2026, 9, 30), "300.00")
+        statement = _import(ctx, current, date(2026, 7, 1), ON)
+        debit = _line(ctx, current, statement, PAID_ON, "-500.00", iban=DEPOT_IBAN)
+        return credit, debit
+
+    credit, debit = run(ws, stored)
+    _book(run, ws, credit, "300.00", C.INTERNAL_TRANSFER_IN)
+    if sent:
+        _book(run, ws, debit, "-500.00", C.INTERNAL_TRANSFER_OUT)
+
+    [portfolio] = read(ws, assets_performance, ON).portfolios
+    [overview] = read(ws, assets_overview, ON, today=ON).accounts
+    moved = Decimal("500.00") if sent else Decimal("0.00")
+    assert portfolio.figures.value_eur == overview.total_eur == Decimal("800.00") + moved
+    kinds = [(f.kind, f.on, f.amount_eur) for f in portfolio.flows]
+    assert (K.TRADE, date(2026, 10, 10), Decimal("500.00")) in kinds
+    assert (K.IN_TRANSIT in {k for k, _, _ in kinds}) is sent
+    figures = portfolio.figures
+    assert (figures.paid_in_eur, figures.gain_eur) == (Decimal("800.00") + moved, Decimal("0.00"))
+
+
+def test_a_purchase_settled_after_the_anchor_day_is_not_counted_twice(run, read, fresh_workspaces):
+    """A trade confirmation of 29 Jun buys 5 units for 500 €; its cash line is booked on
+    1 Jul, after the anchor of 800 € on 30 Jun (a balance by booking date, so it still holds
+    the 500 €). The 5 units are in the start value, and the balance after 1 Jul is 300 €:
+    the start takes the line off, 800 − 500 + 5 × 100 = 800. Today one unit costs 100 €:
+      value 300 + 500 = 800; paid in 800 → gain 0 (it read −500 € before)."""
+    ws, _ = fresh_workspaces
+    depot = _account(
+        run, ws, "Depot", AccountKind.DEPOT, iban=DEPOT_IBAN, opening="800.00", on=date(2026, 6, 30)
+    )
+
+    def stored(ctx):
+        fund = _asset(ctx, kind="etf", isin="IE00BEISPL09", name="Fonds Welt")
+        cash = _import(ctx, depot, date(2026, 7, 1), date(2026, 10, 20))
+        settled = _line(ctx, depot, cash, date(2026, 7, 1), "-500.00")
+        _moved(ctx, depot, fund, "acquisition", "5", date(2026, 6, 29), eur="-500.00", line=settled)
+        _price(ctx, fund, date(2026, 6, 30), "100", "user")
+        _price(ctx, fund, ON, "100", "user")
+
+    run(ws, stored)
+    [portfolio] = read(ws, assets_performance, ON).portfolios
+    assert portfolio.figures.value_eur == Decimal("800.00")
+    assert [(f.kind, f.on, f.amount_eur) for f in portfolio.flows] == [
+        (K.START, date(2026, 6, 30), Decimal("800.00")),
+    ]
+    assert portfolio.figures.gain_eur == Decimal("0.00")
