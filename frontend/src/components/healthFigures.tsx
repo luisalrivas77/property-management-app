@@ -138,11 +138,7 @@ export function AssetsHealthSection({ children }: { children?: ReactNode }) {
       {requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? <MonthEndCard day={requested} onDone={health.reload} /> : null}
       {children}
       <Loading state={health}>
-        {(data) => (
-          <>
-            <SeriesCard series={data.series ?? []} onChanged={health.reload} />
-          </>
-        )}
+        {(data) => <SeriesCard series={data.series ?? []} onChanged={health.reload} />}
       </Loading>
     </div>
   );
