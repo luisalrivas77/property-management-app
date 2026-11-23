@@ -228,3 +228,24 @@ def test_a_failed_price_step_records_no_run(
     with pytest.raises(RuntimeError):
         job.run_refresh_crypto(_deps(app_engine, blob_store), workspace_id=ws, job_id=43)
     assert _runs(read, ws) == []
+
+
+def test_a_failed_event_write_never_fails_a_run_whose_prices_are_stored(
+    run, read, app_engine, blob_store, fresh_workspaces, monkeypatch, caplog
+):
+    ws, _ = fresh_workspaces
+    _setup(run, ws)
+    monkeypatch.setattr(job, "sync_wallets", lambda *a, **k: [])
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("event")
+
+    monkeypatch.setattr(job, "record_run", broken)
+    fake = Fake({"Ticker?pair=INVEUR": (200, TICKER)})
+    with caplog.at_level(logging.INFO, logger="hausbuch.jobs.refresh_crypto"):
+        result = job.run_refresh_crypto(
+            _deps(app_engine, blob_store), workspace_id=ws, fetch=fake, job_id=44
+        )
+    assert result.prices.stored == 1 and len(_spot_rows(read, ws)) == 1
+    assert any(r.fields.get("event") == "crypto_refresh_record_failed" for r in caplog.records)
+    assert _runs(read, ws) == []

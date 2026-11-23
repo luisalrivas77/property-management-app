@@ -13,15 +13,16 @@ Queued by POST /crypto/refresh (services.crypto_refresh) for one workspace:
 Step 1 failing as a whole (its first read, say) never stops step 2: it is logged by its
 exception class and the prices are still read. A failure of step 2 is logged the same way and
 raised, so the job ends `failed` and GET /crypto/refresh says so. No retry: the household
-presses again.
+presses again. The lock is the wallet syncs' own (`wallets:sync`), so the daily run, „Jetzt
+abrufen“ and this job never read one address at once.
 
 A run whose step 2 finished appends one `workspace.crypto_refreshed` event with its counts
 (schemas.events.CryptoRefreshed, tied to its job id), so GET /crypto/refresh can name the
 coins that got no current price and the addresses that were not read (principle 7). An
 address counts as not read when its run did not end `succeeded` (failed, refused, throttled,
 or no run at all, wallet.key_missing); a failure of the relink after the reads is logged and
-is not a failed read. The lock is the wallet syncs' own (`wallets:sync`), so the daily run, „Jetzt
-abrufen“ and this job never read one address at once.
+is not a failed read. A failure to write the event is logged and never fails the run: the
+prices are stored, and GET then shows no counts.
 
 Logged: one line per run with counts and the failed price sources by name, error class and
 HTTP status only; never an address, a pair's price, a URL or the key.
@@ -163,5 +164,9 @@ def run_refresh_crypto(
         raise
     finally:
         _log(result)
-    record_run(deps, workspace_id, result, job_id)
+    try:
+        record_run(deps, workspace_id, result, job_id)
+    except Exception as exc:  # noqa: BLE001 - the prices stand; GET then shows no counts
+        fields = {"event": "crypto_refresh_record_failed", "exc_type": type(exc).__name__}
+        logger.error("the run's counts were not recorded", extra={"fields": fields})
     return result
