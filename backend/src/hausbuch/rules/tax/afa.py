@@ -19,6 +19,13 @@ plus its share of the Nebenkosten, movable.asset_basis) leaves the building's sh
 land's, so basis() is reduced by it everywhere the building basis is read: the statutory AfA,
 the D79 book value and the 15 % test's building cost (anschaffungsnah.limit_status). The asset
 has its own line (movable.py, wk.afa_movable). Without one, every figure is unchanged.
+
+The seller's renovation inside the purchase price (phase 3 D287, Q-O180): while a
+price_renovation input counts (AfaFacts.price_renovation, claimed or accepted), its gross
+amount leaves the building's share too, after the movable assets, never the land's, so basis()
+and with it the 15 % limit fall. The 15 % test counts it (anschaffungsnah.limit_status); over
+the limit it returns as a limit_exceeded addition of the year paid. Without one, or declined,
+every figure is unchanged.
 """
 
 from collections.abc import Iterable
@@ -62,13 +69,23 @@ def movable_deducted(facts: AfaFacts) -> Decimal:
     return cents(sum((asset_basis(facts, a) for a in in_price), ZERO))
 
 
+def price_renovation_deducted(facts: AfaFacts) -> Decimal:
+    """D287: the gross seller's renovation claimed out of the price (0.00 without a claim)."""
+    claim = facts.price_renovation
+    return cents(claim.amount) if claim is not None else cents(ZERO)
+
+
 def basis(facts: AfaFacts) -> Decimal | None:
-    """The building's AfA basis: its share less the movable assets bought with the flat (D80),
-    never below 0.00; None without a split."""
+    """The building's AfA basis: its share less the movable assets bought with the flat (D80)
+    and less the seller's renovation claimed out of the price (D287), never below 0.00; None
+    without a split."""
     share = building_share(facts)
     if share is None:
         return None
-    return max(share - movable_deducted(facts), cents(ZERO))
+    deducted = movable_deducted(facts)
+    if facts.price_renovation is not None:
+        deducted += price_renovation_deducted(facts)
+    return max(share - deducted, cents(ZERO))
 
 
 def _sources(facts: AfaFacts, tax_year: int) -> list[SourceRef]:
@@ -87,6 +104,8 @@ def _sources(facts: AfaFacts, tax_year: int) -> list[SourceRef]:
     for asset in current_assets(facts):  # D80: a kitchen in the price reduced the basis
         if asset.in_purchase_price:
             refs.append(SourceRef(kind="tax_input", id=asset.tax_input_id))
+    if facts.price_renovation is not None:  # D287: the claim reduced the basis
+        refs.append(SourceRef(kind="tax_input", id=facts.price_renovation.tax_input_id))
     return unique(refs)
 
 

@@ -9,7 +9,10 @@ projection states it as an assumption).
 - gain = V − C − (purchase price + Σ cost rows + Σ basis additions − AfA claimed), the AfA
   claimed being the building's plus the D80 kitchen's (wk.afa_movable) of every year owned
   (D94): the kitchen's cost stays in the basis and the sale value is not split, as if the
-  kitchen left with the flat at its book value.
+  kitchen left with the flat at its book value. The part of the price claimed as the
+  household's own renovation while the claim counts (phase 3 D287) leaves the purchase price:
+  expensed within the 15 % limit, it is not an acquisition cost any more; over the limit it is
+  back in the basis as a basis addition, so it is counted once either way.
 - Each owner's share of the gain is half-up to the cent, the last owner taking the
   remainder; it is below the Freigrenze when 0 < share < the Freigrenze (§23 Abs. 3 S. 5, a
   cliff, tested per spouse), the sale year's rule set's speculation_freigrenze (D93). The
@@ -70,6 +73,7 @@ class SaleFacts:
     cash_flows: Sequence[DatedFlow]  # CF_y on 31 Dec of each year, actual and projected
     freigrenze: Decimal  # §23 Abs. 3 S. 5, per spouse: the sale year's rule set's (D93)
     basis_additions: Decimal = ZERO  # Σ costs capitalised into the basis (D73)
+    price_renovation: Decimal = ZERO  # the price's renovation claimed out of it (phase 3 D287)
     override_rate: Decimal | None = None  # the sale year's marginal_rate_override
     joint: bool = True
     value_sources: list[SourceRef] = field(default_factory=list)
@@ -129,7 +133,9 @@ def sale(f: SaleFacts, tariff: Tariff) -> SaleResult:
     owners: list[OwnerGain] = []
     tax = ZERO
     if taxable:
-        basis = f.purchase_price + f.cost_rows + f.basis_additions - f.afa_claimed
+        basis = (
+            f.purchase_price - f.price_renovation + f.cost_rows + f.basis_additions - f.afa_claimed
+        )
         gain = f.value - selling - basis
         owners = _owner_gains(gain, f.shares, f.freigrenze)
         if owners:

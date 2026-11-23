@@ -166,6 +166,15 @@ export const todoActions = defineMessages({
     uploadAreaCalculation: "Wohnflächenberechnung hochladen",
     livingArea: "Wohnfläche (m²)",
     saveLivingArea: "Wohnfläche speichern",
+    // PriceRenovationAnswer (phase 3 D287)
+    priceRenovationYes: "Ja, anerkannt",
+    priceRenovationNo: "Nein, abgelehnt",
+    priceRenovationTitle: "Renovierung im Kaufpreis",
+    priceRenovationYesText: (amount: string | null) =>
+      `Das Finanzamt hat die Renovierung${amount ? ` über ${amount}` : ""} als Erhaltungsaufwand anerkannt. Die Angabe bleibt, wie sie ist; die Frage endet.`,
+    priceRenovationNoText: (amount: string | null) =>
+      `Das Finanzamt hat die Renovierung${amount ? ` über ${amount}` : ""} nicht anerkannt. Der Betrag zählt dann wieder zum Kaufpreis und wird mit dem Gebäude abgeschrieben (AfA); die bisherigen Entwürfe bleiben im Verlauf.`,
+    priceRenovationGone: "Die Angabe wurde inzwischen geändert. Bitte die Seite neu laden.",
   },
   en: {
     saving: "Saving …",
@@ -219,5 +228,13 @@ export const todoActions = defineMessages({
     uploadAreaCalculation: "Upload the living-area calculation (Wohnflächenberechnung)",
     livingArea: "Living area (m²)",
     saveLivingArea: "Save living area",
+    priceRenovationYes: "Yes, accepted",
+    priceRenovationNo: "No, refused",
+    priceRenovationTitle: "Renovation in the purchase price",
+    priceRenovationYesText: (amount: string | null) =>
+      `The Finanzamt accepted the renovation${amount ? ` of ${amount}` : ""} as maintenance costs (Erhaltungsaufwand). The entry stays as it is; the question ends.`,
+    priceRenovationNoText: (amount: string | null) =>
+      `The Finanzamt did not accept the renovation${amount ? ` of ${amount}` : ""}. The amount then counts as part of the purchase price again and is depreciated with the building (AfA); the earlier drafts stay in the history.`,
+    priceRenovationGone: "The entry has been changed in the meantime. Please reload the page.",
   },
 });

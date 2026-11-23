@@ -83,7 +83,10 @@ export type GuideAction =
   | { kind: "living_area" }
   /** anlage_n.no_pay_overruled (phase 4b D195): withdraw the owner's „Kein Arbeitslohn“ row
    * the warning cites. */
-  | { kind: "withdraw_no_pay"; returnInputId: string | null };
+  | { kind: "withdraw_no_pay"; returnInputId: string | null }
+  /** tax.price_renovation_ask (phase 3 D287): „Ja“ records the claim as accepted, „Nein“ as
+   * declined, each a new row superseding the cited claim. */
+  | { kind: "price_renovation_answer"; taxInputId: string; amount: string | undefined };
 
 /** Was tun, in plain words: what to upload, open or confirm, not the law. The warning is
  * passed too, for a text that depends on what it cites (a payment or a tax input). */
@@ -192,6 +195,17 @@ function benefitBooked(warning: DraftWarning, ctx: GuideContext): GuideAction {
 }
 const questions = (_: DraftWarning, ctx: GuideContext) => link(questionnaireHref(ctx.year), "Jahresfragen beantworten");
 
+/** The card „Renovierung im Kaufpreis“ on Steuern › Eure Angaben (phase 3 D287). */
+const priceRenovationCard = (label: string) => (_: DraftWarning, ctx: GuideContext) =>
+  link(`${taxFormHref("angaben", { year: ctx.year, propertyId: ctx.propertyId ?? null, ownerId: null })}#tax-price-renovation`, label);
+
+/** tax.price_renovation_ask: the buttons need the property and the claim the warning cites. */
+const priceRenovationAnswer = (warning: DraftWarning, ctx: GuideContext): GuideAction | null => {
+  const id = (warning.refs ?? []).find((ref) => ref.kind === "tax_input")?.id;
+  if (!ctx.propertyId || !id) return priceRenovationCard("Renovierung im Kaufpreis öffnen")(warning, ctx);
+  return { kind: "price_renovation_answer", taxInputId: id, amount: warning.params?.amount };
+};
+
 // --- the map --------------------------------------------------------------------------------
 
 export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
@@ -236,6 +250,23 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
               : undefined,
           }
         : null,
+  },
+  // Phase 3 D287: the seller's renovation inside the purchase price, claimed openly.
+  "tax.price_renovation_ask": {
+    todo: true,
+    title: () => "Hat das Finanzamt die Renovierung im Kaufpreis anerkannt?",
+    text: (p) =>
+      `Der Einkommensteuerbescheid ${p.tax_year ?? ""} ist bestätigt. Im Bescheid oder seinen Erläuterungen nachsehen, ob die Renovierung im Kaufpreis${p.amount ? ` (${formatMoney(p.amount)})` : ""} als Erhaltungsaufwand anerkannt wurde. „Ja“ beendet die Frage. „Nein“ zählt den Betrag wieder zum Kaufpreis und damit zur AfA; die bisherigen Entwürfe bleiben im Verlauf.`,
+    action: priceRenovationAnswer,
+  },
+  "tax.price_renovation_not_applied": {
+    todo: true,
+    title: () => "Renovierung im Kaufpreis zählt nicht",
+    text: (p) =>
+      p.reason === "before_handover"
+        ? "Die Arbeiten beginnen laut Angabe vor der Übergabe; dann sind sie Sache des Verkäufers. Den Zeitraum der Renovierung prüfen und korrigieren oder die Angabe zurückziehen."
+        : "Der Betrag ist nicht kleiner als der Gebäudeanteil des Kaufpreises, das kann nicht stimmen. Den Betrag prüfen und korrigieren oder die Angabe zurückziehen.",
+    action: priceRenovationCard("Renovierung im Kaufpreis prüfen"),
   },
   "afa.acquisition_cost_without_row": {
     todo: true,
@@ -685,7 +716,90 @@ export function WarningActionView({
           onDone={onChanged}
         />
       ) : null;
+    case "price_renovation_answer":
+      return ctx.propertyId ? (
+        <PriceRenovationAnswer propertyId={ctx.propertyId} taxInputId={action.taxInputId} amount={action.amount} onChanged={onChanged} />
+      ) : null;
   }
+}
+
+/** tax.price_renovation_ask (phase 3 D287): „Ja“ and „Nein“, each after a confirm. The answer
+ * is a new row superseding the cited claim, its value repeated with the status accepted or
+ * declined (append-only, D58); „Nein“ returns the amount to the price and the AfA, the earlier
+ * drafts stay in History. The server refuses a claim no longer current (tax_input.not_current). */
+function PriceRenovationAnswer({
+  propertyId,
+  taxInputId,
+  amount,
+  onChanged,
+}: {
+  propertyId: string;
+  taxInputId: string;
+  amount: string | undefined;
+  onChanged?: () => void;
+}) {
+  const t = useT(todoActions);
+  const c = useT(common);
+  const f = useFormat();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  async function confirm(status: "accepted" | "declined", close: () => void) {
+    setBusy(true);
+    setError(null);
+    try {
+      const rows = await ok(
+        api.GET("/api/properties/{property_id}/tax-inputs", {
+          params: { path: { property_id: propertyId }, query: { kind: "price_renovation" } },
+        }),
+      );
+      const claim = rows.find((row) => row.id === taxInputId);
+      if (!claim) throw new Error(t.priceRenovationGone);
+      await ok(
+        api.POST("/api/properties/{property_id}/tax-inputs", {
+          params: { path: { property_id: propertyId } },
+          body: {
+            property_id: propertyId,
+            kind: "price_renovation",
+            document_id: claim.document_id,
+            value: { ...(claim.value as components["schemas"]["PriceRenovation"]), status },
+            supersedes_id: claim.id,
+            withdrawn: false,
+          },
+        }),
+      );
+      close();
+      onChanged?.();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const shown = amount ? f.money(amount) : null;
+  const answer = (status: "accepted" | "declined", label: string, title: string, text: string, buttonClass: string) => (
+    <ActionDialog label={label} title={title} buttonClass={buttonClass}>
+      {(close) => (
+        <>
+          <p>{text}</p>
+          <ErrorNotice error={error} />
+          <div className="row">
+            <button type="button" disabled={busy} onClick={() => void confirm(status, close)}>
+              {busy ? t.saving : label}
+            </button>
+            <button type="button" className="secondary" onClick={close}>
+              {c.cancel}
+            </button>
+          </div>
+        </>
+      )}
+    </ActionDialog>
+  );
+  return (
+    <>
+      {answer("accepted", t.priceRenovationYes, t.priceRenovationTitle, t.priceRenovationYesText(shown), "")}
+      {answer("declined", t.priceRenovationNo, t.priceRenovationTitle, t.priceRenovationNoText(shown), "secondary")}
+    </>
+  );
 }
 
 /** payment_proof.missing with an offer (phase 3 D149): a payment proof already stored and

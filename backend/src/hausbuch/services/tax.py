@@ -46,6 +46,7 @@ from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import document_link as link_table
+from hausbuch.db.tables import income_input as income_input_table
 from hausbuch.db.tables import property_price_split as split_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import tax_input as tax_input_table
@@ -70,6 +71,7 @@ from hausbuch.schemas.enums import (
     DocumentSubtype,
     ExtractionKind,
     ImportStatus,
+    IncomeInputKind,
     LinkTarget,
 )
 from hausbuch.schemas.loan import Loan, ScheduleEntry
@@ -85,6 +87,7 @@ from hausbuch.schemas.tax import (
     PurchaseSummary,
     RuleSet,
     TaxInputFact,
+    TaxInputKind,
     TaxLoan,
     TaxOwner,
     TaxProperty,
@@ -238,7 +241,10 @@ def draft_facts(
     if private_proofs:
         allocations += _private_proofs(conn, property_id)
     tax_inputs = _tax_inputs(conn, property_id)
-    bills = {r.document_id for r in cost_rows} | {r.document_id for r in tax_inputs}
+    # D287: the Kaufvertrag of a seller's renovation is evidence of the claim, not a bill.
+    bills = {r.document_id for r in cost_rows} | {
+        r.document_id for r in tax_inputs if r.kind is not TaxInputKind.PRICE_RENOVATION
+    }
     bills.discard(None)
 
     return DraftFacts(
@@ -272,7 +278,29 @@ def draft_facts(
         today=today,
         coverage=_coverage(conn, accounts),
         pending=_pending(conn, property_id, accounts, tax_year),
+        assessed_years=_assessed_years(conn, tax_inputs),
     )
+
+
+def _assessed_years(conn: Connection, tax_inputs: Sequence[TaxInputFact]) -> list[int]:
+    """D287: the years whose Einkommensteuerbescheid is confirmed (a household bescheid_zve
+    income input in force), read only when the property has a seller's renovation input, the
+    one rule that asks for them."""
+    if not any(r.kind is TaxInputKind.PRICE_RENOVATION for r in tax_inputs):
+        return []
+    ii = income_input_table.c
+    later = income_input_table.alias("later")
+    rows = conn.execute(
+        select(ii.tax_year)
+        .where(
+            ii.kind == IncomeInputKind.BESCHEID_ZVE.value,
+            ii.owner_id.is_(None),
+            ii.withdrawn.is_(False),
+            ~exists().where(later.c.supersedes_id == ii.id),
+        )
+        .distinct()
+    )
+    return sorted(r.tax_year for r in rows if r.tax_year is not None)
 
 
 # --- Records -------------------------------------------------------------------------

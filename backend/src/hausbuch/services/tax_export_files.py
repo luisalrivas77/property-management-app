@@ -367,6 +367,19 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
     ),
     # Phase 3 D143, D150.
     WarningCode.PAYMENT_PROOF_MISSING: lambda p: _proof_missing_text(p),
+    # Phase 3 D287.
+    WarningCode.TAX_PRICE_RENOVATION_ASK: lambda p: (
+        f"Der Einkommensteuerbescheid {p.get('tax_year', '')} liegt vor: hat das Finanzamt die "
+        f"Renovierung im Kaufpreis ({_p(p)}) als Erhaltungsaufwand anerkannt?"
+    ),
+    WarningCode.TAX_PRICE_RENOVATION_NOT_APPLIED: lambda p: (
+        f"Die Renovierung im Kaufpreis ({_p(p)}) zählt nicht: "
+        + (
+            "die Arbeiten beginnen vor der Übergabe."
+            if p.get("reason") == "before_handover"
+            else "der Betrag ist nicht kleiner als der Gebäudeanteil des Kaufpreises."
+        )
+    ),
     WarningCode.ANLAGE_N_CERTIFICATE_MISSING: lambda p: (
         "Keine Lohnsteuerbescheinigung für dieses Jahr: die Zahlen beruhen auf "
         "Gehaltsabrechnungen oder der Schätzung."

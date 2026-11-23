@@ -375,10 +375,13 @@ class LineBook:
 
 def afa_facts(facts: DraftFacts, additions=()) -> AfaFacts:
     """§5.2's facts from the draft's (the AfA basis from the record only, D55), with the
-    useful_life (D79) and movable_asset (D80) inputs in force."""
+    useful_life (D79) and movable_asset (D80) inputs in force and the seller's renovation
+    claimed out of the price (D287)."""
+    from .price_renovation import applied  # D287; imports this module
+
     prop = facts.property
     evidence = {AllocationCategory.ACQUISITION_COST, AllocationCategory.PURCHASE_PRICE}
-    return AfaFacts(
+    base = AfaFacts(
         property_id=prop.id,
         purchase_price=prop.purchase_price,
         build_year=prop.build_year,
@@ -412,3 +415,5 @@ def afa_facts(facts: DraftFacts, additions=()) -> AfaFacts:
             if row.tax_year is not None
         ],
     )
+    claim, _ = applied(facts, base)
+    return base if claim is None else base.model_copy(update={"price_renovation": claim})

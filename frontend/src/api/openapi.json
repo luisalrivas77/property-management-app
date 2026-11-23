@@ -29245,6 +29245,68 @@
         "title": "PriceLabel",
         "description": "Where a shown price comes from, in the screen's words (D174 (4))."
       },
+      "PriceRenovation": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "claimed",
+              "accepted",
+              "declined"
+            ],
+            "title": "Status"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "amount_net": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount Net"
+          },
+          "period_start": {
+            "type": "string",
+            "format": "date",
+            "title": "Period Start"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Period End"
+          },
+          "paid_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Paid On"
+          },
+          "clause": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clause"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "amount",
+          "amount_net",
+          "period_start",
+          "period_end",
+          "paid_on"
+        ],
+        "title": "PriceRenovation",
+        "description": "Phase 3 D287 (Q-O180, Luis 23 Nov 2026): the Kaufvertrag obliges the seller to renovate\nthe flat after the handover, paid inside the price; the household claims that part as its\nown renovation, openly (BFH IX R 34/03 points the other way, so the Finanzamt may refuse).\n\nWhile `claimed` (or `accepted`, after the Finanzamt's assessment said yes) the gross\n`amount` leaves the building's share of the AfA basis (never the land's), counts in the\n15 % test at `amount_net` as work done on `period_end` (D76), and within the limit is\nErhaltungsaufwand in the year of `paid_on` (§11 EStG, the day the price was paid). Over the\nlimit it returns to the basis (limit_exceeded). `declined` (the Finanzamt's „Nein“) and no\nrow leave the draft exactly as without the claim.\n\ndocument_id on the row is the Kaufvertrag; `clause` quotes its renovation clause (free text:\nit stays in the row and never enters the event payload). The row has no tax_year."
+      },
       "PriceSourceKind": {
         "type": "string",
         "enum": [
@@ -36266,6 +36328,9 @@
               },
               {
                 "$ref": "#/components/schemas/GrundsteuerSchedule"
+              },
+              {
+                "$ref": "#/components/schemas/PriceRenovation"
               }
             ],
             "title": "Value"
@@ -36457,6 +36522,9 @@
               },
               {
                 "$ref": "#/components/schemas/GrundsteuerSchedule"
+              },
+              {
+                "$ref": "#/components/schemas/PriceRenovation"
               }
             ],
             "title": "Value"
@@ -36526,7 +36594,8 @@
           "useful_life",
           "movable_asset",
           "private_cost",
-          "grundsteuer_schedule"
+          "grundsteuer_schedule",
+          "price_renovation"
         ],
         "title": "TaxInputKind"
       },
@@ -40257,6 +40326,8 @@
           "tax.travel_frequency",
           "tax.private_cost_paid_from_account",
           "payment_proof.missing",
+          "tax.price_renovation_ask",
+          "tax.price_renovation_not_applied",
           "anlage_n.certificate_missing",
           "anlage_n.church_mismatch",
           "anlage_n.tax_class_6",

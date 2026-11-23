@@ -10,7 +10,9 @@ allocations and tax inputs and returns the draft with every line's sources:
    kitchen bought with the flat leaves the building basis of both the AfA and the 15 % test),
    the line rules (§5.4–5.7, 5.10), then the categories no rule owns, routed by
    the rule set's category_lines (Grundsteuer, insurance, management and bank fees,
-   professional fees), and the year's private_cost rows into wk.other (phase 4b §5.12, D111).
+   professional fees), the year's private_cost rows into wk.other (phase 4b §5.12, D111),
+   and the seller's renovation claimed out of the price into wk.maintenance in the year paid
+   (D287, price_renovation.py).
 3. Lines are merged by key (amounts summed, sources united). income.rent_total is the sum of
    the merged Z13 rows (D71). Open categories, an undecided renovation and the pending lines
    of the year are excluded and counted (D59).
@@ -60,7 +62,7 @@ from hausbuch.schemas.tax import (
 
 from .. import proof_match
 from ..document_checklist import build_checklist
-from . import einnahmen, erhaltungsaufwand, hausgeld, schuldzinsen, vorab
+from . import einnahmen, erhaltungsaufwand, hausgeld, price_renovation, schuldzinsen, vorab
 from ._common import (
     ZERO,
     LineBook,
@@ -746,6 +748,7 @@ def draft(
         warnings += r.warnings
     _generic(facts, tax_year, rule_set, book, index)
     warnings += _private_costs(facts, tax_year, rule_set, book, limit, private)
+    warnings += price_renovation.lines(facts, building, tax_year, book, limit)  # D287
     warnings += _payment_proofs(full, tax_year)  # D143, D161
 
     rows = _merge_rows(rows)

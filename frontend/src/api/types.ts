@@ -11529,6 +11529,50 @@ export interface components {
             read_at?: string | null;
         };
         /**
+         * PriceRenovation
+         * @description Phase 3 D287 (Q-O180, Luis 23 Nov 2026): the Kaufvertrag obliges the seller to renovate
+         *     the flat after the handover, paid inside the price; the household claims that part as its
+         *     own renovation, openly (BFH IX R 34/03 points the other way, so the Finanzamt may refuse).
+         *
+         *     While `claimed` (or `accepted`, after the Finanzamt's assessment said yes) the gross
+         *     `amount` leaves the building's share of the AfA basis (never the land's), counts in the
+         *     15 % test at `amount_net` as work done on `period_end` (D76), and within the limit is
+         *     Erhaltungsaufwand in the year of `paid_on` (§11 EStG, the day the price was paid). Over the
+         *     limit it returns to the basis (limit_exceeded). `declined` (the Finanzamt's „Nein“) and no
+         *     row leave the draft exactly as without the claim.
+         *
+         *     document_id on the row is the Kaufvertrag; `clause` quotes its renovation clause (free text:
+         *     it stays in the row and never enters the event payload). The row has no tax_year.
+         */
+        PriceRenovation: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "claimed" | "accepted" | "declined";
+            /** Amount */
+            amount: string;
+            /** Amount Net */
+            amount_net: string;
+            /**
+             * Period Start
+             * Format: date
+             */
+            period_start: string;
+            /**
+             * Period End
+             * Format: date
+             */
+            period_end: string;
+            /**
+             * Paid On
+             * Format: date
+             */
+            paid_on: string;
+            /** Clause */
+            clause?: string | null;
+        };
+        /**
          * PriceSourceKind
          * @description price.source (migration 0025). Named ...Kind because §11's PriceSource is the fetcher
          *     protocol below. The precedence among one day's rows is rules.valuation's data.
@@ -14225,7 +14269,7 @@ export interface components {
             /** Document Id */
             document_id?: string | null;
             /** Value */
-            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"] | components["schemas"]["MovableAsset"] | components["schemas"]["PrivateCostValue"] | components["schemas"]["GrundsteuerSchedule"];
+            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"] | components["schemas"]["MovableAsset"] | components["schemas"]["PrivateCostValue"] | components["schemas"]["GrundsteuerSchedule"] | components["schemas"]["PriceRenovation"];
             /** Note */
             note?: string | null;
             /** Supersedes Id */
@@ -14279,7 +14323,7 @@ export interface components {
             /** Document Id */
             document_id?: string | null;
             /** Value */
-            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"] | components["schemas"]["MovableAsset"] | components["schemas"]["PrivateCostValue"] | components["schemas"]["GrundsteuerSchedule"];
+            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"] | components["schemas"]["MovableAsset"] | components["schemas"]["PrivateCostValue"] | components["schemas"]["GrundsteuerSchedule"] | components["schemas"]["PriceRenovation"];
             /** Note */
             note?: string | null;
             /** Supersedes Id */
@@ -14296,7 +14340,7 @@ export interface components {
          * TaxInputKind
          * @enum {string}
          */
-        TaxInputKind: "spread_82b" | "renovation_treatment" | "exclude_from_15pct" | "market_rent" | "ruecklage_spent" | "interest_certified" | "pre_handover_income" | "useful_life" | "movable_asset" | "private_cost" | "grundsteuer_schedule";
+        TaxInputKind: "spread_82b" | "renovation_treatment" | "exclude_from_15pct" | "market_rent" | "ruecklage_spent" | "interest_certified" | "pre_handover_income" | "useful_life" | "movable_asset" | "private_cost" | "grundsteuer_schedule" | "price_renovation";
         /**
          * TaxRateResult
          * @description GET /api/tax-rate: the Steuern screen's "Steuerwirkung" line (§8, §9).
@@ -15931,7 +15975,7 @@ export interface components {
          * WarningCode
          * @enum {string}
          */
-        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "afa.movable_asset_no_evidence" | "afa.movable_asset_exceeds_building" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "limit.private_cost_undated" | "limit.private_cost_after_window" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed" | "tax.travel_frequency" | "tax.private_cost_paid_from_account" | "payment_proof.missing" | "anlage_n.certificate_missing" | "anlage_n.church_mismatch" | "anlage_n.tax_class_6" | "anlage_n.periods_overlap" | "anlage_n.days_implausible" | "anlage_n.home_office_capped" | "anlage_n.too_many_routes" | "anlage_n.receipt_missing" | "anlage_n.form_provisional" | "anlage_n.payslip_gap" | "anlage_n.payslip_no_ytd" | "anlage_n.work_room_records" | "anlage_n.work_room_centre" | "anlage_n.work_room_partial" | "anlage_n.first_workplace_check" | "anlage_n.no_pay_overruled" | "return.progression_provisional" | "return.benefit_possible_double" | "return.benefit_booked" | "return.children_mismatch" | "return.kindergeld_apply" | "return.child_over_18" | "return.childcare_until_14" | "return.donation_over_cap" | "return.filing_required" | "return.questionnaire_open" | "return.not_modelled" | "questionnaire_provisional" | "tax_export.questions_open";
+        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "afa.movable_asset_no_evidence" | "afa.movable_asset_exceeds_building" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "limit.private_cost_undated" | "limit.private_cost_after_window" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed" | "tax.travel_frequency" | "tax.private_cost_paid_from_account" | "payment_proof.missing" | "tax.price_renovation_ask" | "tax.price_renovation_not_applied" | "anlage_n.certificate_missing" | "anlage_n.church_mismatch" | "anlage_n.tax_class_6" | "anlage_n.periods_overlap" | "anlage_n.days_implausible" | "anlage_n.home_office_capped" | "anlage_n.too_many_routes" | "anlage_n.receipt_missing" | "anlage_n.form_provisional" | "anlage_n.payslip_gap" | "anlage_n.payslip_no_ytd" | "anlage_n.work_room_records" | "anlage_n.work_room_centre" | "anlage_n.work_room_partial" | "anlage_n.first_workplace_check" | "anlage_n.no_pay_overruled" | "return.progression_provisional" | "return.benefit_possible_double" | "return.benefit_booked" | "return.children_mismatch" | "return.kindergeld_apply" | "return.child_over_18" | "return.childcare_until_14" | "return.donation_over_cap" | "return.filing_required" | "return.questionnaire_open" | "return.not_modelled" | "questionnaire_provisional" | "tax_export.questions_open";
         /** WerbungskostenComponents */
         WerbungskostenComponents: {
             commute?: components["schemas"]["CommuteComponent"] | null;

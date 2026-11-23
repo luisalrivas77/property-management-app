@@ -486,6 +486,7 @@ MODELS: dict[str, type[Schema]] = {
     "spekulation": SpekulationFixture,
     "checklist_phase3": ChecklistFixture,
     "anlage_v_2026": DraftFixture,
+    "price_renovation": DraftFixture,  # D287
 }
 
 

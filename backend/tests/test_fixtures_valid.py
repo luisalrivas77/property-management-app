@@ -189,6 +189,15 @@ PHASE3_CASES = {
         # D149: a stored proof offered on the to-do of the bill it fits
         "private_repair_unlinked_proof_offered_on_its_todo",
     },
+    # D287: the seller's renovation inside the purchase price
+    "price_renovation": {
+        "claimed_within_limit_year_paid",
+        "claimed_over_limit_returns_to_basis",
+        "declined_is_the_draft_without_it",
+        "claimed_assessed_asks_the_finanzamt_answer",
+        "accepted_counts_and_asks_nothing",
+        "claimed_before_handover_not_applied",
+    },
 }
 
 

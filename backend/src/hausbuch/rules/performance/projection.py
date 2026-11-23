@@ -24,7 +24,7 @@ from functools import cache
 from uuid import UUID
 
 from hausbuch.rules.tax import registry
-from hausbuch.rules.tax._common import RunYears, of_year
+from hausbuch.rules.tax._common import RunYears, afa_facts, of_year
 from hausbuch.rules.tax.draft import draft
 from hausbuch.rules.tax.rounding import cents
 from hausbuch.rules.tax.spekulation import tax_free_from
@@ -374,6 +374,13 @@ def project(
     )
 
 
+def _price_renovation(facts: DraftFacts) -> Decimal:
+    """The gross of the seller's renovation claimed out of the price while the claim counts
+    (phase 3 D287), else 0.00: §23 then reads the price without it (sale.py)."""
+    claim = afa_facts(facts).price_renovation
+    return claim.amount if claim is not None else ZERO
+
+
 def _sale_facts(
     facts: DraftFacts,
     owners: Sequence[OwnerTaxProfile],
@@ -440,6 +447,7 @@ def _sale_facts(
         cash_flows=cash_flows,
         freigrenze=rule_set.speculation_freigrenze,
         basis_additions=additions,
+        price_renovation=_price_renovation(facts),
         override_rate=override,
         value_sources=[*scenario_refs, SourceRef(kind="property", id=prop.id)],
         balance_sources=[SourceRef(kind="loan", id=loan_id) for loan_id in loans],

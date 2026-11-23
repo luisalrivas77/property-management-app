@@ -710,6 +710,12 @@ class WarningCode(StrEnum):
     TAX_PRIVATE_COST_PAID_FROM_ACCOUNT = "tax.private_cost_paid_from_account"
     # Phase 3 D143: a counted bill no bank line paid and no matching payment proof proves
     PAYMENT_PROOF_MISSING = "payment_proof.missing"
+    # Phase 3 D287: the seller's renovation claimed out of the price, the year's assessment
+    # confirmed: did the Finanzamt accept it? („Ja“ / „Nein“)
+    TAX_PRICE_RENOVATION_ASK = "tax.price_renovation_ask"
+    # D287: a claim in force that the draft cannot apply (its work begins before the handover,
+    # or it does not fit in the building's share of the price); the draft is as without it
+    TAX_PRICE_RENOVATION_NOT_APPLIED = "tax.price_renovation_not_applied"
     ANLAGE_N_CERTIFICATE_MISSING = "anlage_n.certificate_missing"
     ANLAGE_N_CHURCH_MISMATCH = "anlage_n.church_mismatch"
     ANLAGE_N_TAX_CLASS_6 = "anlage_n.tax_class_6"
@@ -779,6 +785,8 @@ WARNING_SEVERITY: dict[WarningCode, Severity] = {
     W.TAX_TRAVEL_FREQUENCY: "info",
     W.TAX_PRIVATE_COST_PAID_FROM_ACCOUNT: "warning",
     W.PAYMENT_PROOF_MISSING: "warning",
+    W.TAX_PRICE_RENOVATION_ASK: "warning",
+    W.TAX_PRICE_RENOVATION_NOT_APPLIED: "warning",
     W.ANLAGE_N_CERTIFICATE_MISSING: "warning",
     W.ANLAGE_N_CHURCH_MISMATCH: "warning",
     W.ANLAGE_N_TAX_CLASS_6: "warning",
@@ -1014,6 +1022,21 @@ class MovableAssetFact(Schema):
     document_id: UUID | None = None
 
 
+class PriceRenovationFact(Schema):
+    """A price_renovation tax input in force that counts (D287: claimed or accepted, its work
+    begun on or after the handover): its gross amount leaves the building's share of the AfA
+    basis, its net counts in the 15 % test as work done on period_end, and within the limit it
+    is Erhaltungsaufwand in the year of paid_on."""
+
+    tax_input_id: UUID
+    amount: PositiveMoney
+    amount_net: PositiveMoney
+    period_start: date
+    period_end: date
+    paid_on: date
+    document_id: UUID | None = None
+
+
 class AfaFacts(Schema):
     property_id: UUID
     purchase_price: PositiveMoney
@@ -1027,6 +1050,7 @@ class AfaFacts(Schema):
     allocations: list[AllocationFact] = Field(default_factory=list)
     useful_lives: list[UsefulLifeFact] = Field(default_factory=list)  # in force only (D79)
     movable_assets: list[MovableAssetFact] = Field(default_factory=list)  # in force only (D80)
+    price_renovation: PriceRenovationFact | None = None  # D287, only while it counts
 
 
 AfaMethod = Literal["statutory", "useful_life"]
@@ -1228,6 +1252,9 @@ class DraftFacts(Schema):
     # Phase 3 D150: per bill (document id), the amounts of the cost lines its current reading
     # states; the rules use them only when they sum to the bill's combined total.
     bill_parts: dict[UUID, list[Money]] = Field(default_factory=dict)
+    # Phase 3 D287: the tax years whose Einkommensteuerbescheid is confirmed (a bescheid_zve
+    # income input in force); a claimed seller's renovation then asks whether it was accepted.
+    assessed_years: list[TaxYear] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:

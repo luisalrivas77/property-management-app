@@ -1978,6 +1978,11 @@ const WARNING_TEXT_DE: Record<WarningCode, (params: Params) => string> = {
     p.proof_rest
       ? `Zahlungsnachweis fehlt: ${proofBill(p)} über ${money(p)} zählt mit. Ein Teil ist nachgewiesen; es fehlt noch der Nachweis über ${money(p, "proof_rest")}.`
       : `Zahlungsnachweis fehlt: ${proofBill(p)} über ${money(p)} zählt mit, aber nichts zeigt, dass sie bezahlt wurde${p.proof_amount ? ` (der hochgeladene Nachweis lautet über ${money(p, "proof_amount")}, der Betrag passt nicht)` : ""}.`,
+  // Phase 3 D287: the seller's renovation inside the purchase price.
+  "tax.price_renovation_ask": (p) =>
+    `Der Einkommensteuerbescheid ${p.tax_year ?? ""} liegt vor: hat das Finanzamt die Renovierung im Kaufpreis (${money(p)}) als Erhaltungsaufwand anerkannt?`,
+  "tax.price_renovation_not_applied": (p) =>
+    `Die Renovierung im Kaufpreis (${money(p)}) zählt nicht: ${p.reason === "before_handover" ? "die Arbeiten beginnen vor der Übergabe." : "der Betrag ist nicht kleiner als der Gebäudeanteil des Kaufpreises."}`,
   "anlage_n.certificate_missing": () =>
     "Keine Lohnsteuerbescheinigung für dieses Jahr: die Zahlen beruhen auf Gehaltsabrechnungen oder der Schätzung.",
   "anlage_n.church_mismatch": () =>
@@ -2096,6 +2101,10 @@ const WARNING_TEXT_EN: Record<WarningCode, (params: Params) => string> = {
     p.proof_rest
       ? `Proof of payment missing: ${proofBill(p)} of ${money(p)} counts. Part of it is proven; the proof of ${money(p, "proof_rest")} is still missing.`
       : `Proof of payment missing: ${proofBill(p)} of ${money(p)} counts, but nothing shows it was paid${p.proof_amount ? ` (the uploaded proof is for ${money(p, "proof_amount")}, the amount does not match)` : ""}.`,
+  "tax.price_renovation_ask": (p) =>
+    `The ${p.tax_year ?? ""} income tax assessment is in: did the Finanzamt accept the renovation in the purchase price (${money(p)}) as maintenance costs?`,
+  "tax.price_renovation_not_applied": (p) =>
+    `The renovation in the purchase price (${money(p)}) does not count: ${p.reason === "before_handover" ? "the work begins before the handover." : "the amount is not below the building's share of the price."}`,
   "anlage_n.certificate_missing": () =>
     "No Lohnsteuerbescheinigung for this year: the figures rest on payslips or the estimate.",
   "anlage_n.church_mismatch": () => "The certificate's church tax markers do not match the owner's details.",
