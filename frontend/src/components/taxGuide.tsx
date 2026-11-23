@@ -911,16 +911,24 @@ function ReviewStep({
   const keys: string[] = points.map(pointKey);
   const openIndex = detail.id ? keys.indexOf(detail.id) : -1;
   const openSteps = guide.steps.filter((s) => s.kind !== "review" && s.state !== "done");
-  // Where the open point stood: once it is cleared (the guide reloads without it), „Nächster
-  // Punkt“ offers the point that moved into its place, so the flow never dead-ends.
-  const [lastIndex, setLastIndex] = useState(0);
+  // The open point, remembered: once it is cleared (the guide reloads without it), „Nächster
+  // Punkt“ offers the next point of the same kind on the same property (a payment's twin, which
+  // the reload may have moved), else the point that moved into its place, so the flow never
+  // dead-ends.
+  const [last, setLast] = useState<{ index: number; code: string; propertyId: string | null }>({ index: 0, code: "", propertyId: null });
+  const opened = openIndex >= 0 ? points[openIndex] : undefined;
   // Kept during render, not in an effect: React re-renders at once with the new value.
-  if (openIndex >= 0 && openIndex !== lastIndex) setLastIndex(openIndex);
+  if (opened && (openIndex !== last.index || opened.code !== last.code || (opened.property_id ?? null) !== last.propertyId)) {
+    setLast({ index: openIndex, code: opened.code, propertyId: opened.property_id ?? null });
+  }
+  const twin = points.findIndex((p) => p.code === last.code && (p.property_id ?? null) === last.propertyId);
   const nextIndex =
     points.length === 0
       ? -1
       : openIndex < 0
-        ? Math.min(lastIndex, points.length - 1)
+        ? twin >= 0
+          ? twin
+          : Math.min(last.index, points.length - 1)
         : points.length > 1
           ? (openIndex + 1) % points.length
           : -1;
