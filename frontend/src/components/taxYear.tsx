@@ -3,7 +3,8 @@
 // The tab bar of Steuern › one tax year (phase-3.md §11, phase-4b.md §10, phase 10 D281): Eure
 // Angaben (every input the forms read), Anlage V, Anlage N, KAP and SO (disabled until phase 8),
 // and the way into the Jahresfragen. Each tab is a URL: /tax/2026?tab=angaben (?eigentuemer=…),
-// /tax/2026 (Anlage V, ?immobilie=…), /tax/2026?tab=anlage-n (?eigentuemer=…), and
+// /tax/2026?tab=anlage-v (Anlage V, ?immobilie=…; /tax/2026 alone is the guided start page since
+// phase 10 D290), /tax/2026?tab=anlage-n (?eigentuemer=…), and
 // /tax/2026/fragen for the questionnaire. The chosen property and owner travel along, so
 // switching back keeps them.
 import Link from "next/link";
@@ -18,6 +19,29 @@ export const ANLAGE_N_PARAM = "anlage-n";
 
 /** The value of ?tab= for the Eure Angaben tab (D281). */
 export const ANGABEN_PARAM = "angaben";
+
+/** The value of ?tab= for the Anlage V view (phase 10 D290): /tax/<year> alone is the guided
+ * start page since then; /tax/<year>?immobilie=… without a tab still opens the Anlage V view. */
+export const ANLAGE_V_PARAM = "anlage-v";
+
+/** ?schritt=… opens one step of the guided path (phase 10 D290): the property's tax inputs
+ * (immobilie, with ?immobilie=…), the Belege (belege) and Prüfen und abgeben (pruefen). Eure
+ * Angaben stays ?tab=angaben and the Jahresfragen /tax/<year>/fragen. */
+export const STEP_PARAM = "schritt";
+export type GuideStepParam = "immobilie" | "belege" | "pruefen";
+
+/** The guided start page of a year (phase 10 D290). */
+export function taxGuideHref(year: number): string {
+  return `/tax/${year}`;
+}
+
+/** One step of the guided path; `propertyId` for the Immobilie step. */
+export function taxStepHref(year: number, step: GuideStepParam, propertyId: string | null = null): string {
+  return `/tax/${year}${query([
+    [STEP_PARAM, step],
+    ["immobilie", step === "immobilie" ? propertyId : null],
+  ])}`;
+}
 
 export interface TaxYearState {
   year: number;
@@ -80,7 +104,12 @@ export function withBenefitPrefill(href: string, prefill: BenefitPrefill | null)
 
 /** The URL of one form of the year; „angaben“ is the Eure Angaben tab (D281). */
 export function taxFormHref(form: TaxForm, state: TaxYearState): string {
-  if (form === "v") return `/tax/${state.year}${query([["immobilie", state.propertyId]])}`;
+  if (form === "v") {
+    return `/tax/${state.year}${query([
+      ["tab", ANLAGE_V_PARAM],
+      ["immobilie", state.propertyId],
+    ])}`;
+  }
   return `/tax/${state.year}${query([
     ["tab", form === "n" ? ANLAGE_N_PARAM : ANGABEN_PARAM],
     ["eigentuemer", state.ownerId],
@@ -117,6 +146,9 @@ export function TaxTabs({ current, state }: { current: TaxForm; state: TaxYearSt
   const t = useT(messages);
   return (
     <nav aria-label={t.forms} className="tabs">
+      <Link href={taxGuideHref(state.year)} scroll={false}>
+        {t.allSteps}
+      </Link>
       <Link href={taxFormHref("angaben", state)} aria-current={current === "angaben" ? "page" : undefined} scroll={false}>
         {t.inputsTab}
       </Link>

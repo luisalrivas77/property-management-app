@@ -35,6 +35,7 @@ import { TaxEffectLine } from "./income";
 import { ALLOCATION_CATEGORY, TAX_SOURCE_KIND, WARNING_TEXT, taxNote } from "./labels";
 import { ActionDialog, Loading } from "./ui";
 import { GrundsteuerSection, MovableAssetSection, UsefulLifeSection } from "./taxInputs";
+import { taxFormHref } from "./taxYear";
 import { AnlageVTodos, type GuideContext, WarningActionView, WhatToDo, resolveAction } from "./todos";
 import { useLoad, type Loaded } from "./useLoad";
 
@@ -119,7 +120,7 @@ export function AnlageVScreen({
   const ids = useId();
   const href = useCallback(
     (y: number, propertyId: string) =>
-      properties.length > 1 ? `/tax/${y}?immobilie=${encodeURIComponent(propertyId)}` : `/tax/${y}`,
+      taxFormHref("v", { year: y, propertyId: properties.length > 1 ? propertyId : null, ownerId: null }),
     [properties.length],
   );
 
@@ -744,7 +745,7 @@ function OpenPoints({
   );
 }
 
-function LimitCard({ limit }: { limit: LimitStatus | null }) {
+export function LimitCard({ limit }: { limit: LimitStatus | null }) {
   const t = useT(taxDraft);
   const f = useFormat();
   if (!limit) return null;
@@ -989,7 +990,15 @@ export function ExportCard({
   );
 }
 
-function HandOverCard({ propertyId, taxYear }: { propertyId: string; taxYear: number }) {
+export function HandOverCard({
+  propertyId,
+  taxYear,
+  titleId = "tax-handover-title",
+}: {
+  propertyId: string;
+  taxYear: number;
+  titleId?: string;
+}) {
   const t = useT(taxDraft);
   const buttons: ExportButton[] = [
     { kind: "field_sheet", label: t.fieldSheetButton },
@@ -1018,7 +1027,7 @@ function HandOverCard({ propertyId, taxYear }: { propertyId: string; taxYear: nu
   );
   return (
     <ExportCard
-      titleId="tax-handover-title"
+      titleId={titleId}
       taxYear={taxYear}
       buttons={buttons}
       note={t.handOverNote}

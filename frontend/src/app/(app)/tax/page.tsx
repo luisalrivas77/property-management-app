@@ -18,9 +18,9 @@ export default function TaxPage() {
 function ToCurrentYear() {
   const router = useRouter();
   const search = useSearchParams();
-  // The chosen property, form tab (Eure Angaben, Anlage N) and owner travel along.
+  // The chosen property, form tab (Eure Angaben, Anlage V, Anlage N), guide step and owner travel along.
   const query = new URLSearchParams();
-  for (const key of ["immobilie", "tab", "eigentuemer"]) {
+  for (const key of ["immobilie", "tab", "eigentuemer", "schritt"]) {
     const value = search.get(key);
     if (value) query.set(key, value);
   }

@@ -26,6 +26,7 @@ import { IncomeSection } from "./income";
 import { REPLACEMENT_BENEFIT, STATE_CODE } from "./labels";
 import { InputsPanel, type BenefitForm } from "./returnInputs";
 import { ReturnEstimateCard, useReturnEstimate } from "./returnEstimate";
+import { AngabenPoints } from "./taxGuide";
 import { PRICE_RENOVATION_ANCHOR, PriceRenovationSection } from "./taxInputs";
 import {
   benefitPrefill,
@@ -64,6 +65,9 @@ export function TaxInputsScreen({
         return (
           <>
             <TaxInputsHead state={state} />
+            {/* The points of this step from the guide (phase 10 D290): what the rules found
+                about the owners and the household, each with its button. */}
+            <AngabenPoints year={year} />
             {owner ? (
               <TaxInputs key={`${owner.id}-${year}`} owner={owner} owners={list} state={state} />
             ) : (

@@ -44,6 +44,7 @@ export const tax = defineMessages({
     lineAmount: "Betrag",
     lineBack: "Anlage N",
     lineProvisional: "vorläufig: das Formular des Jahres ist noch nicht veröffentlicht",
+    allSteps: "‹ Alle Schritte",
   },
   en: {
     forms: "Forms",
@@ -85,5 +86,6 @@ export const tax = defineMessages({
     lineAmount: "Amount",
     lineBack: "Anlage N",
     lineProvisional: "provisional: this year's form is not published yet",
+    allSteps: "‹ All steps",
   },
 });
