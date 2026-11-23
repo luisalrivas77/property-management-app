@@ -1,0 +1,77 @@
+# Finanzielle Gesundheit (phase 10 §7.6, Luis 23 Nov 2026: „something that simply says financial
+# health -> excellent, good, or bad“): three questions, each good, ok or strained, and one word.
+#
+# The standard limits apply wherever the household has not confirmed its own (levers.bands, the
+# sheet „Ampel-Grenzen festlegen“); a confirmed side always wins. The reserve's red share, the
+# savings rate's red and the Schuldendienstquote's two limits are bands.yaml's proposals, read
+# through its loader; this file adds only what bands.yaml does not propose: a good limit for the
+# savings rate. Like every limit of bands.yaml it is the household's own lever, not a value any
+# source sets (Luis: published guidance as the default, changeable).
+#
+# This file sits outside rules/health/ and rules/plan/ on purpose: services.health.rule_version()
+# hashes those two folders, and a stored key-figure snapshot must not change version because a
+# verdict text changed. Texts are German and figure-free; their English is in
+# services/read_texts.py, keyed by the same codes.
+version: verdict-2026-11-23
+
+defaults:
+  - figure: savings_rate
+    good: {value: "0.10", origin: own_lever}
+    reference_points:
+      - source: "Elizabeth Warren, Amelia Warren Tyagi: All Your Worth (2005)"
+        budget_reference: split_50_30_20
+        says: the 50/30/20 rule of thumb puts 20 % of net income into saving
+        does_not_say: a limit for a household's savings rate in Germany; a US rule of thumb
+      - source: Statistisches Bundesamt, Sparquote der privaten Haushalte (VGR)
+        says: the national average saving of private households, a comparison
+        does_not_say: a limit for one household's own rate
+
+# The three questions in the order shown.
+order: [savings_rate, reserve, debt_service_ratio]
+
+texts:
+  savings_rate.question: "Gebt ihr weniger aus, als ihr verdient?"
+  savings_rate.why: >-
+    Was ihr im Monat nicht ausgebt, bleibt für Rücklagen und Anlagen; wer dauerhaft mehr
+    ausgibt, als hereinkommt, lebt vom Ersparten oder von Krediten.
+  savings_rate.reference: >-
+    Zum Vergleich: Die 50/30/20-Faustregel (Warren und Tyagi, 2005) legt 20 % des
+    Nettoeinkommens zum Sparen zurück; das Statistische Bundesamt veröffentlicht die Sparquote
+    der privaten Haushalte als Durchschnitt, nicht als Grenze. Die Standard-Grenze für „gut“ ist
+    ein Vorschlag von Hausbuch, den ihr ändern könnt.
+  savings_rate.good: "Ihr spart genug"
+  savings_rate.ok: "Ihr spart, aber wenig"
+  savings_rate.strained: "Ihr spart zu wenig"
+  savings_rate.negative: "Ihr gebt mehr aus, als ihr verdient"
+  savings_rate.missing: "Sparquote noch nicht berechenbar"
+
+  reserve.question: "Könnt ihr eine Überraschung auffangen?"
+  reserve.why: >-
+    Eine Reserve auf dem Konto fängt eine Reparatur, eine Nachzahlung oder ein paar Monate mit
+    weniger Einkommen auf, ohne dass ihr Geld leihen oder Anlagen verkaufen müsst.
+  reserve.reference: >-
+    Gut ist die Reserve ab eurem Reserveziel, das ihr in Monaten eures Bedarfs einstellt;
+    angespannt unter einem Teil davon. Eine Quelle, die eine Grenze für einen Haushalt setzt,
+    gibt es nicht; beide Grenzen sind eure eigenen.
+  reserve.good: "Reserve erreicht euer Ziel"
+  reserve.ok: "Reserve unter eurem Ziel"
+  reserve.strained: "Reserve weit unter eurem Ziel"
+  reserve.missing: "Reserve noch nicht berechenbar"
+
+  debt_service_ratio.question: "Tragt ihr euren Kredit bequem?"
+  debt_service_ratio.why: >-
+    Je größer der Teil eures Einkommens, der für Zins und Tilgung an die Bank geht, desto
+    weniger bleibt für alles andere, und desto härter trifft euch ein höherer Zins, wenn die
+    Zinsbindung endet.
+  debt_service_ratio.reference: >-
+    Verbraucherratgeber (Verbraucherzentrale, Stiftung Warentest) nennen 30 bis 40 % des
+    Nettoeinkommens für die Rate einer selbst genutzten Immobilie; für eine vermietete Wohnung
+    ist das ein Anhaltspunkt, keine Grenze.
+  debt_service_ratio.good: "Kreditrate gut tragbar"
+  debt_service_ratio.ok: "Kreditrate spürbar"
+  debt_service_ratio.strained: "Kreditrate belastet stark"
+  debt_service_ratio.no_loan: "Kein Kredit"
+  debt_service_ratio.missing: "Kreditlast noch nicht berechenbar"
+
+  overall.very_good: "Sparen, Reserve und Kredit: alles im guten Bereich"
+  overall.too_few_months: "Für die Bewertung braucht es drei abgeschlossene Monate in Folge"

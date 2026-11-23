@@ -1,6 +1,7 @@
 /* Übersicht's tiles (mockup 15-B2, phase 10 D268). The kinds of assets carry their colour as a
-   stripe at the tile's edge in the four muted tones (never green, yellow or red); a dot before a
-   key figure's name is its mark (an empty ring while no limit is set). */
+   stripe at the tile's edge in the four muted tones (never green, yellow or red); the dot before
+   „Finanzielle Gesundheit“'s word is its state (phase 10 §7.6; an empty ring while there is too
+   little data), never a colour word. */
 
 .tiles {
   display: flex;
@@ -124,6 +125,21 @@
   border-color: var(--danger);
 }
 
+.tile-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tile-verdict .tile-dot {
+  width: 14px;
+  height: 14px;
+}
+
+.tiles-review {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .tile-review {
   background: var(--info-bg);
   border-color: var(--info-border);
@@ -195,7 +211,7 @@
 
 @media (min-width: 800px) {
   .tiles-money {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) minmax(0, 2fr);
   }
 }
 
@@ -204,12 +220,8 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .tiles-figures {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .tiles-figures .tile-review {
-    grid-column: 1 / -1;
+  .tiles-review {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .tile {
@@ -222,9 +234,5 @@
 
   .tile-value-big {
     font-size: 1.75rem;
-  }
-
-  .tiles-figures .tile-sub {
-    font-size: 0.75rem;
   }
 }

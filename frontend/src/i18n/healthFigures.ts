@@ -6,25 +6,12 @@ import { defineMessages } from "./core";
 
 export const healthFigures = defineMessages({
   de: {
-    bandsConfirmed: "Eure Ampel-Grenzen sind übernommen. Jede Farbe misst eine Kennzahl an eurer eigenen Grenze, nicht an einer Regel von außen.",
     changeLimits: "Grenzen ändern",
 
     // The card a month-end to-do opens.
     monthEndTitle: (date: string) => `Monatsabschluss zum ${date}`,
     monthEndMissing:
       "Für diesen Tag ist noch kein Monatsabschluss gespeichert. Hausbuch hält ihn am nächsten Morgen selbst fest; mit dem Knopf sofort.",
-
-    // The line under a marked figure.
-    reserveLimit: (target: string | null, red: string) =>
-      `eigene Grenze: grün ab eurem Ziel${target ? ` von ${target}` : ""}, rot unter ${red} des Ziels`,
-    ownLimitLine: (limits: string) => `eigene Grenze: ${limits}`,
-    redBelow: (limit: string) => `rot unter ${limit}`,
-    redAbove: (limit: string) => `rot über ${limit}`,
-    noRed: "keine Grenze für Rot",
-    greenFrom: (limit: string) => `grün ab ${limit}`,
-    greenUpTo: (limit: string) => `grün bis ${limit}`,
-    noGreen: "keine Grenze für Grün",
-    times: (value: string) => `${value}fach`,
 
     // Liquiditätsreserve
     reserveMonths: (months: string, need: string) => `reicht für ${months} Monate eures Bedarfs von ${need} im Monat`,
@@ -44,19 +31,15 @@ export const healthFigures = defineMessages({
 
     // Ampel-Grenzen festlegen
     bandsSet: "Ampel-Grenzen festlegen",
-    bandsChange: "Ampel-Grenzen ändern",
     bandsIntro:
-      "Grün, Gelb und Rot zeigt die App erst, wenn ihr eure eigenen Grenzen übernommen habt. Bis dahin hat keine Kennzahl eine Farbe. Hausbuch schlägt die Werte unten vor; jeder lässt sich ändern oder leeren.",
+      "Jede Kennzahl misst Hausbuch an einer Standard-Grenze, solange ihr keine eigene eintragt. Ein leeres Feld heißt: die Standard-Grenze gilt; eine Zahl darin ist eure eigene Grenze und gilt statt ihr.",
     bandsForm: "Ampel-Grenzen",
     reserveGreenBefore: (months: string, target: string | null) =>
       `Grün ab eurem eigenen Reserveziel von ${months} Monaten${target ? ` (${target})` : ""}, das ihr unter `,
     planning: "Planung",
     reserveGreenAfter: " einstellt.",
-    introSavingsRate:
-      "Rot, wenn ihr mehr ausgegeben als eingenommen habt. Eine Grenze für Grün schlägt Hausbuch nicht vor; ihr könnt eine eintragen.",
-    introLtv: "Wie viel die Kredite der Wohnung von ihrem Wert ausmachen.",
+    introSavingsRate: "Welcher Teil eures Einkommens übrig bleibt: angespannt unter der Grenze für Rot, gut ab der für Grün.",
     introDebtService: "Welcher Teil eures Einkommens für Zins und Tilgung an die Bank geht.",
-    introNoProposal: "Hausbuch schlägt keine Grenze vor; ohne eure Zahl bleibt diese Kennzahl ohne Farbe.",
     fieldLabel: (label: string, unit: string) => `${label} (${unit})`,
     redBelowLabel: "Rot unter",
     redAboveLabel: "Rot über",
@@ -64,12 +47,7 @@ export const healthFigures = defineMessages({
     greenUpToLabel: "Grün bis",
     unitOfTarget: "% des Ziels",
     unitPercent: "%",
-    unitTimes: "fach",
-    emptyNoGreen: "leer: ohne Grün",
-    noLimitYet: "noch keine Grenze",
-    sourceSuggested: "Grenze aus einer Quelle, Vorschlag von Hausbuch",
-    ownSuggested: "eigene Grenze, Vorschlag von Hausbuch",
-    ownLimit: "eigene Grenze",
+    emptyStandard: (limit: string | null) => (limit ? `leer: Standard-Grenze ${limit}` : "leer: Standard-Grenze"),
     reference: "Bezugspunkt",
     scenarioRefusedBefore:
       "Die Grenzen werden im Standard-Szenario gespeichert, und dessen Annahmen lassen sich so gerade nicht speichern. Bitte das Szenario unter ",
@@ -79,12 +57,11 @@ export const healthFigures = defineMessages({
 
     // Kennzahlen
     figuresTitle: "Kennzahlen",
-    setLimits: "Grenzen festlegen",
     holdingsOn: (date: string) => `Bestände am ${date} · `,
-    coloursOwn: "Farben nach euren eigenen Grenzen",
+    coloursOwn: "Punkte nach euren eigenen Grenzen, wo ihr welche festgelegt habt, sonst nach den Standard-Grenzen",
+    coloursStandard: "Punkte nach den Standard-Grenzen",
     appliedBy: (who: string | null, date: string) => `, übernommen${who ? ` von ${who}` : ""} am ${date}`,
     aMember: "einem Mitglied",
-    noColours: "ohne Farben, bis ihr eure Grenzen übernehmt",
     annualised: (months: number) => `; hochgerechnet aus ${months} Monaten`,
     withoutOneOffs: "ohne Einmalausgaben",
     ofWhichPrincipal: "davon Tilgung",
@@ -101,27 +78,6 @@ export const healthFigures = defineMessages({
     fromRentalBefore: "Aus den Buchungen des Mietkontos; ",
     planningProperty: "Planung › Immobilie",
     fromRentalAfter: " zeigt die Raten je Jahr.",
-    ltvAdvance: "Die ausgezahlten Kredite der Wohnung geteilt durch den bisher bezahlten Kaufpreis (vor der Übergabe)",
-    ltvEstimate: "Die Kredite der Wohnung geteilt durch ihren geschätzten Wert",
-    ofAmount: (part: string, whole: string) => ` (${part} von ${whole})`,
-    property: "Immobilie",
-    estimateRow: (source: string, estimate: string, loan: string) => `${source} ${estimate}, Darlehen ${loan}`,
-    sourceScenario: "Wert aus ihrem Szenario",
-    sourcePurchasePrice: "Wert nach dem Kaufpreis",
-    sourceAdvance: "Anzahlung, gebucht",
-    debtRatioExplained: (debts: string, assets: string) => `Alle eure Schulden geteilt durch alles, was ihr besitzt (${debts} von ${assets}).`,
-    allDebts: "Alle Schulden am Monatsende",
-    allOwned: "Alles, was ihr besitzt",
-    fromMonthEndBefore: "Die Beträge kommen aus dem Monatsabschluss; jede Position steht unter ",
-    investments: "Anlagen",
-    and: " und",
-    accounts: "Konten",
-    debtToIncomeExplained: (annualised: string) => `Alle eure Schulden geteilt durch euer Einkommen eines Jahres${annualised}.`,
-    yearIncome: (months: number | null) => `Einkommen eines Jahres${months != null ? `, hochgerechnet aus ${months} Monaten` : ""}`,
-    monthsUnderBefore: "Die Monate stehen unter „Sparquote › Monate ansehen“; die Schulden unter ",
-    loans: "Darlehen",
-    noColourYet: "Verschuldungsgrad und Schulden zu Jahreseinkommen bleiben ohne Farbe, bis ihr eine Grenze eintragt.",
-    enterLimit: "Grenze eintragen",
     splitTitle: "Aufteilung des Vermögens",
     splitExplained: (total: string | null, date: string | null) =>
       `Welcher Teil von allem, was ihr besitzt${total ? ` (${total})` : ""}, in welcher Anlageklasse steckt.${date ? ` Am ${date}.` : ""} Eine Aufteilung ist keine Bewertung und bekommt nie eine Farbe.`,
@@ -141,22 +97,10 @@ export const healthFigures = defineMessages({
     otherChanges: "Wertänderungen und Sonstiges",
   },
   en: {
-    bandsConfirmed: "Your traffic-light limits are applied. Each colour measures a key figure against your own limit, not against an outside rule.",
     changeLimits: "Change limits",
 
     monthEndTitle: (date: string) => `Month-end of ${date}`,
     monthEndMissing: "No month-end is stored for this day yet. Hausbuch records it itself the next morning; the button does it now.",
-
-    reserveLimit: (target: string | null, red: string) =>
-      `own limit: green from your target${target ? ` of ${target}` : ""}, red below ${red} of the target`,
-    ownLimitLine: (limits: string) => `own limit: ${limits}`,
-    redBelow: (limit: string) => `red below ${limit}`,
-    redAbove: (limit: string) => `red above ${limit}`,
-    noRed: "no limit for red",
-    greenFrom: (limit: string) => `green from ${limit}`,
-    greenUpTo: (limit: string) => `green up to ${limit}`,
-    noGreen: "no limit for green",
-    times: (value: string) => `${value}×`,
 
     reserveMonths: (months: string, need: string) => `lasts ${months} months of your need of ${need} a month`,
     reserveNoNeed: "Without a monthly need, the reserve cannot be given in months.",
@@ -174,18 +118,15 @@ export const healthFigures = defineMessages({
     reserveLater: "The reserve appears once three months in a row are closed; what is still missing for that is listed under “Key figures”.",
 
     bandsSet: "Set traffic-light limits",
-    bandsChange: "Change traffic-light limits",
     bandsIntro:
-      "The app shows green, amber and red only once you have applied your own limits. Until then no key figure has a colour. Hausbuch suggests the values below; each can be changed or cleared.",
+      "Hausbuch measures each key figure against a standard limit as long as you enter none of your own. An empty field means the standard limit applies; a figure in it is your own limit and applies instead.",
     bandsForm: "Traffic-light limits",
     reserveGreenBefore: (months: string, target: string | null) =>
       `Green from your own reserve target of ${months} months${target ? ` (${target})` : ""}, which you set under `,
     planning: "Planning",
     reserveGreenAfter: ".",
-    introSavingsRate: "Red when you spent more than you earned. Hausbuch suggests no limit for green; you can enter one.",
-    introLtv: "How much of the flat's value its loans make up.",
+    introSavingsRate: "Which part of your income is left: strained below the red limit, good from the green one.",
     introDebtService: "Which part of your income goes to the bank for interest and repayment.",
-    introNoProposal: "Hausbuch suggests no limit; without your figure this key figure stays without a colour.",
     fieldLabel: (label: string, unit: string) => `${label} (${unit})`,
     redBelowLabel: "Red below",
     redAboveLabel: "Red above",
@@ -193,12 +134,7 @@ export const healthFigures = defineMessages({
     greenUpToLabel: "Green up to",
     unitOfTarget: "% of the target",
     unitPercent: "%",
-    unitTimes: "×",
-    emptyNoGreen: "empty: no green",
-    noLimitYet: "no limit yet",
-    sourceSuggested: "limit from a source, suggested by Hausbuch",
-    ownSuggested: "own limit, suggested by Hausbuch",
-    ownLimit: "own limit",
+    emptyStandard: (limit: string | null) => (limit ? `empty: standard limit ${limit}` : "empty: standard limit"),
     reference: "Reference point",
     scenarioRefusedBefore:
       "The limits are stored in the default scenario, and its assumptions cannot be saved as they stand. Please check the scenario under ",
@@ -207,12 +143,11 @@ export const healthFigures = defineMessages({
     savedIn: "Stored in your scenario; you can change them at any time with “Change limits”.",
 
     figuresTitle: "Key figures",
-    setLimits: "Set limits",
     holdingsOn: (date: string) => `holdings on ${date} · `,
-    coloursOwn: "colours by your own limits",
+    coloursOwn: "dots by your own limits where you set them, otherwise by the standard limits",
+    coloursStandard: "dots by the standard limits",
     appliedBy: (who: string | null, date: string) => `, applied${who ? ` by ${who}` : ""} on ${date}`,
     aMember: "a member",
-    noColours: "no colours until you apply your limits",
     annualised: (months: number) => `; projected from ${months} months`,
     withoutOneOffs: "without one-off spending",
     ofWhichPrincipal: "of which loan repayment",
@@ -229,27 +164,6 @@ export const healthFigures = defineMessages({
     fromRentalBefore: "From the rental account's transactions; ",
     planningProperty: "Planning › Property",
     fromRentalAfter: " shows the instalments per year.",
-    ltvAdvance: "The flat's loans paid out, divided by the purchase price paid so far (before the handover)",
-    ltvEstimate: "The flat's loans divided by its estimated value",
-    ofAmount: (part: string, whole: string) => ` (${part} of ${whole})`,
-    property: "Property",
-    estimateRow: (source: string, estimate: string, loan: string) => `${source} ${estimate}, loan ${loan}`,
-    sourceScenario: "Value from the scenario",
-    sourcePurchasePrice: "Value by the purchase price",
-    sourceAdvance: "Down payment, booked",
-    debtRatioExplained: (debts: string, assets: string) => `All your debts divided by everything you own (${debts} of ${assets}).`,
-    allDebts: "All debts at month-end",
-    allOwned: "Everything you own",
-    fromMonthEndBefore: "The amounts come from the month-end; every position is listed under ",
-    investments: "Investments",
-    and: " and",
-    accounts: "Accounts",
-    debtToIncomeExplained: (annualised: string) => `All your debts divided by your income for one year${annualised}.`,
-    yearIncome: (months: number | null) => `Income for one year${months != null ? `, projected from ${months} months` : ""}`,
-    monthsUnderBefore: "The months are under “Savings rate › View months”; the debts under ",
-    loans: "Loans",
-    noColourYet: "Debt ratio and debt to annual income stay without a colour until you enter a limit.",
-    enterLimit: "Enter a limit",
     splitTitle: "Split of the assets",
     splitExplained: (total: string | null, date: string | null) =>
       `Which part of everything you own${total ? ` (${total})` : ""} sits in which asset class.${date ? ` On ${date}.` : ""} A split is not a rating and never gets a colour.`,

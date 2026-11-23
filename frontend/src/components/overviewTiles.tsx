@@ -2,8 +2,10 @@
 
 // Übersicht's tiles (mockup 15-B2, phase 10 D268): the net worth with the month's cash flow under
 // it, one tile per kind of asset (property, ETF depot, crypto, bank) with its colour as an edge
-// stripe, the three key figures with their mark as a dot before the name (an empty dot while no
-// limit is confirmed; never a colour word), and Zu prüfen. Each tile is a name, one number and at
+// stripe, „Finanzielle Gesundheit“ beside the net worth (phase 10 §7.6, Luis 23 Nov 2026: one
+// word, Sehr gut, Gut or Angespannt, with a dot in its colour and the weakest point; its three
+// questions in the panel; it replaced the tiles Sparquote, Reserve and Verschuldungsgrad), and Zu
+// prüfen. Each tile is a name, one number and at
 // most one line (phase 10 §7.6 rule (1)): the Immobilie tile's break-even year, profit at a sale
 // today, value less loans and the properties left out, the net worth's split and its to-dos and
 // the credit card's balance are in their panels only. A tapped tile opens its summary in the
@@ -18,13 +20,16 @@ import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { CashflowCard, lastFullMonth, loadCashflow, type HouseholdCashflow } from "@/components/cashflow";
 import { DetailPanel, type Detail } from "@/components/DetailPanel";
-import type { Health, Light } from "@/components/healthShared";
+import { HealthTodoList } from "@/components/healthFigures";
+import type { Health } from "@/components/healthShared";
 import { NetWorthSection } from "@/components/netWorth";
 import { payInputsHref } from "@/components/taxYear";
 import { Loading } from "@/components/ui";
+import { VerdictCards, VerdictWordLine, WORD_MARK, wordText } from "@/components/verdict";
 import type { Loaded } from "@/components/useLoad";
 import { useFormat, useT, type Formatter } from "@/i18n";
 import { overview as catalogue } from "@/i18n/overview";
+import { verdictText } from "@/i18n/verdict";
 import { Icon } from "@/lib/icons";
 import { recentInbox } from "@/lib/inboxCount";
 
@@ -39,7 +44,7 @@ type PropertiesPayback = components["schemas"]["PropertiesPayback"];
 type PropertyPayback = components["schemas"]["PropertyPayback"];
 type T = (typeof catalogue)["de"];
 
-export type TileId = "nettovermoegen" | "cashflow" | "immobilie" | "depot" | "krypto" | "bank" | "sparquote" | "reserve" | "verschuldung" | "pruefen";
+export type TileId = "nettovermoegen" | "gesundheit" | "cashflow" | "immobilie" | "depot" | "krypto" | "bank" | "pruefen";
 
 export interface MonthCashflow {
   month: string;
@@ -158,11 +163,6 @@ function signed(f: Formatter, value: string): string {
   return `${value.startsWith("-") || /^0+(\.0+)?$/.test(value) ? "" : "+"}${f.money(value)}`;
 }
 
-/** One decimal for the reserve's months, as the server sends it ("4.3"). */
-function months(f: Formatter, value: string): string {
-  return f.decimal(value);
-}
-
 const ASSET_LINE_KINDS = new Set<NetWorthLine["account_kind"]>(["bank_current", "bank_savings"]);
 
 function bankAccounts(lines: NetWorthLine[]): number {
@@ -175,20 +175,6 @@ function cardLines(lines: NetWorthLine[]): NetWorthLine[] {
 
 function positions(lines: NetWorthLine[], cls: NetWorthLine["net_worth_class"]): number {
   return lines.filter((l) => l.net_worth_class === cls && l.kind === "position").length;
-}
-
-/** The mark of one key figure: a dot before the name, filled in the confirmed colour, empty
- * while the household has set no limit (D250, D268). The dot is decoration; its meaning is read
- * out from the figure's own sentence. */
-function Dot({ light, t }: { light: Light | undefined; t: T }) {
-  const colour = light?.colour ?? null;
-  const sentence = colour ? (light?.texts?.[0] ?? light?.sentences?.[0] ?? "") : t.noLimit;
-  return (
-    <>
-      <span className="tile-dot" data-mark={colour ?? "none"} aria-hidden="true" />
-      {sentence ? <span className="visually-hidden">{sentence} </span> : null}
-    </>
-  );
 }
 
 function Tile({
@@ -225,11 +211,7 @@ export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail
   const { netWorth, health, cashflow, inbox, payback } = data;
   const lines = netWorth.data?.lines ?? [];
   const cards = cardLines(lines);
-  const marks = health.data?.marks ?? {};
-  const rate = health.data?.savings_rate ?? null;
-  const reserve = health.data?.reserve ?? null;
-  const debt = health.data?.debt ?? null;
-  const windowMonths = (rate?.months ?? []).map((m) => m.month);
+  const tv = useT(verdictText);
   const items = inbox.data ?? [];
 
   return (
@@ -243,6 +225,23 @@ export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail
                 <span className="tile-sub">{t.today}</span>
               </>
             )}
+          </Wait>
+        </Tile>
+        <Tile id="gesundheit" detail={detail} className="tile-wide tile-health" name={tv.title}>
+          <Wait state={health}>
+            {({ verdict }) =>
+              verdict ? (
+                <>
+                  <span className="tile-value tile-value-big tile-verdict">
+                    <span className="tile-dot" data-mark={WORD_MARK[verdict.word]} aria-hidden="true" />
+                    {wordText(tv, verdict.word)}
+                  </span>
+                  <span className="tile-sub">{verdict.line}</span>
+                </>
+              ) : (
+                <span className="tile-sub">–</span>
+              )
+            }
           </Wait>
         </Tile>
         <Tile id="cashflow" detail={detail} className="tile-wide" name={t.cashflow(f.month(cashflow.data?.month ?? lastFullMonth()))}>
@@ -319,70 +318,7 @@ export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail
         </Tile>
       </div>
 
-      <div className="tiles-grid tiles-figures">
-        <Tile
-          id="sparquote"
-          detail={detail}
-          name={
-            <>
-              <Dot light={marks.savings_rate} t={t} />
-              {t.savingsRate}
-            </>
-          }
-        >
-          <Wait state={health}>
-            {() => (
-              <>
-                <span className="tile-value">{rate?.rate != null ? f.percent(rate.rate) : "–"}</span>
-                <span className="tile-sub">
-                  {windowMonths.length > 1
-                    ? t.windowAvg(f.month(windowMonths[0]), f.month(windowMonths[windowMonths.length - 1]))
-                    : windowMonths.length === 1
-                      ? t.windowOne(f.month(windowMonths[0]))
-                      : t.noFigure}
-                </span>
-              </>
-            )}
-          </Wait>
-        </Tile>
-        <Tile
-          id="reserve"
-          detail={detail}
-          name={
-            <>
-              <Dot light={marks.reserve} t={t} />
-              {t.reserve}
-            </>
-          }
-        >
-          <Wait state={health}>
-            {() => (
-              <>
-                <span className="tile-value">{reserve?.months != null ? t.reserveMonths(months(f, reserve.months)) : "–"}</span>
-                <span className="tile-sub">{reserve ? t.reserveTarget(months(f, reserve.target_months)) : t.noFigure}</span>
-              </>
-            )}
-          </Wait>
-        </Tile>
-        <Tile
-          id="verschuldung"
-          detail={detail}
-          name={
-            <>
-              <Dot light={marks.debt_ratio} t={t} />
-              {t.debtRatio}
-            </>
-          }
-        >
-          <Wait state={health}>
-            {() => (
-              <>
-                <span className="tile-value">{debt?.debt_ratio != null ? f.percent(debt.debt_ratio) : "–"}</span>
-                <span className="tile-sub">{t.debtRatioSub}</span>
-              </>
-            )}
-          </Wait>
-        </Tile>
+      <div className="tiles-grid tiles-review">
         <Tile id="pruefen" detail={detail} className="tile-review" name={t.review}>
           <Wait state={inbox}>
             {() => (
@@ -618,28 +554,14 @@ function Go({ href, children }: { href: string; children: ReactNode }) {
   );
 }
 
-function Sentences({ light }: { light: Light | undefined }) {
-  const texts = light?.texts ?? [];
-  if (texts.length === 0) return null;
-  return (
-    <div className="stack">
-      {texts.map((text) => (
-        <p key={text}>{text}</p>
-      ))}
-    </div>
-  );
-}
-
 const TITLES: Record<TileId, (t: T) => string> = {
   nettovermoegen: (t) => t.netWorth,
+  gesundheit: (t) => t.health,
   cashflow: (t) => t.cashflow(""),
   immobilie: (t) => t.property,
   depot: (t) => t.depot,
   krypto: (t) => t.crypto,
   bank: (t) => t.bank,
-  sparquote: (t) => t.savingsRate,
-  reserve: (t) => t.reserve,
-  verschuldung: (t) => t.debtRatio,
   pruefen: (t) => t.review,
 };
 
@@ -661,7 +583,7 @@ export function TilePanel({
   const t = useT(catalogue);
   const f = useFormat();
   const { netWorth, health, cashflow, inbox, paidIn, payback } = data;
-  const marks = health.data?.marks ?? {};
+  const tv = useT(verdictText);
   const title = id === "cashflow" ? t.cashflow(f.month(cashflow.data?.month ?? lastFullMonth())) : TITLES[id](t);
   const single = properties.length === 1 ? properties[0] : undefined;
 
@@ -673,6 +595,30 @@ export function TilePanel({
           <NetWorthSection onCryptoRefreshed={netWorth.reload} />
           <Go href="/assets">{t.toAssets}</Go>
         </>
+      );
+      break;
+    case "gesundheit":
+      body = (
+        <Loading state={health}>
+          {({ verdict }) =>
+            verdict ? (
+              <>
+                <VerdictWordLine verdict={verdict} big />
+                {(verdict.todos ?? []).length > 0 ? (
+                  <>
+                    <p className="tile-panel-kicker">{tv.waiting}</p>
+                    <HealthTodoList todos={verdict.todos ?? []} onChanged={health.reload} />
+                  </>
+                ) : null}
+                <VerdictCards parts={verdict.parts ?? []} />
+                <Go href="/household#ampel-grenzen">{tv.changeLimits}</Go>
+                <Go href="/household#figures-title">{tv.toHousehold}</Go>
+              </>
+            ) : (
+              <p className="muted">–</p>
+            )
+          }
+        </Loading>
       );
       break;
     case "cashflow": {
@@ -722,86 +668,6 @@ export function TilePanel({
               />
               <p className="muted">{t.balanceOn(f.date(today.on))}</p>
               {id === "depot" ? <Go href="/assets?tab=etf">{t.toEtf}</Go> : id === "krypto" ? <Go href="/assets?tab=krypto">{t.toCrypto}</Go> : <Go href="/accounts?art=bank">{t.toBank}</Go>}
-            </>
-          )}
-        </Loading>
-      );
-      break;
-    }
-    case "sparquote": {
-      const rate = health.data?.savings_rate ?? null;
-      body = (
-        <Loading state={health}>
-          {() => (
-            <>
-              <Rows rows={[[t.savingsRate, rate?.rate != null ? f.percent(rate.rate) : "–"]]} />
-              <Sentences light={marks.savings_rate} />
-              {(rate?.months ?? []).length > 0 ? (
-                <div>
-                  <strong>{t.monthsOfRate}</strong>
-                  <ul className="tile-panel-months">
-                    {(rate?.months ?? []).map(({ month, rate: monthRate }) => (
-                      <li key={month}>
-                        <Link href={`/household?monat=${month}`}>{f.month(month)}</Link>
-                        {monthRate != null ? ` · ${f.percent(monthRate)}` : ""}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              <Go href="/household#figures-title">{t.toFigures}</Go>
-            </>
-          )}
-        </Loading>
-      );
-      break;
-    }
-    case "reserve": {
-      const reserve = health.data?.reserve ?? null;
-      body = (
-        <Loading state={health}>
-          {() => (
-            <>
-              {reserve ? (
-                <Rows
-                  rows={[
-                    [t.reserveAmount, f.money(reserve.amount)],
-                    [t.reserveNeed, f.money(reserve.need)],
-                    [t.reserveGoal, `${t.reserveMonths(months(f, reserve.target_months))} · ${f.money(reserve.target)}`],
-                    [t.reserveGap, f.money(reserve.gap)],
-                  ]}
-                />
-              ) : (
-                <p className="muted">{t.noFigure}</p>
-              )}
-              <Sentences light={marks.reserve} />
-              <Go href="/planning?section=reserve">{t.toReserve}</Go>
-            </>
-          )}
-        </Loading>
-      );
-      break;
-    }
-    case "verschuldung": {
-      const debt = health.data?.debt ?? null;
-      body = (
-        <Loading state={health}>
-          {() => (
-            <>
-              {debt ? (
-                <Rows
-                  rows={[
-                    [t.debtRatio, debt.debt_ratio != null ? f.percent(debt.debt_ratio) : "–"],
-                    [t.liabilities, f.money(debt.liabilities)],
-                    [t.grossAssets, f.money(debt.gross_assets)],
-                  ]}
-                />
-              ) : (
-                <p className="muted">{t.noFigure}</p>
-              )}
-              <Sentences light={marks.debt_ratio} />
-              {marks.debt_ratio?.colour ? null : <p className="muted">{t.noLimit}</p>}
-              <Go href="/household#figures-title">{t.toFigures}</Go>
             </>
           )}
         </Loading>
