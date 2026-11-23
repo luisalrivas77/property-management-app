@@ -151,6 +151,11 @@ export const taxGuide = defineMessages({
     viewCosts: "Kosten ansehen",
     toUnits: "Zu den Wohnungen",
     anlageNSheetOf: (name: string) => (name ? `Feldblatt Anlage N: ${name}` : "Feldblatt Anlage N"),
+    // a wage-replacement benefit announced in the Jahresfragen, not typed yet
+    benefitLetterTitle: "Lohnersatzleistung noch nicht eingetragen",
+    benefitLetterText:
+      "In den Jahresfragen steht, dass im Jahr eine Lohnersatzleistung kam (Elterngeld, Krankengeld, Arbeitslosengeld …). Den Betrag aus dem Bescheid eintragen: er ist steuerfrei, hebt aber den Steuersatz auf das übrige Einkommen (Progressionsvorbehalt).",
+    benefitLetterAction: "Lohnersatzleistung eintragen",
   },
   en: {
     eyebrow: (year: number) => `Your tax return ${year}`,
@@ -294,5 +299,9 @@ export const taxGuide = defineMessages({
     viewCosts: "View costs",
     toUnits: "To the flats",
     anlageNSheetOf: (name: string) => (name ? `Anlage N field sheet: ${name}` : "Anlage N field sheet"),
+    benefitLetterTitle: "Wage-replacement benefit not entered yet",
+    benefitLetterText:
+      "The yearly questions say a wage-replacement benefit came in the year (Elterngeld, Krankengeld, Arbeitslosengeld …). Enter the amount from its notice: it is tax-free but raises the tax rate on the other income (Progressionsvorbehalt, progression clause).",
+    benefitLetterAction: "Enter wage-replacement benefit",
   },
 });

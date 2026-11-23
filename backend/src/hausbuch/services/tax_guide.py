@@ -52,23 +52,9 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
             warnings = draft.warnings
         properties.append(rule.PropertyFacts(prop.id, checklist.items, warnings))
 
-    owners: list[rule.OwnerFacts] = []
-    n_drafts: dict[UUID, AnlageNDraft | str] = {}
-    for owner in list_owners(conn):
-        try:
-            n = anlage_n_draft(conn, owner.id, tax_year=tax_year)
-        except RuleError as exc:
-            n_drafts[owner.id] = exc.code
-            no_pay = exc.code == ANLAGE_N_NO_PAY
-            if not no_pay:
-                unavailable.append(f"anlage_n:{exc.code}")
-            owners.append(rule.OwnerFacts(owner.id, None, (), no_pay=no_pay))
-        else:
-            n_drafts[owner.id] = n
-            owners.append(rule.OwnerFacts(owner.id, n.status, n.warnings))
-
     estimate = None
     estimate_warnings = []
+    benefit_owners: set[UUID] = set()
     try:
         full = household_return_estimate(conn, tax_year=tax_year, today=today)
     except RuleError as exc:
@@ -76,6 +62,31 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
     else:
         estimate = GuideEstimate(result=full.result, status=full.status)
         estimate_warnings = full.warnings
+        # A benefit announced in the Jahresfragen but not typed is only in the estimate's
+        # `missing` (no warning): the guide makes it a point of Eure Angaben.
+        benefit_owners = {
+            m.owner_id for m in full.missing if m.kind == "benefit_letter" and m.owner_id
+        }
+
+    owners: list[rule.OwnerFacts] = []
+    n_drafts: dict[UUID, AnlageNDraft | str] = {}
+    for owner in list_owners(conn):
+        benefit_missing = owner.id in benefit_owners
+        try:
+            n = anlage_n_draft(conn, owner.id, tax_year=tax_year)
+        except RuleError as exc:
+            n_drafts[owner.id] = exc.code
+            no_pay = exc.code == ANLAGE_N_NO_PAY
+            if not no_pay:
+                unavailable.append(f"anlage_n:{exc.code}")
+            owners.append(
+                rule.OwnerFacts(owner.id, None, (), no_pay=no_pay, benefit_missing=benefit_missing)
+            )
+        else:
+            n_drafts[owner.id] = n
+            owners.append(
+                rule.OwnerFacts(owner.id, n.status, n.warnings, benefit_missing=benefit_missing)
+            )
 
     answered = total = None
     try:
@@ -128,10 +139,10 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
         tax_year=tax_year,
         filing_deadline=filing_deadline(tax_year),
         steps=result.steps,
-        steps_done=sum(1 for s in result.steps if s.state == "done"),
+        steps_done=result.steps_done,
         next_step=result.next_step,
         waiting_from=result.waiting_from,
-        ready=all(s.state == "done" for s in result.steps),
+        ready=result.ready,
         estimate=estimate,
         forms=forms,
         points=result.points,

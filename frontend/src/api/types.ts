@@ -8625,8 +8625,9 @@ export interface components {
         /**
          * GuidePoint
          * @description One open point: a draft's to-do warning, an owner without any pay source
-         *     (`anlage_n.no_pay`), or a checklist gap that is a value to type (price_split,
-         *     market_rent).
+         *     (`anlage_n.no_pay`), an owner whose wage-replacement benefit, announced in the
+         *     Jahresfragen, is not typed yet (`anlage_n.benefit_letter`), or a checklist gap that is a
+         *     value to type (price_split, market_rent).
          */
         GuidePoint: {
             /**

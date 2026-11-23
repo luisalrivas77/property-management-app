@@ -100,6 +100,10 @@ PROPERTY_REQUIREMENTS: dict[RequirementCode, str] = {
 # The owner without any pay source for the year (RuleError anlage_n.no_pay from the Anlage N
 # draft): a point of Eure Angaben.
 NO_PAY_CODE = "anlage_n.no_pay"
+# The owner who answered in the Jahresfragen that a wage-replacement benefit came in the year,
+# but whose amount is not typed yet (the whole-return estimate's MissingItem `benefit_letter`,
+# which raises no warning): a point of Eure Angaben, one per owner.
+BENEFIT_LETTER_CODE = "anlage_n.benefit_letter"
 
 
 # --- Who sends a Beleg, and when ----------------------------------------------------------
@@ -165,12 +169,14 @@ class PropertyFacts:
 @dataclass(frozen=True)
 class OwnerFacts:
     """One owner: the Anlage N status ("certified", "estimate", "none"; None: no draft, see
-    no_pay), its warnings, and whether the draft refused for want of any pay source."""
+    no_pay), its warnings, whether the draft refused for want of any pay source, and whether a
+    wage-replacement benefit announced in the Jahresfragen is still to be typed."""
 
     owner_id: object
     status: Literal["certified", "estimate", "none"] | None
     warnings: Sequence[DraftWarning]
     no_pay: bool = False
+    benefit_missing: bool = False
 
 
 @dataclass(frozen=True)
@@ -191,6 +197,15 @@ class GuideResult:
     documents: list[GuideDocument]
     next_step: int | None
     waiting_from: date | None
+
+    @property
+    def steps_done(self) -> int:
+        return sum(1 for s in self.steps if s.state == "done")
+
+    @property
+    def ready(self) -> bool:
+        """Every step done: the ELSTER-Ausfüllhilfe can be made without open points."""
+        return all(s.state == "done" for s in self.steps)
 
 
 def _document_status(status: ChecklistStatus) -> Literal["present", "missing", "expected"]:
@@ -303,6 +318,15 @@ def points(facts: GuideInput, docs: list[GuideDocument]) -> list[GuidePoint]:
             out.append(
                 GuidePoint(
                     step="angaben", form="anlage_n", code=NO_PAY_CODE, owner_id=owner.owner_id
+                )
+            )
+        if owner.benefit_missing:
+            out.append(
+                GuidePoint(
+                    step="angaben",
+                    form="anlage_n",
+                    code=BENEFIT_LETTER_CODE,
+                    owner_id=owner.owner_id,
                 )
             )
         for warning in owner.warnings:

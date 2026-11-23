@@ -124,3 +124,46 @@ def test_a_forms_open_count_is_every_point_listed_for_it(client_a):
     assert any(p["step"] == "property" for p in mine)
     form = next(f for f in got["forms"] if f["form"] == "anlage_v")
     assert form["open"] == len(mine)
+
+
+def _owner_with_pay(client) -> dict:
+    owner = create(client, "/api/owners", {"full_name": "Person A"})
+    create(
+        client,
+        "/api/income-inputs",
+        {
+            "owner_id": owner["id"],
+            "kind": "expected_gross_pay",
+            "tax_year": 2026,
+            "value": {"amount": "60000.00"},
+        },
+    )
+    return owner
+
+
+def test_a_benefit_announced_but_not_typed_keeps_eure_angaben_open(client_a):
+    """The Jahresfragen say a benefit came; no amount is typed: only the estimate's `missing`
+    knows, and the guide makes it a point of Eure Angaben instead of reaching „bereit“."""
+    owner = _owner_with_pay(client_a)
+    ok(
+        client_a.post(
+            "/api/tax/questionnaire/answers",
+            json={
+                "answer": {
+                    "question_key": "owner.replacement_income",
+                    "tax_year": 2026,
+                    "owner_id": owner["id"],
+                    "answer": "yes",
+                    "choice": "arbeitslosengeld",
+                }
+            },
+        ),
+        201,
+    )
+    got = _guide(client_a, 2026)
+    benefit = [p for p in got["points"] if p["code"] == "anlage_n.benefit_letter"]
+    assert [(p["step"], p["form"], p["owner_id"]) for p in benefit] == [
+        ("angaben", "anlage_n", owner["id"])
+    ]
+    assert got["steps"][0]["state"] == "open"
+    assert got["ready"] is False

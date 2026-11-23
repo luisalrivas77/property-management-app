@@ -401,6 +401,21 @@ function pointEntry(point: GuidePoint, scope: PointScope, t: T): TodoEntry | nul
       context,
     };
   }
+  if (point.code === "anlage_n.benefit_letter" && point.owner_id) {
+    // Announced in the Jahresfragen, not typed yet (the estimate's `benefit_letter`): the
+    // Lohnersatzleistungen form of Eure Angaben, as the Gesamt card's „Es fehlt noch“ links it.
+    return {
+      key,
+      title: t.benefitLetterTitle,
+      text: t.benefitLetterText,
+      action: (
+        <Link href={`${taxFormHref("angaben", { year: scope.year, propertyId: null, ownerId: point.owner_id })}#eingabe-replacement_income`}>
+          {t.benefitLetterAction}
+        </Link>
+      ),
+      context,
+    };
+  }
   const property = point.property_id ? scope.contexts?.get(point.property_id) : undefined;
   if (point.warning) {
     const ctx: GuideContext = {

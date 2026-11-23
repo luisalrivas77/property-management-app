@@ -146,6 +146,30 @@ def test_an_owner_without_pay_is_a_point_of_eure_angaben_first():
     assert result.points[0].owner_id == A
 
 
+def test_an_announced_benefit_not_yet_typed_is_one_point_of_eure_angaben_per_owner():
+    """Answered „ja“ in the Jahresfragen, never typed: only in the estimate's `missing`, no
+    warning; the guide keeps Eure Angaben open and is not ready."""
+    result = rule.guide(
+        facts(
+            owners=[
+                rule.OwnerFacts(A, "certified", [], benefit_missing=True),
+                rule.OwnerFacts(B, None, (), no_pay=True, benefit_missing=True),
+            ]
+        )
+    )
+    assert [(p.step, p.form, p.code, p.owner_id) for p in result.points] == [
+        ("angaben", "anlage_n", "anlage_n.benefit_letter", A),
+        ("angaben", "anlage_n", "anlage_n.no_pay", B),
+        ("angaben", "anlage_n", "anlage_n.benefit_letter", B),
+    ]
+    assert (result.steps[0].state, result.steps[0].open) == ("open", 3)
+    assert result.next_step == 0
+    assert result.ready is False
+    assert rule.BENEFIT_LETTER_CODE not in rule.STEP_OF_WARNING  # no warning stands for it
+    typed = rule.guide(facts(owners=[rule.OwnerFacts(A, "certified", [])]))
+    assert typed.points == [] and typed.ready is True
+
+
 def test_angaben_warnings_from_anlage_n_and_the_estimate_route_to_eure_angaben():
     result = rule.guide(
         facts(
