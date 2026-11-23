@@ -21,7 +21,8 @@
 #   over        → a limit_exceeded basis addition of paid_on's year (gross), nothing on
 #                 wk.maintenance; every other counted cost moves too, as without the claim
 #   declined, or no row → the draft without the claim, to the cent
-#   not applied (period before the handover, or amount ≥ the building's share less movable
+#   not applied (period before the handover, paid in a year before the handover's, or
+#                 amount ≥ the building's share less movable
 #                 assets) → the draft without the claim plus tax.price_renovation_not_applied
 #                 (params: reason, amount)
 #   tax.price_renovation_ask (params: amount, tax_year) in paid_on's year once that year's
@@ -382,6 +383,26 @@ cases:
       warnings:
         - {code: tax.price_renovation_not_applied,
            params: {reason: before_handover, amount: "23800.00"}}
+        - {code: hausgeld.abrechnung_pending}
+        - {code: draft.form_provisional}
+
+  - id: claimed_paid_before_handover_year_not_applied
+    description: >
+      A payment dated in a year before the handover's (a typo, or an instalment of an earlier
+      year) would put the deduction in a year with no AfA that the performance view never
+      reads: the claim changes nothing and the draft names it (reason paid_before_handover_year,
+      D287 review).
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      tax_inputs:
+        - {<<: *claim, value: {<<: *claim_value, paid_on: 2025-12-20}}
+    expect:
+      <<: *without_2026
+      warnings:
+        - {code: tax.price_renovation_not_applied,
+           params: {reason: paid_before_handover_year, amount: "23800.00"}}
         - {code: hausgeld.abrechnung_pending}
         - {code: draft.form_provisional}
 

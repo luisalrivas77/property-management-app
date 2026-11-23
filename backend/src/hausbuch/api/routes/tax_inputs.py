@@ -54,6 +54,7 @@ def tax_input_create(property_id: UUID, body: TaxInputCreate, cmd: Cmd) -> TaxIn
     supported: it needs its own acquisition date), tax_input.movable_asset_no_purchase_date
     (the property has no handover date yet), and for the seller's renovation in the price
     (D287) tax_input.price_renovation_no_purchase_date, tax_input.price_renovation_before_handover
-    (its work begins before the handover) and tax_input.price_renovation_exceeds_building (its
+    (its work begins before the handover), tax_input.price_renovation_paid_before_handover_year
+    (paid in a year before the handover's) and tax_input.price_renovation_exceeds_building (its
     gross with the kitchens bought with the flat is not below the building's share)."""
     return cmd.run(create_tax_input, property_id, body)

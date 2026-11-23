@@ -1102,6 +1102,7 @@ const RENOVATION_KEYS = [
 ] as const;
 const RENOVATION_CODE_FIELDS = {
   "tax_input.price_renovation_before_handover": "value.period_start",
+  "tax_input.price_renovation_paid_before_handover_year": "value.paid_on",
   "tax_input.price_renovation_exceeds_building": "value.amount",
 } as const;
 

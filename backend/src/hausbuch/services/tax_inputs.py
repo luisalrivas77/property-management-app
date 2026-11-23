@@ -87,6 +87,7 @@ from hausbuch.rules.errors import (
     TAX_INPUT_PRICE_RENOVATION_BEFORE_HANDOVER,
     TAX_INPUT_PRICE_RENOVATION_EXCEEDS_BUILDING,
     TAX_INPUT_PRICE_RENOVATION_NO_PURCHASE_DATE,
+    TAX_INPUT_PRICE_RENOVATION_PAID_BEFORE_HANDOVER_YEAR,
     TAX_INPUT_USEFUL_LIFE_NOT_SHORTER,
 )
 from hausbuch.rules.tax import registry
@@ -508,6 +509,12 @@ def _check_price_renovation(conn: Connection, prop: Row, data: TaxInputCreate) -
             [TAX_INPUT_PRICE_RENOVATION_BEFORE_HANDOVER],
             f"the work begins on {value.period_start}, before the handover on"
             f" {prop.purchase_date}: then it is the seller's",
+        )
+    if value.paid_on.year < prop.purchase_date.year:
+        raise RuleViolationError(
+            [TAX_INPUT_PRICE_RENOVATION_PAID_BEFORE_HANDOVER_YEAR],
+            f"the price was paid on {value.paid_on}, in a year before the handover's"
+            f" ({prop.purchase_date.year}): enter the payment of the purchase price's rest",
         )
     facts = _basis_facts(conn, prop)
     if facts is None:

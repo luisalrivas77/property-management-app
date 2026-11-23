@@ -18,11 +18,11 @@ the flat, stays below the building's share of the price:
   year, and nothing is booked here.
 
 A claim in force that cannot apply raises tax.price_renovation_not_applied (reason
-before_handover or exceeds_building) and changes nothing else. Once the Einkommensteuerbescheid
-of the year paid is confirmed (DraftFacts.assessed_years), a booked claim still `claimed` raises
-tax.price_renovation_ask, the to-do „Hat das Finanzamt die Renovierung im Kaufpreis anerkannt?“
-whose „Nein“ records `declined` and whose „Ja“ records `accepted`. Declined, or no input: the
-draft is exactly the draft without this module.
+before_handover, paid_before_handover_year or exceeds_building) and changes nothing else. Once
+the Einkommensteuerbescheid of the year paid is confirmed (DraftFacts.assessed_years), a booked
+claim still `claimed` raises tax.price_renovation_ask, the to-do „Hat das Finanzamt die
+Renovierung im Kaufpreis anerkannt?“ whose „Nein“ records `declined` and whose „Ja“ records
+`accepted`. Declined, or no input: the draft is exactly the draft without this module.
 """
 
 from typing import Literal
@@ -43,7 +43,7 @@ from ._common import LineBook, in_force, input_sources, warning
 from .afa import building_share, movable_deducted
 from .rounding import money_str
 
-NotApplied = Literal["before_handover", "exceeds_building"]
+NotApplied = Literal["before_handover", "paid_before_handover_year", "exceeds_building"]
 
 
 def current(facts: DraftFacts) -> TaxInputFact | None:
@@ -66,6 +66,8 @@ def applied(
         return None, None
     if v.period_start < facts.property.purchase_date:
         return None, "before_handover"
+    if v.paid_on.year < facts.property.purchase_date.year:
+        return None, "paid_before_handover_year"
     share = building_share(afa)
     if share is not None and movable_deducted(afa) + v.amount >= share:
         return None, "exceeds_building"

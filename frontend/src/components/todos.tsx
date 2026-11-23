@@ -265,7 +265,9 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
     text: (p) =>
       p.reason === "before_handover"
         ? "Die Arbeiten beginnen laut Angabe vor der Übergabe; dann sind sie Sache des Verkäufers. Den Zeitraum der Renovierung prüfen und korrigieren oder die Angabe zurückziehen."
-        : "Der Betrag ist nicht kleiner als der Gebäudeanteil des Kaufpreises, das kann nicht stimmen. Den Betrag prüfen und korrigieren oder die Angabe zurückziehen.",
+        : p.reason === "paid_before_handover_year"
+          ? "Das Zahlungsdatum liegt in einem Jahr vor dem Jahr der Übergabe. Den Tag eintragen, an dem der restliche Kaufpreis bezahlt wurde, oder die Angabe zurückziehen."
+          : "Der Betrag ist nicht kleiner als der Gebäudeanteil des Kaufpreises, das kann nicht stimmen. Den Betrag prüfen und korrigieren oder die Angabe zurückziehen.",
     action: priceRenovationCard("Renovierung im Kaufpreis prüfen"),
   },
   "afa.acquisition_cost_without_row": {

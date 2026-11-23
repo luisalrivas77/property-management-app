@@ -128,6 +128,8 @@ export const RULE_CODE_TEXT_EN: Record<string, string> = {
     "Enter the property's handover date first: the renovation only counts if it begins after the handover.",
   "tax_input.price_renovation_before_handover":
     "The renovation begins before the handover; then it is the seller's own and does not count as yours. Please check the period of the work.",
+  "tax_input.price_renovation_paid_before_handover_year":
+    "The payment date is in a year before the year of the handover. Please enter the day the rest of the purchase price was paid.",
   "tax_input.price_renovation_exceeds_building":
     "The renovation's amount (with a kitchen bought with the flat) must be smaller than the building share of the purchase price. Please check the amount or the purchase price split.",
   "income_input.scope_invalid":

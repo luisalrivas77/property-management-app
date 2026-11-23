@@ -61,7 +61,9 @@ export const WARNING_EN: Record<string, WarningEn> = {
     text: (p) =>
       p.reason === "before_handover"
         ? "According to the entry, the work begins before the handover; then it is the seller's own. Check and correct the period of the renovation, or withdraw the entry."
-        : "The amount is not below the building's share of the purchase price, which cannot be right. Check and correct the amount, or withdraw the entry.",
+        : p.reason === "paid_before_handover_year"
+          ? "The payment date is in a year before the year of the handover. Enter the day the rest of the purchase price was paid, or withdraw the entry."
+          : "The amount is not below the building's share of the purchase price, which cannot be right. Check and correct the amount, or withdraw the entry.",
   },
   "afa.acquisition_cost_without_row": {
     title: () => "Purchase cost not entered",

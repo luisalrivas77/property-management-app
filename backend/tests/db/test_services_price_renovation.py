@@ -24,6 +24,7 @@ from hausbuch.rules.errors import (
     TAX_INPUT_PRICE_RENOVATION_BEFORE_HANDOVER,
     TAX_INPUT_PRICE_RENOVATION_EXCEEDS_BUILDING,
     TAX_INPUT_PRICE_RENOVATION_NO_PURCHASE_DATE,
+    TAX_INPUT_PRICE_RENOVATION_PAID_BEFORE_HANDOVER_YEAR,
 )
 from hausbuch.schemas.enums import AcquisitionCostKind, PriceSplitSource
 from hausbuch.schemas.events import EventType
@@ -148,6 +149,15 @@ def test_a_claim_is_recorded_with_the_kaufvertrag_and_its_clause_stays_in_the_ro
     assert event.payload["kind"] == "price_renovation"
     assert event.payload["value"]["clause"] is None
     assert CLAUSE not in str(event.payload)
+
+
+def test_payment_in_a_year_before_the_handover_is_refused(world):
+    doc = _kaufvertrag(world)
+    early = _claim(world, doc, value={"paid_on": "2023-12-20"})
+    assert _refused(world, early) == (TAX_INPUT_PRICE_RENOVATION_PAID_BEFORE_HANDOVER_YEAR,)
+    # Earlier in the handover's own year counts (an instalment before the handover).
+    same_year = _create(world, _claim(world, doc, value={"paid_on": "2024-01-15"}))
+    assert same_year.value.paid_on == date(2024, 1, 15)
 
 
 def test_work_before_the_handover_is_refused(world):
