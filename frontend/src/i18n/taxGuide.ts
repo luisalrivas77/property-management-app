@@ -22,6 +22,10 @@ export const taxGuide = defineMessages({
     nowReady: "Alles ist geklärt: die ELSTER-Ausfüllhilfe kann erstellt werden.",
     nowWaiting: (month: string) =>
       `Alles, was jetzt geht, ist erledigt. Die nächsten Belege kommen meist ab ${month}; die App erinnert daran.`,
+    nowUnavailable: (year: number) =>
+      `Für ${year} kann die App die Steuer noch nicht berechnen: die Regeln für dieses Jahr fehlen.`,
+    nowUnavailableOther: (year: number) =>
+      `Für ${year} kann die App noch nicht alles berechnen. Unter „Prüfen und abgeben“ steht bei jedem Formular, ob es schon ein Ergebnis hat.`,
     nowOpenStep: "Weiter",
     stepsLabel: "Schritte",
     stepNumber: (n: number, total: number) => `Schritt ${n} von ${total}`,
@@ -179,6 +183,9 @@ export const taxGuide = defineMessages({
     nowReady: "Everything is clear: the ELSTER filling aid can be made.",
     nowWaiting: (month: string) =>
       `Everything that can be done now is done. The next receipts usually come from ${month}; the app will remind you.`,
+    nowUnavailable: (year: number) => `The app cannot calculate the tax for ${year} yet: the rules for this year are missing.`,
+    nowUnavailableOther: (year: number) =>
+      `The app cannot calculate everything for ${year} yet. “Check and file” shows for each form whether it has a result yet.`,
     nowOpenStep: "Continue",
     stepsLabel: "Steps",
     stepNumber: (n: number, total: number) => `Step ${n} of ${total}`,

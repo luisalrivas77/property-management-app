@@ -193,6 +193,9 @@ class GuideInput:
     # The open Jahresfragen with their owner and property: each counts on that owner's Anlage N
     # or that property's Anlage V card; a household question counts on no card.
     open_questions: Sequence[OpenQuestion] = ()
+    # A source could not be read for the year (the service's `unavailable`: no rule set, a
+    # draft refused): the year cannot be finished, so Prüfen und abgeben is never done.
+    incomplete: bool = False
 
 
 @dataclass(frozen=True)
@@ -391,8 +394,9 @@ def guide(facts: GuideInput) -> GuideResult:
     """The steps with their states, the points, the Belege and „Jetzt dran“: the first step
     with something to do today. When nothing is open but a Beleg is still to come,
     `waiting_from` is the first month one of them usually comes (never before this month).
-    Prüfen und abgeben is "done" only when every other step is; until then it is "open" with
-    its own points, else "waiting", so it never reads „bereit“ while another step is open."""
+    Prüfen und abgeben is "done" only when every other step is and every source could be read
+    (not `incomplete`); until then it is "open" with its own points, else "waiting", so it
+    never reads „bereit“ while another step is open or a part of the year cannot be computed."""
     docs = documents(facts)
     pts = points(facts, docs)
 
@@ -417,7 +421,8 @@ def guide(facts: GuideInput) -> GuideResult:
             )
         )
     if facts.questions_total is None:
-        steps.append(GuideStep(kind="questions", state="done", open=0))
+        # The questionnaire could not be read (no file for the year): not done, nothing to do.
+        steps.append(GuideStep(kind="questions", state="waiting", open=0))
     else:
         answered = facts.questions_answered or 0
         n = facts.questions_total - answered
@@ -454,11 +459,11 @@ def guide(facts: GuideInput) -> GuideResult:
     n = open_points("review")
     if n:
         review_state: GuideStepState = "open"
-    elif all(s.state == "done" for s in steps):
+    elif not facts.incomplete and all(s.state == "done" for s in steps):
         review_state = "done"
     else:
         review_state = "waiting"
-    only_belege_to_come = all(
+    only_belege_to_come = not facts.incomplete and all(
         s.state == "done" or (s.kind == "documents" and s.state == "waiting") for s in steps
     )
     steps.append(

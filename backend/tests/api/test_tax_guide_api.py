@@ -100,6 +100,19 @@ def test_a_year_before_any_rule_set_is_served_in_part(client_a):
         None,
         "tax.no_rule_set",
     )
+    assert got["ready"] is False
+    assert got["steps"][-1]["state"] != "done"
+    assert got["steps"][2]["state"] != "done"  # the Jahresfragen could not be read
+
+
+def test_a_year_without_its_rules_is_not_ready(client_a):
+    """Nothing to type and nothing open, but 2025 has no tariff and no Jahresfragen yet: the
+    guide must not say „bereit“ (it did, every step reading done)."""
+    got = _guide(client_a, 2025)
+    assert {"estimate:tax.no_rule_set", "questionnaire:tax.no_rule_set"} <= set(got["unavailable"])
+    assert got["ready"] is False
+    assert [s["state"] for s in got["steps"]] == ["done", "waiting", "done", "waiting"]
+    assert got["steps_done"] == 2
 
 
 def test_a_property_not_owned_in_the_year_has_no_step(client_a):

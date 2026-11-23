@@ -48,6 +48,7 @@ def facts(
     answered=8,
     total=8,
     open_questions=(),
+    incomplete=False,
 ) -> rule.GuideInput:
     return rule.GuideInput(
         tax_year=YEAR,
@@ -58,6 +59,7 @@ def facts(
         questions_answered=answered,
         questions_total=total,
         open_questions=list(open_questions),
+        incomplete=incomplete,
     )
 
 
@@ -323,10 +325,18 @@ def test_a_property_without_a_draft_still_has_its_step_and_belege():
             owners=[rule.OwnerFacts(A, None, ())],
             answered=None,
             total=None,
+            incomplete=True,
         )
     )
     assert kinds(result) == ["angaben", "property", "questions", "documents", "review"]
-    assert result.steps[2].state == "done" and result.steps[2].total is None
+    # The questionnaire could not be read: not done, nothing to do in it.
+    assert (result.steps[2].state, result.steps[2].open, result.steps[2].total) == (
+        "waiting",
+        0,
+        None,
+    )
+    assert (result.steps[-1].state, result.steps[-1].waiting_from) == ("waiting", None)
+    assert result.ready is False
     assert [d.kind for d in result.documents] == ["grundsteuerbescheid"]
     assert result.documents[0].sender == "municipality"
     assert result.next_step == 3
@@ -389,3 +399,15 @@ def test_a_forms_open_count_holds_its_belege_and_its_jahresfragen():
     assert result.form_open("anlage_n", owner_id=B) == 0
     assert result.form_open("anlage_v", property_id=P1) == 3  # Beleg, price split, question
     assert result.form_open("anlage_v", property_id=P2) == 0
+
+
+def test_a_year_that_cannot_be_computed_is_never_ready():
+    """Nothing open, every Beleg there, but a source could not be read (no rule set): Prüfen
+    waits without a month and the year is not ready."""
+    result = rule.guide(facts(incomplete=True))
+    assert [s.state for s in result.steps] == ["done", "done", "done", "done", "waiting"]
+    assert result.steps[-1].waiting_from is None
+    assert result.ready is False
+    assert result.steps_done == 4
+    assert result.next_step is None
+    assert rule.guide(facts()).ready is True

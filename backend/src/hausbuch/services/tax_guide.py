@@ -108,6 +108,7 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
             questions_answered=answered,
             questions_total=total,
             open_questions=open_questions,
+            incomplete=bool(unavailable),
         )
     )
     # A form's open count is everything still open for it, whichever step clears it (its
@@ -142,7 +143,7 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
         steps_done=result.steps_done,
         next_step=result.next_step,
         waiting_from=result.waiting_from,
-        ready=result.ready,
+        ready=result.ready and not unavailable,
         estimate=estimate,
         forms=forms,
         points=result.points,

@@ -226,6 +226,14 @@ function EstimateLine({ guide, year }: { guide: TaxGuide; year: number }) {
   );
 }
 
+/** Why the year cannot be finished, when a source could not be read (`unavailable`): the
+ *  rules for the year are missing (tax.no_rule_set), or some other part refused. */
+function unavailableText(guide: TaxGuide, t: T): string | null {
+  const codes = guide.unavailable ?? [];
+  if (codes.length === 0) return null;
+  return codes.some((c) => c.endsWith(":tax.no_rule_set")) ? t.nowUnavailable(guide.tax_year) : t.nowUnavailableOther(guide.tax_year);
+}
+
 function StartPage({ guide, properties }: { guide: TaxGuide; properties: readonly Property[] }) {
   const t = useT(messages);
   const f = useFormat();
@@ -240,7 +248,8 @@ function StartPage({ guide, properties }: { guide: TaxGuide; properties: readonl
   else if (next?.kind === "questions") now = t.nowQuestions(next.open);
   else if (next?.kind === "documents") now = t.nowBelege(next.open);
   else if (next) now = t.nowOpen(next.open);
-  else now = t.nowWaiting(guide.waiting_from ? f.month(guide.waiting_from) : "…");
+  // Nothing to do now, yet the year cannot be computed: say so instead of „Alles ist geklärt“.
+  else now = unavailableText(guide, t) ?? t.nowWaiting(guide.waiting_from ? f.month(guide.waiting_from) : "…");
   return (
     <div className="stack tax-guide">
       <div className="page-head tax-head">
@@ -273,7 +282,7 @@ function StartPage({ guide, properties }: { guide: TaxGuide; properties: readonl
           <span>{t.deadline(f.date(guide.filing_deadline))}</span>
           <EstimateLine guide={guide} year={year} />
         </p>
-        {(guide.unavailable ?? []).length > 0 ? <p className="muted">{t.unavailable}</p> : null}
+        {(guide.unavailable ?? []).length > 0 && next ? <p className="muted">{t.unavailable}</p> : null}
       </section>
       <section className="card tax-guide-now" aria-labelledby="tax-guide-now">
         <h2 id="tax-guide-now">{t.nowTitle}</h2>
@@ -948,6 +957,9 @@ function ReviewStep({
   const keys: string[] = points.map(pointKey);
   const openIndex = detail.id ? keys.indexOf(detail.id) : -1;
   const openSteps = guide.steps.filter((s) => s.kind !== "review" && s.state !== "done");
+  const stillOpen = points.length + openSteps.filter((s) => s.kind === "questions" || s.kind === "documents").reduce((n, s) => n + s.open, 0);
+  // Nothing left to clear, yet a part of the year cannot be computed: say that, not „0 Punkte“.
+  const elsterWhy = (stillOpen === 0 ? unavailableText(guide, t) : null) ?? t.elsterNotYet(stillOpen);
   // The open point, remembered: once it is cleared (the guide reloads without it), „Nächster
   // Punkt“ offers the next point of the same kind on the same property (a payment's twin, which
   // the reload may have moved), else the point that moved into its place, so the flow never
@@ -1059,7 +1071,7 @@ function ReviewStep({
                 {t.elsterButton}
               </button>
               <div id="tax-guide-elster-why">
-                <p>{t.elsterNotYet(points.length + openSteps.filter((s) => s.kind === "questions" || s.kind === "documents").reduce((n, s) => n + s.open, 0))}</p>
+                <p>{elsterWhy}</p>
                 {openSteps.length > 0 ? (
                   <p>
                     {t.elsterStepsOpen}{" "}
