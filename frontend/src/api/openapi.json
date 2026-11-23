@@ -11689,6 +11689,18 @@
         "title": "AccountSource",
         "description": "account.source (migration 0006). Only `upload` in phase 2."
       },
+      "AccountTab": {
+        "type": "string",
+        "enum": [
+          "bank",
+          "card",
+          "depot",
+          "exchange",
+          "wallet"
+        ],
+        "title": "AccountTab",
+        "description": "The Konten page's tabs (phase 10 D279, §7.6 Konten (2)) by the account's kind: both\nbank kinds are one tab; the loans' tab reads `loan_balances`."
+      },
       "AcquisitionCost": {
         "properties": {
           "id": {
@@ -26669,6 +26681,17 @@
             "type": "string",
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Property Net"
+          },
+          "by_account_tab": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/AccountTab"
+            },
+            "type": "object",
+            "title": "By Account Tab"
           },
           "lines": {
             "items": {

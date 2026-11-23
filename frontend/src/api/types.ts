@@ -4438,6 +4438,13 @@ export interface components {
          * @enum {string}
          */
         AccountSource: "upload" | "fints" | "aggregator";
+        /**
+         * AccountTab
+         * @description The Konten page's tabs (phase 10 D279, §7.6 Konten (2)) by the account's kind: both
+         *     bank kinds are one tab; the loans' tab reads `loan_balances`.
+         * @enum {string}
+         */
+        AccountTab: "bank" | "card" | "depot" | "exchange" | "wallet";
         /** AcquisitionCost */
         AcquisitionCost: {
             /**
@@ -10410,6 +10417,10 @@ export interface components {
             loan_balances: string;
             /** Property Net */
             property_net: string;
+            /** By Account Tab */
+            by_account_tab?: {
+                [key: string]: string;
+            };
             /** Lines */
             lines?: components["schemas"]["NetWorthLine"][];
             /** Todos */

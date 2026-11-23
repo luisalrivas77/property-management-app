@@ -35,7 +35,12 @@ from hausbuch.schemas.enums import AccountKind, ImportStatus
 from hausbuch.schemas.events import EventType
 from hausbuch.schemas.household import NetWorthClass, OwnershipShare, SetOwnershipBody
 from hausbuch.schemas.loan import LoanCreate
-from hausbuch.schemas.net_worth import NetWorthLineKind, NetWorthTodoCode, SnapshotOutcome
+from hausbuch.schemas.net_worth import (
+    AccountTab,
+    NetWorthLineKind,
+    NetWorthTodoCode,
+    SnapshotOutcome,
+)
 from hausbuch.schemas.performance import Levers, ScenarioCreate
 from hausbuch.schemas.property import Address, OwnerCreate, OwnerShare, PropertyCreate
 from hausbuch.services import net_worth
@@ -373,9 +378,24 @@ def test_the_fixture_ledger_is_read_to_the_euro(run, read, fresh_workspaces):
     assert [t.code for t in seen.todos] == [T.PRICE_STALE]
     assert seen.todos[0].href == "/assets"
 
+    # Phase 10 §7.6 Konten (2): one total per Konten tab, summed from the same lines; the
+    # tabs add up to the net worth less the property's estimate plus its loans.
+    def tab(*names):
+        return sum((v for (a, _), v in valued.items() if a in names), Decimal("0.00"))
+
+    assert seen.by_account_tab == {
+        AccountTab.BANK: tab("joint_current", "savings_a"),
+        AccountTab.DEPOT: tab("depot"),
+        AccountTab.EXCHANGE: tab("exchange_b"),
+    }
+    assert sum(seen.by_account_tab.values()) == (
+        seen.total - seen.property_estimate + seen.loan_balances
+    )
+
     # Another workspace sees none of it (RLS).
     empty = read(other, net_worth.net_worth, ON)
     assert empty.total == 0 and empty.lines == [] and empty.by_owner == {}
+    assert empty.by_account_tab == {}
 
 
 def test_a_balance_stops_at_its_last_reconciled_statement(run, read, fresh_workspaces):
@@ -486,6 +506,8 @@ def test_an_idle_card_needs_no_statement(run, read, fresh_workspaces):
     assert [(t.code, t.href) for t in seen.todos] == [
         (T.BALANCE_OUTDATED, f"/accounts/{used}?tab=kontoauszuege")
     ]
+    # Several cards: the Karten tab's total is theirs together (§7.6 Konten (2)).
+    assert seen.by_account_tab == {AccountTab.CARD: by_account[used].value_eur}
 
 
 def test_a_fund_the_report_lists_with_nothing_booked_is_listed_unvalued(
