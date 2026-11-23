@@ -41,7 +41,14 @@ computed (`unvalued`), nor those of a total that holds it.
 3. *An exchange or a wallet*: each movement that is a leg of a current transfer link
    (phase 6 D162, phase 7 D184), or of kind internal_transfer_in/out: euros at face value
    (TRANSFER), coins at that day's price (UNITS). Trades, rewards, airdrops, fees and
-   corrections stay inside the value.
+   corrections stay inside the value. Coins that came from or went to someone else count
+   too, at that day's price (UNITS): on a wallet, a receipt answered „Geschenk oder Zahlung
+   erhalten“ (an acquisition in a group of kind transfer, never a swap's leg) is paid in, a
+   send answered „Bezahlung“ (a disposal in such a group) taken out; a dust receipt (D262, a
+   0 € acquisition worth less than a cent that day) counts nothing. On an exchange, a coin
+   withdrawal answered as a disposal (a current disposal outside any trade group whose
+   earlier row was an internal_transfer_out) is taken out; a disposal answered from an
+   unrecognised row stays inside, since it may be a trade's leg.
 
 A move between two own portfolios is out of one and in to the other; the totals (ETF, Krypto,
 both) leave it out, keeping only money from or to outside (rules: `pair`, the other leg's
@@ -64,11 +71,13 @@ from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
+from hausbuch.db.tables import movement_group as group_table
 from hausbuch.db.tables import price as price_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.rules import valuation
 from hausbuch.rules.matching import TRANSFER_CATEGORIES
 from hausbuch.rules.performance import portfolio as R
+from hausbuch.schemas.chain import GroupKind
 from hausbuch.schemas.enums import AccountKind, AllocationStatus
 from hausbuch.schemas.household import (
     MovementKind,
@@ -164,7 +173,7 @@ def _movements(conn: Connection, account_ids: Sequence[UUID], today: date) -> li
     `assets_overview_with` counts units)."""
     if not account_ids:
         return []
-    m, a = movement_table.c, asset_table.c
+    m, a, g = movement_table.c, asset_table.c, group_table.c
     return list(
         conn.execute(
             select(
@@ -177,7 +186,10 @@ def _movements(conn: Connection, account_ids: Sequence[UUID], today: date) -> li
                 m.tax_withheld_eur,
                 m.occurred_at,
                 m.transaction_id,
+                m.group_id,
+                g.kind.label("group_kind"),
             )
+            .select_from(movement_table.outerjoin(group_table, g.id == m.group_id))
             .where(
                 m.account_id.in_(account_ids),
                 m.status == MovementStatus.CONFIRMED.value,
@@ -229,6 +241,49 @@ def _cash_lines(
         if transfer.get(r.id):
             lines[r.account_id].append((r.id, r.booking_date, transfer[r.id]))
     return lines, unbooked
+
+
+def _withdrawals_answered_out(conn: Connection, movements: Iterable[Any]) -> set[UUID]:
+    """The current disposals, outside any trade group, whose earlier row (back along
+    superseded_by) was an internal_transfer_out: an exchange's coin withdrawal a person
+    answered as a disposal (exchange.imports.answer_movement), the coins gone to someone
+    else. A disposal answered from an unrecognised row is not one: it may be a trade's leg."""
+    current = {
+        mv.id for mv in movements if mv.kind == MovementKind.DISPOSAL.value and mv.group_id is None
+    }
+    if not current:
+        return set()
+    m = movement_table.c
+    earlier: dict[UUID, list[tuple[UUID, str]]] = defaultdict(list)
+    accounts = list({mv.account_id for mv in movements})
+    for r in conn.execute(
+        select(m.id, m.kind, m.superseded_by).where(
+            m.account_id.in_(accounts), m.superseded_by.is_not(None)
+        )
+    ):
+        earlier[r.superseded_by].append((r.id, r.kind))
+    out = set()
+    for start in current:
+        todo, seen = [start], {start}
+        while todo:
+            for prior, kind in earlier.get(todo.pop(), []):
+                if kind == MovementKind.INTERNAL_TRANSFER_OUT.value:
+                    out.add(start)
+                    todo = []
+                    break
+                if prior not in seen:
+                    seen.add(prior)
+                    todo.append(prior)
+    return out
+
+
+def _given_or_paid(kind: AccountKind, mv: Any, answered_out: set[UUID]) -> bool:
+    """Whether a movement moved coins from or to someone else (module doc, 3.)."""
+    if kind is AccountKind.WALLET:
+        return mv.group_kind == GroupKind.TRANSFER.value and mv.kind in _TRADE
+    if kind is AccountKind.EXCHANGE:
+        return mv.id in answered_out
+    return False
 
 
 def _linked_lines(conn: Connection, movements: Iterable[Any]) -> dict[UUID, tuple[date, Decimal]]:
@@ -366,6 +421,9 @@ def assets_performance(conn: Connection, today: date) -> AssetsPerformance:
     flows = _Flows()
     other = _links(conn)
     movements = _movements(conn, ids, today)
+    answered_out = _withdrawals_answered_out(
+        conn, [mv for mv in movements if kinds[mv.account_id] is AccountKind.EXCHANGE]
+    )
     a = asset_table.c
     asset_ids = {mv.asset_id for mv in movements}
     assets = {
@@ -445,6 +503,16 @@ def assets_performance(conn: Connection, today: date) -> AssetsPerformance:
                 )  # fmt: skip
             continue
         if not is_transfer:
+            if not _given_or_paid(kind, mv, answered_out):
+                continue
+            amount = prices.value(mv.asset_id, mv.quantity, on)
+            dust = mv.eur_amount is not None and mv.eur_amount == 0 and mv.quantity > 0
+            if dust and (amount is None or abs(amount) <= CENT):
+                continue  # D262: worth less than a cent the day it came
+            flows.add(
+                mv.account_id, on, amount, K.UNITS, mv.id,
+                movement_id=mv.id, asset_id=mv.asset_id, units=mv.quantity,
+            )  # fmt: skip
             continue
         euro = _euro(assets[mv.asset_id])
         amount = prices.value(mv.asset_id, mv.quantity, on)

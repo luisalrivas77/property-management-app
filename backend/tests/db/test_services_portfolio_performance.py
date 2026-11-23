@@ -286,3 +286,117 @@ def test_a_start_priced_only_a_month_before_the_anchor_is_unknown(run, read, fre
     figures = portfolio.figures
     assert figures.gain_eur is None and figures.paid_in_eur is None
     assert figures.no_rate is NoRateReason.UNPRICED and figures.unpriced_flows == 1
+
+
+def test_coins_given_or_paid_count_at_the_days_price_on_a_wallet(run, read, fresh_workspaces):
+    """A wallet: 2 SOL received on 1 Oct and answered „Geschenk oder Zahlung erhalten“ (a
+    typed cost of 150 € for the lot) are paid in at that day's price, 2 × 100 = 200 €; 0.5 SOL
+    sent on 15 Oct and answered „Bezahlung“ are taken out at 0.5 × 120 = 60 €. A swap of
+    0.5 SOL for 100 USDC on 20 Oct moves nothing in or out, nor does a dust receipt booked
+    as a 0 € acquisition (D262, worth 0.001 € that day). Without the answers both readings
+    left the value moving with no money in or out."""
+    from db.test_services_holdings import _account as _holdings_account
+    from db.test_services_holdings import _movement
+    from db.test_services_holdings import _price as _coin_price
+    from db.test_wallet_dust_and_swap import _address, _coin, _group
+
+    from hausbuch.schemas.wallet_cards import WalletAnswer, WalletGroupAnswerBody
+    from hausbuch.services.wallet_groups import answer_group
+
+    ws, _ = fresh_workspaces
+    day = {n: datetime(2026, 10, n, 12, tzinfo=UTC) for n in (1, 5, 15, 20)}
+
+    def stored(ctx):
+        wallet = _holdings_account(ctx, AccountKind.WALLET, "Wallet")
+        sol = _coin(ctx, "SOL", "Solana")
+        usdc = _coin(
+            ctx, "USDC", "USD Coin (Test)", contract="UsdcTestMintXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+        )
+        gift = _group(ctx, wallet, [(sol, "2", "uncategorized")], at=day[1])
+        paid = _group(ctx, wallet, [(sol, "-0.5", "uncategorized")], at=day[15])
+        _group(
+            ctx,
+            wallet,
+            [(sol, "-0.5", "disposal"), (usdc, "100", "acquisition")],
+            kind="swap",
+            status="confirmed",
+            at=day[20],
+        )
+        dust = _group(ctx, wallet, [], status="confirmed", at=day[5])
+        _movement(ctx, wallet, sol, "0.00001", day[5], address_id=_address(ctx, wallet),
+                  kind="acquisition", group_id=dust, eur_amount=Decimal("0"))  # fmt: skip
+        for on, price in ((date(2026, 10, 1), "100"), (date(2026, 10, 5), "100")):
+            _coin_price(ctx, sol, on, price)
+        _coin_price(ctx, sol, date(2026, 10, 15), "120")
+        _coin_price(ctx, sol, date(2026, 10, 20), "120")
+        _coin_price(ctx, sol, ON, "110")
+        _coin_price(ctx, usdc, ON, "1")
+        return wallet, gift, paid
+
+    wallet, gift, paid = run(ws, stored)
+    run(
+        ws,
+        answer_group,
+        gift,
+        WalletGroupAnswerBody(answer=WalletAnswer.GIFT, cost_eur=Decimal("150.00")),
+    )
+    run(ws, answer_group, paid, WalletGroupAnswerBody(answer=WalletAnswer.PAYMENT))
+
+    seen = read(ws, assets_performance, ON)
+    [portfolio] = seen.portfolios
+    [overview] = read(ws, assets_overview, ON, today=ON).accounts
+    assert portfolio.account_id == wallet
+    assert portfolio.figures.value_eur == overview.total_eur
+    assert [(f.kind, f.on, f.amount_eur) for f in portfolio.flows] == [
+        (K.UNITS, date(2026, 10, 1), Decimal("200.00")),
+        (K.UNITS, date(2026, 10, 15), Decimal("-60.00")),
+    ]
+    figures = portfolio.figures
+    assert (figures.paid_in_eur, figures.taken_out_eur) == (Decimal("200.00"), Decimal("60.00"))
+    assert figures.gain_eur == overview.total_eur + Decimal("60.00") - Decimal("200.00")
+    assert seen.crypto == figures
+
+
+def test_a_coin_withdrawal_answered_as_a_disposal_is_taken_out(run, read, fresh_workspaces):
+    """An exchange: 1 SOL bought for 100 € (a confirmed trade's leg stays inside), then a
+    proposed coin withdrawal of 0.4 SOL on 10 Oct answered as a disposal: the coins went to
+    someone else, taken out at 0.4 × 125 = 50 €. A disposal answered from an unrecognised row
+    stays inside (it may be a trade's leg)."""
+    from db.test_services_holdings import _account as _holdings_account
+    from db.test_services_holdings import _movement
+    from db.test_services_holdings import _price as _coin_price
+    from db.test_wallet_dust_and_swap import _coin
+
+    from hausbuch.schemas.household import AnswerMovementBody, MovementKind
+    from hausbuch.services.exchange.imports import answer_movement
+
+    ws, _ = fresh_workspaces
+
+    def stored(ctx):
+        exchange = _holdings_account(ctx, AccountKind.EXCHANGE, "Börse")
+        sol = _coin(ctx, "SOL", "Solana")
+        euro = _asset(ctx, kind="cash", symbol="EUR", name="Euro")
+        _movement(ctx, exchange, euro, "100", datetime(2026, 9, 1, 9, tzinfo=UTC),
+                  kind="internal_transfer_in", eur_amount=Decimal("100"))  # fmt: skip
+        _movement(ctx, exchange, euro, "-100", datetime(2026, 9, 2, 9, tzinfo=UTC),
+                  kind="disposal", eur_amount=Decimal("-100"))  # fmt: skip
+        _movement(ctx, exchange, sol, "1", datetime(2026, 9, 2, 9, tzinfo=UTC),
+                  kind="acquisition", eur_amount=Decimal("-100"))  # fmt: skip
+        out = _movement(ctx, exchange, sol, "-0.4", datetime(2026, 10, 10, 9, tzinfo=UTC),
+                        kind="internal_transfer_out", status="proposed")  # fmt: skip
+        odd = _movement(ctx, exchange, sol, "-0.1", datetime(2026, 10, 12, 9, tzinfo=UTC),
+                        kind="uncategorized", status="proposed")  # fmt: skip
+        _coin_price(ctx, sol, date(2026, 10, 10), "125")
+        _coin_price(ctx, sol, date(2026, 10, 12), "125")
+        _coin_price(ctx, sol, ON, "130")
+        return exchange, out, odd
+
+    exchange, out, odd = run(ws, stored)
+    for movement in (out, odd):
+        run(ws, answer_movement, movement, AnswerMovementBody(kind=MovementKind.DISPOSAL))
+
+    [portfolio] = read(ws, assets_performance, ON).portfolios
+    flows = [(f.kind, f.on, f.amount_eur) for f in portfolio.flows]
+    assert (K.UNITS, date(2026, 10, 10), Decimal("-50.00")) in flows
+    assert not any(on == date(2026, 10, 12) for _, on, _ in flows)
+    assert portfolio.figures.taken_out_eur == Decimal("50.00")
