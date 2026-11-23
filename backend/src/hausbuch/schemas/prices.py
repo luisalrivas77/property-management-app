@@ -103,6 +103,10 @@ class OverviewAccount(Schema):
     kind: str
     positions: list[OverviewPosition] = Field(default_factory=list)
     value_eur: Money  # Σ of the valued positions
+    # A depot's cash balance and money on its way to it, the net worth's own account lines
+    # (D292), so the account's total equals its lines in the net worth.
+    cash: list[NetWorthLine] = Field(default_factory=list)
+    total_eur: Money  # value_eur + Σ cash
 
 
 class AssetsOverview(Schema):

@@ -32,6 +32,7 @@ import { useFormat, useT, type Formatter, type Translation } from "@/i18n";
 import { assets } from "@/i18n/assets";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
+import { PortfolioParts } from "./PortfolioParts";
 import { accountKindLabel, assetKindLabel, priceText, sourceLabel } from "./words";
 
 type T = Translation<(typeof assets)["de"]>;
@@ -190,6 +191,7 @@ function AccountPositions({
 }) {
   const t = useT(assets);
   const f = useFormat();
+  const cash = (account.cash ?? []).filter((line) => line.value_eur != null);
   return (
     <section className="card stack" aria-label={t.positionsOf(account.label)}>
       <div className="asset-section-head">
@@ -198,8 +200,9 @@ function AccountPositions({
         </h2>
         <span className="badge badge-muted">{accountKindLabel(t, account.kind)}</span>
         <span className="spacer" />
-        <strong>{f.money(account.value_eur)}</strong>
+        <strong>{f.money(account.total_eur)}</strong>
       </div>
+      {cash.length > 0 ? <PortfolioParts label={account.label} funds={account.value_eur} cash={cash} /> : null}
       <WaitingNotices lines={waiting ? [waiting] : []} />
       <ul className="asset-rows" data-cols="overview">
         <li className="asset-rows-head asset-col" aria-hidden="true">

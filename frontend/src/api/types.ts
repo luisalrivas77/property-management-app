@@ -10719,6 +10719,10 @@ export interface components {
             positions?: components["schemas"]["OverviewPosition"][];
             /** Value Eur */
             value_eur: string;
+            /** Cash */
+            cash?: components["schemas"]["NetWorthLine"][];
+            /** Total Eur */
+            total_eur: string;
         };
         /**
          * OverviewPosition

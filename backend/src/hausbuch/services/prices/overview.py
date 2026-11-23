@@ -228,7 +228,55 @@ def _depot_bounds(
 
 
 def assets_overview(conn: Connection, on: date) -> AssetsOverview:
-    return assets_overview_with(conn, on, MovementReads(conn))
+    """The Anlagen Übersicht tab: the positions of `assets_overview_with`, plus each depot's
+    cash balance and the money on its way to it, the net worth's own account lines (D292),
+    so a depot's total and the tab's total equal their lines in the net worth. Only the
+    screen adds them: the net worth reads `assets_overview_with` for the positions alone
+    and its account lines separately, so they are never counted twice."""
+    from hausbuch.services.net_worth import depot_cash  # net_worth reads this module
+
+    seen = assets_overview_with(conn, on, MovementReads(conn))
+    cash = depot_cash(conn, on)
+    if not cash:
+        return seen
+    by_kind = dict(seen.by_kind)
+    accounts = []
+    for account in seen.accounts:
+        lines = cash.pop(account.account_id, [])
+        extra = sum((x.value_eur for x in lines if x.value_eur is not None), Decimal("0.00"))
+        accounts.append(
+            account.model_copy(update={"cash": lines, "total_eur": account.value_eur + extra})
+        )
+    # A depot with cash but no position on `on` (every fund sold) still shows its cash.
+    labels = (
+        dict(
+            conn.execute(
+                select(account_table.c.id, account_table.c.label).where(
+                    account_table.c.id.in_(list(cash))
+                )
+            ).all()
+        )
+        if cash
+        else {}
+    )
+    for account_id, lines in cash.items():
+        extra = sum((x.value_eur for x in lines if x.value_eur is not None), Decimal("0.00"))
+        accounts.append(
+            OverviewAccount(
+                account_id=account_id,
+                label=labels.get(account_id, ""),
+                kind=AccountKind.DEPOT.value,
+                value_eur=Decimal("0.00"),
+                cash=lines,
+                total_eur=extra,
+            )
+        )
+    added = sum((a.total_eur - a.value_eur for a in accounts), Decimal("0.00"))
+    if added:
+        by_kind[AssetKind.CASH.value] = by_kind.get(AssetKind.CASH.value, Decimal("0.00")) + added
+    return seen.model_copy(
+        update={"accounts": accounts, "by_kind": by_kind, "total_eur": seen.total_eur + added}
+    )
 
 
 def assets_overview_with(conn: Connection, on: date, movements: MovementReads) -> AssetsOverview:
@@ -362,9 +410,13 @@ def assets_overview_with(conn: Connection, on: date, movements: MovementReads) -
                     label=account.label,
                     kind=account.kind,
                     positions=positions,
-                    value_eur=sum(
-                        (p.value_eur for p in positions if p.value_eur is not None), Decimal("0.00")
+                    value_eur=(
+                        funds := sum(
+                            (p.value_eur for p in positions if p.value_eur is not None),
+                            Decimal("0.00"),
+                        )
                     ),
+                    total_eur=funds,
                 )
             )
     return AssetsOverview(
@@ -391,7 +443,7 @@ def etf_today(conn: Connection, on: date) -> EtfToday:
     confirmed movement)."""
     from hausbuch.services.net_worth import depot_cash  # net_worth reads this module
 
-    seen = assets_overview(conn, on)
+    seen = assets_overview_with(conn, on, MovementReads(conn))  # positions only
     today = {(acc.account_id, p.asset_id): p for acc in seen.accounts for p in acc.positions}
     tab = etf_overview(conn)
     cash = depot_cash(conn, on)

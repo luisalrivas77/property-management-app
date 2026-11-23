@@ -331,3 +331,18 @@ def test_the_etf_tab_adds_the_depots_cash_and_money_on_its_way(run, read, fresh_
     assert account.total_eur == sum(
         (line.value_eur for line in seen.lines if line.account_id == depot), Decimal(0)
     )
+
+    # The Anlagen Übersicht tab shows the same parts and total (Luis, 23 Nov 2026: „the
+    # Overview tab doesn't include those missing values“), and its tab total adds them
+    # under Bargeld; the net worth itself still counts the positions and the cash once.
+    over = read(ws, overview.assets_overview, ON)
+    [row] = [a for a in over.accounts if a.account_id == depot]
+    assert row.value_eur == Decimal("100.00")
+    assert [(line.in_transit, line.value_eur) for line in row.cash] == [
+        (False, Decimal("200.00")),
+        (True, Decimal("500.00")),
+    ]
+    assert row.total_eur == account.total_eur
+    assert over.total_eur == sum(a.total_eur for a in over.accounts)
+    assert over.by_kind["cash"] >= Decimal("700.00")
+    assert over.total_eur == sum(over.by_kind.values(), Decimal(0))
