@@ -114,3 +114,8 @@ a.household-group-row .household-share {
 .household-panel-rows .detail-row strong {
   font-variant-numeric: tabular-nums;
 }
+
+/* Phase 10 §7.6: the key figures below the month (components/healthFigures.tsx). */
+.household-health {
+  margin-top: 1rem;
+}

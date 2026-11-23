@@ -709,7 +709,7 @@ export function TilePanel({
                   </ul>
                 </div>
               ) : null}
-              <Go href="#figures-title">{t.toFigures}</Go>
+              <Go href="/household#figures-title">{t.toFigures}</Go>
             </>
           )}
         </Loading>
@@ -761,7 +761,7 @@ export function TilePanel({
               )}
               <Sentences light={marks.debt_ratio} />
               {marks.debt_ratio?.colour ? null : <p className="muted">{t.noLimit}</p>}
-              <Go href="#figures-title">{t.toFigures}</Go>
+              <Go href="/household#figures-title">{t.toFigures}</Go>
             </>
           )}
         </Loading>

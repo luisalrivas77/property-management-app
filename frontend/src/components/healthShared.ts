@@ -239,10 +239,12 @@ export const REFERENCE_POINTS: Record<MarkedFigure, string[]> = localized<Marked
   },
 );
 
-/** Whether a to-do's link captures a month-end (the backend's `/?month_end=YYYY-MM-DD`), which
- * the screens turn into the button „Monatsabschluss festhalten“. */
+/** Whether a to-do's link captures a month-end, which the screens turn into the button
+ * „Monatsabschluss festhalten“: `/assets?month_end=YYYY-MM-DD` (Anlagen › Übersicht holds the
+ * month-end card since phase 10 §7.6), or `/?month_end=…` as rules/health and rules/plan still
+ * write it (those folders feed rule_version(), so their href stays). */
 export function monthEndOf(href: string): string | null {
-  const match = /^\/\?month_end=(\d{4}-\d{2}-\d{2})$/.exec(href);
+  const match = /^\/(?:assets)?\?month_end=(\d{4}-\d{2}-\d{2})$/.exec(href);
   return match?.[1] ?? null;
 }
 

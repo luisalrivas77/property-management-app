@@ -1,18 +1,23 @@
 "use client";
 
-// The household's key figures on Übersicht (phase 9 §14, D235–D243, D250; docs/mockups/
-// 13-overview-figures.png before the limits are confirmed, 13b after): the card
-// „Liquiditätsreserve“, the card „Ampel-Grenzen festlegen“ (each proposed limit with its origin,
-// editable; „Übernehmen“ stores them in a new version of the default household scenario), the
-// block „Kennzahlen“ with each figure's mark beside its sentences, the split of the assets
-// (never marked) and „Vermögen im Verlauf“ (GET /health/net-worth-series). Every figure is the
-// server's (GET /health); a mark and its sentences come only from confirmed limits, so nothing
-// is coloured before „Übernehmen“. Every figure opens what it is made of, and every gap is a
-// to-do with its button (principle 7); a month-end to-do (`/?month_end=…`) is the button
-// „Monatsabschluss festhalten“ itself.
+// The household's key figures (phase 9 §14, D235–D243, D250; docs/mockups/13-overview-figures.png
+// before the limits are confirmed, 13b after), in the sections they are about since phase 10
+// §7.6 (Luis, 23 Nov 2026: „They should be moved to their respective sections as Planung will
+// be removed“; until then one block on Übersicht):
+// - Haushalt (HouseholdHealthSection): the card „Liquiditätsreserve“, the card „Ampel-Grenzen
+//   festlegen“ (`#ampel-grenzen`; each proposed limit with its origin, editable; „Übernehmen“
+//   stores them in a new version of the default household scenario) and the block „Kennzahlen“
+//   (`#figures-title`) with each figure's mark beside its sentences.
+// - Anlagen › Übersicht (AssetsHealthSection): the card a month-end to-do opens
+//   (`/assets?month_end=…`, „Monatsabschluss festhalten“), the split of the assets (never marked)
+//   and „Vermögen im Verlauf“.
+// Every figure is the server's (GET /health, whose `series` is GET /health/net-worth-series's
+// stored runs); a mark and its sentences come only from confirmed limits, so nothing is coloured
+// before „Übernehmen“. Every figure opens what it is made of, and every gap is a to-do with its
+// button (principle 7); a month-end to-do is the button „Monatsabschluss festhalten“ itself.
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { type FormEvent, type ReactNode, Suspense, useCallback, useId, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
@@ -55,7 +60,7 @@ import { percentInput } from "./input";
 import { snapshotOutcomeText } from "./netWorth";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
 import { Loading } from "./ui";
-import { type Loaded, useLoad } from "./useLoad";
+import { useLoad } from "./useLoad";
 
 import "./health.css";
 
@@ -79,89 +84,67 @@ function limitShown(p: PlanFormat, t: HealthText, figure: MarkedFigure, value: s
 
 interface HealthData {
   health: Health;
-  series: NetWorthPoint[];
   scenarios: HouseholdScenario[];
   names: Map<string, string>;
   accounts: Map<string, Account>;
 }
 
-type HealthRest = Omit<HealthData, "health">;
-
-const loadHealthAlone = (): Promise<Health> => ok(api.GET("/api/health"));
-
-/** Everything the block shows besides GET /health. The net worth series is GET /health's own
- * `series` when the page passed its GET /health (Übersicht, phase 10 §7.3: the same stored runs
- * GET /health/net-worth-series reads), so it is not read twice; else its own read. */
-async function loadHealthRest(ownSeries: boolean): Promise<Omit<HealthRest, "series"> & { series?: NetWorthPoint[] }> {
-  const [series, scenarios, names, accounts] = await Promise.all([
-    ownSeries ? ok(api.GET("/api/health/net-worth-series")) : undefined,
+/** Haushalt's reads: GET /health (sent once with the page's own read of it, fetchShared), the
+ * scenarios, the members and the accounts. */
+async function loadHouseholdHealth(): Promise<HealthData> {
+  const [health, scenarios, names, accounts] = await Promise.all([
+    ok(api.GET("/api/health")),
     loadScenarioHistory(),
     loadMemberNames(),
     ok(api.GET("/api/accounts")),
   ]);
-  return { series, scenarios, names, accounts: new Map(accounts.map((account) => [account.id, account])) };
+  return { health, scenarios, names, accounts: new Map(accounts.map((account) => [account.id, account])) };
 }
 
-interface HealthSectionProps {
-  /** Called after the block saved something, besides reloading its own figures. */
-  onChanged?: () => void;
-  /** GET /health as the page already loads it (Übersicht's tiles, phase 10 D268), so the block
-   * neither asks for it a second time nor shows other figures than the tiles; it reloads it
-   * after a save. Without it the block loads its own. */
-  health?: Loaded<Health>;
-  /** The block's other reads (the net worth series, the scenarios, the members, the accounts)
-   * start once this settles: Übersicht lets its tiles' reads go first on the small container
-   * (21 Nov 2026). Without it they start at once. */
-  after?: Promise<unknown>;
+const loadHealth = (): Promise<Health> => ok(api.GET("/api/health"));
+
+/** A link from another page to a card here (`/household#ampel-grenzen`, `#figures-title`)
+ * arrives before the card has loaded, so the browser finds nothing to scroll to; once it is
+ * there, scroll to it. A hash of the detail panel (`#d-…`) is not one of ours. */
+function useScrollToHash(ready: boolean) {
+  useEffect(() => {
+    if (!ready) return;
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    if (!id || id.startsWith("d-")) return;
+    document.getElementById(id)?.scrollIntoView();
+  }, [ready]);
 }
 
-/** The Übersicht's phase 9 block. */
-export function HealthSection({ onChanged, health, after }: HealthSectionProps = {}) {
-  return (
-    <Suspense fallback={null}>
-      {health ? <HealthBlock health={health} after={after} onChanged={onChanged} /> : <OwnHealthBlock after={after} onChanged={onChanged} />}
-    </Suspense>
-  );
-}
-
-function OwnHealthBlock({ after, onChanged }: Omit<HealthSectionProps, "health">) {
-  const health = useLoad(loadHealthAlone);
-  return <HealthBlock health={health} after={after} onChanged={onChanged} ownSeries />;
-}
-
-const NOW: Promise<unknown> = Promise.resolve();
-
-function HealthBlock({
-  health,
-  after = NOW,
-  onChanged,
-  ownSeries = false,
-}: Omit<HealthSectionProps, "health"> & { health: Loaded<Health>; ownSeries?: boolean }) {
-  const loadRest = useCallback(() => after.then(() => loadHealthRest(ownSeries)), [after, ownSeries]);
-  const rest = useLoad(loadRest);
-  const requested = useSearchParams().get("month_end");
-  const state: Loaded<HealthData> = {
-    data:
-      health.data !== undefined && rest.data !== undefined
-        ? { health: health.data, ...rest.data, series: rest.data.series ?? health.data.series ?? [] }
-        : undefined,
-    error: health.error ?? rest.error,
-    loading: health.loading || rest.loading,
-    reload: () => {
-      if (health.error != null) health.reload();
-      if (rest.error != null) rest.reload();
-    },
-  };
+/** Haushalt's key figures (phase 10 §7.6): the reserve, the limits and the Kennzahlen. */
+export function HouseholdHealthSection({ onChanged }: { onChanged?: () => void } = {}) {
+  const state = useLoad(loadHouseholdHealth);
+  useScrollToHash(state.data !== undefined);
   const changed = () => {
-    health.reload();
-    rest.reload();
+    state.reload();
     onChanged?.();
   };
+  return <Loading state={state}>{(data) => <HealthFigures data={data} onChanged={changed} />}</Loading>;
+}
+
+/** Anlagen › Übersicht's part (phase 10 §7.6): the card a month-end to-do opens
+ * (`?month_end=YYYY-MM-DD`) above the tab's own content (`children`), and the split of the assets
+ * and „Vermögen im Verlauf“ below it. Inside a Suspense boundary (useSearchParams). */
+export function AssetsHealthSection({ children }: { children?: ReactNode }) {
+  const health = useLoad(loadHealth);
+  const requested = useSearchParams().get("month_end");
   return (
-    <>
-      {requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? <MonthEndCard day={requested} onDone={changed} /> : null}
-      <Loading state={state}>{(data) => <HealthFigures data={data} onChanged={changed} />}</Loading>
-    </>
+    <div className="stack">
+      {requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? <MonthEndCard day={requested} onDone={health.reload} /> : null}
+      {children}
+      <Loading state={health}>
+        {(data) => (
+          <>
+            <SplitCard health={data} />
+            <SeriesCard series={data.series ?? []} onChanged={health.reload} />
+          </>
+        )}
+      </Loading>
+    </div>
   );
 }
 
@@ -208,7 +191,6 @@ function HealthFigures({ data, onChanged }: { data: HealthData; onChanged: () =>
         onChanged={onChanged}
         onEditBands={() => setEditing(true)}
       />
-      <SeriesCard series={data.series} onChanged={onChanged} />
     </>
   );
 }
@@ -224,9 +206,11 @@ export function HealthTodoItem({ todo, onChanged }: { todo: HealthTodo; onChange
       {day !== null ? (
         <MonthEndButton day={day} label={todo.action} onDone={onChanged} />
       ) : todo.href === "/" ? (
-        <a href="#ampel-grenzen" className="button-link secondary">
+        // The limits' to-do (rules/health/bands, whose href stays "/" for rule_version()): the
+        // card „Ampel-Grenzen festlegen“ is on Haushalt since phase 10 §7.6.
+        <Link href="/household#ampel-grenzen" className="button-link secondary">
           {todo.action}
-        </a>
+        </Link>
       ) : (
         <Link href={todo.href} className="button-link secondary">
           {todo.action}
@@ -277,7 +261,8 @@ export function MonthEndButton({ day, label, onDone }: { day: string; label: str
   );
 }
 
-/** The card a month-end to-do of Planung opens (`/?month_end=YYYY-MM-DD`). */
+/** The card a month-end to-do opens (`/assets?month_end=YYYY-MM-DD`; Übersicht forwards the old
+ * `/?month_end=` there). */
 function MonthEndCard({ day, onDone }: { day: string; onDone: () => void }) {
   const t = useT(healthFigures);
   const tn = useT(netWorthText);
@@ -633,7 +618,7 @@ function multiply(a: string, b: string): string {
   return `${negative ? "-" : ""}${whole}${fraction ? `.${fraction}` : ""}`;
 }
 
-// --- Kennzahlen -------------------------------------------------------------------------
+// --- Kennzahlen and the split of the assets -----------------------------------------------
 
 function splitLabel(t: HealthText, key: string): string {
   switch (key) {
@@ -680,7 +665,6 @@ function FiguresCard({
     null,
   );
   const gap = (figure: components["schemas"]["DebtFigure"]) => debt?.gaps?.find((g) => g.figure === figure)?.reason ?? null;
-  const split = Object.entries(health.split ?? {}).sort(([, a], [, b]) => Number(b) - Number(a));
   const annualised = debt && debt.months < 12 ? t.annualised(debt.months) : "";
 
   return (
@@ -864,25 +848,35 @@ function FiguresCard({
           ) : null}
         </>
       ) : null}
-      {split.length > 0 ? (
-        <div className="stack health-split">
-          <h3>{t.splitTitle}</h3>
-          <p className="muted">
-            {t.splitExplained(debt ? p.euro(debt.gross_assets) : null, newest ? p.longDate(monthEnd(newest)) : null)}
-          </p>
-          <ul className="health-split-rows">
-            {split.map(([key, share]) => (
-              <li key={key}>
-                <span>{splitLabel(t, key)}</span>
-                <span className="household-share" aria-hidden="true">
-                  <span style={{ width: `${Math.max(0, Math.min(100, Number(share) * 100))}%` }} />
-                </span>
-                <span>{p.ratio(share)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+    </section>
+  );
+}
+
+/** The split of the assets on the newest closed month-end: never marked (D240). */
+function SplitCard({ health }: { health: Health }) {
+  const t = useT(healthFigures);
+  const p = usePlanFormat();
+  const split = Object.entries(health.split ?? {}).sort(([, a], [, b]) => Number(b) - Number(a));
+  if (split.length === 0) return null;
+  const months = health.window.months ?? [];
+  const newest = months[months.length - 1];
+  return (
+    <section className="card stack health-split" aria-labelledby="split-title">
+      <h2 id="split-title">{t.splitTitle}</h2>
+      <p className="muted">
+        {t.splitExplained(health.debt ? p.euro(health.debt.gross_assets) : null, newest ? p.longDate(monthEnd(newest)) : null)}
+      </p>
+      <ul className="health-split-rows">
+        {split.map(([key, share]) => (
+          <li key={key}>
+            <span>{splitLabel(t, key)}</span>
+            <span className="household-share" aria-hidden="true">
+              <span style={{ width: `${Math.max(0, Math.min(100, Number(share) * 100))}%` }} />
+            </span>
+            <span>{p.ratio(share)}</span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
