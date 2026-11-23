@@ -25,7 +25,7 @@ from hausbuch.schemas.allocation import (
     AllocationSet,
 )
 from hausbuch.schemas.enums import AccountKind
-from hausbuch.schemas.net_worth import NetWorthLineKind, SnapshotOutcome
+from hausbuch.schemas.net_worth import AccountTab, NetWorthLineKind, SnapshotOutcome
 from hausbuch.services import allocations, health, net_worth, transfers
 from hausbuch.services.iban import protect_iban
 
@@ -114,6 +114,11 @@ def test_money_sent_to_a_depot_whose_statement_lags_counts_once(run, read, fresh
     assert moving.label == "Unterwegs zu „Depot“"
     assert "29.10.2026" in moving.note and "Girokonto" in moving.note
     assert seen.total == Decimal("1200.00")  # the 500 € counted once, not lost
+    # The Konten tabs count the money on its way in the depot's tab (§7.6 Konten (2)).
+    assert seen.by_account_tab == {
+        AccountTab.BANK: Decimal("500.00"),
+        AccountTab.DEPOT: Decimal("700.00"),
+    }
     # The transit line comes after the depot's balance line (the account page reads the first).
     depot_lines = [line for line in seen.lines if line.account_id == depot]
     assert [line.in_transit for line in depot_lines] == [False, True]

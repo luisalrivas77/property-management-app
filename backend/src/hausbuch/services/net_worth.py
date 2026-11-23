@@ -1090,6 +1090,11 @@ def _figure(
         property_estimate=estimate,
         loan_balances=loans,
         property_net=estimate - loans,
+        by_account_tab=rules.tab_totals(
+            (i.line.account_kind, i.line.value_eur)
+            for i in items
+            if i.line.kind in (L.ACCOUNT, L.POSITION) and i.line.account_kind is not None
+        ),
         lines=[i.line for i in items],
         todos=todos,
         stale_positions=stale,

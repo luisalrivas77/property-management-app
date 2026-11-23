@@ -4438,6 +4438,13 @@ export interface components {
          * @enum {string}
          */
         AccountSource: "upload" | "fints" | "aggregator";
+        /**
+         * AccountTab
+         * @description The Konten page's tabs (phase 10 D279, §7.6 Konten (2)) by the account's kind: both
+         *     bank kinds are one tab; the loans' tab reads `loan_balances`.
+         * @enum {string}
+         */
+        AccountTab: "bank" | "card" | "depot" | "exchange" | "wallet";
         /** AcquisitionCost */
         AcquisitionCost: {
             /**
@@ -5878,6 +5885,8 @@ export interface components {
             gap_points: string;
             /** Gap Monthly */
             gap_monthly: string;
+            /** At Target */
+            at_target: string;
             /** Text */
             text: string;
         };
@@ -7087,6 +7096,11 @@ export interface components {
             /** @description every trade of the report's Wertpapierumsätze list, one item per trade, each written `ISIN | trade date | units | amount | reference`, as printed: the trade date the Schlußtag, the units signed (a sale negative), the amount the Ausmachender Betrag with its sign (a purchase negative), the reference the Referenz; unbekannt for a part the row does not state; never the Depot-Nr. */
             trades?: components["schemas"]["ExtractedValue"];
         };
+        /**
+         * DifferenceWords
+         * @enum {string}
+         */
+        DifferenceWords: "more" | "less";
         /**
          * Direction
          * @enum {string}
@@ -8392,11 +8406,68 @@ export interface components {
             notes?: components["schemas"]["ExtractedValue"];
         };
         /**
+         * GroupDifference
+         * @description A spending group whose month differs from its own mean over the closed months before
+         *     it (phase 10 §7.6 Haushalt (3), build decision (a)); `difference` = `amount` − `mean`.
+         */
+        GroupDifference: {
+            group: components["schemas"]["HouseholdGroup"];
+            /** Amount */
+            amount: string;
+            /** Mean */
+            mean: string;
+            /** Difference */
+            difference: string;
+            words: components["schemas"]["DifferenceWords"];
+            /** Payments */
+            payments?: components["schemas"]["GroupPayment"][];
+        };
+        /**
          * GroupKind
          * @description movement_group.kind (D183 (2)): the thirteen shapes a transaction is classified as.
          * @enum {string}
          */
         GroupKind: "transfer" | "exchange_transfer" | "swap" | "wrap" | "bridge" | "stake" | "reward" | "airdrop" | "lp" | "contract_call" | "failed" | "spam" | "unknown";
+        /**
+         * GroupPayment
+         * @description One confirmed allocation of a private line behind a group's month, `amount` signed as
+         *     the group's spending (money out positive, a refund negative), so a group's payments add
+         *     up to its month.
+         */
+        GroupPayment: {
+            /**
+             * Allocation Id
+             * Format: uuid
+             */
+            allocation_id: string;
+            /**
+             * Transaction Id
+             * Format: uuid
+             */
+            transaction_id: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Account Label */
+            account_label: string;
+            /**
+             * Booked On
+             * Format: date
+             */
+            booked_on: string;
+            /** Payee */
+            payee?: string | null;
+            /**
+             * Purpose
+             * @default
+             */
+            purpose: string;
+            category: components["schemas"]["AllocationCategory"];
+            /** Amount */
+            amount: string;
+        };
         /**
          * GroupStatus
          * @description movement_group.status: proposed -> confirmed only (the trigger group_forward).
@@ -8556,6 +8627,7 @@ export interface components {
             todos?: components["schemas"]["HealthTodo"][];
             last_ended?: components["schemas"]["HouseholdMonth"] | null;
             verdict?: components["schemas"]["Verdict"] | null;
+            differences?: components["schemas"]["MonthDifferences"] | null;
         };
         /**
          * HealthMonthView
@@ -10169,6 +10241,20 @@ export interface components {
             /** Ytd */
             ytd?: string | null;
         };
+        /**
+         * MonthDifferences
+         * @description The newest closed month (`month`) against the mean of the closed months before it
+         *     (`baseline`, three to twelve, oldest first): at most three groups, the largest difference
+         *     first; empty when none crosses both thresholds. Figures only: no colour, no advice.
+         */
+        MonthDifferences: {
+            /** Month */
+            month: string;
+            /** Baseline */
+            baseline: string[];
+            /** Groups */
+            groups?: components["schemas"]["GroupDifference"][];
+        };
         /** MonthRate */
         MonthRate: {
             /** Month */
@@ -10411,6 +10497,10 @@ export interface components {
             loan_balances: string;
             /** Property Net */
             property_net: string;
+            /** By Account Tab */
+            by_account_tab?: {
+                [key: string]: string;
+            };
             /** Lines */
             lines?: components["schemas"]["NetWorthLine"][];
             /** Todos */

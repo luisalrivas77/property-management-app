@@ -9,10 +9,10 @@
 // IBAN, „Quelle“, the owners or the to-do „Eigentümer festlegen“ (D157, principle 7), „Stand“
 // (the newest reconciled import's last booking day and closing balance, as the API stored them;
 // a credit card's what is owed), the last import's status) and the kind's total as the net
-// worth computes it today (GET /net-worth/overview: `by_class.bank`, `by_class.depot`,
-// `loan_balances`, the one credit card's own line, and Börsen and Wallets together as
-// `by_class.crypto`), never summed here (principle 1). A tapped account opens in the detail
-// panel (D267): its balance, the links into Umsätze, Kontoauszüge and Mögliche
+// worth computes it today, large on its own line with „<N> Konten · heute“ under it (§7.6
+// Konten (2); GET /net-worth/overview: `by_account_tab` per tab, Börsen and Wallets each
+// their own, the loans' `loan_balances`), never summed here (principle 1). A tapped account
+// opens in the detail panel (D267): its balance, the links into Umsätze, Kontoauszüge and Mögliche
 // Doppelbuchungen, the Bankabruf card, the owners with „Anteile ändern“ and the statement
 // upload; an exchange or a wallet shows its own section (exchange.tsx, wallet.tsx), as its page
 // does. A wallet's Stand is the wallet page's verdicts (GET /wallets/{id}/state) and when it was
@@ -22,7 +22,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
-import type { Account, Loan, LoanSchedule, Owner, StatementImport, WalletAddress, WalletState } from "@/api/schemas";
+import type { Account, AccountTab, Loan, LoanSchedule, Owner, StatementImport, WalletAddress, WalletState } from "@/api/schemas";
 import { AccountOwnership } from "@/app/(app)/accounts/[id]/AccountOwnership";
 import { ownersText } from "@/components/accountLines";
 import { ImportStatusPill, StatementUpload } from "@/components/accounts";
@@ -57,6 +57,16 @@ const KINDS: { key: KindKey; label: keyof Messages; kinds: Account["kind"][] }[]
   { key: "wallet", label: "kindWallet", kinds: ["wallet"] },
   { key: "darlehen", label: "kindLoan", kinds: [] },
 ];
+
+/** The tab's key in the net worth's `by_account_tab`; the loans read `loan_balances`. */
+const TAB_OF_KIND: Record<KindKey, AccountTab | null> = {
+  bank: "bank",
+  karte: "card",
+  depot: "depot",
+  boerse: "exchange",
+  wallet: "wallet",
+  darlehen: null,
+};
 
 /** A wallet has no statement imports: its row reads its addresses instead. */
 async function loadRow(account: Account): Promise<Row> {
@@ -194,30 +204,19 @@ function AccountKinds({ data, onChanged }: { data: Loaded; onChanged: () => void
   );
 }
 
-/** The count of the kind and its total as GET /net-worth/overview states it today. */
+/** The kind's total as GET /net-worth/overview states it today (`by_account_tab`, the loans'
+ * `loan_balances`), large, and its count under it. No total when no account of the tab has a
+ * line in the net worth yet. */
 function KindTotal({ kind, rows, loans, today }: { kind: KindKey; rows: Row[]; loans: LoanRow[]; today: Loaded["today"] }) {
   const t = useT(catalogue);
   const f = useFormat();
-  let total: { value: string; label: string } | null = null;
-  if (kind === "bank" && today.by_class.bank != null) total = { value: f.money(today.by_class.bank), label: t.totalToday };
-  if (kind === "depot" && today.by_class.depot != null) total = { value: f.money(today.by_class.depot), label: t.totalToday };
-  if ((kind === "boerse" || kind === "wallet") && today.by_class.crypto != null)
-    total = { value: f.money(today.by_class.crypto), label: t.cryptoTotal };
-  if (kind === "darlehen") total = { value: f.money(today.loan_balances), label: t.totalOwedToday };
-  if (kind === "karte" && rows.length === 1) {
-    // One card: its own line of the net worth (negative when owed). With several there is no
-    // card-only figure in the API, so none is shown rather than added up here.
-    const line = (today.lines ?? []).find((item) => item.kind === "account" && item.account_id === rows[0]?.account.id);
-    if (line?.value_eur != null) total = { value: f.money(line.value_eur), label: t.totalToday };
-  }
+  const tab = TAB_OF_KIND[kind];
+  const value = tab === null ? today.loan_balances : today.by_account_tab?.[tab];
+  const count = kind === "darlehen" ? t.loanCount(loans.length) : t.accountCount(rows.length);
   return (
     <div className="kind-summary">
-      <span className="muted">{kind === "darlehen" ? t.loanCount(loans.length) : t.accountCount(rows.length)}</span>
-      {total ? (
-        <span className="kind-total">
-          <strong>{total.value}</strong> <span className="muted">{total.label}</span>
-        </span>
-      ) : null}
+      {value != null ? <p className="kind-total">{f.money(value)}</p> : null}
+      <p className="muted">{t.countToday(count)}</p>
     </div>
   );
 }

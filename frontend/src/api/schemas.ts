@@ -129,6 +129,8 @@ export type AccountSource = Schemas["AccountSource"];
 // every account of the household, its kind, purpose and owner shares (phase 6 D156, D157)
 export type AccountKind = Schemas["AccountKind"];
 export type AccountPurpose = Schemas["AccountPurpose"];
+// the Konten tabs, each with its total in the net worth (phase 10 §7.6 Konten (2))
+export type AccountTab = Schemas["AccountTab"];
 export type AccountOwnership = Schemas["AccountOwnership"];
 export type OwnershipShare = Schemas["OwnershipShare"];
 export type SetOwnershipBody = Schemas["SetOwnershipBody"];
