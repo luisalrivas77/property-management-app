@@ -51,7 +51,7 @@ from hausbuch.db.tables import household_scenario as household_scenario_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
-from hausbuch.rules.budget.differences import differences, spending_group
+from hausbuch.rules.budget.differences import compared_by_group, compared_group, differences
 from hausbuch.rules.errors import (
     HEALTH_MONTH_END_INCOMPLETE,
     HEALTH_MONTH_END_MISSING,
@@ -760,7 +760,9 @@ def month_differences(
     if newest is None:
         return None
     baseline = _window(reads, up_to=_previous(newest)).months
-    spending = {m: reads[m].private.cashflow.spending_by_group for m in [*baseline, newest]}
+    spending = {
+        m: compared_by_group(cashflow_rows(reads[m].private.lines)) for m in [*baseline, newest]
+    }
     named = differences(spending[newest], [spending[m] for m in baseline])
     if named is None:
         return None
@@ -779,7 +781,7 @@ def _group_payments(
     month_cashflow counts them), oldest booking first, each signed as the group's spending."""
     wanted: dict[UUID, tuple[HouseholdGroup, AllocationCategory, Decimal]] = {}
     for line, (category, amount) in zip(lines, cashflow_rows(lines), strict=True):
-        group = spending_group(category)
+        group = compared_group(category)
         if group is not None and group in groups:
             wanted[line.allocation_id] = (group, category, -amount)
     if not wanted:

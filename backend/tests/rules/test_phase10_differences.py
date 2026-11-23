@@ -5,8 +5,14 @@ from decimal import Decimal
 
 import pytest
 
-from hausbuch.rules.budget.differences import differences, spending_group
+from hausbuch.rules.budget.differences import (
+    compared_by_group,
+    compared_group,
+    differences,
+    spending_group,
+)
 from hausbuch.rules.household.cashflow import month_cashflow
+from hausbuch.rules.household.taxonomy import ONE_OFF
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.health import DifferenceWords
 from hausbuch.schemas.household import HouseholdGroup as G
@@ -116,3 +122,17 @@ def test_spending_group_is_the_group_month_cashflow_counts_a_line_under(category
     it does not count as spending (income, Geldanlage, transfers) is listed under none."""
     counted = month_cashflow("2027-03", [(category, Decimal("-10.00"))], saved=Decimal("0.00"))
     assert set(counted.spending_by_group) == ({spending_group(category)} - {None})
+
+
+@pytest.mark.parametrize("category", list(C))
+def test_compared_by_group_is_month_cashflow_less_one_offs_and_refunds(category):
+    """The comparison's month equals month_cashflow's spending per group with one-off codes and
+    refunds left out, so a named group's payments add up to the figure shown."""
+    counted = month_cashflow("2027-03", [(category, Decimal("-10.00"))], saved=Decimal("0.00"))
+    expected = {
+        g: v
+        for g, v in counted.spending_by_group.items()
+        if category not in ONE_OFF and g is not G.REFUND
+    }
+    assert compared_by_group([(category, Decimal("-10.00"))]) == expected
+    assert compared_group(category) == (next(iter(expected)) if expected else None)

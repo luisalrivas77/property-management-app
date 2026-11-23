@@ -3,7 +3,8 @@ decision (a)). Pure: no I/O, nothing stored. Outside rules/health/ and rules/pla
 services.health.rule_version() does not change with it.
 
 `differences(month, now, before)` compares the newest closed month's spending per group
-(`now`, phase 6's `spending_by_group` as the Haushalt table shows it, one-off codes included)
+(`now`, the month's regular spending per group by `compared_by_group`: one-off codes and
+refunds left out)
 with the mean of the same groups over the closed months before it (`before`, oldest first):
 
 - **Fewer than three earlier months** (MIN_BASELINE): None, the screen shows nothing.
@@ -18,10 +19,10 @@ month_cashflow sums it under, None for income, the Geldanlage group and a transf
 service can list the payments behind a named group.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from decimal import ROUND_HALF_UP, Decimal
 
-from hausbuch.rules.household.taxonomy import TAXONOMY
+from hausbuch.rules.household.taxonomy import ONE_OFF, TAXONOMY
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.health import DifferenceWords, GroupDifference
 from hausbuch.schemas.household import HouseholdGroup, Relevance
@@ -47,6 +48,30 @@ def spending_group(category: AllocationCategory) -> HouseholdGroup | None:
     if code.relevance in (Relevance.SPENDING, Relevance.TAX):
         return code.group
     return None
+
+
+def compared_group(category: AllocationCategory) -> HouseholdGroup | None:
+    """The group a line of `category` is compared under, else None: `spending_group` less the
+    one-off codes (D236; a large one-off purchase would make every later month read as
+    „weniger als üblich“) and refunds (they lower spending, nothing the household spends on),
+    so the comparison is of the regular month."""
+    if category in ONE_OFF:
+        return None
+    group = spending_group(category)
+    return None if group is HouseholdGroup.REFUND else group
+
+
+def compared_by_group(
+    rows: Iterable[tuple[AllocationCategory, Decimal]],
+) -> dict[HouseholdGroup, Decimal]:
+    """One month's regular spending per compared group from month_cashflow's rows (an
+    outflow is negative there, so spending is its negation)."""
+    out: dict[HouseholdGroup, Decimal] = {}
+    for category, amount in rows:
+        group = compared_group(category)
+        if group is not None:
+            out[group] = out.get(group, _ZERO) - amount
+    return out
 
 
 def differences(
