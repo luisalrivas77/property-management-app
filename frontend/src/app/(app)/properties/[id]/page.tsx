@@ -14,6 +14,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import { LinkedDocuments } from "@/components/documents";
+import { PropertyFlatRateCard } from "@/components/propertyFlatRate";
 import {
   isFirstCard,
   type PropertySection,
@@ -129,6 +130,7 @@ function PropertyDetail() {
                 </PropertyCard>
                 <UnitsTab propertyId={id} />
                 <CurrentTenancies propertyId={id} />
+                <PropertyFlatRateCard propertyId={id} />
               </div>
             ) : null}
             {section === "kauf" ? (
