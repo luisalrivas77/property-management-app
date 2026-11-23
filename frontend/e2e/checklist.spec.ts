@@ -1,4 +1,5 @@
-// The Unterlagen tab (docs/phases/phase-1.md, spec amendment 3): a property with only its
+// The Steuer-Checkliste section („Unterlagen“ until phase 10 §7.6; docs/phases/phase-1.md,
+// spec amendment 3): a property with only its
 // Kaufvertrag linked shows that row as present, with a link to the document, and the
 // Grundsteuerbescheid as missing, with a link to where it is fixed.
 import { apiCall, expect, test } from "./support";
@@ -31,7 +32,7 @@ test("the Unterlagen tab shows a present and a missing item", async ({ page, sig
   await apiCall(page, "POST", `/api/documents/${document.id}/links`, { target_type: "property", target_id: property.id });
 
   await page.goto(`/properties/${property.id}`);
-  await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Unterlagen" }).click();
+  await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Steuer-Checkliste" }).click();
   await expect(page).toHaveURL(`/properties/${property.id}?tab=unterlagen`);
   await expect(page.getByRole("heading", { name: "Unterlagen für die Steuererklärung" })).toBeVisible();
 
