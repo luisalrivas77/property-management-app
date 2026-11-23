@@ -108,11 +108,12 @@ test("Übersicht shows one word with its dot, the panel explains it with three q
   const panel = page
     .getByRole("dialog", { name: "Finanzielle Gesundheit" })
     .or(page.getByRole("complementary", { name: "Finanzielle Gesundheit" }));
-  for (const [label, question] of <const [string, string][]>[
+  const questions: [string, string][] = [
     ["Sparquote", "Gebt ihr weniger aus, als ihr verdient?"],
     ["Liquiditätsreserve", "Könnt ihr eine Überraschung auffangen?"],
     ["Schuldendienstquote", "Tragt ihr euren Kredit bequem?"],
-  ]) {
+  ];
+  for (const [label, question] of questions) {
     await expect(panel.getByRole("group", { name: label })).toContainText(question);
   }
   const rate = panel.getByRole("group", { name: "Sparquote" });
