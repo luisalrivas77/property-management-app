@@ -27,6 +27,7 @@ from datetime import date
 from typing import Literal
 
 from hausbuch.schemas.checklist import ChecklistStatus, DocumentChecklistItem, RequirementCode
+from hausbuch.schemas.employment import OpenQuestion
 from hausbuch.schemas.tax import DraftWarning
 from hausbuch.schemas.tax_guide import (
     GuideDocument,
@@ -189,6 +190,9 @@ class GuideInput:
     estimate_warnings: Sequence[DraftWarning]
     questions_answered: int | None  # None: no questionnaire for the year
     questions_total: int | None
+    # The open Jahresfragen with their owner and property: each counts on that owner's Anlage N
+    # or that property's Anlage V card; a household question counts on no card.
+    open_questions: Sequence[OpenQuestion] = ()
 
 
 @dataclass(frozen=True)
@@ -198,6 +202,28 @@ class GuideResult:
     documents: list[GuideDocument]
     next_step: int | None
     waiting_from: date | None
+    open_questions: Sequence[OpenQuestion] = ()
+
+    def form_open(
+        self, form: Literal["anlage_v", "anlage_n"], *, property_id=None, owner_id=None
+    ) -> int:
+        """What is still open for one form card, whichever step clears it: the points listed
+        for the form, its Belege not there yet (the property's checklist documents, the owner's
+        wage certificate) and the open Jahresfragen about that owner or property. A point a
+        missing Beleg stands for is not listed while the Beleg is missing (`_covered`), so
+        nothing counts twice."""
+
+        def mine(p_id, o_id) -> bool:
+            if form == "anlage_v":
+                return property_id is not None and p_id == property_id
+            return owner_id is not None and o_id == owner_id
+
+        points = sum(1 for p in self.points if p.form == form and mine(p.property_id, p.owner_id))
+        belege = sum(
+            1 for d in self.documents if d.status != "present" and mine(d.property_id, d.owner_id)
+        )
+        questions = sum(1 for q in self.open_questions if mine(q.property_id, q.owner_id))
+        return points + belege + questions
 
     @property
     def steps_done(self) -> int:
@@ -455,4 +481,5 @@ def guide(facts: GuideInput) -> GuideResult:
         documents=docs,
         next_step=next_step,
         waiting_from=waiting_from if next_step is None else None,
+        open_questions=facts.open_questions,
     )

@@ -913,7 +913,14 @@ function FormCard({ form, year, properties, owners }: { form: GuideFormResult; y
           <span className="detail-row-title">{title}</span>
           <span className="detail-row-sub">{form.result != null ? f.money(form.result) : t.formNoResult}</span>
         </span>
-        {form.open > 0 ? <span className="badge badge-warn">{t.formOpen(form.open)}</span> : <span className="badge">{t.formDone}</span>}
+        {/* „fertig“ only under a result: a form with no draft for the year is not done */}
+        {form.open > 0 ? (
+          <span className="badge badge-warn">{t.formOpen(form.open)}</span>
+        ) : form.result == null ? (
+          <span className="badge badge-muted">{t.stateNotYet}</span>
+        ) : (
+          <span className="badge">{t.formDone}</span>
+        )}
         <Icon name="chevronRight" size={18} />
       </Link>
     </li>

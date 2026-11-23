@@ -123,7 +123,36 @@ def test_a_forms_open_count_is_every_point_listed_for_it(client_a):
     mine = [p for p in got["points"] if p["form"] == "anlage_v" and p["property_id"] == prop["id"]]
     assert any(p["step"] == "property" for p in mine)
     form = next(f for f in got["forms"] if f["form"] == "anlage_v")
-    assert form["open"] == len(mine)
+    belege = [
+        d for d in got["documents"] if d["property_id"] == prop["id"] and d["status"] != "present"
+    ]
+    assert form["open"] == len(mine) + len(belege) + _open_questions(client_a, prop_id=prop["id"])
+
+
+def _open_questions(client, *, prop_id=None, owner_id=None) -> int:
+    view = ok(client.get("/api/tax/questionnaire", params={"tax_year": 2026}))
+    return sum(
+        1
+        for q in view["progress"]["open"]
+        if (prop_id and q["property_id"] == prop_id) or (owner_id and q["owner_id"] == owner_id)
+    )
+
+
+def test_an_anlage_n_card_counts_the_wage_certificate_still_to_come(client_a):
+    """Pay from an estimate only: no point names the Anlage N, but its certificate is expected
+    and the owner's Jahresfragen are open, so the card never reads 0 („fertig“)."""
+    owner = _owner_with_pay(client_a)
+    got = _guide(client_a, 2026)
+    certificate = [
+        d
+        for d in got["documents"]
+        if d["kind"] == "wage_certificate" and d["owner_id"] == owner["id"]
+    ]
+    assert [d["status"] for d in certificate] in (["expected"], ["missing"])
+    card = next(f for f in got["forms"] if f["form"] == "anlage_n")
+    points = [p for p in got["points"] if p["form"] == "anlage_n" and p["owner_id"] == owner["id"]]
+    assert card["open"] == len(points) + 1 + _open_questions(client_a, owner_id=owner["id"])
+    assert card["open"] > 0
 
 
 def _owner_with_pay(client) -> dict:

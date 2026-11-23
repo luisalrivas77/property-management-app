@@ -16,6 +16,7 @@ from hausbuch.schemas.checklist import (
     DocumentChecklistItem,
     RequirementCode,
 )
+from hausbuch.schemas.employment import OpenQuestion
 from hausbuch.schemas.tax import SourceRef, WarningCode
 from hausbuch.services.health import rule_version
 
@@ -46,6 +47,7 @@ def facts(
     estimate_warnings=(),
     answered=8,
     total=8,
+    open_questions=(),
 ) -> rule.GuideInput:
     return rule.GuideInput(
         tax_year=YEAR,
@@ -55,6 +57,7 @@ def facts(
         estimate_warnings=list(estimate_warnings),
         questions_answered=answered,
         questions_total=total,
+        open_questions=list(open_questions),
     )
 
 
@@ -356,3 +359,33 @@ def test_two_owners_each_get_their_wage_certificate():
     )
     wages = [(d.owner_id, d.status) for d in result.documents if d.kind == "wage_certificate"]
     assert wages == [(A, "present"), (B, "expected")]
+
+
+def test_a_forms_open_count_holds_its_belege_and_its_jahresfragen():
+    """An Anlage N card counts the wage certificate still to come and the owner's open
+    question; an Anlage V card its missing Beleg, its point and the property's open question; a
+    household question counts on no card. The certificate's warning is not counted twice."""
+    zins = item(RequirementCode.ZINSBESCHEINIGUNG, ChecklistStatus.MISSING, date(2027, 2, 28))
+    split = item(RequirementCode.PRICE_SPLIT, ChecklistStatus.MISSING)
+    questions = [
+        OpenQuestion(key="owner.tax_class", scope="owner", owner_id=A),
+        OpenQuestion(key="property.self_use", scope="property", property_id=P1),
+        OpenQuestion(key="household.children", scope="household"),
+    ]
+    result = rule.guide(
+        facts(
+            properties=[rule.PropertyFacts(P1, [zins, split], []), rule.PropertyFacts(P2, [], [])],
+            owners=[
+                rule.OwnerFacts(A, "estimate", [warning(WarningCode.ANLAGE_N_CERTIFICATE_MISSING)]),
+                rule.OwnerFacts(B, "certified", []),
+            ],
+            answered=5,
+            total=8,
+            open_questions=questions,
+        )
+    )
+    assert not any(p.code == "anlage_n.certificate_missing" for p in result.points)
+    assert result.form_open("anlage_n", owner_id=A) == 2  # the certificate, the question
+    assert result.form_open("anlage_n", owner_id=B) == 0
+    assert result.form_open("anlage_v", property_id=P1) == 3  # Beleg, price split, question
+    assert result.form_open("anlage_v", property_id=P2) == 0

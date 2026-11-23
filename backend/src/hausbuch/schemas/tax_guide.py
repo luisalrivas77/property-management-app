@@ -89,6 +89,7 @@ class GuideFormResult(Schema):
     result: Money | None = None
     status: str | None = None  # Anlage N: certified / estimate / none
     reason: str | None = None
+    # Its points, its Belege not there yet and the open Jahresfragen about its owner or property.
     open: int = Field(ge=0)
 
 

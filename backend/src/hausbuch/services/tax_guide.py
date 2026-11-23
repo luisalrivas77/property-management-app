@@ -20,7 +20,7 @@ from hausbuch.rules import document_checklist as checklist_rule
 from hausbuch.rules import tax_guide as rule
 from hausbuch.rules.errors import ANLAGE_N_NO_PAY, RuleError
 from hausbuch.rules.tax.return_estimate import filing_deadline
-from hausbuch.schemas.employment import AnlageNDraft
+from hausbuch.schemas.employment import AnlageNDraft, OpenQuestion
 from hausbuch.schemas.tax import AnlageVDraft
 from hausbuch.schemas.tax_guide import GuideEstimate, GuideFormResult, TaxGuide
 
@@ -89,12 +89,14 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
             )
 
     answered = total = None
+    open_questions: list[OpenQuestion] = []
     try:
         progress = questionnaire_progress(conn, tax_year)
     except RuleError as exc:
         unavailable.append(f"questionnaire:{exc.code}")
     else:
         answered, total = progress.answered, progress.total
+        open_questions = progress.open
 
     result = rule.guide(
         rule.GuideInput(
@@ -105,10 +107,12 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
             estimate_warnings=estimate_warnings,
             questions_answered=answered,
             questions_total=total,
+            open_questions=open_questions,
         )
     )
-    # A form's open count is every point the guide lists for it, whichever step clears it, so
-    # „fertig“ on Prüfen und abgeben never stands under a point that names the form.
+    # A form's open count is everything still open for it, whichever step clears it (its
+    # points, its Belege not there yet, the Jahresfragen about its owner or property), so
+    # „fertig“ on Prüfen und abgeben never stands over something left to do for the form.
     forms: list[GuideFormResult] = []
     for prop_id, v in v_drafts.items():
         forms.append(
@@ -117,9 +121,7 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
                 property_id=prop_id,
                 result=None if isinstance(v, str) else v.totals.result,
                 reason=v if isinstance(v, str) else None,
-                open=sum(
-                    1 for p in result.points if p.form == "anlage_v" and p.property_id == prop_id
-                ),
+                open=result.form_open("anlage_v", property_id=prop_id),
             )
         )
     for owner_id, n in n_drafts.items():
@@ -130,9 +132,7 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
                 result=None if isinstance(n, str) else n.result,
                 status=None if isinstance(n, str) else n.status,
                 reason=n if isinstance(n, str) else None,
-                open=sum(
-                    1 for p in result.points if p.form == "anlage_n" and p.owner_id == owner_id
-                ),
+                open=result.form_open("anlage_n", owner_id=owner_id),
             )
         )
     return TaxGuide(
