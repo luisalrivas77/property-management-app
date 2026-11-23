@@ -35,6 +35,7 @@ const de = {
 
   surplusTitle: "Überschuss je Monat",
   surplusHow: "Einnahmen minus Ausgaben",
+  investedOf: (amount: string) => `Davon angelegt: ${amount}`,
   shortMonths: ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"].join(","),
 
   byCategory: "Ausgaben nach Kategorie",
@@ -52,6 +53,7 @@ const de = {
   sumSoFar: "Summe bisher",
   plannedCount: (n: number) => `${n} geplant`,
   openGroup: (group: string) => `${group} aufklappen`,
+  showAllGroups: (n: number) => `Alle ${n} anzeigen`,
   notFinal:
     "Der Monat ist noch nicht abgeschlossen: „bisher“ zählt die bestätigten Umsätze bis heute. Der Vergleich mit „Geplant“ ist erst nach dem Monatsabschluss endgültig.",
   waiting: (lines: string, n: number) => `${lines} ${n === 1 ? "wartet" : "warten"} in Zu prüfen`,
@@ -109,6 +111,7 @@ const en: Messages = {
 
   surplusTitle: "Surplus per month",
   surplusHow: "Income minus spending",
+  investedOf: (amount) => `Of which invested: ${amount}`,
   shortMonths: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].join(","),
 
   byCategory: "Spending by category",
@@ -126,6 +129,7 @@ const en: Messages = {
   sumSoFar: "Total so far",
   plannedCount: (n) => `${n} planned`,
   openGroup: (group) => `Expand ${group}`,
+  showAllGroups: (n) => `Show all ${n}`,
   notFinal:
     "The month is not closed yet: „so far“ counts the transactions confirmed up to today. The comparison with „Planned“ is final only after the month's closing.",
   waiting: (lines, n) => `${lines} ${n === 1 ? "is" : "are"} waiting in To review`,

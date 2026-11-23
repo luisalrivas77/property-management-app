@@ -2,7 +2,7 @@
 
 // Immobilien (phase 10 D266, mockup 14-C2): one card per property with its tenancies and its
 // owners' shares, and the rows about the property (Darlehen, Kauf & Nebenkosten, Einheiten,
-// Unterlagen, Dokumente, Verlauf) that open its page's tabs. Mieter and Eigentümer left the
+// Steuer-Checkliste, Dokumente, Verlauf) that open its page's tabs. Mieter and Eigentümer left the
 // menu, so a tapped tenancy or owner opens in the detail panel (D267) with a link to its own
 // page; /owners and /tenants keep working. The rent shown is the API's answer for today
 // (GET /tenancies/{id}/rent?at=…), as on the property page; nothing is summed here (a total

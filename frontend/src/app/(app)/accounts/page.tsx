@@ -1,8 +1,9 @@
 "use client";
 
 // Konten (phase 10 D279, mockup 21; before it phase-6.md §4.3, mockup 08): one kind of account
-// at a time. Chips at the top, one per kind the household holds, each with its count:
-// Bankkonten, Kreditkarten, Depots, Börsen, Wallets, Darlehen; Bankkonten first and the
+// at a time. Chips at the top, one per kind the household holds, each with its count and a
+// short label (§7.6 Konten (1): Bank, Karten, Depots, Börsen, Wallets, Darlehen) in an even
+// grid, three columns on the phone, one row on the computer; Bank first and the
 // default; the kind is in the URL (`/accounts?art=bank|karte|depot|boerse|wallet|darlehen`).
 // The page lists that kind's accounts with all of today's columns (label, provider and masked
 // IBAN, „Quelle“, the owners or the to-do „Eigentümer festlegen“ (D157, principle 7), „Stand“

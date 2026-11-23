@@ -4,7 +4,8 @@
 // Phase 10 (mockup 25): the ten tabs became six sections of cards, each card a former tab with
 // its heading: Übersicht (Stammdaten, Eigentümer, Einheiten, and the current tenancy per unit),
 // Kauf & Nebenkosten (Nebenkosten, Kaufpreisaufteilung), Darlehen (with the Tilgungsplan per
-// loan), Unterlagen (the document checklist per tax year), Dokumente, Verlauf (History, then the
+// loan), Steuer-Checkliste (the document checklist per tax year; „Unterlagen“ until §7.6,
+// its key still `unterlagen`), Dokumente, Verlauf (History, then the
 // Protokoll). An old ?tab= key (a bookmark, a stored link; D266) opens its card's section and
 // scrolls the card into view; a #card-… hash does the same for a new link
 // (components/propertySections.ts). A row's details still open in the panel (#d-<kind>-<id>).

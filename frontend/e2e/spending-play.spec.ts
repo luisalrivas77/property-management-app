@@ -376,6 +376,13 @@ test("Haushalt shows „Geplant“ and „Unterschied“ only for the codes the 
   const restaurant = panel.getByRole("listitem").filter({ hasText: "Restaurant" });
   await expect(restaurant).toContainText("Geplant 100,00 € · 60,00 € weniger als geplant");
   await expect(panel.getByText("Geplant laut eurem Szenario vom 18. November 2026.")).toBeVisible();
+  // „Gespart, nicht ausgegeben“ is no card any more (phase 10 §7.6): the surplus card's line
+  // „Davon angelegt“ opens it in the panel.
+  await expect(page.getByRole("region", { name: "Gespart, nicht ausgegeben" })).toHaveCount(0);
+  const surplus = page.getByRole("region", { name: "Überschuss je Monat" });
+  await surplus.getByRole("link", { name: /^Davon angelegt: / }).click();
+  await expect(page).toHaveURL(/#d-angelegt-/);
+  await expect(page.getByRole("complementary", { name: "Gespart, nicht ausgegeben" })).toBeVisible();
 });
 
 // --- Planung › Budget: the household's own targets (phase 10 D274) ------------------------------

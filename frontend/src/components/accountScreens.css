@@ -338,8 +338,30 @@
 
 /* Konten (D279, mockup 21): chips per kind, the kind's total, one row per account. On the
    computer the cells sit in columns; on the phone each row stacks, labels beside values. */
+/* The kind tabs (§7.6 Konten (1)): short labels in an even grid, three equal columns on the
+   phone, every held kind in one row on the computer. */
 .account-kinds {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   margin-bottom: 0.75rem;
+}
+
+.account-kinds .chip {
+  justify-content: center;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 799px) {
+  .account-kinds {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .account-kinds .chip {
+    padding-inline: 0.5rem;
+  }
 }
 
 .kind-summary {
