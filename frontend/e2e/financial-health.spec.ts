@@ -61,10 +61,17 @@ const VERDICT: Verdict = {
   todos: [],
 };
 
+/** YYYY-MM, `back` months before the current one. */
+function monthsBack(back: number): string {
+  const now = new Date();
+  const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1));
+  return day.toISOString().slice(0, 7);
+}
+
 function health(): Health {
   return {
     as_of: "2026-11-18",
-    window: { months: ["2026-07", "2026-08", "2026-09"], enough: true },
+    window: { months: [monthsBack(4), monthsBack(3), monthsBack(2)], enough: true },
     todos: [],
     verdict: VERDICT,
   };
@@ -126,4 +133,11 @@ test("Übersicht shows one word with its dot, the panel explains it with three q
   await expect(bands).toBeVisible();
   await expect(bands.getByRole("group", { name: "Sparquote" })).toBeVisible();
   await expect(bands.getByRole("group", { name: "Beleihungsauslauf" })).toHaveCount(0);
+  // Closing it drops the hash, so a reload does not open it again.
+  await bands.getByRole("button", { name: "Abbrechen" }).click();
+  await expect(bands).toHaveCount(0);
+  await expect(page).toHaveURL(/\/household$/);
+  await page.reload();
+  await expect(page.getByRole("region", { name: "Kennzahlen" })).toBeVisible();
+  await expect(bands).toHaveCount(0);
 });

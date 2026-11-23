@@ -167,6 +167,13 @@ function HealthFigures({ data, onChanged }: { data: HealthData; onChanged: () =>
     window.addEventListener("hashchange", open);
     return () => window.removeEventListener("hashchange", open);
   }, []);
+  // Closing drops the hash too, so a reload or a second link to it opens the sheet again.
+  const close = () => {
+    setEditing(false);
+    if (window.location.hash === "#ampel-grenzen") {
+      window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    }
+  };
   const todos = health.todos ?? [];
   const current = currentDefault(scenarios);
   // Below three closed months Haushalt's „Noch keine Durchschnitte“ above shows „too few closed
@@ -184,10 +191,10 @@ function HealthFigures({ data, onChanged }: { data: HealthData; onChanged: () =>
           health={health}
           current={current}
           onSaved={() => {
-            setEditing(false);
+            close();
             onChanged();
           }}
-          onCancel={() => setEditing(false)}
+          onCancel={close}
         />
       ) : null}
     </>
