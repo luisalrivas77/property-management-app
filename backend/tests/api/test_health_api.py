@@ -33,9 +33,9 @@ def test_the_health_reads_answer_for_an_empty_workspace(client_a):
     assert all(m["snapshot_id"] is None and m["stored"] is None for m in months)
     # Closed and ended, but no month-end run: each names „Monatsabschluss festhalten“.
     assert [m["todo"]["href"] for m in months] == [
-        "/?month_end=2026-01-31",
-        "/?month_end=2026-02-28",
-        "/?month_end=2026-03-31",
+        "/assets?month_end=2026-01-31",
+        "/assets?month_end=2026-02-28",
+        "/assets?month_end=2026-03-31",
     ]
     backwards = client_a.get("/api/health/months", params={"from": "2026-03", "to": "2026-01"})
     assert (backwards.status_code, backwards.json()["codes"]) == (422, ["health.range_invalid"])
