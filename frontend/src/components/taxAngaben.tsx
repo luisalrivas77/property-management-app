@@ -7,7 +7,8 @@
 // deductions, a Bescheid's zvE, the typed rate, „Kein Arbeitslohn“, the pay documents) with
 // „Kinder und Haushalt“ (components/income.tsx); one owner's Werbungskosten and
 // Lohnersatzleistungen (return_input, components/returnInputs.tsx), the owner picked by
-// ?eigentuemer=…; and the Jahresfragen as a card into /tax/<year>/fragen. Both stores stay as
+// ?eigentuemer=…; the Jahresfragen as a card into /tax/<year>/fragen; and per property the
+// seller's renovation inside the purchase price (phase 3 D287, components/taxInputs.tsx). Both stores stay as
 // they were (no migration); Anlage N and Anlage V only show the result. The inputs' own
 // components keep their German texts (shared with /owners and the questionnaire).
 import Link from "next/link";
@@ -15,15 +16,17 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect } from "react";
 
 import { api, ok } from "@/api/client";
-import type { Owner } from "@/api/schemas";
+import type { Owner, Property } from "@/api/schemas";
 import { useT } from "@/i18n";
 import { tax as messages } from "@/i18n/tax";
+import { taxInputsText } from "@/i18n/taxInputs";
 
 import { todayIso } from "./format";
 import { IncomeSection } from "./income";
 import { REPLACEMENT_BENEFIT, STATE_CODE } from "./labels";
 import { InputsPanel, type BenefitForm } from "./returnInputs";
 import { ReturnEstimateCard, useReturnEstimate } from "./returnEstimate";
+import { PRICE_RENOVATION_ANCHOR, PriceRenovationSection } from "./taxInputs";
 import {
   benefitPrefill,
   benefitPrefillBacked,
@@ -40,6 +43,7 @@ import "./tax.css";
 
 const loadOwners = () => ok(api.GET("/api/owners"));
 const loadYears = () => ok(api.GET("/api/tax/anlage-n/years")).then((r) => r.years);
+const loadProperties = () => ok(api.GET("/api/properties"));
 
 export function TaxInputsScreen({
   year,
@@ -240,6 +244,35 @@ function TaxInputs({ owner, owners, state }: { owner: Owner; owners: Owner[]; st
           </section>
         </div>
       </div>
+      <PriceRenovationCards propertyId={state.propertyId} onChanged={reloadEstimate} />
     </div>
+  );
+}
+
+/** The seller's renovation inside the purchase price (phase 3 D287), per property: the one the
+ * URL names, else every property. The first card carries the anchor the to-dos open. */
+function PriceRenovationCards({ propertyId, onChanged }: { propertyId: string | null; onChanged: () => void }) {
+  const t = useT(taxInputsText);
+  const properties = useLoad(loadProperties);
+  return (
+    <Loading state={properties}>
+      {(list: Property[]) => {
+        const named = list.filter((p) => p.id === propertyId);
+        const shown = named.length > 0 ? named : list;
+        return (
+          <>
+            {shown.map((p, index) => (
+              <PriceRenovationSection
+                key={p.id}
+                propertyId={p.id}
+                title={shown.length > 1 ? t.prTitleOf(p.label) : t.prTitle}
+                anchor={index === 0 ? PRICE_RENOVATION_ANCHOR : `${PRICE_RENOVATION_ANCHOR}-${p.id}`}
+                onChanged={onChanged}
+              />
+            ))}
+          </>
+        );
+      }}
+    </Loading>
   );
 }

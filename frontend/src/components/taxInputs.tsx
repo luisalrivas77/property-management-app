@@ -26,6 +26,11 @@
 //   (tax_input.movable_asset_exceeds_building), a missing price split
 //   (tax_input.movable_asset_no_split) and a missing handover date
 //   (tax_input.movable_asset_no_purchase_date).
+// - On Steuern › Eure Angaben: the seller's renovation inside the purchase price (phase 3 D287),
+//   claimed openly; the card explains the saving, BFH IX R 34/03 and a refusal; the server
+//   refuses work begun before the handover (tax_input.price_renovation_before_handover), an
+//   amount not below the building's share (tax_input.price_renovation_exceeds_building) and a
+//   property without a handover date (tax_input.price_renovation_no_purchase_date).
 // - On the Steuern page: the Grundsteuer schedule (phase-5.md D126, §11), the Bescheid's annual
 //   amount, its instalments (dates and amounts), the rhythm and the payment mode, the Bescheid
 //   required; the server refuses instalments outside the first year, out of order or not
@@ -33,7 +38,7 @@
 //
 // The labels live here, not in labels.ts (phase 3 step 2 scope).
 import Link from "next/link";
-import { useCallback, useId, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import { ApiError, RULE_CODE_TEXT, ruleCodes } from "@/api/errors";
@@ -48,6 +53,8 @@ import {
   MARKET_RENT_SOURCE_EN,
   OPERATING_COSTS_TERMS_DE,
   OPERATING_COSTS_TERMS_EN,
+  PRICE_RENOVATION_STATUS_DE,
+  PRICE_RENOVATION_STATUS_EN,
   RENOVATION_TREATMENT_DE,
   RENOVATION_TREATMENT_EN,
   taxInputsText,
@@ -1064,6 +1071,311 @@ function MovableAssetForm({
       {replaces !== null ? (
         <p className="muted hint">{t.correctionFromYear(replaces.tax_year)}</p>
       ) : null}
+      <div className="row">
+        <Submit busy={busy}>{replaces === null ? t.enter : t.saveCorrection}</Submit>
+        <button type="button" className="link" onClick={onCancel}>
+          {c.cancel}
+        </button>
+      </div>
+      {banner ? <p className="notice notice-error">{banner}</p> : null}
+      <FormBanner errors={form.errors} />
+    </form>
+  );
+}
+
+// --- on Steuern › Eure Angaben: the seller's renovation in the price (phase 3 D287) -------------
+
+type PriceRenovationValue = Schemas["PriceRenovation"];
+type PriceRenovationStatus = PriceRenovationValue["status"];
+
+const PRICE_RENOVATION_STATUS: Record<PriceRenovationStatus, string> = localized(PRICE_RENOVATION_STATUS_DE, PRICE_RENOVATION_STATUS_EN);
+
+const RENOVATION_KEYS = [
+  "value.amount",
+  "value.amount_net",
+  "value.period_start",
+  "value.period_end",
+  "value.paid_on",
+  "value.clause",
+  "value.status",
+  "document_id",
+] as const;
+const RENOVATION_CODE_FIELDS = {
+  "tax_input.price_renovation_before_handover": "value.period_start",
+  "tax_input.price_renovation_exceeds_building": "value.amount",
+} as const;
+
+/** The anchor the to-dos tax.price_renovation_ask and _not_applied open (components/todos.tsx). */
+export const PRICE_RENOVATION_ANCHOR = "tax-price-renovation";
+
+function requiredDate(raw: string, message: string): { ok: true; value: string } | { ok: false; message: string } {
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw.trim()) ? { ok: true, value: raw.trim() } : { ok: false, message };
+}
+
+/**
+ * The seller's renovation inside the purchase price (D287, Q-O180): the Kaufvertrag obliges the
+ * seller to renovate after the handover, paid with the price; the household claims that part as
+ * its own renovation, openly. The card explains what it saves, that BFH IX R 34/03 points the
+ * other way, and what a refusal means (principle 7). One claim per property: entered (claimed),
+ * corrected (a superseding row, its status changeable, e.g. after a mistaken „Nein“) or
+ * withdrawn. The Finanzamt's answer is normally recorded by the to-do tax.price_renovation_ask.
+ * The server refuses work begun before the handover, an amount not below the building's share
+ * and a property without a handover date. `onChanged` reloads what reads the draft.
+ */
+export function PriceRenovationSection({
+  propertyId,
+  title,
+  anchor,
+  onChanged,
+}: {
+  propertyId: string;
+  title: string;
+  anchor: string;
+  onChanged: () => void;
+}) {
+  const t = useT(taxInputsText);
+  const f = useFormat();
+  const load = useCallback(() => loadInputs(propertyId, "price_renovation"), [propertyId]);
+  const state = useLoad(load);
+  const [editing, setEditing] = useState<TaxInput | "new" | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const loaded = state.data !== undefined;
+
+  // The to-dos link here by its anchor; the card renders after its load, so the browser's own
+  // jump to the hash may have happened before it existed.
+  useEffect(() => {
+    if (loaded && typeof window !== "undefined" && window.location.hash === `#${anchor}`) {
+      document.getElementById(anchor)?.scrollIntoView();
+    }
+  }, [loaded, anchor]);
+
+  function changed() {
+    state.reload();
+    onChanged();
+  }
+
+  async function withdraw(row: TaxInput) {
+    setBusy(true);
+    setBanner(null);
+    try {
+      await record(propertyId, {
+        property_id: propertyId,
+        kind: "price_renovation",
+        document_id: row.document_id,
+        value: row.value,
+        supersedes_id: row.id,
+        withdrawn: true,
+      });
+    } catch (error) {
+      setBanner(messageOf(error) ?? t.withdrawFailed);
+    } finally {
+      setBusy(false);
+      changed();
+    }
+  }
+
+  return (
+    <section className="card stack" aria-labelledby={anchor}>
+      <h2 id={anchor}>{title}</h2>
+      <p>{t.prWhat}</p>
+      <p className="muted">{t.prSaves}</p>
+      <p className="muted">{t.prRuling}</p>
+      <p className="muted">{t.prRefused}</p>
+      <Loading state={state}>
+        {(rows) =>
+          rows.length === 0 ? (
+            <p className="muted">{t.prNone}</p>
+          ) : (
+            <ul className="stack">
+              {rows.map((row) => {
+                const value = row.value as PriceRenovationValue;
+                return (
+                  <li key={row.id} className="stack">
+                    <div className="row">
+                      <span>
+                        {t.prRow(
+                          f.money(value.amount),
+                          f.money(value.amount_net),
+                          f.date(value.period_start),
+                          f.date(value.period_end),
+                          f.date(value.paid_on),
+                        )}
+                      </span>
+                      <span className="spacer" />
+                      <button type="button" className="link" onClick={() => setEditing(row)} disabled={busy}>
+                        {t.correct}
+                      </button>
+                      <button type="button" className="link" onClick={() => void withdraw(row)} disabled={busy}>
+                        {t.withdraw}
+                      </button>
+                    </div>
+                    <p className="muted">
+                      {t.prStatusLabel}: {PRICE_RENOVATION_STATUS[value.status]}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          )
+        }
+      </Loading>
+      {banner ? <p className="notice notice-error">{banner}</p> : null}
+      {editing === null ? (
+        state.data !== undefined && state.data.length === 0 ? (
+          <div>
+            <button type="button" className="secondary" onClick={() => setEditing("new")}>
+              {t.prEnter}
+            </button>
+          </div>
+        ) : null
+      ) : (
+        <PriceRenovationForm
+          key={editing === "new" ? "new" : editing.id}
+          propertyId={propertyId}
+          replaces={editing === "new" ? null : editing}
+          onDone={() => {
+            setEditing(null);
+            changed();
+          }}
+          onCancel={() => setEditing(null)}
+        />
+      )}
+    </section>
+  );
+}
+
+function PriceRenovationForm({
+  propertyId,
+  replaces,
+  onDone,
+  onCancel,
+}: {
+  propertyId: string;
+  replaces: TaxInput | null;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const t = useT(taxInputsText);
+  const c = useT(common);
+  const old = replaces?.value as PriceRenovationValue | undefined;
+  const [amount, setAmount] = useState(old ? decimalInput(old.amount) : "");
+  const [net, setNet] = useState(old ? decimalInput(old.amount_net) : "");
+  const [start, setStart] = useState(old?.period_start ?? "");
+  const [end, setEnd] = useState(old?.period_end ?? "");
+  const [paid, setPaid] = useState(old?.paid_on ?? "");
+  const [clause, setClause] = useState(old?.clause ?? "");
+  const [status, setStatus] = useState<PriceRenovationStatus>(old?.status ?? "claimed");
+  const [documentId, setDocumentId] = useState<string | null>(replaces?.document_id ?? null);
+  const [note, setNote] = useState(replaces?.note ?? "");
+  const [busy, setBusy] = useState(false);
+  const [banner, setBanner] = useState<string | null>(null);
+  const form = useFormErrors(useMemo(() => [...RENOVATION_KEYS], []), RENOVATION_CODE_FIELDS);
+  const base = useId();
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const values = collector();
+    const gross = values.take("value.amount", toMoneyString(amount));
+    const netAmount = values.take("value.amount_net", toMoneyString(net));
+    const startOn = values.take("value.period_start", requiredDate(start, t.prDateRequired));
+    const endOn = values.take("value.period_end", requiredDate(end, t.prDateRequired));
+    const paidOn = values.take("value.paid_on", requiredDate(paid, t.prDateRequired));
+    if (gross !== undefined && Number(gross) <= 0) values.messages["value.amount"] = [t.amountAboveZero];
+    if (netAmount !== undefined && Number(netAmount) <= 0) values.messages["value.amount_net"] = [t.amountAboveZero];
+    if (gross !== undefined && netAmount !== undefined && Number(netAmount) > Number(gross)) {
+      values.messages["value.amount_net"] = [t.prNetAboveAmount];
+    }
+    if (startOn !== undefined && endOn !== undefined && endOn < startOn) values.messages["value.period_end"] = [t.prEndBeforeStart];
+    if (documentId === null) values.messages["document_id"] = [t.prContractRequired];
+    if (
+      !values.ok ||
+      gross === undefined ||
+      netAmount === undefined ||
+      startOn === undefined ||
+      endOn === undefined ||
+      paidOn === undefined ||
+      documentId === null
+    ) {
+      return form.invalid(values.messages);
+    }
+    setBusy(true);
+    setBanner(null);
+    form.clear();
+    try {
+      await record(propertyId, {
+        property_id: propertyId,
+        kind: "price_renovation",
+        document_id: documentId,
+        value: {
+          status,
+          amount: gross,
+          amount_net: netAmount,
+          period_start: startOn,
+          period_end: endOn,
+          paid_on: paidOn,
+          clause: clause.trim() || null,
+        },
+        note: note.trim() || null,
+        supersedes_id: replaces?.id ?? null,
+        withdrawn: false,
+      });
+      onDone();
+    } catch (error) {
+      const codes = codesOf(error);
+      if (codes.includes("tax_input.not_current") && replaces === null) {
+        setBanner(t.prTaken);
+      } else if (codes.includes("tax_input.not_current")) {
+        setBanner(CODE_MESSAGES["tax_input.not_current"] ?? null);
+      } else {
+        form.fail(error);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="stack" onSubmit={submit} noValidate>
+      <div className="grid">
+        <Field id={`${base}-amount`} label={t.prAmount} description={t.prAmountDescription} errors={form.of("value.amount")}>
+          <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoComplete="off" />
+        </Field>
+        <Field id={`${base}-net`} label={t.prNet} description={t.prNetDescription} errors={form.of("value.amount_net")}>
+          <input type="text" inputMode="decimal" value={net} onChange={(e) => setNet(e.target.value)} autoComplete="off" />
+        </Field>
+        <Field id={`${base}-start`} label={t.prStart} description={t.prStartDescription} errors={form.of("value.period_start")}>
+          <input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+        </Field>
+        <Field id={`${base}-end`} label={t.prEnd} description={t.prEndDescription} errors={form.of("value.period_end")}>
+          <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+        </Field>
+        <Field id={`${base}-paid`} label={t.prPaid} description={t.prPaidDescription} errors={form.of("value.paid_on")}>
+          <input type="date" value={paid} onChange={(e) => setPaid(e.target.value)} />
+        </Field>
+        {replaces !== null ? (
+          <Field id={`${base}-status`} label={t.prStatusLabel} description={t.prStatusDescription} errors={form.of("value.status")}>
+            <select value={status} onChange={(e) => setStatus(e.target.value as PriceRenovationStatus)}>
+              {entries(PRICE_RENOVATION_STATUS).map(([code, label]) => (
+                <option key={code} value={code}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : null}
+        <Field id={`${base}-document`} label={t.prContract} description={t.prContractDescription} errors={form.of("document_id")}>
+          <DocumentPicker value={documentId} onChange={setDocumentId} />
+        </Field>
+        <Field id={`${base}-clause`} label={t.prClause} description={t.prClauseDescription} errors={form.of("value.clause")}>
+          <textarea rows={2} maxLength={1000} value={clause} onChange={(e) => setClause(e.target.value)} autoComplete="off" />
+        </Field>
+        <Field id={`${base}-note`} label={t.noteOptional}>
+          <input type="text" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} autoComplete="off" />
+        </Field>
+      </div>
+      {replaces !== null ? <p className="muted hint">{t.prCorrectionHint}</p> : null}
       <div className="row">
         <Submit busy={busy}>{replaces === null ? t.enter : t.saveCorrection}</Submit>
         <button type="button" className="link" onClick={onCancel}>

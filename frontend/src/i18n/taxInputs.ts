@@ -52,6 +52,17 @@ export const MARKET_RENT_SOURCE_EN: Record<Schemas["MarketRent"]["source"], stri
   other: "Other source",
 };
 
+export const PRICE_RENOVATION_STATUS_DE: Record<Schemas["PriceRenovation"]["status"], string> = {
+  claimed: "Geltend gemacht (Antwort des Finanzamts offen)",
+  accepted: "Vom Finanzamt anerkannt",
+  declined: "Vom Finanzamt abgelehnt",
+};
+export const PRICE_RENOVATION_STATUS_EN: Record<Schemas["PriceRenovation"]["status"], string> = {
+  claimed: "Claimed (the tax office's answer is open)",
+  accepted: "Accepted by the tax office",
+  declined: "Refused by the tax office",
+};
+
 export const taxInputsText = defineMessages({
   de: {
     extensionHint:
@@ -184,6 +195,47 @@ export const taxInputsText = defineMessages({
     terms: "Nebenkosten laut Mietvertrag",
     termsDescription:
       "Wie der Mietvertrag die Nebenkosten regelt: als Vorauszahlung mit jährlicher Abrechnung, als Pauschale ohne Abrechnung, oder gar nicht gesondert (eine Warmmiete, in der alles enthalten ist). Davon hängt ab, in welcher Zeile der Anlage V die Beträge stehen.",
+    // the seller's renovation inside the purchase price (phase 3 D287)
+    prTitle: "Renovierung im Kaufpreis",
+    prTitleOf: (label: string) => `Renovierung im Kaufpreis: ${label}`,
+    prWhat:
+      "Verpflichtet der Kaufvertrag den Verkäufer, die Wohnung nach der Übergabe zu renovieren, und ist das im Kaufpreis bezahlt, könnt ihr diesen Teil als eure eigene Renovierung angeben.",
+    prSaves:
+      "Was es spart: Der Betrag verlässt die AfA des Gebäudes, die ihn sonst über Jahrzehnte mit wenigen Prozent im Jahr abschreibt, und wird im Jahr, in dem der Kaufpreis bezahlt wurde, auf einmal als Erhaltungsaufwand abgezogen. Er zählt netto zur 15-%-Grenze der ersten drei Jahre nach dem Kauf; liegen alle Renovierungen dieser Jahre zusammen darüber, geht er wieder in die AfA und es bleibt bei der bisherigen Rechnung.",
+    prRuling:
+      "Warum offen: Die bekannte Rechtsprechung sieht es anders. Nach dem BFH (IX R 34/03) gehört eine Renovierung, die der Verkäufer schuldet und ausführt, zum Kaufpreis und damit in die AfA. Hausbuch gibt die Renovierung deshalb offen an: Das Steuerblatt nennt sie mit einem Satz für die „Ergänzenden Angaben“, damit das Finanzamt sie prüfen kann.",
+    prRefused:
+      "Wenn das Finanzamt ablehnt: Es setzt die Steuer dann ohne den Abzug fest. Weil die Angabe offen gemacht wurde, ist das eine andere Rechtsauffassung, keine falsche Angabe. Sobald der Einkommensteuerbescheid bestätigt ist, fragt ein To-do „Hat das Finanzamt die Renovierung im Kaufpreis anerkannt?“; mit „Nein“ rechnet der Entwurf ab diesem Jahr wieder wie ohne die Angabe, der bisherige bleibt im Verlauf.",
+    prNone: "Keine Renovierung im Kaufpreis angegeben. Die AfA rechnet mit dem ganzen Gebäudeanteil des Kaufpreises.",
+    prRow: (amount: string, net: string, start: string, end: string, paid: string) =>
+      `${amount} (netto ${net}), Arbeiten ${start} bis ${end}, Kaufpreis bezahlt am ${paid}`,
+    prStatusLabel: "Stand",
+    prStatusDescription:
+      "„Geltend gemacht“, bis der Einkommensteuerbescheid kommt; dann die Antwort des Finanzamts. „Abgelehnt“ rechnet wieder wie ohne die Angabe.",
+    prEnter: "Renovierung im Kaufpreis angeben",
+    prAmount: "Renovierung im Kaufpreis, brutto (€)",
+    prAmountDescription:
+      "Der Teil des Kaufpreises, der laut Kaufvertrag auf die Renovierung entfällt, mit Umsatzsteuer. Er muss kleiner sein als der Gebäudeanteil des Kaufpreises.",
+    prNet: "Netto (€)",
+    prNetDescription:
+      "Der Betrag ohne Umsatzsteuer, wie im Vertrag genannt oder aus dem genannten Satz gerechnet (bei 19 %: brutto ÷ 1,19). Die 15-%-Grenze rechnet netto.",
+    prNetAboveAmount: "Der Nettobetrag kann nicht höher sein als der Bruttobetrag.",
+    prStart: "Beginn der Arbeiten",
+    prStartDescription: "Der erste Tag der Arbeiten; am oder nach dem Tag der Übergabe.",
+    prEnd: "Ende der Arbeiten",
+    prEndDescription: "Der Tag, an dem die Renovierung fertig ist. An ihm zählt sie für die 15-%-Grenze als ausgeführt.",
+    prEndBeforeStart: "Das Ende der Arbeiten liegt vor ihrem Beginn.",
+    prPaid: "Kaufpreis bezahlt am",
+    prPaidDescription:
+      "Der Tag, an dem der Kaufpreis mit dieser Renovierung bezahlt wurde. In diesem Jahr wird sie als Erhaltungsaufwand abgezogen (§ 11 EStG).",
+    prDateRequired: "Bitte ein Datum eingeben.",
+    prClause: "Renovierungsklausel (optional)",
+    prClauseDescription: "Der Satz des Kaufvertrags, der den Verkäufer zur Renovierung verpflichtet, für eine Nachfrage des Finanzamts.",
+    prContract: "Kaufvertrag",
+    prContractDescription: "Der Kaufvertrag mit der Renovierungsklausel; das Finanzamt fragt danach.",
+    prContractRequired: "Bitte den Kaufvertrag auswählen.",
+    prTaken: "Eine Renovierung im Kaufpreis ist schon angegeben. Bitte diese korrigieren.",
+    prCorrectionHint: "Eine Korrektur ersetzt die Angabe; die bisherige bleibt im Verlauf.",
   },
   en: {
     extensionHint:
@@ -310,5 +362,46 @@ export const taxInputsText = defineMessages({
     terms: "Service charges under the lease",
     termsDescription:
       "How the lease settles the service charges: as a prepayment with a yearly statement, as a flat rate without a statement, or not separately at all (a rent including everything). This decides on which line of the Anlage V (rental income form) the amounts stand.",
+    // the seller's renovation inside the purchase price (phase 3 D287)
+    prTitle: "Renovation in the purchase price",
+    prTitleOf: (label: string) => `Renovation in the purchase price: ${label}`,
+    prWhat:
+      "If the purchase contract obliges the seller to renovate the flat after the handover, and that is paid inside the purchase price, you can state this part as your own renovation.",
+    prSaves:
+      "What it saves: the amount leaves the building's AfA (depreciation), which would otherwise write it off at a few percent a year over decades, and is deducted at once as a repair expense (Erhaltungsaufwand) in the year the purchase price was paid. It counts net toward the 15% limit of the first three years after the purchase; if all renovations of those years together exceed it, it goes back into the AfA and the calculation stays as before.",
+    prRuling:
+      "Why openly: the known case law sees it differently. According to the Federal Fiscal Court (BFH, IX R 34/03), a renovation the seller owes and carries out is part of the purchase price and therefore of the AfA. Hausbuch therefore states the renovation openly: the field sheet names it with a sentence for the „Ergänzende Angaben“ (additional information), so the tax office can check it.",
+    prRefused:
+      "If the tax office refuses: it then assesses the tax without the deduction. Because the claim was made openly, that is a different legal view, not a false statement. Once the income tax assessment (Einkommensteuerbescheid) is confirmed, a to-do asks „Hat das Finanzamt die Renovierung im Kaufpreis anerkannt?“ (did the tax office accept it?); with „Nein“ (no) the draft computes as without the claim again from that year on, and the earlier one stays in the history.",
+    prNone: "No renovation in the purchase price stated. The AfA (depreciation) uses the building's whole share of the purchase price.",
+    prRow: (amount: string, net: string, start: string, end: string, paid: string) =>
+      `${amount} (net ${net}), work ${start} to ${end}, purchase price paid on ${paid}`,
+    prStatusLabel: "Status",
+    prStatusDescription:
+      "“Claimed” until the income tax assessment arrives; then the tax office's answer. “Refused” computes as without the claim again.",
+    prEnter: "State the renovation in the purchase price",
+    prAmount: "Renovation in the price, gross (€)",
+    prAmountDescription:
+      "The part of the purchase price that the purchase contract assigns to the renovation, VAT included. It must be smaller than the building's share of the purchase price.",
+    prNet: "Net (€)",
+    prNetDescription:
+      "The amount without VAT, as stated in the contract or computed from the stated rate (at 19%: gross ÷ 1.19). The 15% limit is computed net.",
+    prNetAboveAmount: "The net amount cannot be higher than the gross amount.",
+    prStart: "Work begins",
+    prStartDescription: "The first day of the work; on or after the day of the handover.",
+    prEnd: "Work ends",
+    prEndDescription: "The day the renovation is finished. On this day it counts as done for the 15% limit.",
+    prEndBeforeStart: "The end of the work is before its beginning.",
+    prPaid: "Purchase price paid on",
+    prPaidDescription:
+      "The day the purchase price with this renovation was paid. In that year it is deducted as a repair expense (Erhaltungsaufwand, § 11 EStG).",
+    prDateRequired: "Please enter a date.",
+    prClause: "Renovation clause (optional)",
+    prClauseDescription: "The sentence of the purchase contract that obliges the seller to renovate, for a question from the tax office.",
+    prContract: "Purchase contract",
+    prContractDescription: "The purchase contract (Kaufvertrag) with the renovation clause; the tax office asks for it.",
+    prContractRequired: "Please select the purchase contract.",
+    prTaken: "A renovation in the purchase price is already stated. Please correct that one.",
+    prCorrectionHint: "A correction replaces the entry; the previous one stays in the history.",
   },
 });
