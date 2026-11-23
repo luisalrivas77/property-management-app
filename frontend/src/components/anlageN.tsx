@@ -432,19 +432,17 @@ function LinePanel({ line, ownerId, year }: { line: DraftLine; ownerId: string; 
 
 // --- Übergabe: the owner's field sheet (phase 4b D104) ---------------------------------------
 
-export function AnlageNHandOver({
+function AnlageNHandOver({
   ownerId,
   year,
   ready,
   declared,
-  titleId = "tax-n-handover",
 }: {
   ownerId: string;
   year: number;
   ready: boolean;
   /** „Kein Arbeitslohn“ for the year (D195): no sheet, and the note says why. */
   declared: boolean;
-  titleId?: string;
 }) {
   const n = useT(anlageN);
   const sheetButtons: ExportButton[] = [{ kind: "anlage_n_sheet", label: n.sheet }];
@@ -472,7 +470,7 @@ export function AnlageNHandOver({
   return (
     <ExportCard
       key={`${ownerId}-${year}`}
-      titleId={titleId}
+      titleId="tax-n-handover"
       taxYear={year}
       buttons={sheetButtons}
       disabled={!ready}

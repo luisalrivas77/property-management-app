@@ -11,6 +11,7 @@ import Link from "next/link";
 
 import { useT } from "@/i18n";
 import { tax as messages } from "@/i18n/tax";
+import { detailHref } from "@/lib/detailHash";
 
 export type TaxForm = "angaben" | "v" | "n";
 
@@ -41,6 +42,44 @@ export function taxStepHref(year: number, step: GuideStepParam, propertyId: stri
     [STEP_PARAM, step],
     ["immobilie", step === "immobilie" ? propertyId : null],
   ])}`;
+}
+
+/** The anchors of the property's tax inputs, on the Anlage V page until D290 and on the
+ * Immobilie step since: a to-do link or an old bookmark to one of them opens that step. */
+export const PROPERTY_STEP_ANCHORS: readonly string[] = ["tax-useful-life", "tax-movable-asset", "tax-grundsteuer", "tax-limit"];
+
+/** The Immobilie step's URL for a `#…` link to one of PROPERTY_STEP_ANCHORS, else null. */
+export function propertyAnchorHref(year: number, propertyId: string | null, href: string): string | null {
+  if (!href.startsWith("#") || !PROPERTY_STEP_ANCHORS.includes(href.slice(1))) return null;
+  return `${taxStepHref(year, "immobilie", propertyId)}${href}`;
+}
+
+/** The detail-panel kind of a point on Prüfen und abgeben (#d-punkt-<key>). */
+export const POINT_DETAIL_KIND = "punkt";
+
+/** What names one point of the guide (GET /tax/{year}/guide, `GuidePoint`): its code, where it
+ * belongs and the warning's params. The form views link to the same key, so both agree. */
+export interface GuidePointKeyParts {
+  code: string;
+  property_id?: string | null;
+  owner_id?: string | null;
+  /** The checklist item's scope id, for a point that is a checklist item. */
+  item_scope_id?: string | null;
+  params?: { [key: string]: string } | null;
+}
+
+export function guidePointKey(point: GuidePointKeyParts): string {
+  const params = point.params ?? {};
+  const sorted = Object.keys(params)
+    .sort()
+    .map((k) => `${k}=${params[k]}`)
+    .join("&");
+  return `${point.code}~${point.property_id ?? ""}~${point.owner_id ?? ""}~${point.item_scope_id ?? ""}~${sorted}`;
+}
+
+/** Prüfen und abgeben with one point open in the panel. */
+export function guidePointHref(year: number, point: GuidePointKeyParts): string {
+  return `${taxStepHref(year, "pruefen")}${detailHref(POINT_DETAIL_KIND, guidePointKey(point))}`;
 }
 
 export interface TaxYearState {

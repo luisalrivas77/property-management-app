@@ -65,7 +65,6 @@ export const taxGuide = defineMessages({
     usefulLifeYears: (years: string) => `${years} Jahre`,
     none: "keine",
     noneClaimed: "nicht beansprucht",
-    entered: "eingetragen",
     notEntered: "nicht eingetragen",
     usefulLifeWhy:
       "Wie viele Jahre das Gebäude abgeschrieben wird. Ohne Gutachten gilt die gesetzliche Dauer; ein Gutachten über eine kürzere Restnutzungsdauer macht die AfA (Abschreibung) jedes Jahr höher.",
@@ -94,7 +93,6 @@ export const taxGuide = defineMessages({
     wageCertificate: "Lohnsteuerbescheinigung",
     uploadWageCertificate: "Lohnsteuerbescheinigung hochladen",
     uploadBeleg: "Beleg hochladen",
-    proofsTitle: "Zahlungsnachweise",
     allDocumentsOf: (label: string) => `Alle Unterlagen: ${label}`,
     sender: (who: string) =>
       ({
@@ -117,7 +115,6 @@ export const taxGuide = defineMessages({
     formNoResult: "noch kein Ergebnis",
     anlageVOf: (label: string) => `Anlage V · ${label}`,
     anlageNOf: (name: string) => `Anlage N · ${name}`,
-    view: "Ansehen",
     resultTitle: "Ergebnis",
     resultChanges: "Das Ergebnis ändert sich noch, bis jeder Punkt geklärt ist.",
     resultFinal: "Alle Punkte sind geklärt.",
@@ -127,7 +124,7 @@ export const taxGuide = defineMessages({
       n === 1 ? "Geht, sobald der eine Punkt geklärt ist." : `Geht, sobald die ${n} Punkte geklärt sind.`,
     elsterStepsOpen: "Noch nicht erledigt:",
     elsterAnyway:
-      "Die Feldblätter und das Archiv lassen sich auch jetzt schon in jedem Formular erstellen; sie nennen dann die offenen Punkte.",
+      "Die Feldblätter und das Archiv lassen sich auch jetzt schon in jedem Formular erstellen; sie nennen dann die offenen Punkte:",
     readyTitle: "Bereit zum Abgeben",
     ready1: "ELSTER-Ausfüllhilfe öffnen",
     ready1Text: "Für jede Anlage ein Feldblatt: jede Zahl mit ihrer Zeile und Kennzahl.",
@@ -137,16 +134,23 @@ export const taxGuide = defineMessages({
     ready3Text: "Das Jahresarchiv mit allen Belegen und Zahlungsnachweisen herunterladen und aufbewahren.",
     // the point panel
     pointOf: (n: number, total: number) => `Punkt ${n} von ${total}`,
-    whatToDo: "Was zu tun ist",
     later: "Später",
     nextPoint: "Nächster Punkt ›",
     pointGone: "Dieser Punkt ist erledigt.",
     formLabel: (form: string) =>
       ({ anlage_v: "Anlage V", anlage_n: "Anlage N", return: "ganze Erklärung" })[form] ?? form,
-    openInStep: "Im Schritt öffnen",
-    viewOnly:
-      "Diese Ansicht zeigt das Formular. Geändert und ergänzt wird in den Schritten unter Steuern.",
-    pointsOfStep: (step: string) => `Offene Punkte: ${step}`,
+    rowElections: "Reparaturen und Renovierung",
+    electionsValue: (n: number) =>
+      n === 0 ? "noch keine Angabe; wird an der Zahlung beantwortet" : n === 1 ? "1 Angabe an einer Zahlung" : `${n} Angaben an Zahlungen`,
+    marketRentValue: (amounts: string) => `${amounts} je m² kalt`,
+    electionsWhy:
+      "Ob eine Reparatur auf 2 bis 5 Jahre verteilt wird (§ 82b EStDV), was eine Renovierung ist und ob sie zur 15-%-Grenze zählt, wird an der Zahlung beantwortet: in der Anlage V die Kosten-Zeile antippen und die Zahlung öffnen.",
+    rowMarketRent: "Ortsübliche Miete",
+    marketRentWhy:
+      "Liegt eure Miete unter zwei Dritteln der ortsüblichen Miete, zählen die Kosten nur anteilig (§ 21 Abs. 2 EStG). Eingetragen wird sie je Wohnung.",
+    viewCosts: "Kosten ansehen",
+    toUnits: "Zu den Wohnungen",
+    anlageNSheetOf: (name: string) => (name ? `Feldblatt Anlage N: ${name}` : "Feldblatt Anlage N"),
   },
   en: {
     eyebrow: (year: number) => `Your tax return ${year}`,
@@ -207,7 +211,6 @@ export const taxGuide = defineMessages({
     usefulLifeYears: (years: string) => `${years} years`,
     none: "none",
     noneClaimed: "not claimed",
-    entered: "entered",
     notEntered: "not entered",
     usefulLifeWhy:
       "How many years the building is depreciated over. Without an appraisal the statutory life applies; an appraisal of a shorter remaining life makes the AfA (depreciation) higher each year.",
@@ -235,7 +238,6 @@ export const taxGuide = defineMessages({
     wageCertificate: "Lohnsteuerbescheinigung (wage certificate)",
     uploadWageCertificate: "Upload Lohnsteuerbescheinigung",
     uploadBeleg: "Upload receipt",
-    proofsTitle: "Payment proofs",
     allDocumentsOf: (label: string) => `All documents: ${label}`,
     sender: (who: string) =>
       ({
@@ -257,7 +259,6 @@ export const taxGuide = defineMessages({
     formNoResult: "no result yet",
     anlageVOf: (label: string) => `Anlage V · ${label}`,
     anlageNOf: (name: string) => `Anlage N · ${name}`,
-    view: "View",
     resultTitle: "Result",
     resultChanges: "The result still changes until every point is cleared.",
     resultFinal: "Every point is cleared.",
@@ -267,7 +268,7 @@ export const taxGuide = defineMessages({
       n === 1 ? "Possible once the one point is cleared." : `Possible once the ${n} points are cleared.`,
     elsterStepsOpen: "Not done yet:",
     elsterAnyway:
-      "The field sheets and the archive can be made in each form already now; they then name the open points.",
+      "The field sheets and the archive can be made in each form already now; they then name the open points:",
     readyTitle: "Ready to file",
     ready1: "Open the ELSTER filling aid",
     ready1Text: "One field sheet per form: every figure with its line and Kennzahl (field number).",
@@ -276,14 +277,22 @@ export const taxGuide = defineMessages({
     ready3: "Save the archive",
     ready3Text: "Download the yearly archive with every receipt and payment proof and keep it.",
     pointOf: (n: number, total: number) => `Point ${n} of ${total}`,
-    whatToDo: "What to do",
     later: "Later",
     nextPoint: "Next point ›",
     pointGone: "This point is cleared.",
     formLabel: (form: string) =>
       ({ anlage_v: "Anlage V", anlage_n: "Anlage N", return: "whole return" })[form] ?? form,
-    openInStep: "Open in its step",
-    viewOnly: "This view shows the form. Changes and additions are made in the steps under Taxes.",
-    pointsOfStep: (step: string) => `Open points: ${step}`,
+    rowElections: "Repairs and renovation",
+    electionsValue: (n: number) =>
+      n === 0 ? "none yet; answered on the payment" : n === 1 ? "1 answer on a payment" : `${n} answers on payments`,
+    marketRentValue: (amounts: string) => `${amounts} per m² cold`,
+    electionsWhy:
+      "Whether a repair is spread over 2 to 5 years (§ 82b EStDV), what counts as a renovation and whether it counts toward the 15 % limit is answered on the payment: tap the cost line in the Anlage V and open the payment.",
+    rowMarketRent: "Local comparable rent",
+    marketRentWhy:
+      "If your rent is below two thirds of the local comparable rent, the costs count only in part (§ 21 (2) EStG). It is entered per flat.",
+    viewCosts: "View costs",
+    toUnits: "To the flats",
+    anlageNSheetOf: (name: string) => (name ? `Anlage N field sheet: ${name}` : "Anlage N field sheet"),
   },
 });

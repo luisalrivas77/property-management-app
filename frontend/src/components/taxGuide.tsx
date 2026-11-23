@@ -12,7 +12,7 @@
 // ?tab=angaben and the Jahresfragen /tax/<year>/fragen.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
@@ -23,7 +23,6 @@ import { taxGuide as messages } from "@/i18n/taxGuide";
 import { todosText } from "@/i18n/todos";
 import { Icon } from "@/lib/icons";
 
-import { AnlageNHandOver } from "./anlageN";
 import { DetailLayout, DetailPanel, useDetail } from "./DetailPanel";
 import { ReadUpload } from "./documents";
 import { WARNING_TEXT } from "./labels";
@@ -47,7 +46,10 @@ import {
   warningEntry,
 } from "./todos";
 import {
+  guidePointKey,
   type GuideStepParam,
+  POINT_DETAIL_KIND,
+  propertyAnchorHref,
   payInputsHref,
   questionnaireHref,
   taxFormHref,
@@ -66,10 +68,6 @@ type GuidePoint = components["schemas"]["GuidePoint"];
 type GuideDocument = components["schemas"]["GuideDocument"];
 type GuideFormResult = components["schemas"]["GuideFormResult"];
 type T = ReturnType<typeof translate<typeof messages.de>>;
-
-/** The anchors of the Immobilie step's inputs; a to-do's `#…` link (todos.tsx `onPage`) or a
- * reminder opens the step at one of them. */
-export const PROPERTY_STEP_ANCHORS = ["tax-useful-life", "tax-movable-asset", "tax-grundsteuer", "tax-limit"] as const;
 
 const loadProperties = () => ok(api.GET("/api/properties"));
 const loadOwners = () => ok(api.GET("/api/owners"));
@@ -353,12 +351,13 @@ interface PointScope {
 }
 
 function pointKey(point: GuidePoint): string {
-  const params = point.warning?.params ?? {};
-  const sorted = Object.keys(params)
-    .sort()
-    .map((k) => `${k}=${params[k]}`)
-    .join("&");
-  return `${point.code}~${point.property_id ?? ""}~${point.owner_id ?? ""}~${point.item?.scope.id ?? ""}~${sorted}`;
+  return guidePointKey({
+    code: point.code,
+    property_id: point.property_id,
+    owner_id: point.owner_id,
+    item_scope_id: point.item?.scope.id,
+    params: point.warning?.params,
+  });
 }
 
 function pointContext(point: GuidePoint, scope: PointScope, t: T): string | undefined {
@@ -407,21 +406,45 @@ function pointEntry(point: GuidePoint, scope: PointScope, t: T): TodoEntry | nul
     );
   }
   if (point.item && point.property_id) {
-    return checklistEntry(
-      point.item,
-      scope.year,
-      { propertyId: point.property_id, payments: property?.payments, items: scope.items(point.property_id), onChanged: scope.onChanged },
-      context,
+    const checklistCtx = {
+      propertyId: point.property_id,
+      payments: property?.payments,
+      items: scope.items(point.property_id),
+      onChanged: scope.onChanged,
+    };
+    // The server counts this point, so it is never dropped: an item todos.tsx lists no to-do for
+    // keeps its requirement's title and action.
+    return (
+      checklistEntry(point.item, scope.year, checklistCtx, context) ?? {
+        key,
+        title: requirementGuide(point.item.code).title(point.item, scope.year),
+        text: requirementGuide(point.item.code).hint,
+        action: checklistAction(point.item, checklistCtx),
+        context,
+      }
     );
   }
   return null;
 }
 
-function usePointScope(guide: TaxGuide, properties: readonly Property[], owners: readonly Owner[], onChanged: () => void) {
-  const ids = useMemo(
-    () => guide.steps.filter((s) => s.kind === "property" && s.property_id).map((s) => s.property_id as string),
-    [guide.steps],
-  );
+/** The ids of the properties whose draft the shown points or Belege need (their to-do actions
+ * read the draft and its payments), so a step drafts no property it does not show. */
+function propertyIdsOf(points: readonly GuidePoint[], documents: readonly GuideDocument[] = []): string[] {
+  const ids = new Set<string>();
+  for (const p of points) if (p.property_id) ids.add(p.property_id);
+  for (const d of documents) if (d.property_id) ids.add(d.property_id);
+  return [...ids].sort();
+}
+
+function usePointScope(
+  guide: TaxGuide,
+  properties: readonly Property[],
+  owners: readonly Owner[],
+  onChanged: () => void,
+  propertyIds: readonly string[],
+) {
+  const idKey = propertyIds.join(",");
+  const ids = useMemo(() => (idKey ? idKey.split(",") : []), [idKey]);
   const contexts = usePropertyContexts(guide.tax_year, ids);
   const reloadContexts = contexts.reload;
   const changed = useCallback(() => {
@@ -472,10 +495,10 @@ function AngabenPointList({
   onChanged: () => void;
   empty: string;
 }) {
+  const points = (guide.points ?? []).filter((p) => p.step === "angaben");
+  const { scope } = usePointScope(guide, properties, owners, onChanged, propertyIdsOf(points));
   const t = useT(messages);
-  const { scope } = usePointScope(guide, properties, owners, onChanged);
-  const entries = (guide.points ?? [])
-    .filter((p) => p.step === "angaben")
+  const entries = points
     .map((p) => pointEntry(p, scope, t))
     .filter((e): e is TodoEntry => e !== null);
   if (entries.length === 0) return null;
@@ -489,21 +512,33 @@ function liveRows(rows: readonly TaxInput[]): TaxInput[] {
   return rows.filter((r) => !superseded.has(r.id) && !r.withdrawn);
 }
 
-/** Opens the `<details>` the URL's hash names, now and on every hash change. */
+/** Opens the `<details>` the URL's hash names: on arrival, on a hash change, and on a click of a
+ * same-page `#…` link (a Next `<Link>` moves the hash by pushState, which fires no hashchange). */
 function useOpenAnchor() {
   useEffect(() => {
-    function open() {
-      const id = window.location.hash.slice(1);
-      if (!id) return;
+    function openId(id: string) {
+      if (!id || id.startsWith("d-")) return;
       const target = document.getElementById(id);
       if (target instanceof HTMLDetailsElement) {
         target.open = true;
         target.scrollIntoView({ block: "start" });
       }
     }
-    open();
-    window.addEventListener("hashchange", open);
-    return () => window.removeEventListener("hashchange", open);
+    function fromHash() {
+      openId(window.location.hash.slice(1));
+    }
+    function onClick(event: globalThis.MouseEvent) {
+      const anchor = (event.target as Element | null)?.closest?.("a");
+      const href = anchor?.getAttribute("href");
+      if (href && href.startsWith("#")) openId(decodeURIComponent(href.slice(1)));
+    }
+    fromHash();
+    window.addEventListener("hashchange", fromHash);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("hashchange", fromHash);
+      document.removeEventListener("click", onClick, true);
+    };
   }, []);
 }
 
@@ -520,7 +555,7 @@ function InputRow({
   value: ReactNode;
   why: string;
   /** A link instead of the inline form (the input lives on another page). */
-  change?: { href: string };
+  change?: { href: string; label?: string };
   children?: ReactNode;
 }) {
   const t = useT(messages);
@@ -535,7 +570,7 @@ function InputRow({
           <summary aria-label={t.rowWhyLabel(title)}>{t.rowWhy}</summary>
           <p className="muted">{why}</p>
         </details>
-        {change ? <Link href={change.href}>{t.rowChange}</Link> : null}
+        {change ? <Link href={change.href}>{change.label ?? t.rowChange}</Link> : null}
       </div>
       {children ? (
         <details id={id} className="tax-guide-change">
@@ -595,17 +630,19 @@ function PropertyStepBody({
   const t = useT(messages);
   const f = useFormat();
   const year = guide.tax_year;
-  const { scope, contexts } = usePointScope(guide, properties, [], onChanged);
+  // This property's draft (the 15 % limit, the kitchen's purchase year) and its points' actions.
+  const { scope, contexts } = usePointScope(guide, properties, [], onChanged, [propertyId]);
   const loadInputs = useCallback(
     () => ok(api.GET("/api/properties/{property_id}/tax-inputs", { params: { path: { property_id: propertyId }, query: {} } })),
     [propertyId],
   );
   const inputs = useLoad(loadInputs);
   const reloadInputs = inputs.reload;
+  const scopeChanged = scope.onChanged;
   const changed = useCallback(() => {
     reloadInputs();
-    scope.onChanged();
-  }, [reloadInputs, scope]);
+    scopeChanged();
+  }, [reloadInputs, scopeChanged]);
   useOpenAnchor();
 
   const entries = (guide.points ?? [])
@@ -617,6 +654,12 @@ function PropertyStepBody({
   const usefulLife = of("useful_life")[0];
   const movable = of("movable_asset");
   const renovation = of("price_renovation")[0];
+  // The repair and renovation elections are answered on the payment (allocations.tsx), so this
+  // row counts them and leads to the cost lines; the comparable rent is entered per flat.
+  const elections = live.filter(
+    (r) => (r.kind === "spread_82b" || r.kind === "renovation_treatment" || r.kind === "exclude_from_15pct") && (r.tax_year == null || r.tax_year <= year),
+  );
+  const marketRents = of("market_rent");
   const schedules = of("grundsteuer_schedule");
   const schedule = schedules.find((r) => r.tax_year === year) ?? schedules[0];
   const draft = contexts.data?.get(propertyId)?.draft ?? null;
@@ -676,6 +719,24 @@ function PropertyStepBody({
             <GrundsteuerSection propertyId={propertyId} defaultYear={year} />
           </InputRow>
           <InputRow
+            title={t.rowElections}
+            why={t.electionsWhy}
+            value={value(t.electionsValue(elections.length))}
+            change={{ href: taxFormHref("v", { year, propertyId, ownerId: null }), label: t.viewCosts }}
+          />
+          <InputRow
+            title={t.rowMarketRent}
+            why={t.marketRentWhy}
+            value={value(
+              marketRents.length > 0
+                ? t.marketRentValue(
+                    marketRents.map((r) => ("cold_rent_per_m2" in r.value ? f.money(r.value.cold_rent_per_m2) : "")).join(", "),
+                  )
+                : t.notEntered,
+            )}
+            change={{ href: `/properties/${propertyId}`, label: t.toUnits }}
+          />
+          <InputRow
             title={t.rowHandover}
             why={t.handoverWhy}
             value={property ? f.date(property.purchase_date) : "…"}
@@ -719,16 +780,22 @@ function DocumentsStep({
 }) {
   const t = useT(messages);
   const year = guide.tax_year;
-  const { scope } = usePointScope(guide, properties, owners, onChanged);
   const docs = guide.documents ?? [];
+  const proofPoints = (guide.points ?? []).filter((p) => p.code === "payment_proof.missing");
+  // The full checklists below load on their own: the counter reloads them after any change here.
+  const [refresh, setRefresh] = useState(0);
+  const changed = useCallback(() => {
+    setRefresh((n) => n + 1);
+    onChanged();
+  }, [onChanged]);
+  const { scope } = usePointScope(guide, properties, owners, changed, propertyIdsOf(proofPoints, docs));
   const missing = docs.filter((d) => d.status !== "present");
   const present = docs.filter((d) => d.status === "present");
   const context = (d: GuideDocument) =>
     d.property_id ? propertyLabel(properties, d.property_id, t) : d.owner_id ? ownerName(owners, d.owner_id) : "";
   // The bills that still need their proof of payment (a review point, D143): a Beleg too, so
   // they are uploaded here as well.
-  const proofs = (guide.points ?? [])
-    .filter((p) => p.code === "payment_proof.missing")
+  const proofs = proofPoints
     .map((p) => pointEntry(p, scope, t))
     .filter((e): e is TodoEntry => e !== null);
   const stepPropertyIds = guide.steps.filter((s) => s.kind === "property" && s.property_id).map((s) => s.property_id as string);
@@ -790,7 +857,7 @@ function DocumentsStep({
       {stepPropertyIds.map((id) => (
         <details key={id} className="card tax-guide-all">
           <summary>{t.allDocumentsOf(propertyLabel(properties, id, t))}</summary>
-          <ChecklistTab propertyId={id} year={year} payments={scope.contexts?.get(id)?.payments} onChanged={scope.onChanged} />
+          <ChecklistTab propertyId={id} year={year} refresh={refresh} payments={scope.contexts?.get(id)?.payments} onChanged={scope.onChanged} />
         </details>
       ))}
     </div>
@@ -822,7 +889,7 @@ function FormCard({ form, year, properties, owners }: { form: GuideFormResult; y
   );
 }
 
-const POINT_KIND = "punkt";
+const POINT_KIND = POINT_DETAIL_KIND;
 
 function ReviewStep({
   guide,
@@ -838,11 +905,25 @@ function ReviewStep({
   const t = useT(messages);
   const year = guide.tax_year;
   const detail = useDetail(POINT_KIND);
-  const { scope } = usePointScope(guide, properties, owners, onChanged);
   const points = guide.points ?? [];
+  const { scope } = usePointScope(guide, properties, owners, onChanged, propertyIdsOf(points));
   const keys: string[] = points.map(pointKey);
   const openIndex = detail.id ? keys.indexOf(detail.id) : -1;
   const openSteps = guide.steps.filter((s) => s.kind !== "review" && s.state !== "done");
+  // Where the open point stood: once it is cleared (the guide reloads without it), „Nächster
+  // Punkt“ offers the point that moved into its place, so the flow never dead-ends.
+  const [lastIndex, setLastIndex] = useState(0);
+  // Kept during render, not in an effect: React re-renders at once with the new value.
+  if (openIndex >= 0 && openIndex !== lastIndex) setLastIndex(openIndex);
+  const nextIndex =
+    points.length === 0
+      ? -1
+      : openIndex < 0
+        ? Math.min(lastIndex, points.length - 1)
+        : points.length > 1
+          ? (openIndex + 1) % points.length
+          : -1;
+  const nextKey = nextIndex >= 0 ? keys[nextIndex] : undefined;
 
   const panel = detail.id ? (
     <PointPanel
@@ -851,7 +932,7 @@ function ReviewStep({
       total={points.length}
       scope={scope}
       onClose={detail.close}
-      onNext={openIndex >= 0 && points.length > 1 ? () => detail.open(keys[(openIndex + 1) % points.length] ?? "") : null}
+      onNext={nextKey !== undefined ? () => detail.open(nextKey) : null}
     />
   ) : null;
 
@@ -908,7 +989,12 @@ function ReviewStep({
                   form.form === "anlage_v" && form.property_id ? (
                     <HandOverCard key={form.property_id} propertyId={form.property_id} taxYear={year} titleId={`tax-guide-v-${form.property_id}`} />
                   ) : form.form === "anlage_n" && form.owner_id && form.result != null ? (
-                    <AnlageNHandOver key={form.owner_id} ownerId={form.owner_id} year={year} ready declared={false} titleId={`tax-guide-n-${form.owner_id}`} />
+                    <p key={form.owner_id}>
+                      {/* the form view decides whether the sheet can be made (a „Kein Arbeitslohn“ year makes none) */}
+                      <Link href={`${taxFormHref("n", { year, propertyId: null, ownerId: form.owner_id })}#tax-n-handover`}>
+                        {t.anlageNSheetOf(ownerName(owners, form.owner_id))}
+                      </Link>
+                    </p>
                   ) : null,
                 )}
               </li>
@@ -943,7 +1029,12 @@ function ReviewStep({
                   </p>
                 ) : null}
               </div>
-              <p className="muted">{t.elsterAnyway}</p>
+              <p className="muted">
+                {t.elsterAnyway}{" "}
+                <Link href={`${taxFormHref("v", { year, propertyId: null, ownerId: null })}#tax-handover-title`}>Anlage V</Link>
+                {" · "}
+                <Link href={taxFormHref("n", { year, propertyId: null, ownerId: null })}>Anlage N</Link>
+              </p>
             </>
           )}
         </section>
@@ -981,7 +1072,12 @@ function PointPanel({
     const href = anchor?.getAttribute("href");
     if (!anchor || !href || !href.startsWith("#") || href.startsWith("#d-")) return;
     event.preventDefault();
-    router.push(`${taxStepHref(scope.year, "immobilie", point?.property_id ?? null)}${href}`);
+    const propertyId = point?.property_id ?? null;
+    // An input of the Immobilie step opens there; any other anchor (the field sheet) is the
+    // Anlage V view's.
+    router.push(
+      propertyAnchorHref(scope.year, propertyId, href) ?? `${taxFormHref("v", { year: scope.year, propertyId, ownerId: null })}${href}`,
+    );
   }
 
   return (
@@ -1016,7 +1112,19 @@ function PointPanel({
           </div>
         </div>
       ) : (
-        <p className="muted">{t.pointGone}</p>
+        <div className="stack tax-guide-point">
+          <p className="muted">{t.pointGone}</p>
+          <div className="row">
+            <button type="button" className="secondary" onClick={onClose}>
+              {t.later}
+            </button>
+            {onNext ? (
+              <button type="button" onClick={onNext}>
+                {t.nextPoint}
+              </button>
+            ) : null}
+          </div>
+        </div>
       )}
     </DetailPanel>
   );
