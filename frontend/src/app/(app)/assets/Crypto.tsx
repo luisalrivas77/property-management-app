@@ -63,11 +63,13 @@ function dayBefore(day: string): string {
 }
 
 /** Where a coin's price stands (D291): „Stand 14:32“ for a price read on demand today; once one
- * was read today, a coin still at an older price says so („Kurs von gestern“, else its day). */
+ * was read today, a coin still at a daily price says so: „Kurs von gestern“ for the last close
+ * (yesterday's, or a feed's row of today, which is its midnight snapshot), else its day. */
 function priceMoment(t: T, f: Formatter, coin: CryptoCoin, data: CryptoHoldings): string | null {
   if (coin.price_source === "spot" && coin.price_read_at) return t.spotAt(f.time(coin.price_read_at));
-  if (!data.spot_read_at || !coin.price_on || coin.price_on >= data.on) return null;
-  return coin.price_on === dayBefore(data.on) ? t.yesterdaysPrice : t.asOf(f.date(coin.price_on));
+  if (!data.spot_read_at || !coin.price_on) return null;
+  if (coin.price_source !== "coingecko_daily" && coin.price_source !== "kraken_daily") return null;
+  return coin.price_on >= dayBefore(data.on) ? t.yesterdaysPrice : t.asOf(f.date(coin.price_on));
 }
 
 function Crypto({ data, owners, onRefreshed }: { data: CryptoHoldings; owners: Owner[]; onRefreshed: () => void }) {

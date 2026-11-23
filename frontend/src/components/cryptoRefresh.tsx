@@ -26,6 +26,8 @@ export function CryptoRefresh({ onRefreshed }: { onRefreshed: () => void }) {
   const [refused, setRefused] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [tick, setTick] = useState(0);
+  // Whether this view pressed or watched the newest run: only then is its failure news.
+  const [watched, setWatched] = useState(false);
   const running = state?.status === "running";
 
   // A run started elsewhere (the other screen, another device) shows as running here too.
@@ -33,7 +35,9 @@ export function CryptoRefresh({ onRefreshed }: { onRefreshed: () => void }) {
     let cancelled = false;
     ok(api.GET("/api/crypto/refresh")).then(
       (fresh) => {
-        if (!cancelled) setState(fresh);
+        if (cancelled) return;
+        setState(fresh);
+        if (fresh.status === "running") setWatched(true);
       },
       (caught: unknown) => {
         if (!cancelled) setError(caught);
@@ -75,6 +79,7 @@ export function CryptoRefresh({ onRefreshed }: { onRefreshed: () => void }) {
     try {
       const fresh = await ok(api.POST("/api/crypto/refresh"));
       setState(fresh);
+      setWatched(true);
       setTick((n) => n + 1);
       if (!fresh.queued && fresh.status !== "running") setRefused(true);
     } catch (caught) {
@@ -86,7 +91,7 @@ export function CryptoRefresh({ onRefreshed }: { onRefreshed: () => void }) {
 
   const status = running
     ? t.refreshRunning
-    : state?.status === "failed" && state.finished_at
+    : watched && state?.status === "failed"
       ? t.refreshFailed
       : refused
         ? t.refreshJustRan
