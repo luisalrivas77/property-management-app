@@ -13,6 +13,7 @@ type HealthMonthView = components["schemas"]["HealthMonthView"];
 type HealthTodo = components["schemas"]["HealthTodo"];
 type HouseholdMonth = components["schemas"]["HouseholdMonth"];
 type SnapshotResult = components["schemas"]["SnapshotResult"];
+type Verdict = components["schemas"]["Verdict"];
 
 /** YYYY-MM, `back` months before the current one. */
 function monthsBack(back: number): string {
@@ -60,6 +61,36 @@ const MONTH_END: HealthTodo = {
   href: "/assets?month_end=2026-10-31",
 };
 
+/** Finanzielle Gesundheit as rules/verdict states it: before the month-end every figure is still
+ * missing; after it the savings rate is in, at 25 % against the standard limits. */
+function verdict(captured: boolean): Verdict {
+  const texts = { question: "Frage", headline: "Kurzfassung", why: "Warum", reference: "Bezugspunkt" };
+  return {
+    word: "too_little_data",
+    weakest: "reserve",
+    line: "Noch zu wenig abgeschlossene Monate.",
+    parts: [
+      captured
+        ? {
+            figure: "savings_rate",
+            state: "good",
+            value: "0.2500",
+            good: "0.10",
+            strained: "0",
+            good_origin: "default",
+            strained_origin: "default",
+            origin: "default",
+            no_loan: false,
+            ...texts,
+          }
+        : { figure: "savings_rate", state: "missing", no_loan: false, ...texts },
+      { figure: "reserve", state: "missing", no_loan: false, ...texts },
+      { figure: "debt_service_ratio", state: "good", no_loan: true, ...texts },
+    ],
+    todos: [],
+  };
+}
+
 /** Before the month-end: one closed month, GET /health listing what holds the next month open
  * (as rules/health/window does); after it: three closed months and a savings rate. */
 function health(captured: boolean): Health {
@@ -81,6 +112,7 @@ function health(captured: boolean): Health {
       : null,
     proposals: [{ figure: "savings_rate", direction: "higher", red: { value: "0", origin: "source" } }],
     todos: captured ? [] : [TOO_FEW, WAITING, MONTH_END],
+    verdict: verdict(captured),
   };
 }
 
@@ -132,8 +164,10 @@ test("below three closed months the month-end to-do shows once, and its button r
   // Once on the page: the Kennzahlen below do not list GET /health's copy of the same to-dos.
   await expect(page.getByRole("button", { name: "Monatsabschluss festhalten" })).toHaveCount(1);
   await expect(page.getByText(WAITING.text)).toHaveCount(1);
+  // The savings rate's card is there, still without a figure.
   const rate = page.locator('div.health-figure[aria-label="Sparquote"]');
-  await expect(rate).toHaveCount(0);
+  await expect(rate).toHaveAttribute("data-state", "missing");
+  await expect(rate).not.toContainText("%");
   await page.evaluate(() => {
     (window as unknown as { e2eKept?: boolean }).e2eKept = true;
   });
@@ -142,6 +176,7 @@ test("below three closed months the month-end to-do shows once, and its button r
   await expect.poll(() => snapshots).toEqual([{ as_of: "2026-10-31" }]);
   // The Kennzahlen read GET /health again and show the three closed months, in the same page.
   await expect(rate).toContainText("25,0 %");
+  await expect(rate).toHaveAttribute("data-state", "good");
   await expect(page.getByRole("region", { name: "Noch keine Durchschnitte" })).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as { e2eKept?: boolean }).e2eKept)).toBe(true);
 });

@@ -30,9 +30,11 @@
 //
 // Phase 10 §7.6 (Luis, 23 Nov 2026: „They should be moved to their respective sections as
 // Planung will be removed“): below the month, the household's key figures that were on
-// Übersicht: „Liquiditätsreserve“, „Ampel-Grenzen festlegen“ (`/household#ampel-grenzen`) and
-// „Kennzahlen“ (`/household#figures-title`), from components/healthFigures.tsx unchanged. They are
-// the window's figures, not the chosen month's, so they sit outside the month's own read.
+// Übersicht: „Kennzahlen“ (`/household#figures-title`), since 23 Nov 2026 the three figures of
+// Finanzielle Gesundheit (Sparquote, Liquiditätsreserve, Schuldendienstquote) as cards with their
+// dots, and „Ampel-Grenzen festlegen“ (`/household#ampel-grenzen` opens it), from
+// components/healthFigures.tsx. They are the window's figures, not the chosen month's, so they
+// sit outside the month's own read.
 //
 // Phase 10 §7.6 Haushalt (3), build decision (a): „Was diesen Monat anders ist“ at the top, from
 // GET /health's `differences`: the newest closed month (named, whichever month is chosen) against

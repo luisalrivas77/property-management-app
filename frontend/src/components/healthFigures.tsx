@@ -4,17 +4,23 @@
 // before the limits are confirmed, 13b after), in the sections they are about since phase 10
 // §7.6 (Luis, 23 Nov 2026: „They should be moved to their respective sections as Planung will
 // be removed“; until then one block on Übersicht):
-// - Haushalt (HouseholdHealthSection): the card „Liquiditätsreserve“, the card „Ampel-Grenzen
-//   festlegen“ (`#ampel-grenzen`; each proposed limit with its origin, editable; „Übernehmen“
-//   stores them in a new version of the default household scenario) and the block „Kennzahlen“
-//   (`#figures-title`) with each figure's mark beside its sentences.
+// - Haushalt (HouseholdHealthSection): the block „Kennzahlen“ (`#figures-title`) with the three
+//   figures of Finanzielle Gesundheit (phase 10 §7.6, Luis 23 Nov 2026: Sparquote,
+//   Liquiditätsreserve, Schuldendienstquote) as cards, each with its dot against the limits used
+//   and what it is made of; the Beleihungsauslauf, Verschuldungsgrad and Schulden zu
+//   Jahreseinkommen are no longer shown („Any figure that does not help convey financial health is
+//   not needed“), the property page keeps its own LTV. „Grenzen ändern“ (or `#ampel-grenzen`)
+//   opens the sheet „Ampel-Grenzen festlegen“: an empty field is the standard limit, a typed one
+//   the household's, „Übernehmen“ stores them in a new version of the default scenario.
 // - Anlagen › Übersicht (AssetsHealthSection): the card a month-end to-do opens
 //   (`/assets?month_end=…`, „Monatsabschluss festhalten“), the split of the assets (never marked)
 //   and „Vermögen im Verlauf“.
 // Every figure is the server's (GET /health, whose `series` is GET /health/net-worth-series's
-// stored runs); a mark and its sentences come only from confirmed limits, so nothing is coloured
-// before „Übernehmen“. Every figure opens what it is made of, and every gap is a to-do with its
-// button (principle 7); a month-end to-do is the button „Monatsabschluss festhalten“ itself.
+// stored runs); a figure's state, limits and sentences are its `verdict` (rules/verdict), on the
+// standard limits until the household sets its own (this supersedes phase 9 D250 (3)'s „nothing
+// coloured before „Übernehmen““ on these screens). Every figure opens what it is made of, and
+// every gap is a to-do with its button (principle 7); a month-end to-do is the button
+// „Monatsabschluss festhalten“ itself.
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
@@ -26,23 +32,20 @@ import { type Translation, useT } from "@/i18n";
 import { common } from "@/i18n/common";
 import { healthFigures } from "@/i18n/healthFigures";
 import { netWorthText } from "@/i18n/netWorth";
+import { verdictText } from "@/i18n/verdict";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import {
   type BandLimits,
   type BandProposal,
   bandsConfirmedBy,
-  COLOUR_CLASS,
-  COLOUR_LABEL,
   currentDefault,
   FIGURE_LABEL,
-  FIGURES,
   formatOneDecimal,
   type Health,
   type HealthTodo,
   HIGHER_IS_BETTER,
   type HouseholdScenario,
-  type Light,
   leversOf,
   loadMemberNames,
   loadScenarioHistory,
@@ -50,9 +53,7 @@ import {
   monthEnd,
   monthEndOf,
   type NetWorthPoint,
-  REFERENCE_POINTS,
   saveDefaultScenario,
-  toMultiple,
   toSignedRate,
 } from "./healthShared";
 import { Field } from "./form";
@@ -61,25 +62,18 @@ import { snapshotOutcomeText } from "./netWorth";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
+import { VerdictCards, type VerdictPart, VerdictWordLine } from "./verdict";
 
 import "./health.css";
 
 type Account = components["schemas"]["Account"];
 type SnapshotResult = components["schemas"]["SnapshotResult"];
-type EstimateSource = components["schemas"]["EstimateSource"];
 type HealthText = Translation<typeof healthFigures.de>;
 
 /** One decimal as phase 9 shows it: German exactly as formatOneDecimal („3,0“), English with a
  * trailing „.0“ dropped. */
 function oneDecimal(p: PlanFormat, value: string | null | undefined): string {
   return p.locale === "de" ? formatOneDecimal(value) : p.short(value);
-}
-
-/** A limit as shown: a ratio as a percent, the reserve's red as a percent of the target,
- * Schulden zu Jahreseinkommen as a multiple (German exactly as healthShared's limitText). */
-function limitShown(p: PlanFormat, t: HealthText, figure: MarkedFigure, value: string | null | undefined): string {
-  if (value == null) return "–";
-  return figure === "debt_to_income" ? t.times(oneDecimal(p, value)) : p.ratio(value);
 }
 
 interface HealthData {
@@ -157,52 +151,52 @@ export function AssetsHealthSection({ children }: { children?: ReactNode }) {
   );
 }
 
+/** The three figures of Finanzielle Gesundheit (rules/verdict), in the server's order. The sheet
+ * edits only these; a band the household stored for any other figure is kept as it is. */
+const VERDICT_FIGURES: MarkedFigure[] = ["savings_rate", "reserve", "debt_service_ratio"];
+
 function HealthFigures({ data, onChanged }: { data: HealthData; onChanged: () => void }) {
   const { health, scenarios } = data;
-  const [editing, setEditing] = useState(false);
-  const proposals = health.proposals ?? [];
+  // `/household#ampel-grenzen` (Übersicht's „Grenzen ändern“) opens the sheet. This part mounts
+  // only after its read, so the sheet is there when the section scrolls to the hash.
+  const [editing, setEditing] = useState(() => typeof window !== "undefined" && window.location.hash === "#ampel-grenzen");
+  useEffect(() => {
+    const open = () => {
+      if (window.location.hash === "#ampel-grenzen") setEditing(true);
+    };
+    window.addEventListener("hashchange", open);
+    return () => window.removeEventListener("hashchange", open);
+  }, []);
+  // Closing drops the hash too, so a reload or a second link to it opens the sheet again.
+  const close = () => {
+    setEditing(false);
+    if (window.location.hash === "#ampel-grenzen") {
+      window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    }
+  };
   const todos = health.todos ?? [];
   const current = currentDefault(scenarios);
-  const confirmed = (current?.levers?.bands ?? []).length > 0;
-  const showCard = !confirmed || editing;
-  // The bands' own to-do is the card itself on this page. Below three closed months Haushalt's
-  // „Noch keine Durchschnitte“ above shows „too few closed months“ and what holds the next month
-  // open (its month-end to-do included) with their buttons, so they are not listed here a second
-  // time (phase 10 §7.6 (f)); GET /health has no other to-dos (rules/health/window, bands).
+  // Below three closed months Haushalt's „Noch keine Durchschnitte“ above shows „too few closed
+  // months“ and what holds the next month open (its month-end to-do included) with their buttons,
+  // so they are not listed here a second time (phase 10 §7.6 (f)). The limits' own to-do
+  // (bands_unconfirmed, still sent by rules/health/bands) is not shown: the standard limits apply
+  // until the household sets its own, so nothing waits for it (phase 10 §7.6, Finanzielle
+  // Gesundheit).
   const otherTodos = health.window.enough ? todos.filter((todo) => todo.code !== "bands_unconfirmed" && todo.code !== "too_few_months") : [];
-  const t = useT(healthFigures);
   return (
     <>
-      <ReserveCard data={data} onChanged={onChanged} />
-      {showCard ? (
+      <FiguresCard data={data} current={current} todos={otherTodos} onChanged={onChanged} onEditBands={() => setEditing(true)} />
+      {editing ? (
         <BandsCard
           health={health}
-          proposals={proposals}
           current={current}
-          confirmed={confirmed}
           onSaved={() => {
-            setEditing(false);
+            close();
             onChanged();
           }}
-          onCancel={confirmed ? () => setEditing(false) : null}
+          onCancel={close}
         />
-      ) : (
-        <div className="notice notice-info row health-confirmed" role="note">
-          <p>{t.bandsConfirmed}</p>
-          <span className="spacer" />
-          <button type="button" className="link" onClick={() => setEditing(true)}>
-            {t.changeLimits}
-          </button>
-        </div>
-      )}
-      <FiguresCard
-        data={data}
-        confirmed={confirmed}
-        current={current}
-        todos={otherTodos}
-        onChanged={onChanged}
-        onEditBands={() => setEditing(true)}
-      />
+      ) : null}
     </>
   );
 }
@@ -290,50 +284,7 @@ function MonthEndCard({ day, onDone }: { day: string; onDone: () => void }) {
   );
 }
 
-// --- the mark ---------------------------------------------------------------------------
-
-function MarkPill({ light }: { light: Light | undefined }) {
-  if (!light?.colour) return null;
-  return <span className={COLOUR_CLASS[light.colour]}>{COLOUR_LABEL[light.colour]}</span>;
-}
-
-/** „eigene Grenze: rot unter 0,0 %, keine Grenze für Grün“ beside a marked figure. */
-function LimitLine({ figure, light, target }: { figure: MarkedFigure; light: Light | undefined; target?: string }) {
-  const t = useT(healthFigures);
-  const p = usePlanFormat();
-  if (!light?.colour) return null;
-  const higher = HIGHER_IS_BETTER[figure];
-  if (figure === "reserve") {
-    return <p className="muted">{t.reserveLimit(target ? p.euro(target) : null, limitShown(p, t, figure, light.red))}</p>;
-  }
-  const red =
-    light.red != null
-      ? higher
-        ? t.redBelow(limitShown(p, t, figure, light.red))
-        : t.redAbove(limitShown(p, t, figure, light.red))
-      : t.noRed;
-  const green =
-    light.green != null
-      ? higher
-        ? t.greenFrom(limitShown(p, t, figure, light.green))
-        : t.greenUpTo(limitShown(p, t, figure, light.green))
-      : t.noGreen;
-  return <p className="muted">{t.ownLimitLine(higher ? `${red}, ${green}` : `${green}, ${red}`)}</p>;
-}
-
-function Texts({ light }: { light: Light | undefined }) {
-  const texts = light?.texts ?? [];
-  if (texts.length === 0) return null;
-  return (
-    <div className="health-texts">
-      {texts.map((text) => (
-        <p key={text}>{text}</p>
-      ))}
-    </div>
-  );
-}
-
-// --- Liquiditätsreserve -------------------------------------------------------------------
+// --- Finanzielle Gesundheit's three figures ------------------------------------------------
 
 function reserveOrigin(t: HealthText, origin: components["schemas"]["ReserveOrigin"]): string {
   switch (origin) {
@@ -346,19 +297,54 @@ function reserveOrigin(t: HealthText, origin: components["schemas"]["ReserveOrig
   }
 }
 
-function ReserveCard({ data, onChanged }: { data: HealthData; onChanged: () => void }) {
-  const reserve = data.health.reserve;
-  const light = data.health.marks?.reserve;
+/** What one verdict card is made of, under the server's sentences: the savings rate's rows and
+ * months, the reserve's target and accounts, the loans' interest and repayment. */
+function FigureDetails({ part, data, onChanged }: { part: VerdictPart; data: HealthData; onChanged: () => void }) {
+  const { health } = data;
   const t = useT(healthFigures);
   const p = usePlanFormat();
-  return (
-    <section className="card stack" aria-labelledby="reserve-title">
-      <h2 id="reserve-title">{FIGURE_LABEL.reserve}</h2>
-      {reserve ? (
+  const range = p.monthRange(health.window.months ?? []);
+  switch (part.figure) {
+    case "savings_rate": {
+      const rate = health.savings_rate;
+      if (!rate) return null;
+      return (
         <>
-          <p className="cashflow-value">
-            {p.euro(reserve.amount)} <MarkPill light={light} />
-          </p>
+          <ul className="household-rows">
+            <li>
+              <span>{t.withoutOneOffs}</span>
+              <span>{p.ratio(rate.rate_regular)}</span>
+            </li>
+            <li>
+              <span>{t.ofWhichPrincipal}</span>
+              <span>{p.euro(rate.principal)}</span>
+            </li>
+            <li>
+              <span>{t.withoutPrincipal}</span>
+              <span>{p.ratio(rate.rate_without_principal)}</span>
+            </li>
+          </ul>
+          <p className="muted">{t.savingsExplained(range)}</p>
+          <details className="health-sources">
+            <summary>{t.viewMonths}</summary>
+            <ul className="household-rows">
+              {(rate.months ?? []).map((row) => (
+                <li key={row.month}>
+                  <Link href={`/household?monat=${row.month}`}>{p.month(row.month)}</Link>
+                  <span>{p.ratio(row.rate)}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="muted">{t.savedOf(p.euro(rate.saved), p.euro(rate.income), p.euro(rate.one_off_spending))}</p>
+          </details>
+        </>
+      );
+    }
+    case "reserve": {
+      const reserve = health.reserve;
+      if (!reserve) return <p className="muted">{t.reserveLater}</p>;
+      return (
+        <>
           <p className="muted">
             {reserve.months != null ? t.reserveMonths(oneDecimal(p, reserve.months), p.euro(reserve.need)) : t.reserveNoNeed}
           </p>
@@ -366,8 +352,6 @@ function ReserveCard({ data, onChanged }: { data: HealthData; onChanged: () => v
             {t.ownTarget(p.euro(reserve.target), p.short(reserve.target_months))}{" "}
             <Link href="/planning?tab=haushalt">{t.change}</Link>
           </p>
-          <LimitLine figure="reserve" light={light} target={reserve.target} />
-          <Texts light={light} />
           <details className="health-sources">
             <summary>{t.reserveSources}</summary>
             <ul className="household-rows">
@@ -382,17 +366,46 @@ function ReserveCard({ data, onChanged }: { data: HealthData; onChanged: () => v
               ))}
             </ul>
             <p className="muted">
-              {t.needExplained(p.monthRange(data.health.window.months ?? []))}{" "}
-              <Link href="/planning?tab=haushalt">{t.changeReserveAccounts}</Link>
+              {t.needExplained(range)} <Link href="/planning?tab=haushalt">{t.changeReserveAccounts}</Link>
             </p>
           </details>
           <HealthTodoList todos={reserve.todos ?? []} onChanged={onChanged} />
         </>
-      ) : (
-        <p className="muted">{t.reserveLater}</p>
-      )}
-    </section>
-  );
+      );
+    }
+    case "debt_service_ratio": {
+      const debt = health.debt;
+      if (!debt || part.no_loan) return null;
+      const annualised = debt.months < 12 ? t.annualised(debt.months) : "";
+      const gap = debt.gaps?.find((g) => g.figure === "debt_service_ratio")?.reason ?? null;
+      return (
+        <>
+          <p className="muted">{t.debtServiceExplained(annualised, p.euro(debt.debt_service_year), p.euro(debt.income_year))}</p>
+          {gap ? <p className="muted">{gap}</p> : null}
+          <details className="health-sources">
+            <summary>{t.madeOf}</summary>
+            <ul className="household-rows">
+              <li>
+                <span>{t.interestIn(range)}</span>
+                <span>{p.euro(debt.interest)}</span>
+              </li>
+              <li>
+                <span>{t.principalIn(range)}</span>
+                <span>{p.euro(debt.principal)}</span>
+              </li>
+            </ul>
+            <p className="muted">
+              {t.fromRentalBefore}
+              <Link href="/planning">{t.planningProperty}</Link>
+              {t.fromRentalAfter}
+            </p>
+          </details>
+        </>
+      );
+    }
+    default:
+      return null;
+  }
 }
 
 // --- Ampel-Grenzen festlegen ---------------------------------------------------------------
@@ -403,46 +416,54 @@ interface LimitDraft {
 }
 
 /** A limit from the API as typed text: a ratio in percent ("0.3" → "30,0"), the reserve's red as
- * a percent of the target, Schulden zu Jahreseinkommen as a multiple. */
-function limitInput(figure: MarkedFigure, value: string | null | undefined): string {
+ * a percent of the target. */
+function limitInput(value: string | null | undefined): string {
   if (value == null) return "";
-  if (figure === "debt_to_income") return value.replace(".", ",");
   const percent = percentInput(value);
   return percent.includes(",") ? percent : `${percent},0`;
 }
 
-function parseLimit(figure: MarkedFigure, raw: string): { ok: true; value: string | null } | { ok: false; message: string } {
+function parseLimit(raw: string): { ok: true; value: string | null } | { ok: false; message: string } {
   if (raw.trim() === "") return { ok: true, value: null };
-  return figure === "debt_to_income" ? toMultiple(raw, 4) : toSignedRate(raw, 4);
+  return toSignedRate(raw, 4);
 }
 
-function draftsFrom(bands: BandLimits[], proposals: BandProposal[]): Record<MarkedFigure, LimitDraft> {
+/** The sheet starts from the sides the household stored; an empty side is the standard limit
+ * (rules/verdict), so saving the sheet unchanged stores nothing new. */
+function draftsFrom(bands: BandLimits[]): Record<MarkedFigure, LimitDraft> {
   const out = {} as Record<MarkedFigure, LimitDraft>;
-  for (const figure of FIGURES) {
+  for (const figure of VERDICT_FIGURES) {
     const band = bands.find((b) => b.figure === figure);
-    const proposal = proposals.find((p) => p.figure === figure);
-    out[figure] = band
-      ? { green: limitInput(figure, band.green), red: limitInput(figure, band.red) }
-      : bands.length > 0
-        ? { green: "", red: "" }
-        : { green: limitInput(figure, proposal?.green?.value), red: limitInput(figure, proposal?.red?.value) };
+    out[figure] = { green: limitInput(band?.green), red: limitInput(band?.red) };
   }
   return out;
 }
 
+/** The standard limit of one side, shown beside an empty field: the verdict's own limit while
+ * that side is the standard one, else the proposal of rules/health/bands. */
+function standardLimit(
+  figure: MarkedFigure,
+  side: keyof LimitDraft,
+  part: VerdictPart | undefined,
+  proposals: BandProposal[],
+): string | null {
+  if (part) {
+    const value = side === "green" ? part.good : part.strained;
+    const origin = side === "green" ? part.good_origin : part.strained_origin;
+    if (value != null && origin === "default") return value;
+  }
+  const proposal = proposals.find((p) => p.figure === figure);
+  return (side === "green" ? proposal?.green?.value : proposal?.red?.value) ?? null;
+}
+
 function figureIntro(t: HealthText, figure: MarkedFigure): string {
   switch (figure) {
-    case "reserve":
-      return "";
     case "savings_rate":
       return t.introSavingsRate;
-    case "ltv":
-      return t.introLtv;
     case "debt_service_ratio":
       return t.introDebtService;
-    case "debt_ratio":
-    case "debt_to_income":
-      return t.introNoProposal;
+    default:
+      return "";
   }
 }
 
@@ -454,30 +475,35 @@ function scenarioRefused(error: unknown): boolean {
 
 function BandsCard({
   health,
-  proposals,
   current,
-  confirmed,
   onSaved,
   onCancel,
 }: {
   health: Health;
-  proposals: BandProposal[];
   current: HouseholdScenario | null;
-  confirmed: boolean;
   onSaved: () => void;
-  onCancel: (() => void) | null;
+  onCancel: () => void;
 }) {
   const ids = useId();
-  const [drafts, setDrafts] = useState(() => draftsFrom(current?.levers?.bands ?? [], proposals));
+  const stored = current?.levers?.bands ?? [];
+  const [drafts, setDrafts] = useState(() => draftsFrom(stored));
   const [messages, setMessages] = useState<Partial<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const initial = draftsFrom(current?.levers?.bands ?? [], proposals);
+  const card = useRef<HTMLElement>(null);
+  const proposals = health.proposals ?? [];
+  const parts = health.verdict?.parts ?? [];
   const target = health.reserve?.target ?? null;
   const targetMonths = current?.levers?.reserve_target_months ?? health.reserve?.target_months ?? "6";
   const t = useT(healthFigures);
+  const tv = useT(verdictText);
   const c = useT(common);
   const p = usePlanFormat();
+
+  // Opened by „Grenzen ändern“ below the cards: bring it into view.
+  useEffect(() => {
+    card.current?.scrollIntoView({ block: "start" });
+  }, []);
 
   function set(figure: MarkedFigure, side: keyof LimitDraft, value: string) {
     setDrafts((previous) => ({ ...previous, [figure]: { ...previous[figure], [side]: value } }));
@@ -487,10 +513,10 @@ function BandsCard({
     event.preventDefault();
     const found: Partial<Record<string, string>> = {};
     const bands: BandLimits[] = [];
-    for (const figure of FIGURES) {
+    for (const figure of VERDICT_FIGURES) {
       const draft = drafts[figure];
-      const green = figure === "reserve" ? ({ ok: true, value: null } as const) : parseLimit(figure, draft.green);
-      const red = parseLimit(figure, draft.red);
+      const green = figure === "reserve" ? ({ ok: true, value: null } as const) : parseLimit(draft.green);
+      const red = parseLimit(draft.red);
       if (!green.ok) found[`${figure}.green`] = green.message;
       if (!red.ok) found[`${figure}.red`] = red.message;
       if (green.ok && red.ok && (green.value !== null || red.value !== null)) {
@@ -499,10 +525,13 @@ function BandsCard({
     }
     setMessages(found);
     if (Object.keys(found).length > 0) return;
+    // A figure the screens no longer show (LTV, Verschuldungsgrad, Schulden zu Jahreseinkommen)
+    // keeps the band the household stored for it, untouched.
+    const kept = stored.filter((band) => !VERDICT_FIGURES.includes(band.figure));
     setBusy(true);
     setError(null);
     try {
-      await saveDefaultScenario({ ...leversOf(current), bands }, current);
+      await saveDefaultScenario({ ...leversOf(current), bands: [...bands, ...kept] }, current);
       onSaved();
     } catch (caught) {
       setError(caught);
@@ -511,22 +540,17 @@ function BandsCard({
     }
   }
 
-  function originText(figure: MarkedFigure): string {
-    const draft = drafts[figure];
-    if (draft.green.trim() === "" && draft.red.trim() === "") return t.noLimitYet;
-    const proposal = proposals.find((p) => p.figure === figure);
-    const same = draft.green === initial[figure].green && draft.red === initial[figure].red;
-    if (!confirmed && proposal && same) {
-      const source = proposal.red?.origin === "source" || proposal.green?.origin === "source";
-      return source ? t.sourceSuggested : t.ownSuggested;
-    }
-    return t.ownLimit;
+  function hint(figure: MarkedFigure, side: keyof LimitDraft, unit: string): string | undefined {
+    if (drafts[figure][side].trim() !== "") return undefined;
+    const standard = standardLimit(figure, side, parts.find((part) => part.figure === figure), proposals);
+    return t.emptyStandard(standard != null ? `${limitInput(standard)} ${unit}` : null);
   }
 
-  function field(figure: MarkedFigure, side: keyof LimitDraft, label: string, unit: string, hint?: string) {
+  function field(figure: MarkedFigure, side: keyof LimitDraft, label: string, unit: string, extra?: string) {
     const message = messages[`${figure}.${side}`];
+    const shown = [hint(figure, side, unit), extra].filter((text): text is string => text !== undefined).join(" · ");
     return (
-      <Field id={`${ids}-${figure}-${side}`} label={t.fieldLabel(label, unit)} hint={hint} errors={message ? [message] : []}>
+      <Field id={`${ids}-${figure}-${side}`} label={t.fieldLabel(label, unit)} hint={shown || undefined} errors={message ? [message] : []}>
         <input
           type="text"
           inputMode="decimal"
@@ -538,55 +562,57 @@ function BandsCard({
     );
   }
 
-  const reserveRed = parseLimit("reserve", drafts.reserve.red);
-  const reserveRedEuro =
-    target && reserveRed.ok && reserveRed.value !== null ? p.euro(multiply(target, reserveRed.value)) : null;
+  const reserveRed = parseLimit(drafts.reserve.red);
+  const reserveRedEuro = target && reserveRed.ok && reserveRed.value !== null ? `= ${p.euro(multiply(target, reserveRed.value))}` : undefined;
 
   return (
-    <section className="card stack" id="ampel-grenzen" aria-labelledby={`${ids}-title`}>
-      <h2 id={`${ids}-title`}>{confirmed ? t.bandsChange : t.bandsSet}</h2>
+    <section className="card stack" id="ampel-grenzen" aria-labelledby={`${ids}-title`} ref={card}>
+      <h2 id={`${ids}-title`}>{t.bandsSet}</h2>
       <p>{t.bandsIntro}</p>
       <form className="stack" onSubmit={(event) => void submit(event)} aria-label={t.bandsForm}>
-        {FIGURES.map((figure) => (
-          <fieldset key={figure} className="health-limit">
-            <legend>{FIGURE_LABEL[figure]}</legend>
-            {figure === "reserve" ? (
-              <p className="muted">
-                {t.reserveGreenBefore(p.short(targetMonths), target ? p.euro(target) : null)}
-                <Link href="/planning?tab=haushalt">{t.planning}</Link>
-                {t.reserveGreenAfter}
-              </p>
-            ) : (
-              <p className="muted">{figureIntro(t, figure)}</p>
-            )}
-            <div className="health-limit-fields">
+        {VERDICT_FIGURES.map((figure) => {
+          const draft = drafts[figure];
+          const own = draft.green.trim() !== "" || draft.red.trim() !== "";
+          const part = parts.find((row) => row.figure === figure);
+          return (
+            <fieldset key={figure} className="health-limit">
+              <legend>{FIGURE_LABEL[figure]}</legend>
               {figure === "reserve" ? (
-                field("reserve", "red", t.redBelowLabel, t.unitOfTarget, reserveRedEuro ? `= ${reserveRedEuro}` : undefined)
-              ) : HIGHER_IS_BETTER[figure] ? (
-                <>
-                  {field(figure, "red", t.redBelowLabel, t.unitPercent)}
-                  {field(figure, "green", t.greenFromLabel, t.unitPercent, drafts[figure].green.trim() === "" ? t.emptyNoGreen : undefined)}
-                </>
-              ) : (
-                <>
-                  {field(figure, "green", t.greenUpToLabel, figure === "debt_to_income" ? t.unitTimes : t.unitPercent)}
-                  {field(figure, "red", t.redAboveLabel, figure === "debt_to_income" ? t.unitTimes : t.unitPercent)}
-                </>
-              )}
-            </div>
-            <p>
-              <span className="badge badge-muted">{originText(figure)}</span>
-            </p>
-            <div className="health-reference">
-              <p className="health-reference-title">{t.reference}</p>
-              {REFERENCE_POINTS[figure].map((text) => (
-                <p key={text} className="muted">
-                  {text}
+                <p className="muted">
+                  {t.reserveGreenBefore(p.short(targetMonths), target ? p.euro(target) : null)}
+                  <Link href="/planning?tab=haushalt">{t.planning}</Link>
+                  {t.reserveGreenAfter}
                 </p>
-              ))}
-            </div>
-          </fieldset>
-        ))}
+              ) : (
+                <p className="muted">{figureIntro(t, figure)}</p>
+              )}
+              <div className="health-limit-fields">
+                {figure === "reserve" ? (
+                  field("reserve", "red", t.redBelowLabel, t.unitOfTarget, reserveRedEuro)
+                ) : HIGHER_IS_BETTER[figure] ? (
+                  <>
+                    {field(figure, "red", t.redBelowLabel, t.unitPercent)}
+                    {field(figure, "green", t.greenFromLabel, t.unitPercent)}
+                  </>
+                ) : (
+                  <>
+                    {field(figure, "green", t.greenUpToLabel, t.unitPercent)}
+                    {field(figure, "red", t.redAboveLabel, t.unitPercent)}
+                  </>
+                )}
+              </div>
+              <p>
+                <span className="badge badge-muted">{own ? tv.yourLimit : tv.standardLimit}</span>
+              </p>
+              {part ? (
+                <div className="health-reference">
+                  <p className="health-reference-title">{t.reference}</p>
+                  <p className="muted">{part.reference}</p>
+                </div>
+              ) : null}
+            </fieldset>
+          );
+        })}
         {error != null ? <ErrorNotice error={error} /> : null}
         {scenarioRefused(error) ? (
           <p className="muted" role="note">
@@ -599,11 +625,9 @@ function BandsCard({
           <button type="submit" disabled={busy}>
             {c.apply}
           </button>
-          {onCancel ? (
-            <button type="button" className="secondary" disabled={busy} onClick={onCancel}>
-              {c.cancel}
-            </button>
-          ) : null}
+          <button type="button" className="secondary" disabled={busy} onClick={onCancel}>
+            {c.cancel}
+          </button>
           <span className="muted">{t.savedIn}</span>
         </div>
       </form>
@@ -647,16 +671,16 @@ function splitLabel(t: HealthText, key: string): string {
   }
 }
 
+/** „Kennzahlen“ (`#figures-title`): the verdict's word and its three figures as cards, each with
+ * its dot against the limits used, and what it is made of. */
 function FiguresCard({
   data,
-  confirmed,
   current,
   todos,
   onChanged,
   onEditBands,
 }: {
   data: HealthData;
-  confirmed: boolean;
   current: HouseholdScenario | null;
   todos: HealthTodo[];
   onChanged: () => void;
@@ -665,201 +689,38 @@ function FiguresCard({
   const { health } = data;
   const t = useT(healthFigures);
   const p = usePlanFormat();
-  const marks = health.marks ?? {};
   const months = health.window.months ?? [];
   const range = p.monthRange(months);
   const newest = months[months.length - 1];
-  const by = current && confirmed ? bandsConfirmedBy(data.scenarios, current) : null;
-  const rate = health.savings_rate;
-  const debt = health.debt;
-  const ltvRow = (debt?.properties ?? []).reduce<components["schemas"]["PropertyLtv"] | null>(
-    (best, row) => (row.ltv != null && (best?.ltv == null || Number(row.ltv) > Number(best.ltv)) ? row : best),
-    null,
-  );
-  const gap = (figure: components["schemas"]["DebtFigure"]) => debt?.gaps?.find((g) => g.figure === figure)?.reason ?? null;
-  const annualised = debt && debt.months < 12 ? t.annualised(debt.months) : "";
+  const own = (current?.levers?.bands ?? []).some((band) => VERDICT_FIGURES.includes(band.figure));
+  const by = current && own ? bandsConfirmedBy(data.scenarios, current) : null;
+  const verdict = health.verdict ?? null;
 
   return (
     <section className="card stack" aria-labelledby="figures-title">
       <div className="planning-card-head">
         <h2 id="figures-title">{t.figuresTitle}</h2>
         <span className="spacer" />
-        {confirmed ? (
-          <button type="button" className="link" onClick={onEditBands}>
-            {t.changeLimits}
-          </button>
-        ) : (
-          <a href="#ampel-grenzen" className="link">
-            {t.setLimits}
-          </a>
-        )}
+        <button type="button" className="link" onClick={onEditBands}>
+          {t.changeLimits}
+        </button>
       </div>
       <p className="muted">
         {range ? `${range} · ` : ""}
         {newest ? t.holdingsOn(p.longDate(monthEnd(newest))) : ""}
-        {confirmed
+        {own
           ? `${t.coloursOwn}${
               by ? t.appliedBy(by.created_by ? (data.names.get(by.created_by) ?? t.aMember) : null, p.longDate(by.created_at)) : ""
             }`
-          : t.noColours}
+          : t.coloursStandard}
       </p>
+      {verdict ? <VerdictWordLine verdict={verdict} /> : null}
       <HealthTodoList todos={todos} onChanged={onChanged} />
-      {rate ? (
-        <Figure title={FIGURE_LABEL.savings_rate} value={p.ratio(rate.rate)} light={marks.savings_rate}>
-          <ul className="household-rows">
-            <li>
-              <span>{t.withoutOneOffs}</span>
-              <span>{p.ratio(rate.rate_regular)}</span>
-            </li>
-            <li>
-              <span>{t.ofWhichPrincipal}</span>
-              <span>{p.euro(rate.principal)}</span>
-            </li>
-            <li>
-              <span>{t.withoutPrincipal}</span>
-              <span>{p.ratio(rate.rate_without_principal)}</span>
-            </li>
-          </ul>
-          <p className="muted">{t.savingsExplained(range)}</p>
-          <LimitLine figure="savings_rate" light={marks.savings_rate} />
-          <Texts light={marks.savings_rate} />
-          <details className="health-sources">
-            <summary>{t.viewMonths}</summary>
-            <ul className="household-rows">
-              {(rate.months ?? []).map((row) => (
-                <li key={row.month}>
-                  <Link href={`/household?monat=${row.month}`}>{p.month(row.month)}</Link>
-                  <span>{p.ratio(row.rate)}</span>
-                </li>
-              ))}
-            </ul>
-            <p className="muted">{t.savedOf(p.euro(rate.saved), p.euro(rate.income), p.euro(rate.one_off_spending))}</p>
-          </details>
-        </Figure>
-      ) : null}
-      {debt ? (
-        <>
-          <Figure
-            title={FIGURE_LABEL.debt_service_ratio}
-            value={debt.debt_service_ratio != null ? p.ratio(debt.debt_service_ratio) : "–"}
-            light={marks.debt_service_ratio}
-          >
-            <p className="muted">{t.debtServiceExplained(annualised, p.euro(debt.debt_service_year), p.euro(debt.income_year))}</p>
-            {gap("debt_service_ratio") ? <p className="muted">{gap("debt_service_ratio")}</p> : null}
-            <LimitLine figure="debt_service_ratio" light={marks.debt_service_ratio} />
-            <Texts light={marks.debt_service_ratio} />
-            <details className="health-sources">
-              <summary>{t.madeOf}</summary>
-              <ul className="household-rows">
-                <li>
-                  <span>{t.interestIn(range)}</span>
-                  <span>{p.euro(debt.interest)}</span>
-                </li>
-                <li>
-                  <span>{t.principalIn(range)}</span>
-                  <span>{p.euro(debt.principal)}</span>
-                </li>
-              </ul>
-              <p className="muted">
-                {t.fromRentalBefore}
-                <Link href="/planning">{t.planningProperty}</Link>
-                {t.fromRentalAfter}
-              </p>
-            </details>
-          </Figure>
-          <Figure title={FIGURE_LABEL.ltv} value={ltvRow?.ltv != null ? p.ratio(ltvRow.ltv) : "–"} light={marks.ltv}>
-            <p className="muted">
-              {ltvRow?.estimate_source === "advance" ? t.ltvAdvance : t.ltvEstimate}
-              {ltvRow ? t.ofAmount(p.euro(ltvRow.loan_balance), p.euro(ltvRow.estimate)) : ""}.
-            </p>
-            {gap("ltv") ? <p className="muted">{gap("ltv")}</p> : null}
-            <LimitLine figure="ltv" light={marks.ltv} />
-            <Texts light={marks.ltv} />
-            <details className="health-sources">
-              <summary>{t.madeOf}</summary>
-              <ul className="household-rows">
-                {(debt.properties ?? []).map((row) => (
-                  <li key={row.property_id}>
-                    <span>
-                      <Link href={`/properties/${row.property_id}`}>{t.property}</Link>{" "}
-                      <span className="muted">
-                        {t.estimateRow(estimateSource(t, row.estimate_source), p.euro(row.estimate), p.euro(row.loan_balance))}
-                      </span>
-                    </span>
-                    <span>{p.ratio(row.ltv)}</span>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          </Figure>
-          <Figure
-            title={FIGURE_LABEL.debt_ratio}
-            value={debt.debt_ratio != null ? p.ratio(debt.debt_ratio) : "–"}
-            light={marks.debt_ratio}
-          >
-            <p className="muted">{t.debtRatioExplained(p.euro(debt.liabilities), p.euro(debt.gross_assets))}</p>
-            {gap("debt_ratio") ? <p className="muted">{gap("debt_ratio")}</p> : null}
-            <LimitLine figure="debt_ratio" light={marks.debt_ratio} />
-            <Texts light={marks.debt_ratio} />
-            <details className="health-sources">
-              <summary>{t.madeOf}</summary>
-              <ul className="household-rows">
-                <li>
-                  <span>{t.allDebts}</span>
-                  <span>{p.euro(debt.liabilities)}</span>
-                </li>
-                <li>
-                  <span>{t.allOwned}</span>
-                  <span>{p.euro(debt.gross_assets)}</span>
-                </li>
-              </ul>
-              <p className="muted">
-                {t.fromMonthEndBefore}
-                <Link href="/assets">{t.investments}</Link>
-                {t.and}{" "}
-                <Link href="/accounts">{t.accounts}</Link>.
-              </p>
-            </details>
-          </Figure>
-          <Figure
-            title={FIGURE_LABEL.debt_to_income}
-            value={debt.debt_to_income != null ? oneDecimal(p, debt.debt_to_income) : "–"}
-            light={marks.debt_to_income}
-          >
-            <p className="muted">{t.debtToIncomeExplained(annualised)}</p>
-            {gap("debt_to_income") ? <p className="muted">{gap("debt_to_income")}</p> : null}
-            <LimitLine figure="debt_to_income" light={marks.debt_to_income} />
-            <Texts light={marks.debt_to_income} />
-            <details className="health-sources">
-              <summary>{t.madeOf}</summary>
-              <ul className="household-rows">
-                <li>
-                  <span>{t.allDebts}</span>
-                  <span>{p.euro(debt.liabilities)}</span>
-                </li>
-                <li>
-                  <span>{t.yearIncome(annualised ? debt.months : null)}</span>
-                  <span>{p.euro(debt.income_year)}</span>
-                </li>
-              </ul>
-              <p className="muted">
-                {t.monthsUnderBefore}
-                <Link href="/loans">{t.loans}</Link>
-                {t.and}{" "}
-                <Link href="/accounts">{t.accounts}</Link>.
-              </p>
-            </details>
-          </Figure>
-          {!confirmed ? null : (["debt_ratio", "debt_to_income"] as const).some((f) => !current?.levers?.bands?.some((b) => b.figure === f)) ? (
-            <p className="muted">
-              {t.noColourYet}{" "}
-              <button type="button" className="link" onClick={onEditBands}>
-                {t.enterLimit}
-              </button>
-            </p>
-          ) : null}
-        </>
-      ) : null}
+      {verdict ? (
+        <VerdictCards parts={verdict.parts ?? []}>{(part) => <FigureDetails part={part} data={data} onChanged={onChanged} />}</VerdictCards>
+      ) : (
+        <p className="muted">–</p>
+      )}
     </section>
   );
 }
@@ -891,42 +752,6 @@ function SplitCard({ health }: { health: Health }) {
       </ul>
     </section>
   );
-}
-
-function Figure({
-  title,
-  value,
-  light,
-  children,
-}: {
-  title: string;
-  value: string;
-  light: Light | undefined;
-  children: ReactNode;
-}) {
-  return (
-    <div className="health-figure" role="group" aria-label={title}>
-      <p className="health-figure-label">{title}</p>
-      <p className="health-figure-value">
-        {value} <MarkPill light={light} />
-      </p>
-      {children}
-    </div>
-  );
-}
-
-/** Where the loan-to-value's property value comes from (phase 9 D239 amended): the scenario's
- * estimate, the purchase price, or before the handover the price paid so far, „Anzahlung,
- * gebucht“ (phase 6 D265), a booked figure and no estimate. */
-function estimateSource(t: HealthText, source: EstimateSource): string {
-  switch (source) {
-    case "scenario":
-      return t.sourceScenario;
-    case "purchase_price":
-      return t.sourcePurchasePrice;
-    case "advance":
-      return t.sourceAdvance;
-  }
 }
 
 // --- Vermögen im Verlauf ------------------------------------------------------------------

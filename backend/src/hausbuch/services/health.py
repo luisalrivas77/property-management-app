@@ -73,6 +73,7 @@ from hausbuch.rules.performance.year_figures import (
     UMLAGEN_IN,
     UMLAGEN_OUT,
 )
+from hausbuch.rules.verdict.verdict import verdict
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.bank_sync import SyncStatus
 from hausbuch.schemas.enums import (
@@ -746,7 +747,13 @@ def health(conn: Connection, today: date, scenario_id: UUID | None = None) -> He
         last_ended=reads[ended[-1]].household if ended else None,
         differences=month_differences(conn, reads, newest),
     )
-    return out.model_copy(update={"marks": with_texts(out, lights(out, levers.bands))})
+    return out.model_copy(
+        update={
+            "marks": with_texts(out, lights(out, levers.bands)),
+            # Phase 10 §7.6: the one word (rules/verdict, outside rule_version's folders).
+            "verdict": verdict(out, levers.bands),
+        }
+    )
 
 
 def month_differences(
