@@ -3,8 +3,10 @@
 // scenario writes are mocked, since a workspace with three closed months needs a full ledger;
 // every other read is the real API of a fresh workspace. Synthetic figures only.
 //
-// - No key figure has a colour before the household's limits are confirmed with „Übernehmen“
-//   (D250).
+// - Since phase 10 §7.6 (Finanzielle Gesundheit) Haushalt's Kennzahlen are its three figures,
+//   each with its dot against the standard limits until the household stores its own with
+//   „Grenzen ändern“; a band stored for a figure no longer shown is kept. (Until then no figure
+//   had a colour before „Übernehmen“, phase 9 D250.)
 // - The plan's rate fields start empty with no placeholder, and the projection of the net worth
 //   appears only once a rate is saved (D247): the app proposes none.
 // - Below three closed months both screens show what holds the next month open, as to-dos whose
@@ -30,6 +32,7 @@ type HouseholdPlan = components["schemas"]["HouseholdPlan"];
 type HouseholdScenario = components["schemas"]["HouseholdScenario"];
 type HouseholdScenarioCreate = components["schemas"]["HouseholdScenarioCreate"];
 type SnapshotResult = components["schemas"]["SnapshotResult"];
+type Verdict = components["schemas"]["Verdict"];
 
 // The KI panel beside the plan (step 5) reads its explanation: served here as the app's template
 // with no text, so these tests, which are not about it, never read a real explanation of a
@@ -89,6 +92,74 @@ const TOO_FEW: HealthTodo = {
   action: "Zu prüfen öffnen",
   href: "/inbox",
 };
+
+const TEXTS = { question: "Frage", headline: "Kurzfassung", why: "Warum", reference: "Bezugspunkt" };
+
+/** Finanzielle Gesundheit as rules/verdict states it for these figures: the savings rate of 25 %
+ * good on the standard limits (ok once the household's own green of 30 % is stored), the reserve
+ * between half its target and the target, the loans' 15,4 % good. Below three closed months every
+ * figure is missing. */
+function verdictOf(enough: boolean, ownSavingsGreen: boolean): Verdict {
+  if (!enough) {
+    return {
+      word: "too_little_data",
+      weakest: "savings_rate",
+      line: "Noch zu wenig abgeschlossene Monate.",
+      parts: [
+        { figure: "savings_rate", state: "missing", no_loan: false, ...TEXTS },
+        { figure: "reserve", state: "missing", no_loan: false, ...TEXTS },
+        { figure: "debt_service_ratio", state: "missing", no_loan: false, ...TEXTS },
+      ],
+      todos: [TOO_FEW],
+    };
+  }
+  return {
+    word: "good",
+    weakest: "reserve",
+    line: "Am knappsten: die Reserve.",
+    parts: [
+      {
+        figure: "savings_rate",
+        state: ownSavingsGreen ? "ok" : "good",
+        value: "0.2500",
+        good: ownSavingsGreen ? "0.30" : "0.10",
+        strained: "0",
+        good_origin: ownSavingsGreen ? "household" : "default",
+        strained_origin: "default",
+        origin: ownSavingsGreen ? "household" : "default",
+        no_loan: false,
+        ...TEXTS,
+      },
+      {
+        figure: "reserve",
+        state: "ok",
+        amount: "12000.00",
+        months: "3.08",
+        target: "23400.00",
+        target_months: "6",
+        strained: "0.5",
+        strained_amount: "11700.00",
+        strained_origin: "default",
+        origin: "default",
+        no_loan: false,
+        ...TEXTS,
+      },
+      {
+        figure: "debt_service_ratio",
+        state: "good",
+        value: "0.1538",
+        good: "0.30",
+        strained: "0.40",
+        good_origin: "default",
+        strained_origin: "default",
+        origin: "default",
+        no_loan: false,
+        ...TEXTS,
+      },
+    ],
+    todos: [],
+  };
+}
 
 function health(window: string[], options: { coloured?: boolean } = {}): Health {
   const enough = window.length >= 3;
@@ -151,6 +222,7 @@ function health(window: string[], options: { coloured?: boolean } = {}): Health 
         ? []
         : [{ code: "bands_unconfirmed", text: "Eure Ampel-Grenzen fehlen.", action: "Grenzen festlegen", href: "/" }]
       : [TOO_FEW],
+    verdict: verdictOf(enough, options.coloured ?? false),
   };
 }
 
@@ -253,28 +325,66 @@ async function monthsOf(page: Page, views: (from: string, to: string) => HealthM
   );
 }
 
-test("no key figure has a colour before „Übernehmen“, and the confirmed limits colour it", async ({ page, signedIn }) => {
+test("the three figures carry their dots on the standard limits, and „Grenzen ändern“ stores the household's own", async ({
+  page,
+  signedIn,
+}) => {
   void signedIn;
   const window = [monthsBack(4), monthsBack(3), monthsBack(2)];
-  const posted = await scenarios(page);
+  // A band stored for the Beleihungsauslauf before it left the screen: kept by every save.
+  const saved = scenario("00000000-0000-4000-8000-000000000900", {
+    name: "Standard",
+    is_default: true,
+    withdrawn: false,
+    supersedes_id: null,
+    levers: {
+      reserve_target_months: "6",
+      buffer_percent: "10",
+      horizon_months: 60,
+      net_worth_years: 10,
+      value_change: { depot: null, crypto: null },
+      bands: [{ figure: "ltv", green: "0.60", red: "0.80" }],
+    },
+  });
+  const posted = await scenarios(page, [saved]);
   await serve(page, "/api/health", () => health(window, { coloured: posted.length > 0 }));
   await serve(page, "/api/health/net-worth-series", () => []);
 
   await page.goto("/household");
-  const figure = page.locator('div.health-figure[aria-label="Sparquote"]');
-  await expect(figure).toContainText("25,0 %");
-  await expect(page.locator(".health-mark")).toHaveCount(0);
-  await expect(page.getByText("ohne Farben, bis ihr eure Grenzen übernehmt")).toBeVisible();
-
+  const figures = page.getByRole("region", { name: "Kennzahlen" });
+  const rate = page.locator('div.health-figure[aria-label="Sparquote"]');
+  await expect(rate).toContainText("25,0 %");
+  await expect(rate).toHaveAttribute("data-state", "good");
+  await expect(rate).toContainText("Standard-Grenze");
+  await expect(page.locator('div.health-figure[aria-label="Liquiditätsreserve"]')).toHaveAttribute("data-state", "ok");
+  await expect(page.locator('div.health-figure[aria-label="Schuldendienstquote"]')).toHaveAttribute("data-state", "good");
+  for (const gone of ["Beleihungsauslauf", "Verschuldungsgrad", "Schulden zu Jahreseinkommen"]) {
+    await expect(page.locator(`div.health-figure[aria-label="${gone}"]`)).toHaveCount(0);
+  }
+  // Nothing waits for the limits: the sheet opens only on „Grenzen ändern“.
+  await expect(page.getByText("Eure Ampel-Grenzen fehlen.")).toHaveCount(0);
   const bands = page.getByRole("region", { name: "Ampel-Grenzen festlegen" });
+  await expect(bands).toHaveCount(0);
+  await figures.getByRole("button", { name: "Grenzen ändern" }).click();
+  await expect(bands).toBeVisible();
+  await expect(bands.getByRole("group")).toHaveCount(3);
+  const savings = bands.getByRole("group", { name: "Sparquote" });
+  const green = savings.getByLabel("Grün ab (%)");
+  await expect(green).toHaveValue("");
+  await expect(savings).toContainText(/leer: Standard-Grenze 10/);
+  await green.fill("30");
   await bands.getByRole("button", { name: "Übernehmen" }).click();
   await expect.poll(() => posted.length).toBe(1);
   expect(posted[0]?.is_default).toBe(true);
-  const bands0 = posted[0]?.levers?.bands ?? [];
-  expect(bands0.map((band) => [band.figure, band.green ?? null, Number(band.red)])).toEqual([["savings_rate", null, 0]]);
+  const stored = posted[0]?.levers?.bands ?? [];
+  expect(stored.map((band) => [band.figure, band.green == null ? null : Number(band.green), band.red == null ? null : Number(band.red)])).toEqual([
+    ["savings_rate", 0.3, null],
+    ["ltv", 0.6, 0.8],
+  ]);
 
-  await expect(figure.locator(".health-mark")).toHaveText("Grün");
-  await expect(page.getByText("Eure Ampel-Grenzen sind übernommen.")).toBeVisible();
+  await expect(bands).toHaveCount(0);
+  await expect(rate).toHaveAttribute("data-state", "ok");
+  await expect(rate).toContainText("eure Grenze");
 });
 
 test("„Übernehmen“ on Haushalt keeps the default's budget targets and class moves", async ({ page, signedIn }) => {
@@ -300,6 +410,7 @@ test("„Übernehmen“ on Haushalt keeps the default's budget targets and class
   await serve(page, "/api/health/net-worth-series", () => []);
 
   await page.goto("/household");
+  await page.getByRole("region", { name: "Kennzahlen" }).getByRole("button", { name: "Grenzen ändern" }).click();
   await page.getByRole("region", { name: "Ampel-Grenzen festlegen" }).getByRole("button", { name: "Übernehmen" }).click();
   await expect.poll(() => posted.length).toBe(1);
   expect(posted[0]?.supersedes_id).toBe(saved.id);
@@ -434,21 +545,13 @@ test("every figure opens what it is made of, and a month opens Haushalt with its
   for (const month of window) {
     await expect(rate.locator(`a[href="/household?monat=${month}"]`)).toBeVisible();
   }
-  // The reserve and the four debt figures: each opens its rows and links to where they come from.
-  const reserve = page.getByRole("region", { name: "Liquiditätsreserve" });
+  // The reserve and the loans' figure: each opens its rows and links to where they come from.
+  const reserve = page.locator('div.health-figure[aria-label="Liquiditätsreserve"]');
   await reserve.getByText("Woraus die Reserve besteht").click();
   await expect(reserve.locator(`a[href="/accounts/${SAVINGS}"]`)).toBeVisible();
-  const links: Record<string, string> = {
-    Schuldendienstquote: "/planning",
-    Beleihungsauslauf: `/properties/${FLAT}`,
-    Verschuldungsgrad: "/assets",
-    "Schulden zu Jahreseinkommen": "/loans",
-  };
-  for (const [title, href] of Object.entries(links)) {
-    const figure = page.locator(`div.health-figure[aria-label="${title}"]`);
-    await figure.getByText("Woraus die Zahl besteht").click();
-    await expect(figure.locator(`details a[href="${href}"]`)).toBeVisible();
-  }
+  const debtService = page.locator('div.health-figure[aria-label="Schuldendienstquote"]');
+  await debtService.getByText("Woraus die Zahl besteht").click();
+  await expect(debtService.locator('details a[href="/planning"]')).toBeVisible();
 
   // Planung › Haushalt: each row of „So entsteht die Zahl“ that has months opens them.
   await page.goto("/planning?section=anlegen");

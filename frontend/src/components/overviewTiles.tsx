@@ -44,7 +44,7 @@ type PropertiesPayback = components["schemas"]["PropertiesPayback"];
 type PropertyPayback = components["schemas"]["PropertyPayback"];
 type T = (typeof catalogue)["de"];
 
-export type TileId = "nettovermoegen" | "gesundheit" | "cashflow" | "immobilie" | "depot" | "krypto" | "bank" | "gesundheit" | "pruefen";
+export type TileId = "nettovermoegen" | "gesundheit" | "cashflow" | "immobilie" | "depot" | "krypto" | "bank" | "pruefen";
 
 export interface MonthCashflow {
   month: string;
