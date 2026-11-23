@@ -61,8 +61,8 @@ test("a Grundsteuer rise shows the card, the to-do, the pre-filled change and th
   await apiCall(page, "POST", inputs, schedule(property.id, document.id, 2024, "120")); // 40,00 € a month
   await apiCall(page, "POST", inputs, schedule(property.id, document.id, 2025, "186")); // 62,00 € a month
 
-  // Planung: the card, above the actuals, with the room's verdict.
-  await page.goto(`/planning?immobilie=${property.id}`);
+  // The property page (phase 10 §7.6): the card, with the room's verdict.
+  await page.goto(`/properties/${property.id}`);
   const card = page.getByRole("region", { name: "Nebenkostenpauschalen" });
   await expect(card).toBeVisible();
   await expect(card.getByRole("row").filter({ hasText: "Grundsteuer" }).first()).toContainText("+22,00 €");
@@ -99,7 +99,7 @@ test("a Grundsteuer rise shows the card, the to-do, the pre-filled change and th
   await save.getByRole("button", { name: "Speichern" }).click();
   await expect(save).toBeHidden(); // closed once the row is saved
 
-  await page.goto(`/planning?immobilie=${property.id}`);
+  await page.goto(`/properties/${property.id}`);
   await page.reload();
   const room = card.getByRole("row").filter({ hasText: "Zimmer 1" });
   await expect(room).toContainText(/Änderung ab \d{2}\.\d{2}\.\d{4} erfasst \(122,00 €\)/);

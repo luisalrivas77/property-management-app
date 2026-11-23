@@ -44,7 +44,7 @@ test("the projection renders, a lever recalculates and a scenario is saved", asy
   await navigateTo(page, "Planung");
   // Phase 10 D270: Planung opens on Budget; the property's Planung is the section Immobilie.
   await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Immobilie" }).click();
-  await expect(page).toHaveURL("/planning?section=immobilie");
+  await expect(page).toHaveURL("/assets?tab=immobilie"); // §7.6: the property's Planung lives on Anlagen
   await expect(page.getByRole("heading", { name: "Rechnet sich die Immobilie?" })).toBeVisible();
   await expect(page.getByRole("group", { name: `Verkaufspreis ${saleYear}` })).toContainText(euro(before.sale.value));
   await expect(page.getByRole("group", { name: "Wertsteigerung pro Jahr" })).toContainText("2,0 %");
@@ -88,7 +88,7 @@ test("the projection renders, a lever recalculates and a scenario is saved", asy
     purchase_date: "2024-05-01",
     purchase_price: "210000.00",
   });
-  await page.goto("/planning?section=immobilie");
+  await page.goto("/assets?tab=immobilie");
   await page.getByRole("combobox", { name: /^Immobilie/ }).selectOption({ label: "Wohnung Altbestand" });
   await expect(page.getByText(/Für das Kaufjahr dieser Immobilie gibt es noch kein Regelwerk\./)).toBeVisible();
   await expect(page.getByRole("group", { name: /^Verkaufspreis / })).toHaveCount(0);

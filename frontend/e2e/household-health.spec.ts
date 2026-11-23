@@ -508,9 +508,9 @@ test("the month-end card, the split and the net worth over time are on Anlagen, 
   await card.getByRole("button", { name: "Monatsabschluss festhalten" }).click();
   await expect.poll(() => snapshots).toEqual([{ as_of: "2026-10-31" }]);
 
-  // The split of the assets and „Vermögen im Verlauf“ follow the positions, and leave Übersicht.
+  // The total (with the split inside it) and „Vermögen im Verlauf“ follow the positions, and leave Übersicht.
   await page.goto("/assets");
-  await expect(page.getByRole("region", { name: "Aufteilung des Vermögens" })).toContainText("96,2 %");
+  await expect(page.getByRole("region", { name: "Vermögen in Anlagen" })).toBeVisible(); // §7.6: the split sits inside the total
   await expect(page.getByRole("region", { name: "Vermögen im Verlauf" })).toContainText("112.000");
   await page.goto("/");
   await expect(page.getByRole("region", { name: "Vermögen im Verlauf" })).toHaveCount(0);
