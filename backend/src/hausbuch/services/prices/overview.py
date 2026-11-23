@@ -502,7 +502,7 @@ def list_assets(conn: Connection, today: date) -> list[AssetRow]:
 
 def update_asset(ctx: CommandContext, asset_id: UUID, body: AssetPatch) -> AssetRow:
     """The name, and a coin's own CoinGecko id or Kraken pair („Kursquelle wählen“): the
-    next 07:00 run fetches by them. A fund or a cash asset takes no ids (422
+    next morning's price run fetches by them. A fund or a cash asset takes no ids (422
     asset.not_crypto); an ETF's issuer comes from the registry, else from the issuer's
     catalogue, found by the daily fetch (D174 amended 16 Nov 2026), never typed."""
     current = require_row(ctx.conn, asset_table, EntityType.ASSET, asset_id, for_update=True)

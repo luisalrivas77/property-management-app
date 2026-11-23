@@ -323,7 +323,7 @@ about which figure depends on which row (the weakness of the stored-months idea 
    when both are equal; requests run at READ COMMITTED, so a commit during the computation could otherwise be half
    seen and kept. A failed or non-200 answer is never kept.
 5. **Warm after the morning jobs.** The daily fetches (bank 06:30, wallets 06:45, prices, month-end 08:00, key
-   figures 08:30 UTC) move the version every morning, so the first load of the day would recompute. One step after
+   figures 08:30 UTC, since 23 Nov 2026 the morning jobs run as a chain: wallets 06:30 UTC with one retry of a failed address, then prices no earlier than 07:00, then the month-end once the prices and the morning's bank runs have ended, then the key figures and the warm step; the clock times stay as deadlines, prices by 07:30, the month-end at 08:00 and the key figures at 08:30 running once more as a second pass, `jobs/morning.py`) move the version every morning, so the first load of the day would recompute. One step after
    the last of them computes the kept routes for each member once, in the worker; nothing is warmed after a person's
    own change (the next load after it takes the §7.3 time, about 8 s).
 6. **A check that it is right.** `hausbuch perf-overview --digest` gains a mode that reads each kept route twice, once

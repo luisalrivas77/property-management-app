@@ -1975,7 +1975,7 @@ export interface paths {
         head?: never;
         /**
          * Asset Update
-         * @description „Kursquelle wählen“: the next daily fetch (07:00 UTC) prices the coin by these ids.
+         * @description „Kursquelle wählen“: the next price fetch (from 07:00 UTC) prices the coin by these ids.
          */
         patch: operations["asset_update_api_assets__asset_id__patch"];
         trace?: never;

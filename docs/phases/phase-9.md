@@ -302,7 +302,7 @@ The taxonomy's `one_off` flag (D236) and the validator's three data files are co
 | `PATCH /workspace/settings` | gains `advice_mode` | D251 |
 | `GET /household/cashflow` (phase 6) | **amended in its service only**: a privately paid purchase cost is emitted as `hh_investment_property`. The schema is unchanged; the Haushalt screen reads the month's rate and the flat's row from `GET /health/months` | D234, D235 |
 
-A new periodic task `health_daily` (08:30 UTC, after phase 6's `month_end` at 08:00 on the 1st) does two idempotent things: store a `health_snapshot` for every month that is closed, has a run and has no snapshot; and, when that stored a row and `ai_private_accounts` is on, enqueue one `explain_plan` for the default scenario (§18 Q8). `hausbuch health-check` (D259) is a CLI command, run from the operator's computer.
+A new periodic task `health_daily` (08:30 UTC, after phase 6's `month_end` at 08:00 on the 1st, since 23 Nov 2026 the morning jobs run as a chain: wallets 06:30 UTC with one retry of a failed address, then prices no earlier than 07:00, then the month-end once the prices and the morning's bank runs have ended, then the key figures and the warm step; the clock times stay as deadlines, prices by 07:30, the month-end at 08:00 and the key figures at 08:30 running once more as a second pass, `jobs/morning.py`) does two idempotent things: store a `health_snapshot` for every month that is closed, has a run and has no snapshot; and, when that stored a row and `ai_private_accounts` is on, enqueue one `explain_plan` for the default scenario (§18 Q8). `hausbuch health-check` (D259) is a CLI command, run from the operator's computer.
 
 ## 14. Screens (mockups 07, 10 and 12; labels German)
 
