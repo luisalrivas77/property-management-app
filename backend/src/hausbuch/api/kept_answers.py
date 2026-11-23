@@ -189,6 +189,8 @@ KEPT_ROUTES: tuple[str, ...] = (
     "/api/return-inputs/{return_input_id}/evidence",
     "/api/tax/anlage-n/years",
     "/api/tax/questionnaire",
+    # Phase 10 D290: composes kept reads only (checklists, drafts, estimate, questionnaire)
+    "/api/tax/{tax_year}/guide",
     "/api/properties/{property_id}/ownership",
     "/api/properties/{property_id}/acquisition-costs",
     "/api/properties/{property_id}/price-splits",

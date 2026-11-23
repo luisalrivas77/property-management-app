@@ -63,6 +63,7 @@ from .routes import (
     statements,
     tax,
     tax_exports,
+    tax_guide,
     tax_inputs,
     tenancies,
     tenants,
@@ -104,6 +105,7 @@ ROUTE_MODULES = (
     wallets,
     wallet_cards,
     tax,
+    tax_guide,  # phase 10 D290: /tax/{tax_year}/guide
     tax_inputs,
     tax_exports,
     performance,
