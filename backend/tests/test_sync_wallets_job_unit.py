@@ -13,14 +13,17 @@ from hausbuch.jobs import tasks
 from hausbuch.jobs.document_read import JobDeps
 
 
-def test_the_tasks_are_registered_daily_at_six_forty_five_under_one_lock():
+def test_the_tasks_are_registered_daily_at_half_past_six_under_one_lock():
+    """06:30 since the morning chain (23 Nov 2026; 06:45 before): the wallets start it."""
     app = tasks.register_tasks(procrastinate.App(connector=testing.InMemoryConnector()))
     daily = app.tasks[job.SYNC_WALLETS_TASK]
     now = app.tasks[job.SYNC_WALLET_TASK]
-    assert daily.lock == now.lock == job.SYNC_WALLETS_LOCK
+    retry = app.tasks[job.SYNC_WALLETS_RETRY_TASK]
+    assert daily.lock == now.lock == retry.lock == job.SYNC_WALLETS_LOCK
     periodic = [p for p in app.periodic_registry.periodic_tasks.values() if p.task is daily]
-    assert [p.cron for p in periodic] == [job.SYNC_WALLETS_CRON] == ["45 6 * * *"]
-    assert not [p for p in app.periodic_registry.periodic_tasks.values() if p.task is now]
+    assert [p.cron for p in periodic] == [job.SYNC_WALLETS_CRON] == ["30 6 * * *"]
+    for task in (now, retry):
+        assert not [p for p in app.periodic_registry.periodic_tasks.values() if p.task is task]
 
 
 def test_no_workspace_logs_one_line(caplog):
