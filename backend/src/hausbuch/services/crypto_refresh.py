@@ -10,8 +10,13 @@ is queued in the caller's transaction.
 Procrastinate's tables have no row-level security (phase 2 D20), so the job is found by its
 `workspace_id` argument, as tax_export does. A succeeded run's counts come from its own
 workspace.crypto_refreshed event (jobs.refresh_crypto), found by the job's id; an older run's
-event is never shown for a newer job. The job itself writes the prices and movements,
-which move the data version (§7.4); queueing it writes no workspace table.
+event is never shown for a newer job. A running job's `prices_done` compares the newest price
+read on demand (stamped by the job's clock, the API container's) with Procrastinate's
+`started` event of that job (the database clock); a price is read at least one HTTP round
+trip after the start, so a small skew does not decide it, and a container clock running
+behind leaves the flag false, the card then saying „läuft …“ as before. The job
+itself writes the prices and movements, which move the data version (§7.4); queueing it
+writes no workspace table.
 """
 
 from datetime import date, datetime
@@ -36,7 +41,9 @@ _NEWEST = text(
     "  AND e.type IN ('succeeded', 'failed', 'cancelled', 'aborted')) AS finished_at,"
     " (SELECT max(e.at) FROM procrastinate_events e WHERE e.job_id = j.id"
     "  AND e.type IN ('succeeded', 'failed', 'cancelled', 'aborted'))"
-    f"  > now() - interval '{REFUSE_FOR}' AS recent"
+    f"  > now() - interval '{REFUSE_FOR}' AS recent,"
+    " (SELECT min(e.at) FROM procrastinate_events e WHERE e.job_id = j.id"
+    "  AND e.type = 'started') AS started_at"
     " FROM procrastinate_jobs j"
     " WHERE j.task_name = :task AND j.args->>'workspace_id' = :workspace"
     " ORDER BY j.id DESC LIMIT 1"
@@ -72,7 +79,15 @@ def _state(conn: Connection, workspace_id: UUID, now: datetime) -> tuple[CryptoR
     if job is None:
         return CryptoRefreshState(status="idle", spot_read_at=spot), False
     if job.status in ("todo", "doing"):
-        return CryptoRefreshState(job_id=job.id, status="running", spot_read_at=spot), True
+        # The job prices the held coins before it reads the wallets (jobs.refresh_crypto): a
+        # price read on demand since the job started means that step is done.
+        done = spot is not None and job.started_at is not None and spot >= job.started_at
+        return (
+            CryptoRefreshState(
+                job_id=job.id, status="running", spot_read_at=spot, prices_done=done
+            ),
+            True,
+        )
     succeeded = job.status == "succeeded"
     counts = _counts(conn, job.id) if succeeded else None
     state = CryptoRefreshState(

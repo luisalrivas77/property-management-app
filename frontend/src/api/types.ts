@@ -6794,7 +6794,10 @@ export interface components {
          *     queued (POST only): whether this press queued a new run; false while one runs or one
          *     finished less than two minutes ago, whose state is then returned (one at a time per
          *     household). spot_read_at: the moment of the newest price read on demand today (Berlin),
-         *     null when none was read today.
+         *     null when none was read today. prices_done: while a run is `running`, whether it has
+         *     already stored its current prices (a price read on demand at or after the run started),
+         *     so the card says the wallets are still being checked; false otherwise, and false through
+         *     a run that stored no price at all.
          *
          *     The counts of the newest run when it succeeded (its workspace.crypto_refreshed event),
          *     else null: `stored`, the held coins that got a current price; `unpriced`, those with a
@@ -6819,6 +6822,11 @@ export interface components {
             finished_at?: string | null;
             /** Spot Read At */
             spot_read_at?: string | null;
+            /**
+             * Prices Done
+             * @default false
+             */
+            prices_done: boolean;
             /** Stored */
             stored?: number | null;
             /** Unpriced */

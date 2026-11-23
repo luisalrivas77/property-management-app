@@ -17663,6 +17663,11 @@
             ],
             "title": "Spot Read At"
           },
+          "prices_done": {
+            "type": "boolean",
+            "title": "Prices Done",
+            "default": false
+          },
           "stored": {
             "anyOf": [
               {
@@ -17714,7 +17719,7 @@
           "status"
         ],
         "title": "CryptoRefreshState",
-        "description": "GET /crypto/refresh, and POST's answer.\n\nstatus: `idle` (never pressed), `running` (queued or reading), `succeeded`, `failed`.\nqueued (POST only): whether this press queued a new run; false while one runs or one\nfinished less than two minutes ago, whose state is then returned (one at a time per\nhousehold). spot_read_at: the moment of the newest price read on demand today (Berlin),\nnull when none was read today.\n\nThe counts of the newest run when it succeeded (its workspace.crypto_refreshed event),\nelse null: `stored`, the held coins that got a current price; `unpriced`, those with a\nprice source (a Kraken pair or a CoinGecko id) that kept their daily close;\n`wallets_failed`, the wallet addresses that could not be read; `wallets_aborted`, the\nwallet read stopped as a whole, so no address count is known."
+        "description": "GET /crypto/refresh, and POST's answer.\n\nstatus: `idle` (never pressed), `running` (queued or reading), `succeeded`, `failed`.\nqueued (POST only): whether this press queued a new run; false while one runs or one\nfinished less than two minutes ago, whose state is then returned (one at a time per\nhousehold). spot_read_at: the moment of the newest price read on demand today (Berlin),\nnull when none was read today. prices_done: while a run is `running`, whether it has\nalready stored its current prices (a price read on demand at or after the run started),\nso the card says the wallets are still being checked; false otherwise, and false through\na run that stored no price at all.\n\nThe counts of the newest run when it succeeded (its workspace.crypto_refreshed event),\nelse null: `stored`, the held coins that got a current price; `unpriced`, those with a\nprice source (a Kraken pair or a CoinGecko id) that kept their daily close;\n`wallets_failed`, the wallet addresses that could not be read; `wallets_aborted`, the\nwallet read stopped as a whole, so no address count is known."
       },
       "Currency": {
         "type": "string",
