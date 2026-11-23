@@ -32,7 +32,7 @@ test("Übersicht: tiles, an empty mark before its limit, a tile's summary opens 
   const panel = page.getByRole("dialog", { name: "Bank" }).or(page.getByRole("complementary", { name: "Bank" }));
   await expect(panel).toContainText("Girokonto A");
   await expect(panel).toContainText("1.200,00 €");
-  await panel.getByRole("link", { name: "Zu Konten › Bankkonten" }).click();
+  await panel.getByRole("link", { name: "Zu Konten › Bank" }).click();
   await expect(page).toHaveURL(/\/accounts\?art=bank/);
 
   // The panel closes back to the page.
