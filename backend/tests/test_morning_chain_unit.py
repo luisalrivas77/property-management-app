@@ -1,6 +1,7 @@
 """The morning chain's registration and its pure helpers (jobs.morning). The order, the gate
 and the fallbacks against the job table are tests/db/test_jobs_morning.py."""
 
+import inspect
 import uuid
 from datetime import UTC, datetime
 
@@ -73,3 +74,20 @@ def test_the_retry_argument_round_trips_ids_only():
     encoded = wallets_job.encode_targets(pairs)
     assert all(isinstance(v, str) for v in encoded)
     assert wallets_job.decode_targets(encoded) == pairs
+
+
+def test_what_the_chain_defers_binds_to_each_tasks_signature():
+    """The kwargs jobs.morning writes into a job row (tests/db/test_jobs_morning.py reads
+    them back) are what the worker passes to the wrapper in jobs.tasks."""
+    app = _app()
+    rows = {
+        FETCH_PRICES_TASK: {"timestamp": 1},
+        MONTH_END_TASK: {"timestamp": 1},
+        HEALTH_DAILY_TASK: {"timestamp": 1},
+        WARM_TASK: {"timestamp": 1},
+        morning.GATE_TASK: {"timestamp": 1, "finished": "42"},
+        wallets_job.SYNC_WALLETS_RETRY_TASK: {"timestamp": 1, "addresses": ["a:b"]},
+    }
+    for name, kwargs in rows.items():
+        inspect.signature(app.tasks[name].func).bind(object(), **kwargs)
+    inspect.signature(app.tasks[morning.GATE_TASK].func).bind(object(), timestamp=1, finished="")

@@ -297,6 +297,26 @@ def test_a_gate_without_the_finishers_id_does_not_count_a_running_price_job(bank
     assert _run_gates(engine, deps, ws) == ["waiting_prices"]
 
 
+def test_a_running_schedule_counts_only_as_the_schedule(bank, work):
+    """No connection queues a run (FinTS off): the schedule's gate, picked up while the
+    schedule job is still `doing`, must not count it as the prices too."""
+    engine, ws = bank.engine, bank.ws
+    deps = _deps(engine, FIRST, bank.settings)
+    schedule_id = _add(engine, SCHEDULE_TASK, FIRST)  # `doing`
+    morning.queue_gate(engine, FIRST, finished=schedule_id)
+    assert _run_gates(engine, deps, ws) == ["waiting_prices"]
+    assert _jobs(engine, MONTH_END_TASK) == []
+
+
+def test_a_running_price_job_counts_only_as_the_prices(bank, work):
+    engine, ws = bank.engine, bank.ws
+    deps = _deps(engine, FIRST, bank.settings)
+    prices_id = _add(engine, FETCH_PRICES_TASK, FIRST)  # `doing`, no schedule today
+    morning.queue_gate(engine, FIRST, finished=prices_id)
+    assert _run_gates(engine, deps, ws) == ["waiting_schedule"]
+    assert _jobs(engine, MONTH_END_TASK) == []
+
+
 def test_yesterdays_runs_do_not_count_today(bank, work):
     engine, ws = bank.engine, bank.ws
     deps = _deps(engine, SECOND, bank.settings)
