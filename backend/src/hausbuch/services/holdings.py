@@ -48,6 +48,7 @@ from hausbuch.db.tables import wallet_address as address_table
 from hausbuch.db.tables import wallet_sync as sync_table
 from hausbuch.rules import holdings as figures
 from hausbuch.rules import lots as lot_rules
+from hausbuch.rules import valuation
 from hausbuch.rules.lots import berlin_day
 from hausbuch.schemas.bank import Account
 from hausbuch.schemas.chain import (
@@ -71,7 +72,7 @@ from hausbuch.schemas.household import (
 from hausbuch.schemas.prices import PriceSourceKind
 
 from .accounts import list_accounts
-from .prices.overview import _latest_prices
+from .prices.overview import _latest_prices, newest_spot
 from .wallet_groups import waiting
 
 CRYPTO_ACCOUNT_KINDS = (AccountKind.WALLET, AccountKind.EXCHANGE)
@@ -167,7 +168,9 @@ def _day_prices(
     p = price_table.c
     rows = conn.execute(
         select(p.asset_id, p.on, p.price_eur, p.source, p.fetched_at).where(
-            or_(*(and_(p.asset_id == asset_id, p.on.in_(on)) for asset_id, on in days.items()))
+            or_(*(and_(p.asset_id == asset_id, p.on.in_(on)) for asset_id, on in days.items())),
+            # Phase 10 D291: a price read on demand never prices a lot.
+            p.source != PriceSourceKind.SPOT.value,
         )
     ).all()
     return [
@@ -278,8 +281,14 @@ def _symbols(ledger: _Ledger) -> dict[UUID, str | None]:
 
 
 def _coins(
-    conn: Connection, ledger: _Ledger, on: date, book: lot_rules.LotBook
+    conn: Connection,
+    ledger: _Ledger,
+    on: date,
+    book: lot_rules.LotBook,
+    today: date | None = None,
 ) -> list[CryptoCoin]:
+    """`today` (phase 10 D291): only the Krypto tab's live read passes it, so a price read on
+    demand values today; the statement and the lots never read one."""
     units = _units(ledger, on)
     open_lots = _open_lots(book)
     keys = sorted(
@@ -290,7 +299,7 @@ def _coins(
         },
         key=lambda k: (str(k[0]), ledger.assets[k[1]].symbol or "", str(k[1])),
     )
-    prices = _latest_prices(conn, {asset_id for _, asset_id in keys}, on)
+    prices = _latest_prices(conn, {asset_id for _, asset_id in keys}, on, today)
     addresses = _addresses(conn, [a.id for a in ledger.accounts], on)
     unreconciled = _unreconciled_positions(_through(ledger, on), addresses)
     symbols = _symbols(ledger)
@@ -325,12 +334,13 @@ def _unreconciled_positions(
     return out
 
 
-def crypto_holdings(conn: Connection, on: date) -> CryptoHoldings:
+def crypto_holdings(conn: Connection, on: date, today: date | None = None) -> CryptoHoldings:
     """GET /holdings/crypto: every wallet and exchange account, its coins and their open lots
-    at the end of the Berlin day `on`, and the tab's four cards (D188 (5))."""
+    at the end of the Berlin day `on`, and the tab's four cards (D188 (5)). `today` (phase
+    10 D291): the route's Berlin day; on it a coin's price read on demand values the coin."""
     ledger = _ledger(conn)
     book = _book(ledger, on)
-    coins = _coins(conn, ledger, on, book)
+    coins = _coins(conn, ledger, on, book, today)
     held = {c.account_id for c in coins}
     accounts = [
         CryptoAccount(
@@ -353,7 +363,8 @@ def crypto_holdings(conn: Connection, on: date) -> CryptoHoldings:
         unfilled_account_ids=sorted(unfilled_accounts, key=str),
     )
     # The coins a wallet's proposed movements hold, which the figures above leave out.
-    return summary.model_copy(update={"waiting": waiting(conn, on)})
+    spot = newest_spot(conn, on) if valuation.reads_spot(on, today) else None
+    return summary.model_copy(update={"waiting": waiting(conn, on), "spot_read_at": spot})
 
 
 def account_lots(

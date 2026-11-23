@@ -42,7 +42,8 @@ def crypto_holdings(cmd: Cmd, on: date | None = None) -> CryptoHoldings:
     """Every wallet and exchange account with its coins and their open lots (FIFO per account
     and coin), each lot with its day, units, cost and „steuerfrei ab“, or the prices whose
     absence leaves it without a cost („Kurs fehlt“); the four cards of the tab."""
-    return english(cmd.read(holdings.crypto_holdings, on or _today()))
+    today = _today()  # D291: a price read on demand values today only
+    return english(cmd.read(holdings.crypto_holdings, on or today, today=today))
 
 
 @router.get("/wallets/holdings")

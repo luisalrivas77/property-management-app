@@ -16,7 +16,7 @@ from pydantic import Field
 
 from .chain import Lot, WalletWaiting
 from .common import Money, Schema, Sha256Hex
-from .household import OwnershipShare, PriceEur, Quantity
+from .household import OwnershipShare, PriceEur, PriceSourceKind, Quantity
 
 
 class LotPriceNeed(Schema):
@@ -48,6 +48,9 @@ class CryptoCoin(Schema):
     units: Quantity
     price_eur: PriceEur | None = None
     price_on: date | None = None
+    price_source: PriceSourceKind | None = None
+    # spot (phase 10 D291): the moment the price was read, „Stand <Uhrzeit>“.
+    price_read_at: datetime | None = None
     value_eur: Money | None = None  # None: no price
     cost_eur: Money | None = None  # None: a lot without a cost
     cost_priced_eur: Money  # Σ of the lots with a cost
@@ -108,6 +111,10 @@ class CryptoHoldings(Schema):
     unfilled_account_ids: list[UUID] = Field(default_factory=list)
     # Wallets whose read movements wait for a person: not counted above (16 Nov 2026).
     waiting: list[WalletWaiting] = Field(default_factory=list)
+    # Phase 10 D291: the newest price read on demand of the day `on`, when `on` is today and
+    # „Jetzt aktualisieren“ stored one; a coin it did not price then keeps yesterday's close
+    # („Kurs von gestern“).
+    spot_read_at: datetime | None = None
 
 
 class HoldingsExportCreate(Schema):

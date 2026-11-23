@@ -891,6 +891,9 @@ class PriceSourceKind(StrEnum):
     # Phase 6 D264 (migration 0049): an exchange's daily price in euros (Lang & Schwarz),
     # for a fund whose issuer publishes no usable daily NAV; never a NAV.
     EXCHANGE_CLOSE = "exchange_close"
+    # Phase 10 D291 (migration 0053): a coin's current price read on demand („Jetzt
+    # aktualisieren“), several a day; read for today only (rules.valuation.price_on).
+    SPOT = "spot"
 
 
 class PriceDraft(Schema):

@@ -54,7 +54,8 @@ def accounts_auto_rate(month: Month, cmd: Cmd) -> AutoRate:
 
 @router.get("/net-worth")
 def net_worth_get(cmd: Cmd, on: date | None = None) -> NetWorth:
-    return english(cmd.read(net_worth.net_worth, on or _today()))
+    today = _today()
+    return english(cmd.read(net_worth.net_worth, on or today, today=today))
 
 
 @router.get("/net-worth/overview")

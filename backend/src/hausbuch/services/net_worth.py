@@ -634,9 +634,11 @@ def _outdated(
 
 
 def _positions(
-    conn: Connection, on: date, reads: _Reads
+    conn: Connection, on: date, reads: _Reads, today: date | None = None
 ) -> tuple[list[_Item], list[NetWorthTodo], int, int]:
-    overview = assets_overview_with(conn, on, reads.movements)
+    # `today` (phase 10 D291): only today's live figure passes it, so a coin's price read on
+    # demand values today and never a month-end.
+    overview = assets_overview_with(conn, on, reads.movements, today=today)
     items: list[_Item] = []
     todos: list[NetWorthTodo] = []
     stale = unvalued = 0
@@ -1096,14 +1098,16 @@ def _figure(
     )
 
 
-def net_worth(conn: Connection, on: date) -> NetWorth:
-    """GET /net-worth?on=: NetWorth(on) on read."""
-    return _net_worth(conn, on, _Reads(conn))
+def net_worth(conn: Connection, on: date, today: date | None = None) -> NetWorth:
+    """GET /net-worth?on=: NetWorth(on) on read. `today` (phase 10 D291): the route's Berlin
+    day, so a coin's price read on demand values today; every other caller (the month-end,
+    the key figures, the plan) passes none and reads the daily closes only."""
+    return _net_worth(conn, on, _Reads(conn), today=today)
 
 
-def _net_worth(conn: Connection, on: date, reads: _Reads) -> NetWorth:
+def _net_worth(conn: Connection, on: date, reads: _Reads, today: date | None = None) -> NetWorth:
     balances, balance_todos = _balances(conn, on, reads)
-    positions, position_todos, stale, unvalued = _positions(conn, on, reads)
+    positions, position_todos, stale, unvalued = _positions(conn, on, reads, today)
     properties, property_todos, property_shares = _properties(conn, on)
     return _figure(
         conn,
@@ -1424,7 +1428,7 @@ def overview(conn: Connection, today: date) -> NetWorthOverview:
         current = _net_worth(conn, due, reads).total
         now = current if current != stored.total else None
     return NetWorthOverview(
-        today=_net_worth(conn, today, reads),
+        today=_net_worth(conn, today, reads, today=today),
         month_end=stored,
         month_end_due=None if _latest_run(conn, due) is not None else due,
         month_end_now=now,

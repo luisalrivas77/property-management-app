@@ -13,6 +13,13 @@ sums the valuations into the net worth.
   SOURCE_PRECEDENCE, and on one day and source the chain asset's own row before the symbol's,
   so a price typed on the chain asset wins its day and the symbol's newer rows value the days
   after it (step 0's reading, §15.1 item 18). Without `priced_as` rows nothing changes.
+  Phase 10 D291 (§7.7): a `spot` row (a current price read on demand) is read only when the
+  caller passes `today` and values that very day (`on == today`, the Berlin day); every other
+  reader, and every past day, never sees one, so the month-end, the key figures, the lots,
+  „steuerfrei ab“ and the 31 Dec statement keep the daily closes. On today `spot` ranks after
+  a typed price and a trade but before the daily feeds (TODAY_PRECEDENCE): CoinGecko's daily
+  row of today is its 00:00 UTC snapshot, older than any price read since; the newest spot row
+  wins (`fetched_at` is the moment it was read). Tomorrow the day's close replaces it.
 - `to_eur(amount, on, rates)`: a figure in another currency, divided by the ECB rate (units
   of the currency per euro) of the latest ECB day on or before the figure's day (a Saturday
   NAV by Friday's rate), 8 places half up.
@@ -62,7 +69,22 @@ SOURCE_PRECEDENCE: tuple[PriceSourceKind, ...] = (
     PriceSourceKind.EXCHANGE_CLOSE,
     PriceSourceKind.KRAKEN_DAILY,
     PriceSourceKind.COINGECKO_DAILY,
+    # Phase 10 D291: a current price read on demand, the lowest for a coin; read for today
+    # only, and there by TODAY_PRECEDENCE (see price_on).
+    PriceSourceKind.SPOT,
     PriceSourceKind.ECB_FX,
+)
+# Phase 10 D291: on today a price read in the last minutes beats the daily feeds' rows of the
+# same day (CoinGecko's is its 00:00 UTC snapshot), never a typed price or a trade's own.
+TODAY_PRECEDENCE: tuple[PriceSourceKind, ...] = (
+    PriceSourceKind.USER,
+    PriceSourceKind.TRADE,
+    PriceSourceKind.SPOT,
+    *(
+        s
+        for s in SOURCE_PRECEDENCE
+        if s not in (PriceSourceKind.USER, PriceSourceKind.TRADE, PriceSourceKind.SPOT)
+    ),
 )
 STALE_AFTER_DAYS = 7
 # D174 amended 19 Nov 2026 (g): a first read whose NAV, in euros, differs from the depot
@@ -77,24 +99,47 @@ CENT = Decimal("0.01")
 PRICE_PLACES = Decimal("0.00000001")  # price.price_eur numeric(20,8)
 
 
+def reads_spot(on: date, today: date | None) -> bool:
+    """Phase 10 D291: whether a valuation of `on` may read a `spot` row: only a caller that
+    passes `today` and values that very day."""
+    return today is not None and on == today
+
+
+def eligible(p: PricePoint, on: date, today: date | None = None) -> bool:
+    """Whether `p` may value the day `on` at all (on or before it; a `spot` row only for
+    today, D291)."""
+    if p.on > on:
+        return False
+    if p.source is PriceSourceKind.SPOT:
+        return reads_spot(on, today) and p.on == today
+    return True
+
+
 def price_on(
-    prices: Sequence[PricePoint], on: date, *, priced_as: Sequence[PricePoint] = ()
+    prices: Sequence[PricePoint],
+    on: date,
+    *,
+    priced_as: Sequence[PricePoint] = (),
+    today: date | None = None,
 ) -> PricePoint | None:
     """The row an asset is valued at on `on`, or None when no row is on or before it.
     `priced_as`: a chain asset's symbol-level rows (D180 (3)); the row returned keeps its own
-    asset_id, so the caller can tell which asset priced it."""
-    eligible = [(p, False) for p in prices if p.on <= on]
-    eligible += [(p, True) for p in priced_as if p.on <= on]
-    if not eligible:
+    asset_id, so the caller can tell which asset priced it. `today` (phase 10 D291): only a
+    live read passes it; a `spot` row is read when `on == today` and the row is of today,
+    never otherwise (None: never)."""
+    rows_in = [(p, False) for p in prices if eligible(p, on, today)]
+    rows_in += [(p, True) for p in priced_as if eligible(p, on, today)]
+    if not rows_in:
         return None
-    day = max(p.on for p, _ in eligible)
-    rows = [(p, twin) for p, twin in eligible if p.on == day]
+    day = max(p.on for p, _ in rows_in)
+    rows = [(p, twin) for p, twin in rows_in if p.on == day]
+    order = TODAY_PRECEDENCE if reads_spot(on, today) else SOURCE_PRECEDENCE
     # Best source first; the asset's own row before its symbol's; within a source the latest
-    # fetched_at (a correction appended later).
+    # fetched_at (a correction appended later; for spot, the newest price read).
     best, _ = min(
         rows,
         key=lambda pt: (
-            SOURCE_PRECEDENCE.index(pt[0].source),
+            order.index(pt[0].source),
             pt[1],
             -pt[0].fetched_at.timestamp(),
         ),

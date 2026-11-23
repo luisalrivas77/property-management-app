@@ -49,7 +49,7 @@ from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Connection, and_, func, insert, select, update
+from sqlalchemy import Connection, and_, func, insert, or_, select, update
 
 from hausbuch import i18n
 from hausbuch.db.tables import account as account_table
@@ -117,11 +117,16 @@ _HAND_SOURCES = (S.USER, S.TRADE, S.STATEMENT)
 # --- reads ----------------------------------------------------------------------------------
 
 
-def _latest_prices(conn: Connection, asset_ids: set[UUID], on: date) -> dict[UUID, PricePoint]:
+def _latest_prices(
+    conn: Connection, asset_ids: set[UUID], on: date, today: date | None = None
+) -> dict[UUID, PricePoint]:
     """Per asset the row price_on picks on `on`: only the rows of each asset's latest day on
     or before `on` are read (date first, D167 (2)). A chain asset with a `priced_as` asset
     (phase 7 D180 (3)) is valued from its own rows and that asset's together; the row chosen
-    keeps the asset_id it was stored under."""
+    keeps the asset_id it was stored under. `today` (phase 10 D291): a live read passes the
+    Berlin day; a `spot` row is read only when `on` is that day, and is left out of the
+    latest-day search otherwise, so a day with only spot rows never hides the close before
+    it."""
     if not asset_ids:
         return {}
     a = asset_table.c
@@ -134,16 +139,21 @@ def _latest_prices(conn: Connection, asset_ids: set[UUID], on: date) -> dict[UUI
     )
     read = set(asset_ids) | set(twin_of.values())
     p = price_table.c
+    readable = (
+        or_(p.source != S.SPOT.value, p.on == on)
+        if valuation.reads_spot(on, today)
+        else p.source != S.SPOT.value
+    )
     day = (
         select(p.asset_id, func.max(p.on).label("on"))
-        .where(p.asset_id.in_(read), p.on <= on)
+        .where(p.asset_id.in_(read), p.on <= on, readable)
         .group_by(p.asset_id)
         .subquery()
     )
     rows = conn.execute(
-        select(p.asset_id, p.on, p.price_eur, p.source, p.fetched_at).join(
-            day, and_(p.asset_id == day.c.asset_id, p.on == day.c.on)
-        )
+        select(p.asset_id, p.on, p.price_eur, p.source, p.fetched_at)
+        .join(day, and_(p.asset_id == day.c.asset_id, p.on == day.c.on))
+        .where(readable)
     ).all()
     points: dict[UUID, list[PricePoint]] = defaultdict(list)
     for r in rows:
@@ -161,6 +171,7 @@ def _latest_prices(conn: Connection, asset_ids: set[UUID], on: date) -> dict[UUI
             points.get(asset_id, []),
             on,
             priced_as=points.get(twin_of[asset_id], []) if asset_id in twin_of else (),
+            today=today,
         )
         for asset_id in asset_ids
     }
@@ -175,11 +186,27 @@ def _fund(kind: AssetKind, isin: str | None, stored: NavSource | None) -> FundSo
     return nav_source(fund_source(isin), isin, stored)
 
 
+def newest_spot(conn: Connection, on: date) -> datetime | None:
+    """Phase 10 D291: the moment of the newest price read on demand („Jetzt aktualisieren“)
+    stored for the day `on`, or None."""
+    p = price_table.c
+    return conn.execute(
+        select(func.max(p.fetched_at)).where(p.source == S.SPOT.value, p.on == on)
+    ).scalar_one()
+
+
 def _label(point: PricePoint, fund: FundSource | None) -> PriceLabel:
     issuer = None
     if point.source is S.ISSUER_NAV and fund is not None:
         issuer = issuer_name(fund.issuer)
-    return PriceLabel(source=point.source, on=point.on, price_eur=point.price_eur, issuer=issuer)
+    return PriceLabel(
+        source=point.source,
+        on=point.on,
+        price_eur=point.price_eur,
+        issuer=issuer,
+        # D291: „Stand <Uhrzeit>“ beside a value priced by a price read on demand.
+        read_at=point.fetched_at if point.source is S.SPOT else None,
+    )
 
 
 def _is_euro(row: Any) -> bool:
@@ -227,11 +254,15 @@ def _depot_bounds(
     }
 
 
-def assets_overview(conn: Connection, on: date) -> AssetsOverview:
-    return assets_overview_with(conn, on, MovementReads(conn))
+def assets_overview(conn: Connection, on: date, today: date | None = None) -> AssetsOverview:
+    """`today` (D291): the live read's Berlin day, so a coin's price read on demand values
+    today; None (every other caller) reads the daily closes only."""
+    return assets_overview_with(conn, on, MovementReads(conn), today=today)
 
 
-def assets_overview_with(conn: Connection, on: date, movements: MovementReads) -> AssetsOverview:
+def assets_overview_with(
+    conn: Connection, on: date, movements: MovementReads, today: date | None = None
+) -> AssetsOverview:
     """`assets_overview` reading each depot's movements through `movements`."""
     a, m, acc = asset_table.c, movement_table.c, account_table.c
     accounts = conn.execute(
@@ -291,7 +322,7 @@ def assets_overview_with(conn: Connection, on: date, movements: MovementReads) -
             select(a.id, a.kind, a.symbol, a.isin, a.name, a.currency).where(a.id.in_(asset_ids))
         )
     }
-    prices = _latest_prices(conn, asset_ids, on)
+    prices = _latest_prices(conn, asset_ids, on, today)
     stored = stored_nav_sources(conn, asset_ids)
     by_account: dict[UUID, list[Any]] = defaultdict(list)
     for u in held:
