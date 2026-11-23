@@ -9,7 +9,7 @@ from decimal import Decimal
 from hausbuch.rules.performance import payback as rules
 from hausbuch.rules.performance.sale import SaleFacts, sale
 from hausbuch.rules.tax import registry
-from hausbuch.schemas.performance import Assumption, YearFigures, YearFlag, YearKind
+from hausbuch.schemas.performance import Assumption, TaxEffect, YearFigures, YearFlag, YearKind
 from hausbuch.schemas.property import PropertyPaidIn
 
 D = Decimal
@@ -218,3 +218,70 @@ def test_a_loan_without_a_value_names_its_loan():
     got = rules.left_out(_paid("1000.00"), "loan_not_valued", loan_id=loan)
     assert (got.reason, got.loan_id, got.cash_back) == ("loan_not_valued", loan, None)
     assert rules.total([got]).paid_in == ZERO  # left out of the totals
+
+
+def _taxed(
+    year: int, net_cash: str, effect: str, source: str, carried: bool = False
+) -> YearFigures:
+    """An actual year with a tax effect: cash before tax = net_cash + effect."""
+    return _year(year, net_cash, YearKind.ACTUAL).model_copy(
+        update={
+            "tax_effect": TaxEffect(effect=D(effect), source=source, carried_forward=carried),
+            "flags": [] if source == "bescheid" else [YearFlag.TAX_ESTIMATED],
+        }
+    )
+
+
+def test_the_cash_back_splits_into_arrived_and_the_expected_refund():
+    """Phase 10 §7.6 (d). 2024: −1,500 before tax, its own Bescheid saves 2,000 → net 500,
+    all arrived. 2025: −1,000 before tax, the estimate saves 1,800 → net 800; −1,000 arrived,
+    1,800 expected. 2026: 200 before tax, a Bescheid of 2025 carried forward costs 100 →
+    net 100; 200 arrived, −100 expected (a back-payment). 2023: income missing, net −50 all
+    arrived. arrived = 500 − 1,000 + 200 − 50 = −350.00; expected = 1,800 − 100 = 1,700.00;
+    together 1,350.00 = cash_back. percent and break-even stay on cash_back."""
+    actual = [
+        _year(2023, "-50.00", YearKind.ACTUAL, [YearFlag.INCOME_MISSING]),
+        _taxed(2024, "500.00", "-2000.00", "bescheid"),
+        _taxed(2025, "800.00", "-1800.00", "estimate"),
+        _taxed(2026, "100.00", "100.00", "bescheid", carried=True),
+    ]
+    got = rules.payback(
+        _paid("10000.00"), actual, [], 2030, _sold("300000.00", "250000.00"), D("0.0357")
+    )
+    assert (got.cash_back, got.arrived, got.expected_tax_refund) == (
+        D("1350.00"),
+        D("-350.00"),
+        D("1700.00"),
+    )
+    assert got.arrived + got.expected_tax_refund == got.cash_back
+    assert got.percent == D("13.5")  # 1,350 ÷ 10,000: both parts together
+    assert [(y.cash_before_tax, y.tax_refund, y.tax_assessed) for y in got.years] == [
+        (D("-50.00"), None, False),
+        (D("-1500.00"), D("2000.00"), True),
+        (D("-1000.00"), D("1800.00"), False),
+        (D("200.00"), D("-100.00"), False),
+    ]
+    assert all(y.cash_before_tax + (y.tax_refund or ZERO) == y.net_cash for y in got.years)
+    other = rules.payback(
+        _paid("2000.00", "Wohnung B"),
+        [_taxed(2026, "300.00", "-400.00", "override")],
+        [],
+        2030,
+        _sold("200000.00", "190000.00"),
+        D("0.0357"),
+    )
+    total = rules.total([got, other])
+    assert (total.cash_back, total.arrived, total.expected_tax_refund) == (
+        D("1650.00"),
+        D("-450.00"),  # −350 + (300 − 400)
+        D("2100.00"),  # 1,700 + 400
+    )
+    assert total.arrived + total.expected_tax_refund == total.cash_back
+
+
+def test_without_a_tax_effect_everything_has_arrived():
+    got = rules.payback(
+        _paid("10000.00"), ACTUAL, PROJECTED, 2029, _sold("300000.00", "250000.00"), D("0.0357")
+    )
+    assert (got.arrived, got.expected_tax_refund) == (D("-500.00"), ZERO)
+    assert rules.total([]).arrived == rules.total([]).expected_tax_refund == ZERO

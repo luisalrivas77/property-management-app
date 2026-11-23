@@ -7,7 +7,7 @@ They change only through a correcting event, never through update_property.
 
 from collections.abc import Sequence
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
@@ -452,20 +452,39 @@ def list_acquisition_costs(conn: Connection, property_id: UUID) -> list[Acquisit
 
 
 def record_price_split(
-    ctx: CommandContext, data: PriceSplitCreate, *, select_if_none: bool = False
+    ctx: CommandContext,
+    data: PriceSplitCreate,
+    *,
+    select_if_none: bool = False,
+    reuse_equal: bool = False,
 ) -> PriceSplit:
     """Append a building/land split candidate. Candidates are never edited (append-only).
     With `select_if_none` (pre-fill apply and the manual add, phase 2 D133) the split also
     becomes the AfA basis when the property has none selected yet, with the same event as the
-    manual choice; a split the user already chose is never replaced."""
-    if select_if_none:
+    manual choice; a split the user already chose is never replaced.
+
+    With `reuse_equal` (pre-fill apply only, phase 10 §7.6 (e)) a split equal to one the
+    property already holds (`same_price_split`) is not recorded again: the existing one is
+    returned, and selected under `select_if_none` when none is selected yet; nothing is
+    written then except that selection's own event. The manual add keeps recording."""
+    if select_if_none or reuse_equal:
         # Lock before the insert: the insert's foreign key takes a share lock on the row, and
-        # two writers upgrading it afterwards would deadlock.
+        # two writers upgrading it afterwards would deadlock. The lock also serialises two
+        # applies of the same split, so the equality check below sees the other's row.
         current = _to_property(_lock(ctx.conn, data.property_id))
-        none_selected = current.selected_price_split_id is None
+        none_selected = select_if_none and current.selected_price_split_id is None
     else:
         require_row(ctx.conn, property_table, EntityType.PROPERTY, data.property_id)
         none_selected = False
+    if reuse_equal:
+        existing = next(
+            (s for s in list_price_splits(ctx.conn, data.property_id) if same_price_split(s, data)),
+            None,
+        )
+        if existing is not None:
+            if none_selected:
+                select_price_split(ctx, existing.property_id, existing.id)
+            return existing
     require_document(ctx.conn, data.evidence_document_id)
     values = data.model_dump()
     if values["inputs"] is None:
@@ -491,6 +510,39 @@ def record_price_split(
     if none_selected:
         select_price_split(ctx, split.property_id, split.id)
     return split
+
+
+def same_price_split(split: PriceSplitCreate, other: PriceSplitCreate) -> bool:
+    """Phase 10 §7.6 (e): two splits that say the same thing: the same source, the same
+    building share as a number, and the same BMF inputs, numbers compared as numbers (a
+    contract split stores no inputs; the price and land it was derived from are not stored,
+    the share being computed from them). The evidence document and the note are not compared:
+    a re-read of the same contract, or another copy of it, says nothing new."""
+    return (
+        split.source == other.source
+        and Decimal(split.building_share) == Decimal(other.building_share)
+        and _normal_inputs(split.inputs) == _normal_inputs(other.inputs)
+    )
+
+
+def _normal_inputs(value: Any) -> Any:
+    """BMF inputs with every number (or numeric text) as a Decimal, so "250000" and
+    "250000.00" compare equal; booleans and other text stay as they are."""
+    if isinstance(value, dict):
+        return {key: _normal_inputs(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normal_inputs(item) for item in value]
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, int | float | Decimal):
+        return Decimal(str(value))
+    if isinstance(value, str):
+        try:
+            number = Decimal(value)
+        except InvalidOperation:
+            return value
+        return number if number.is_finite() else value
+    return value
 
 
 def list_price_splits(conn: Connection, property_id: UUID) -> list[PriceSplit]:
@@ -524,6 +576,16 @@ def select_price_split(ctx: CommandContext, property_id: UUID, split_id: UUID) -
         property_id=property_id,
     )
     return updated
+
+
+def select_price_split_if_none(ctx: CommandContext, property_id: UUID, split_id: UUID) -> None:
+    """D133 for a split already recorded (phase 10 §7.6 (e)): choose it as the AfA basis only
+    when the property has none chosen yet; refused when the split is not the property's."""
+    current = _to_property(_lock(ctx.conn, property_id))
+    if current.selected_price_split_id is None:
+        select_price_split(ctx, property_id, split_id)
+    elif not any(s.id == split_id for s in list_price_splits(ctx.conn, property_id)):
+        raise NotFoundError("price_split", split_id)
 
 
 # --- Rows ----------------------------------------------------------------------

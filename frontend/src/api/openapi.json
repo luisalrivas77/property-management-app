@@ -28481,6 +28481,35 @@
             "type": "string",
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Cumulative"
+          },
+          "cash_before_tax": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cash Before Tax"
+          },
+          "tax_refund": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Refund"
+          },
+          "tax_assessed": {
+            "type": "boolean",
+            "title": "Tax Assessed",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -29922,6 +29951,16 @@
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Cash Back"
           },
+          "arrived": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Arrived"
+          },
+          "expected_tax_refund": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Expected Tax Refund"
+          },
           "percent": {
             "anyOf": [
               {
@@ -29990,6 +30029,8 @@
           "properties",
           "paid_in",
           "cash_back",
+          "arrived",
+          "expected_tax_refund",
           "profit_today"
         ],
         "title": "PropertiesPayback",
@@ -30422,6 +30463,30 @@
               }
             ],
             "title": "Cash Back"
+          },
+          "arrived": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arrived"
+          },
+          "expected_tax_refund": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Tax Refund"
           },
           "percent": {
             "anyOf": [

@@ -941,6 +941,13 @@ class PaybackYear(Schema):
     kind: YearKind
     net_cash: Money
     cumulative: Money
+    # Phase 10 §7.6 (d): net_cash = cash_before_tax + tax_refund. tax_refund = −the tax effect
+    # (positive a refund, negative a back-payment), None without one (income missing);
+    # tax_assessed: the effect is the year's own Einkommensteuerbescheid's, else it is still
+    # expected (rules.performance.payback).
+    cash_before_tax: Money | None = None
+    tax_refund: Money | None = None
+    tax_assessed: bool = False
 
 
 class SaleToday(Schema):
@@ -984,6 +991,11 @@ class PropertyPayback(Schema):
     label: str
     paid_in: Money | None
     cash_back: Money | None = None
+    # Phase 10 §7.6 (d): cash_back = arrived + expected_tax_refund (rules.performance.payback):
+    # the money that has arrived, and the tax refund still expected from the years without
+    # their Einkommensteuerbescheid (negative: an expected back-payment).
+    arrived: Money | None = None
+    expected_tax_refund: Money | None = None
     percent: SignedPercent | None = None
     years: list[PaybackYear] = Field(default_factory=list)
     break_even_year: TaxYear | None = None
@@ -1008,6 +1020,10 @@ class PropertiesPayback(Schema):
     properties: list[PropertyPayback]
     paid_in: Money
     cash_back: Money
+    # Phase 10 §7.6 (d): the sums of the counted properties' parts; cash_back = arrived +
+    # expected_tax_refund.
+    arrived: Money
+    expected_tax_refund: Money
     percent: SignedPercent | None = None
     profit_today: Money
     break_even_year: TaxYear | None = None

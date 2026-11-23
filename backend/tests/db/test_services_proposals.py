@@ -601,6 +601,145 @@ def test_a_contract_split_never_replaces_the_split_already_chosen(
     assert _types(events).count(EventType.PROPERTY_PRICE_SPLIT_SELECTED) == 1
 
 
+def _as_screen(proposal) -> ProposalApplyBody:
+    """What the review screen sends: every record with its proposed values, an unchanged one
+    as skipped (frontend proposals.tsx initialState)."""
+    accepted = {r.key: r for r in _accept_all(proposal).records}
+    return ProposalApplyBody(
+        records=[
+            ProposalApplyRecord(key=r.key, skip=True) if r.mode == "unchanged" else accepted[r.key]
+            for r in proposal.records
+        ]
+    )
+
+
+def test_a_reread_contract_records_no_second_equal_split(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """Phase 10 §7.6 (e): the same contract read again proposes its split as already recorded
+    (unchanged, on the existing split) and writes no second row and no recorded event."""
+    ws, _ = fresh_workspaces
+    _, first, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, PURCHASE, PURCHASE_VALUES, b"%PDF once"
+    )
+    run(ws, proposals.apply_proposal, first.id, _accept_all(first), iban_key=TEST_IBAN_KEY)
+    [prop] = read(ws, list_properties)
+    [split] = read(ws, list_price_splits, prop.id)
+
+    _, again, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, PURCHASE, PURCHASE_VALUES, b"%PDF twice"
+    )
+    [record] = [r for r in again.records if r.key == "price_split"]
+    assert (record.mode, record.target_id) == ("unchanged", split.id)
+    assert record.fields["building_share"].value == "0.800000"
+    result = run(ws, proposals.apply_proposal, again.id, _as_screen(again), iban_key=TEST_IBAN_KEY)
+
+    assert {a.key: a.entity_id for a in result.applied}["price_split"] == split.id
+    assert read(ws, list_price_splits, prop.id) == [split]
+    assert read(ws, get_property, prop.id).selected_price_split_id == split.id
+    events = read(ws, list_events, entity_id=prop.id)
+    assert _types(events).count(EventType.PROPERTY_PRICE_SPLIT_RECORDED) == 1
+    assert _types(events).count(EventType.PROPERTY_PRICE_SPLIT_SELECTED) == 1
+
+
+def test_an_equal_split_already_recorded_is_selected_when_none_is(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """D133 for the split already recorded: none chosen yet, so applying the unchanged record
+    chooses it; still no second row."""
+    ws, _ = fresh_workspaces
+    prop = run(ws, create_property, FLAT)
+    earlier = _upload(run, ws, blob_store, b"%PDF earlier copy")
+    split = run(
+        ws,
+        record_price_split,
+        PriceSplitCreate(
+            property_id=prop.id,
+            source=PriceSplitSource.PURCHASE_CONTRACT,
+            building_share=Decimal("0.80"),
+            evidence_document_id=earlier.id,
+        ),
+    )
+    assert read(ws, get_property, prop.id).selected_price_split_id is None
+    _, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, PURCHASE, PURCHASE_VALUES, b"%PDF select"
+    )
+    [record] = [r for r in ready.records if r.key == "price_split"]
+    assert (record.mode, record.target_id) == ("unchanged", split.id)
+    run(ws, proposals.apply_proposal, ready.id, _as_screen(ready), iban_key=TEST_IBAN_KEY)
+
+    assert read(ws, list_price_splits, prop.id) == [split]
+    assert read(ws, get_property, prop.id).selected_price_split_id == split.id
+
+
+def test_a_different_share_is_recorded_as_a_new_split(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    ws, _ = fresh_workspaces
+    prop = run(ws, create_property, FLAT)
+    earlier = _upload(run, ws, blob_store, b"%PDF other share")
+    other = run(
+        ws,
+        record_price_split,
+        PriceSplitCreate(
+            property_id=prop.id,
+            source=PriceSplitSource.PURCHASE_CONTRACT,
+            building_share=Decimal("0.75"),
+            evidence_document_id=earlier.id,
+        ),
+    )
+    _, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, PURCHASE, PURCHASE_VALUES, b"%PDF new share"
+    )
+    [record] = [r for r in ready.records if r.key == "price_split"]
+    assert record.mode == "create"
+    run(ws, proposals.apply_proposal, ready.id, _as_screen(ready), iban_key=TEST_IBAN_KEY)
+
+    [first, added] = read(ws, list_price_splits, prop.id)
+    assert first == other and added.building_share == Decimal("0.8")
+
+
+def test_a_split_recorded_after_the_read_is_not_recorded_again_at_apply(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """A proposal built before the equal split existed still proposes `create`; its apply
+    reuses the split instead of a second row. The manual add keeps recording either way."""
+    ws, _ = fresh_workspaces
+    prop = run(ws, create_property, FLAT)
+    doc, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, PURCHASE, PURCHASE_VALUES, b"%PDF stale"
+    )
+    assert [r.mode for r in ready.records if r.key == "price_split"] == ["create"]
+    by_hand = run(
+        ws,
+        record_price_split,
+        PriceSplitCreate(
+            property_id=prop.id,
+            source=PriceSplitSource.PURCHASE_CONTRACT,
+            building_share=Decimal("0.8"),
+            evidence_document_id=doc.id,
+        ),
+        select_if_none=True,
+    )
+    result = run(ws, proposals.apply_proposal, ready.id, _as_screen(ready), iban_key=TEST_IBAN_KEY)
+
+    assert {a.key: a.entity_id for a in result.applied}["price_split"] == by_hand.id
+    assert read(ws, list_price_splits, prop.id) == [by_hand]
+    # The manual add (the property form's route) records a second equal split, as before.
+    run(
+        ws,
+        record_price_split,
+        PriceSplitCreate(
+            property_id=prop.id,
+            source=PriceSplitSource.PURCHASE_CONTRACT,
+            building_share=Decimal("0.800"),
+            evidence_document_id=doc.id,
+        ),
+        select_if_none=True,
+    )
+    assert len(read(ws, list_price_splits, prop.id)) == 2
+
+
 def test_a_cost_invoice_creates_the_cost_with_this_document_as_beleg(
     run, read, job, fresh_workspaces, blob_store, enqueued
 ):

@@ -134,6 +134,7 @@ from hausbuch.schemas.proposal import (
     ExistingLoan,
     ExistingOwner,
     ExistingPayRow,
+    ExistingPriceSplit,
     ExistingPrivateCost,
     ExistingProofBill,
     ExistingProperty,
@@ -943,6 +944,14 @@ def prefill_context(
             ExistingProperty.model_validate(
                 p.model_dump(include=set(ExistingProperty.model_fields))
                 | _contract_facts(conn, p.id)
+                | {
+                    "price_splits": [
+                        ExistingPriceSplit.model_validate(
+                            split.model_dump(include=set(ExistingPriceSplit.model_fields))
+                        )
+                        for split in properties.list_price_splits(conn, p.id)
+                    ]
+                }
             )
             for p in props
         ],
@@ -1339,6 +1348,12 @@ class _Apply:
 
     def apply(self, record: ProposalRecord) -> None:
         chosen = self.given.get(record.key)
+        if record.mode == "unchanged" and _prefix(record.key) == "price_split":
+            # Phase 10 §7.6 (e): the split is already recorded. The screen sends an unchanged
+            # record as skipped, yet D133 still holds: it becomes the AfA basis when none is
+            # chosen yet (a split the user chose is never replaced).
+            self._done(record, self._existing_split(record))
+            return
         if chosen is None or chosen.skip:
             self._done(record, None, skipped=True)
             return
@@ -1455,9 +1470,21 @@ class _Apply:
             "evidence_document_id": str(self.document_id),
         } | values
         # D133: a split read from the contract becomes the AfA basis when none is chosen yet.
+        # Phase 10 §7.6 (e): one equal to a split already recorded (a proposal built before
+        # it was, or applied twice) is not recorded again.
         return properties.record_price_split(
-            self.ctx, _validate(record.key, PriceSplitCreate, data), select_if_none=True
+            self.ctx,
+            _validate(record.key, PriceSplitCreate, data),
+            select_if_none=True,
+            reuse_equal=True,
         ).id
+
+    def _existing_split(self, record: ProposalRecord) -> UUID:
+        """An unchanged price_split record: its split, selected when the property has none
+        selected yet (D133). The split must still be the property's."""
+        target = _target(record)
+        properties.select_price_split_if_none(self.ctx, self.property_id(record.key), target)
+        return target
 
     def _cost(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
         if record.mode == "create":

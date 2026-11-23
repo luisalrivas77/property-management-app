@@ -68,6 +68,7 @@ type AllocationCategory = components["schemas"]["AllocationCategory"];
 type TransferLinkView = components["schemas"]["TransferLinkView"];
 type HealthMonthView = components["schemas"]["HealthMonthView"];
 type Health = components["schemas"]["Health"];
+type HealthTodo = components["schemas"]["HealthTodo"];
 type HouseholdMonthFigures = components["schemas"]["HouseholdMonth"];
 type SpendingComparison = components["schemas"]["SpendingComparison"];
 type SpendingComparisonRow = components["schemas"]["SpendingComparisonRow"];
@@ -111,6 +112,17 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 function chosenMonth(raw: string | null, current: string): string {
   if (raw && MONTH.test(raw) && monthsUpTo(current, MONTHS_OFFERED).includes(raw)) return raw;
   return lastFullMonth();
+}
+
+/** Each to-do once, by its code, link and text, in the order first given. */
+function uniqueTodos(todos: readonly HealthTodo[]): HealthTodo[] {
+  const seen = new Set<string>();
+  return todos.filter((todo) => {
+    const key = `${todo.code}\n${todo.href}\n${todo.text}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** The Geldanlage group's fallback („Sonstige Geldanlage“), listed last when the group opens. */
@@ -173,6 +185,10 @@ function Household() {
   const current = todayIso().slice(0, 7);
   const month = chosenMonth(search.get("monat"), current);
   const setMonth = (next: string) => router.replace(`${pathname}?monat=${next}`, { scroll: false });
+  // A month-end captured in „Noch keine Durchschnitte“ reads the reserve and the Kennzahlen below
+  // again (phase 10 §7.6 (f)).
+  const [healthRefresh, setHealthRefresh] = useState(0);
+  const healthChanged = useCallback(() => setHealthRefresh((n) => n + 1), []);
 
   return (
     <section>
@@ -196,18 +212,23 @@ function Household() {
           </select>
         </label>
       </div>
-      <HouseholdYear month={month} />
+      <HouseholdYear month={month} onHealthChanged={healthChanged} />
       <div className="stack household-health">
-        <HouseholdHealthSection />
+        <HouseholdHealthSection refresh={healthRefresh} />
       </div>
     </section>
   );
 }
 
-function HouseholdYear({ month }: { month: string }) {
+function HouseholdYear({ month, onHealthChanged }: { month: string; onHealthChanged: () => void }) {
   const load = useCallback(() => loadYear(month), [month]);
   const year = useLoad(load);
-  return <Loading state={year}>{(data) => <HouseholdMonth year={data} onChanged={year.reload} />}</Loading>;
+  const { reload } = year;
+  const changed = useCallback(() => {
+    reload();
+    onHealthChanged();
+  }, [reload, onHealthChanged]);
+  return <Loading state={year}>{(data) => <HouseholdMonth year={data} onChanged={changed} />}</Loading>;
 }
 
 function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void }) {
@@ -233,6 +254,13 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
   // What holds the month after the window open (its own closing to-dos), when it is loaded.
   const after = health.find((h) => (last === undefined || h.month > last) && !h.closed.closed);
   const tooFew = (overall.todos ?? []).filter((todo) => todo.code === "too_few_months");
+  // What holds the next month open: the months shown and GET /health's own (the same month's,
+  // unless the chosen month is before it or no month is closed yet), each once; the Kennzahlen
+  // below no longer repeat them (phase 10 §7.6 (f)).
+  const holding = uniqueTodos([
+    ...(after?.closed.todos ?? []),
+    ...(overall.todos ?? []).filter((todo) => todo.code !== "too_few_months" && todo.code !== "bands_unconfirmed"),
+  ]);
 
   let panel = null;
   if (view?.stored && closingDetail.id === month.month) {
@@ -299,7 +327,7 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
           <section className="card stack" aria-labelledby="window-title">
             <h2 id="window-title">{t.noMeansTitle}</h2>
             <p className="muted">{t.noMeansText(closed.length)}</p>
-            <HealthTodoList todos={[...tooFew, ...(after?.closed.todos ?? [])]} onChanged={onChanged} />
+            <HealthTodoList todos={[...tooFew, ...holding]} onChanged={onChanged} />
           </section>
         )}
         <SurplusBars months={months} windowMonths={means} savedLink={savedDetail.linkProps(month.month)} />
