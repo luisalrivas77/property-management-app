@@ -51,6 +51,7 @@ from hausbuch.db.tables import household_scenario as household_scenario_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
+from hausbuch.rules.budget.differences import differences, spending_group
 from hausbuch.rules.errors import (
     HEALTH_MONTH_END_INCOMPLETE,
     HEALTH_MONTH_END_MISSING,
@@ -59,7 +60,7 @@ from hausbuch.rules.errors import (
 )
 from hausbuch.rules.health.bands import bands_todos, lights, proposals, with_texts
 from hausbuch.rules.health.figures import debt, reserve, savings_rate, series, split
-from hausbuch.rules.health.month import household_month, rental_month
+from hausbuch.rules.health.month import cashflow_rows, household_month, rental_month
 from hausbuch.rules.health.window import closed, window, window_todos
 from hausbuch.rules.net_worth import FIRST_MONTH_END
 from hausbuch.rules.performance.year_figures import (
@@ -89,6 +90,7 @@ from hausbuch.schemas.health import (
     Debt,
     EstimateSource,
     ExactShare,
+    GroupPayment,
     Health,
     HealthCheckInput,
     HealthCheckResult,
@@ -101,6 +103,7 @@ from hausbuch.schemas.health import (
     HealthTodo,
     HealthTodoCode,
     HouseholdMonth,
+    MonthDifferences,
     MonthFacts,
     MonthLine,
     NetWorthPoint,
@@ -113,6 +116,7 @@ from hausbuch.schemas.health import (
     Window,
     month_of,
 )
+from hausbuch.schemas.household import HouseholdGroup
 from hausbuch.schemas.net_worth import (
     NetWorth,
     NetWorthLine,
@@ -740,8 +744,78 @@ def health(conn: Connection, today: date, scenario_id: UUID | None = None) -> He
         proposals=[] if levers.bands else list(proposals()[1].values()),
         todos=todos,
         last_ended=reads[ended[-1]].household if ended else None,
+        differences=month_differences(conn, reads, newest),
     )
     return out.model_copy(update={"marks": with_texts(out, lights(out, levers.bands))})
+
+
+def month_differences(
+    conn: Connection, reads: dict[str, MonthRead], newest: str | None
+) -> MonthDifferences | None:
+    """Phase 10 §7.6 Haushalt (3), build decision (a): the newest closed month's spending
+    groups against their mean over the closed months before it (the unbroken run ending at
+    the month before, cut to 12, as `window` takes it), by rules.budget.differences; each
+    named group with the payments behind its month. None with no closed month or fewer than
+    three before it; the month in progress is never compared (`reads` are ended months)."""
+    if newest is None:
+        return None
+    baseline = _window(reads, up_to=_previous(newest)).months
+    spending = {m: reads[m].private.cashflow.spending_by_group for m in [*baseline, newest]}
+    named = differences(spending[newest], [spending[m] for m in baseline])
+    if named is None:
+        return None
+    payments = _group_payments(conn, reads[newest].private.lines, {d.group for d in named})
+    return MonthDifferences(
+        month=newest,
+        baseline=baseline,
+        groups=[d.model_copy(update={"payments": payments.get(d.group, [])}) for d in named],
+    )
+
+
+def _group_payments(
+    conn: Connection, lines: Sequence[MonthLine], groups: set[HouseholdGroup]
+) -> dict[HouseholdGroup, list[GroupPayment]]:
+    """The month's private allocations counted under `groups` (D234's recode applied, as
+    month_cashflow counts them), oldest booking first, each signed as the group's spending."""
+    wanted: dict[UUID, tuple[HouseholdGroup, AllocationCategory, Decimal]] = {}
+    for line, (category, amount) in zip(lines, cashflow_rows(lines), strict=True):
+        group = spending_group(category)
+        if group is not None and group in groups:
+            wanted[line.allocation_id] = (group, category, -amount)
+    if not wanted:
+        return {}
+    a, t, acc = allocation_table.c, transaction_table.c, account_table.c
+    out: dict[HouseholdGroup, list[GroupPayment]] = {}
+    for r in conn.execute(
+        select(
+            a.id,
+            t.id.label("transaction_id"),
+            acc.id.label("account_id"),
+            acc.label,
+            t.booking_date,
+            t.counterparty_name,
+            t.purpose,
+        )
+        .join(transaction_table, t.id == a.transaction_id)
+        .join(account_table, acc.id == t.account_id)
+        .where(a.id.in_(list(wanted)))
+        .order_by(t.booking_date, t.id, a.id)
+    ):
+        group, category, amount = wanted[r.id]
+        out.setdefault(group, []).append(
+            GroupPayment(
+                allocation_id=r.id,
+                transaction_id=r.transaction_id,
+                account_id=r.account_id,
+                account_label=r.label,
+                booked_on=r.booking_date,
+                payee=r.counterparty_name,
+                purpose=r.purpose or "",
+                category=category,
+                amount=amount,
+            )
+        )
+    return out
 
 
 def _check_range(first: str, last: str) -> list[str]:

@@ -22,7 +22,7 @@ from .allocation import AllocationCategory
 from .common import _STRING_ONLY, Money, Schema, _string_schema
 from .common import Fraction as ExactShare
 from .enums import AccountKind
-from .household import NetWorthClass
+from .household import HouseholdGroup, NetWorthClass
 from .household import SavingsRate as Ratio  # signed, four places (numeric(9,4))
 
 # A calendar month, "2027-05".
@@ -639,6 +639,58 @@ class Light(Schema):
     texts: list[str] = Field(default_factory=list)
 
 
+# --- Phase 10 §7.6 Haushalt (3): „Was diesen Monat anders ist“ --------------------------------
+
+
+class DifferenceWords(StrEnum):
+    MORE = "more"  # „<Betrag> mehr als üblich“
+    LESS = "less"  # „<Betrag> weniger als üblich“
+
+
+class GroupPayment(Schema):
+    """One confirmed allocation of a private line behind a group's month, `amount` signed as
+    the group's spending (money out positive, a refund negative), so a group's payments add
+    up to its month."""
+
+    allocation_id: UUID
+    transaction_id: UUID
+    account_id: UUID
+    account_label: str
+    booked_on: date
+    payee: str | None = None
+    purpose: str = ""
+    category: AllocationCategory
+    amount: Money
+
+
+class GroupDifference(Schema):
+    """A spending group whose month differs from its own mean over the closed months before
+    it (phase 10 §7.6 Haushalt (3), build decision (a)); `difference` = `amount` − `mean`."""
+
+    group: HouseholdGroup
+    amount: Money
+    mean: Money
+    difference: Money
+    words: DifferenceWords
+    payments: list[GroupPayment] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _difference(self) -> Self:
+        if self.difference != self.amount - self.mean:
+            raise ValueError("difference = amount − mean")
+        return self
+
+
+class MonthDifferences(Schema):
+    """The newest closed month (`month`) against the mean of the closed months before it
+    (`baseline`, three to twelve, oldest first): at most three groups, the largest difference
+    first; empty when none crosses both thresholds. Figures only: no colour, no advice."""
+
+    month: YearMonth
+    baseline: list[YearMonth]
+    groups: list[GroupDifference] = Field(default_factory=list)
+
+
 # --- GET /health, the stored month, the closing check -----------------------------------
 
 
@@ -662,6 +714,9 @@ class Health(Schema):
     # it for that month, so Übersicht's cash flow tile reads its savings rate from this answer
     # instead of a second read of the months; None before the first ended month.
     last_ended: HouseholdMonth | None = None
+    # Phase 10 §7.6 Haushalt (3): the newest closed month's spending groups that differ most
+    # from their mean over the closed months before it; None below three such months.
+    differences: MonthDifferences | None = None
 
 
 class HealthSnapshotFigures(Schema):

@@ -33,6 +33,12 @@
 // Übersicht: „Liquiditätsreserve“, „Ampel-Grenzen festlegen“ (`/household#ampel-grenzen`) and
 // „Kennzahlen“ (`/household#figures-title`), from components/healthFigures.tsx unchanged. They are
 // the window's figures, not the chosen month's, so they sit outside the month's own read.
+//
+// Phase 10 §7.6 Haushalt (3), build decision (a): „Was diesen Monat anders ist“ at the top, from
+// GET /health's `differences`: the newest closed month (named, whichever month is chosen) against
+// the mean of the closed months before it, at most three groups, each opening its payments in
+// the panel (`#d-anders-<group>`). The server picks the groups and every figure; nothing is
+// coloured and nothing is shown when it names none or has fewer than three months to compare.
 import "./household.css";
 
 import Link from "next/link";
@@ -71,6 +77,8 @@ type Health = components["schemas"]["Health"];
 type HouseholdMonthFigures = components["schemas"]["HouseholdMonth"];
 type SpendingComparison = components["schemas"]["SpendingComparison"];
 type SpendingComparisonRow = components["schemas"]["SpendingComparisonRow"];
+type MonthDifferences = components["schemas"]["MonthDifferences"];
+type GroupDifference = components["schemas"]["GroupDifference"];
 
 const MONTHS_SHOWN = 12;
 const MONTHS_OFFERED = 24;
@@ -216,6 +224,7 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
   const groupDetail = useDetail("gruppe");
   const closingDetail = useDetail("abschluss");
   const savedDetail = useDetail("angelegt");
+  const differenceDetail = useDetail("anders");
   const { months, transfers, health, overall, windowMonths, comparison } = year;
   const month = months[months.length - 1];
   if (!month) return null;
@@ -234,8 +243,17 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
   const after = health.find((h) => (last === undefined || h.month > last) && !h.closed.closed);
   const tooFew = (overall.todos ?? []).filter((todo) => todo.code === "too_few_months");
 
+  const differences = overall.differences ?? null;
+  const shownDifference = (differences?.groups ?? []).find((d) => d.group === differenceDetail.id);
+
   let panel = null;
-  if (view?.stored && closingDetail.id === month.month) {
+  if (differences && shownDifference) {
+    panel = (
+      <DetailPanel title={groupLabel(shownDifference.group)} backLabel={t.title} onClose={differenceDetail.close}>
+        <DifferencePanel differences={differences} difference={shownDifference} />
+      </DetailPanel>
+    );
+  } else if (view?.stored && closingDetail.id === month.month) {
     panel = (
       <DetailPanel title={t.changedTitle} backLabel={t.title} onClose={closingDetail.close}>
         <ChangedSinceClosing month={month.month} now={view.household} stored={view.stored} />
@@ -265,6 +283,7 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
             </a>
           </p>
         ) : null}
+        {differences ? <Differences differences={differences} link={differenceDetail.linkProps} /> : null}
         <div className="planning-kpis">
           <div className="planning-kpi" role="group" aria-label={t.income}>
             <p className="planning-kpi-label">{t.income}</p>
@@ -376,6 +395,84 @@ function SurplusBars({
 }
 
 type LinkProps = ReturnType<ReturnType<typeof useDetail>["linkProps"]>;
+
+/** „Restaurant: 180,00 € mehr als üblich“ / „… weniger als üblich“, from the server's words. */
+function DifferenceText({ difference: d }: { difference: GroupDifference }) {
+  const t = useT(household);
+  const f = useFormat();
+  const amount = f.money(d.difference.replace(/^-/, ""));
+  return <>{d.words === "more" ? t.differenceMore(groupLabel(d.group), amount) : t.differenceLess(groupLabel(d.group), amount)}</>;
+}
+
+/** „Was diesen Monat anders ist“ (§7.6 Haushalt (3)): up to three lines, each opening its group's
+ * payments in the panel; no card when the server names no group. */
+function Differences({ differences, link }: { differences: MonthDifferences; link: (group: string) => LinkProps }) {
+  const t = useT(household);
+  const f = useFormat();
+  const groups = differences.groups ?? [];
+  if (groups.length === 0) return null;
+  return (
+    <section className="card stack" aria-labelledby="differences-title">
+      <div>
+        <h2 id="differences-title">{t.differencesTitle}</h2>
+        <p className="muted">{t.differencesBasis(f.month(differences.month), differences.baseline.length)}</p>
+      </div>
+      <ul className="household-rows">
+        {groups.map((d) => (
+          <li key={d.group}>
+            <a {...link(d.group)}>
+              <DifferenceText difference={d} /> <span aria-hidden="true">›</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** A named group's month and mean, and the payments behind the month (the server's list, its
+ * amounts signed as spending, so they add up to the month). */
+function DifferencePanel({ differences, difference }: { differences: MonthDifferences; difference: GroupDifference }) {
+  const t = useT(household);
+  const f = useFormat();
+  const payments = difference.payments ?? [];
+  return (
+    <div className="stack">
+      <p>
+        <DifferenceText difference={difference} />
+      </p>
+      <ul className="household-rows">
+        <li>
+          <span>{f.month(differences.month)}</span>
+          <span>{f.money(difference.amount)}</span>
+        </li>
+        <li>
+          <span>{t.differenceMean(differences.baseline.length)}</span>
+          <span>{f.money(difference.mean)}</span>
+        </li>
+      </ul>
+      <h3>{t.differencePayments}</h3>
+      {payments.length === 0 ? (
+        <p className="muted">{t.differenceNoPayments}</p>
+      ) : (
+        <ul className="household-rows">
+          {payments.map((p) => (
+            <li key={p.allocation_id}>
+              <span>
+                {f.date(p.booked_on)} · {p.payee || p.purpose || categoryLabel(p.category)}
+                <br />
+                <span className="muted">
+                  {categoryLabel(p.category)} · {p.account_label}
+                </span>
+              </span>
+              <span>{f.money(p.amount)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 /** The codes of a group to list under it, the group's fallback last; planned codes included. */
 function orderedCodes(group: string, both: HouseholdCashflow[], planned: SpendingComparisonRow[], month: HouseholdCashflow): string[] {
