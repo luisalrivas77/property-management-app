@@ -113,3 +113,14 @@ def test_another_workspace_sees_none_of_it(client_a, client_b):
     got = _guide(client_b, 2026)
     assert [s["kind"] for s in got["steps"]] == ["angaben", "questions", "documents", "review"]
     assert got["forms"] == [] and got["documents"] == []
+
+
+def test_a_forms_open_count_is_every_point_listed_for_it(client_a):
+    """A point the Immobilie step clears (the flat has no Wohnfläche) still counts on its
+    Anlage V card, so the card never says „fertig“ under a point that names the form."""
+    prop = new_property(client_a)
+    got = _guide(client_a, 2026)
+    mine = [p for p in got["points"] if p["form"] == "anlage_v" and p["property_id"] == prop["id"]]
+    assert any(p["step"] == "property" for p in mine)
+    form = next(f for f in got["forms"] if f["form"] == "anlage_v")
+    assert form["open"] == len(mine)

@@ -96,6 +96,8 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
             questions_total=total,
         )
     )
+    # A form's open count is every point the guide lists for it, whichever step clears it, so
+    # „fertig“ on Prüfen und abgeben never stands under a point that names the form.
     forms: list[GuideFormResult] = []
     for prop_id, v in v_drafts.items():
         forms.append(
@@ -105,9 +107,7 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
                 result=None if isinstance(v, str) else v.totals.result,
                 reason=v if isinstance(v, str) else None,
                 open=sum(
-                    1
-                    for p in result.points
-                    if p.step == "review" and p.form == "anlage_v" and p.property_id == prop_id
+                    1 for p in result.points if p.form == "anlage_v" and p.property_id == prop_id
                 ),
             )
         )
@@ -120,9 +120,7 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
                 status=None if isinstance(n, str) else n.status,
                 reason=n if isinstance(n, str) else None,
                 open=sum(
-                    1
-                    for p in result.points
-                    if p.step == "review" and p.form == "anlage_n" and p.owner_id == owner_id
+                    1 for p in result.points if p.form == "anlage_n" and p.owner_id == owner_id
                 ),
             )
         )

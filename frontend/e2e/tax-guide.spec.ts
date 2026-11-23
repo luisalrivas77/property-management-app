@@ -87,7 +87,33 @@ test("Steuern leads through five steps, one point at a time", async ({ page, sig
   await first.getByRole("button", { name: "Später" }).click();
   await expect(first).toBeHidden();
   await expect(points).toHaveCount(total);
-  // („Nächster Punkt“ with two points of one kind: tax-todos.spec.ts, Einnahme ohne Zuordnung.)
+  // („Nächster Punkt“: tax-todos.spec.ts, Einnahme ohne Zuordnung.)
+
+  // A year with every point cleared (the guide mocked as ready, since a whole finished year is
+  // out of reach here): three numbered steps, „fertig“ on the form card, the result final and
+  // no greyed button.
+  await page.route(`**/api/tax/${YEAR}/guide`, async (route) => {
+    const response = await route.fetch();
+    const guide = await response.json();
+    guide.ready = true;
+    guide.points = [];
+    guide.next_step = guide.steps.length - 1;
+    guide.steps = guide.steps.map((s: Record<string, unknown>) => ({ ...s, state: "done", open: 0, waiting_from: null }));
+    guide.steps_done = guide.steps.length;
+    guide.documents = (guide.documents ?? []).map((d: Record<string, unknown>) => ({ ...d, status: "present" }));
+    guide.forms = (guide.forms ?? []).map((f: Record<string, unknown>) => ({ ...f, open: 0 }));
+    await route.fulfill({ response, json: guide });
+  });
+  await page.reload();
+  const ready = page.getByRole("region", { name: "Bereit zum Abgeben" });
+  await expect(ready.locator("ol.tax-guide-ready > li")).toHaveCount(3);
+  await expect(ready).toContainText("ELSTER-Ausfüllhilfe öffnen");
+  await expect(ready).toContainText("In „Mein ELSTER“ übertragen");
+  await expect(ready).toContainText("Archiv speichern");
+  await expect(page.getByRole("region", { name: "Formulare" })).toContainText("fertig");
+  await expect(page.getByText("Alle Punkte sind geklärt.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "ELSTER-Ausfüllhilfe erstellen" })).toHaveCount(0);
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 
   // The Anlage V view is a view: its field sheet and archive stay, and „Alle Schritte“ leads back.
   await page.goto(`/tax/${YEAR}?tab=anlage-v&immobilie=${property.id}`);

@@ -319,7 +319,21 @@ function StartPage({ guide, properties }: { guide: TaxGuide; properties: readonl
 
 // --- one step's frame -------------------------------------------------------------------------
 
-function StepHead({ guide, kind, propertyId, title }: { guide: TaxGuide; kind: GuideStep["kind"]; propertyId?: string | null; title: string }) {
+/** `listed`: the points the page lists, when it lists more than the step's own (Prüfen und
+ * abgeben lists every point, so its badge counts the same list). */
+function StepHead({
+  guide,
+  kind,
+  propertyId,
+  title,
+  listed,
+}: {
+  guide: TaxGuide;
+  kind: GuideStep["kind"];
+  propertyId?: string | null;
+  title: string;
+  listed?: number;
+}) {
   const t = useT(messages);
   const index = guide.steps.findIndex((s) => s.kind === kind && (kind !== "property" || s.property_id === propertyId));
   const step = index >= 0 ? guide.steps[index] : null;
@@ -333,7 +347,7 @@ function StepHead({ guide, kind, propertyId, title }: { guide: TaxGuide; kind: G
         <h1>{title}</h1>
       </div>
       <span className="spacer" />
-      {step ? <StepState step={step} /> : null}
+      {listed ? <span className="badge badge-warn">{t.stateOpen(listed)}</span> : step ? <StepState step={step} /> : null}
     </div>
   );
 }
@@ -948,7 +962,7 @@ function ReviewStep({
   return (
     <DetailLayout panel={panel}>
       <div className="stack tax-guide">
-        <StepHead guide={guide} kind="review" title={t.stepReview} />
+        <StepHead guide={guide} kind="review" title={t.stepReview} listed={points.length} />
         <p className="muted">{t.reviewIntro}</p>
         <section aria-labelledby="tax-guide-points" className="stack">
           <h2 id="tax-guide-points">{points.length > 0 ? t.pointsTitle(points.length) : t.pointsNone}</h2>

@@ -240,9 +240,18 @@ test("an Einnahme ohne Zuordnung is booked as rent from its to-do", async ({ pag
   const rows = points.getByRole("link").filter({ hasText: "Einnahme ohne Zuordnung" });
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("Anlage V · Wohnung Verkäufermiete");
+  // The Prüfen head counts the list it shows, whichever step clears a point.
+  const listed = await page.getByRole("region", { name: /noch zu klären$/ }).getByRole("link").count();
+  await expect(page.locator(".page-head .badge")).toHaveText(`${listed} offen`);
   await rows.first().click();
   const panel = pointPanel(page, "Einnahme ohne Zuordnung");
-  await expect(panel).toContainText(/Punkt \d von \d/);
+  await expect(panel).toContainText(/Punkt \d+ von \d+/);
+  const [, at, of] = /Punkt (\d+) von (\d+)/.exec((await panel.textContent()) ?? "") ?? [];
+  // „Nächster Punkt“ from an open point opens the one after it: the second part, its own point.
+  await panel.getByRole("button", { name: "Nächster Punkt ›" }).click();
+  await expect(panel).toContainText(`Punkt ${Number(at) + 1} von ${of}`);
+  await rows.first().click();
+  await expect(panel).toContainText(`Punkt ${at} von ${of}`);
   await expect(panel.getByRole("link", { name: "Zahlung öffnen" })).toHaveAttribute("href", `/inbox?umsatz=${transactionId}`);
   await panel.getByRole("button", { name: "Als Miete buchen" }).click();
   const dialog = page.getByRole("dialog", { name: "Einnahme als Miete buchen" });
