@@ -39,7 +39,13 @@
 // the mean of the closed months before it, at most three groups, each opening its payments in
 // the panel (`#d-anders-<group>`). The server picks the groups and every figure; nothing is
 // coloured and nothing is shown when it names none or has fewer than three months to compare.
+//
+// Phase 10 §7.6 Haushalt (4): the Budget in one line under it, from GET /household-budget: each of
+// Notwendiges, Wünsche and Sparen that has a target saved, its monthly mean against the target's
+// euros (both the server's), with the dot of Planung › Budget (green met, amber missed, never red)
+// and a link there. No line before a target is saved; a failed read shows no line either.
 import "./household.css";
+import "@/components/planningSections.css";
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -63,11 +69,13 @@ import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { todayIso } from "@/components/format";
 import { HealthTodoList, HouseholdHealthSection } from "@/components/healthFigures";
 import { ALLOCATION_CATEGORY, HOUSEHOLD_GROUP, HOUSEHOLD_SPENDING_GROUPS } from "@/components/labels";
+import { usePlanFormat } from "@/components/planFormat";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 import { useFormat, useT, type Formatter } from "@/i18n";
 import { common } from "@/i18n/common";
 import { household } from "@/i18n/household";
+import { lineLabel, planning } from "@/i18n/planning";
 
 type HouseholdGroup = components["schemas"]["HouseholdGroup"];
 type AllocationCategory = components["schemas"]["AllocationCategory"];
@@ -79,6 +87,8 @@ type SpendingComparison = components["schemas"]["SpendingComparison"];
 type SpendingComparisonRow = components["schemas"]["SpendingComparisonRow"];
 type MonthDifferences = components["schemas"]["MonthDifferences"];
 type GroupDifference = components["schemas"]["GroupDifference"];
+type BudgetView = components["schemas"]["BudgetView"];
+type BudgetLine = components["schemas"]["BudgetLine"];
 
 const MONTHS_SHOWN = 12;
 const MONTHS_OFFERED = 24;
@@ -97,20 +107,24 @@ interface Year {
   windowMonths: HouseholdCashflow[];
   /** The chosen month beside the saved plan (D263 (d)); no rows when no scenario names a code. */
   comparison: SpendingComparison;
+  /** GET /household-budget for Haushalt's Budget line (§7.6); null when the read failed. */
+  budget: BudgetView | null;
 }
 
 async function loadYear(month: string): Promise<Year> {
   const shown = monthsUpTo(month, MONTHS_SHOWN);
-  const [months, transfers, health, overall, comparison] = await Promise.all([
+  const [months, transfers, health, overall, comparison, budget] = await Promise.all([
     Promise.all(shown.map(loadCashflow)),
     ok(api.GET("/api/transfers", { params: { query: { month } } })),
     ok(api.GET("/api/health/months", { params: { query: { from: shown[0] ?? month, to: month } } })),
     ok(api.GET("/api/health")),
     ok(api.GET("/api/household-plan/comparison", { params: { query: { month } } })),
+    // The Budget's line is an extra: a read that fails leaves it out, never the month.
+    ok(api.GET("/api/household-budget")).catch(() => null),
   ]);
   const loaded = new Map(months.map((m) => [m.month, m]));
   const windowMonths = await Promise.all((overall.window.months ?? []).map((m) => loaded.get(m) ?? loadCashflow(m)));
-  return { months, transfers, health, overall, windowMonths, comparison };
+  return { months, transfers, health, overall, windowMonths, comparison, budget };
 }
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -225,7 +239,7 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
   const closingDetail = useDetail("abschluss");
   const savedDetail = useDetail("angelegt");
   const differenceDetail = useDetail("anders");
-  const { months, transfers, health, overall, windowMonths, comparison } = year;
+  const { months, transfers, health, overall, windowMonths, comparison, budget } = year;
   const month = months[months.length - 1];
   if (!month) return null;
   const view = health.find((h) => h.month === month.month);
@@ -284,6 +298,7 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
           </p>
         ) : null}
         {differences ? <Differences differences={differences} link={differenceDetail.linkProps} /> : null}
+        {budget ? <BudgetOneLine budget={budget} /> : null}
         <div className="planning-kpis">
           <div className="planning-kpi" role="group" aria-label={t.income}>
             <p className="planning-kpi-label">{t.income}</p>
@@ -402,6 +417,38 @@ function DifferenceText({ difference: d }: { difference: GroupDifference }) {
   const f = useFormat();
   const amount = f.money(d.difference.replace(/^-/, ""));
   return <>{d.words === "more" ? t.differenceMore(groupLabel(d.group), amount) : t.differenceLess(groupLabel(d.group), amount)}</>;
+}
+
+/** The Budget in one line (§7.6 Haushalt (4)): the lines with a mark, i.e. with a saved target. */
+function BudgetOneLine({ budget }: { budget: BudgetView }) {
+  const t = useT(household);
+  const tp = useT(planning);
+  const p = usePlanFormat();
+  const marked = (budget.lines ?? []).flatMap((l: BudgetLine) =>
+    l.mark && (l.key === "need" || l.key === "want" || l.key === "saving") ? [{ key: l.key, monthly: l.monthly, mark: l.mark }] : [],
+  );
+  if (marked.length === 0) return null;
+  return (
+    <section className="card household-budget-line" aria-labelledby="budget-line-title">
+      <p>
+        <strong id="budget-line-title">{t.budgetLineTitle}</strong>{" "}
+        <span className="muted">({t.budgetLineBasis((budget.window.months ?? []).length)})</span>
+      </p>
+      <p>
+        {marked.map(({ key, monthly, mark }) => (
+          <span key={key} className="household-budget-item">
+            <span
+              className={`budget-dot budget-dot-${mark.colour}`}
+              role="img"
+              aria-label={mark.colour === "green" ? tp.markGreen : tp.markAmber}
+            />{" "}
+            {(key === "saving" ? t.budgetOfMinimum : t.budgetOf)(lineLabel(tp, key), p.euro(monthly), p.euro(mark.at_target))}
+          </span>
+        ))}
+        <Link href={PLANNING_BUDGET}>{t.planningBudget} ›</Link>
+      </p>
+    </section>
+  );
 }
 
 /** „Was diesen Monat anders ist“ (§7.6 Haushalt (3)): up to three lines, each opening its group's

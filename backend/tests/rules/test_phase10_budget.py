@@ -75,6 +75,7 @@ def test_budget_fixture(name: str, case: phase10.BudgetCase) -> None:
             assert got.mark.gap_points == want.mark.gap_points
             assert got.mark.gap_monthly == want.mark.gap_monthly
             assert got.mark.text == want.mark.text
+            assert got.mark.at_target == got.monthly - got.mark.gap_monthly  # Haushalt (§7.6)
     h, wh = view.housing, exp.housing
     assert h is not None and wh is not None
     assert (h.monthly, h.total, h.share, h.target) == (wh.monthly, wh.total, wh.share, wh.target)

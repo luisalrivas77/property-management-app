@@ -119,3 +119,21 @@ a.household-group-row .household-share {
 .household-health {
   margin-top: 1rem;
 }
+
+/* The Budget in one line (phase 10 §7.6 Haushalt (4)): its marked lines side by side, wrapping. */
+.household-budget-line p {
+  margin: 0;
+}
+
+.household-budget-line p + p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.household-budget-item {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
