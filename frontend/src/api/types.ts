@@ -11242,6 +11242,15 @@ export interface components {
             net_cash: string;
             /** Cumulative */
             cumulative: string;
+            /** Cash Before Tax */
+            cash_before_tax?: string | null;
+            /** Tax Refund */
+            tax_refund?: string | null;
+            /**
+             * Tax Assessed
+             * @default false
+             */
+            tax_assessed: boolean;
         };
         /**
          * PaymentIbanConfirmed
@@ -11924,6 +11933,10 @@ export interface components {
             paid_in: string;
             /** Cash Back */
             cash_back: string;
+            /** Arrived */
+            arrived: string;
+            /** Expected Tax Refund */
+            expected_tax_refund: string;
             /** Percent */
             percent?: string | null;
             /** Profit Today */
@@ -12124,6 +12137,10 @@ export interface components {
             paid_in: string | null;
             /** Cash Back */
             cash_back?: string | null;
+            /** Arrived */
+            arrived?: string | null;
+            /** Expected Tax Refund */
+            expected_tax_refund?: string | null;
             /** Percent */
             percent?: string | null;
             /** Years */
