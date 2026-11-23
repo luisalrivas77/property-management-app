@@ -25,6 +25,7 @@ from .household import (
     PriceSourceKind,
     Quantity,
 )
+from .net_worth import NetWorthLine
 
 __all__ = [
     "AssetPriceRow",
@@ -145,6 +146,10 @@ class EtfAccountToday(Schema):
     label: str
     positions: list[EtfPositionToday] = Field(default_factory=list)
     value_eur: Money  # Σ of the valued positions: the Übersicht's value of this account
+    # The depot's cash balance and the money on its way to it, as the net worth counts them
+    # (net_worth.depot_cash, 23 Nov 2026), and the portfolio's total: funds + those lines.
+    cash: list[NetWorthLine] = Field(default_factory=list)
+    total_eur: Money
 
 
 class EtfToday(Schema):

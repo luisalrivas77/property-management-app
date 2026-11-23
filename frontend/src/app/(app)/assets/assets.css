@@ -244,3 +244,27 @@
   margin-right: 6px;
   border-radius: 2px;
 }
+
+/* A portfolio's parts on the ETF tab: funds, the depot's cash and money on its way, which
+   add up to the total in the card's heading (23 Nov 2026). */
+.portfolio-parts {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.portfolio-parts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.portfolio-parts dt {
+  min-width: 0;
+}
+
+.portfolio-parts dd {
+  margin: 0;
+  white-space: nowrap;
+}

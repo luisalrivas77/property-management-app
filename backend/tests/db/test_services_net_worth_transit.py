@@ -299,3 +299,35 @@ def test_a_card_payment_counted_in_part_says_so(run, read, fresh_workspaces):
     assert "soweit es die bekannte Schuld der Karte tilgt" in part.note
     assert "Schuld" not in full.note
     assert seen.total == Decimal("550.00")  # 550 on the current account, the card at 0
+
+
+def test_the_etf_tab_adds_the_depots_cash_and_money_on_its_way(run, read, fresh_workspaces):
+    """23 Nov 2026 (the quirion portfolios still read lower than in quirion's own app): a
+    portfolio on the Anlagen ETF tab shows its funds, its cash balance and the money on its way
+    as the net worth counts them, and their total, so it reads as the depot's own app does."""
+    from db.test_services_prices_fetch import _asset, _held
+    from db.test_services_prices_overview import S, _price
+
+    from hausbuch.services.prices import overview
+
+    ws, _ = fresh_workspaces
+    _, depot, _ = _world(run, ws)
+
+    def fund(ctx):
+        asset = _asset(ctx, kind="etf", isin="IE000CASH001", name="Ein Fonds")
+        _held(ctx, depot, asset, "4")
+        _price(ctx, asset, ON, "25.00", S.USER)
+
+    run(ws, fund, now=NOW)
+    tab = read(ws, overview.etf_today, ON)
+    [account] = tab.accounts
+    assert account.value_eur == Decimal("100.00")  # the funds alone, as before
+    assert [(line.in_transit, line.value_eur) for line in account.cash] == [
+        (False, Decimal("200.00")),
+        (True, Decimal("500.00")),
+    ]
+    assert account.total_eur == Decimal("800.00")
+    seen = read(ws, net_worth.net_worth, ON)
+    assert account.total_eur == sum(
+        (line.value_eur for line in seen.lines if line.account_id == depot), Decimal(0)
+    )

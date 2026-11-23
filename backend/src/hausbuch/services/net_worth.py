@@ -392,6 +392,21 @@ def merge_transit(lines: Sequence[NetWorthLine]) -> list[NetWorthLine]:
     return out
 
 
+def depot_cash(conn: Connection, on: date) -> dict[UUID, list[NetWorthLine]]:
+    """Per depot account the net worth's account lines on `on`: its cash balance from its
+    statements and each „unterwegs zu <Depot>“ line, in the net worth's order and with its
+    values (not split by owner shares). The Anlagen ETF tab adds them to the funds so each
+    portfolio shows the total the depot's own app shows (Luis, 23 Nov 2026: the quirion
+    portfolios still read lower than in quirion's app). Read only; the same `_balances`."""
+    items, _ = _balances(conn, on, _Reads(conn))
+    out: dict[UUID, list[NetWorthLine]] = defaultdict(list)
+    for item in items:
+        line = item.line
+        if line.account_kind is AccountKind.DEPOT and line.account_id is not None:
+            out[line.account_id].append(line)
+    return dict(out)
+
+
 class _Reads:
     """What a net worth reads that does not depend on its day, read once per call and shared
     by the days one call computes (overview: the last month-end and today). Nothing is kept
