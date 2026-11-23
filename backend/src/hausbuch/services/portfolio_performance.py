@@ -294,18 +294,26 @@ class _Flows:
         )
 
 
+_RATIO_LIMIT = Decimal(1_000_000)  # GainRatio: twelve digits, six of them places
+
+
 def _figures(p: R.Performance) -> PortfolioFigures:
     rate = p.yearly_return
     reason = None if p.no_rate is None else NoRateReason(p.no_rate.value)
     if rate is not None and (rate <= -1 or abs(rate) >= 1000):
         rate, reason = None, NoRateReason.NO_RATE  # outside what a rate can be shown as
+    ratio = p.gain_ratio
+    if ratio is not None and (ratio < -1 or abs(ratio) >= _RATIO_LIMIT):
+        # Outside what a percent can be shown as (GainRatio): a negative value (a depot's
+        # cash overdrawn) loses more than was paid in; a cent paid in makes it boundless.
+        ratio = None
     return PortfolioFigures(
         start=p.start,
         value_eur=p.value,
         paid_in_eur=p.paid_in,
         taken_out_eur=p.taken_out,
         gain_eur=p.gain,
-        gain_ratio=p.gain_ratio,
+        gain_ratio=ratio,
         yearly_return=rate,
         no_rate=reason,
         unpriced_flows=p.unpriced,

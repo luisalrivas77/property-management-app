@@ -15,8 +15,9 @@ from .common import _STRING_ONLY, Money, NonNegativeMoney, ReturnRate, Schema, _
 from .enums import AccountKind
 from .household import Quantity
 
-# A gain as a share of the money paid in, signed, six places (−1 = everything lost; a gain
-# since the start never falls below it, since a value and the money taken out are ≥ 0).
+# A gain as a share of the money paid in, signed, six places (−1 = everything lost). A value
+# can be negative (a depot's cash overdrawn), so a ratio can fall below −1, and a tiny sum
+# paid in makes it boundless: the service shows no percent outside this range.
 GainRatio = Annotated[
     Decimal,
     Field(ge=-1, max_digits=12, decimal_places=6),
