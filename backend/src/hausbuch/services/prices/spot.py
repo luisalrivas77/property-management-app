@@ -28,7 +28,7 @@ class and HTTP status only, never a pair's price, a URL or the key.
 
 import json
 from collections import Counter
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Collection, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
@@ -152,6 +152,19 @@ class SpotResult:
     unpriced: int = 0  # keep their last daily close
     errors: Counter = field(default_factory=Counter)  # (source, kind, status) -> n
     stored: int = 0
+    # The coins this read considered (counted in `coins`), so a later read of the same run asks
+    # only the coins held since (jobs.refresh_crypto); not compared, not logged.
+    asset_ids: frozenset[UUID] = field(default_factory=frozenset, compare=False, repr=False)
+
+    def add(self, other: "SpotResult") -> None:
+        """Count a second read of the same run, over other coins, into this one."""
+        self.coins += other.coins
+        self.kraken += other.kraken
+        self.coingecko += other.coingecko
+        self.unpriced += other.unpriced
+        self.errors.update(other.errors)
+        self.stored += other.stored
+        self.asset_ids = self.asset_ids | other.asset_ids
 
 
 def held_coins(engine: Engine, workspace_id: UUID) -> tuple[list[Coin], dict[str, list[FxRate]]]:
@@ -269,11 +282,16 @@ def refresh_prices(
     clock: Callable[[], datetime],
     fetch: Fetch,
     coingecko_key: SecretStr | None,
+    skip: Collection[UUID] = (),
 ) -> SpotResult:
-    """Read and store a current price for every held coin of the workspace."""
+    """Read and store a current price for every held coin of the workspace, except the coins
+    in `skip` (a run's first read, jobs.refresh_crypto); no coin left asks no source."""
     result = SpotResult()
     coins, rates = held_coins(engine, workspace_id)
+    if skip:
+        coins = [c for c in coins if c.asset_id not in skip]
     result.coins = len(coins)
+    result.asset_ids = frozenset(c.asset_id for c in coins)
     rows = read_prices(
         coins, rates, fetch=fetch, clock=clock, coingecko_key=coingecko_key, result=result
     )

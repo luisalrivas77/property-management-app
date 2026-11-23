@@ -20,6 +20,7 @@ in-process worker runs. In a process without a store (deps.kept_answers None) th
 """
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -70,7 +71,16 @@ def enrolled_members(deps: JobDeps) -> list[AuthContext]:
     return members
 
 
-async def run_warm(deps: JobDeps, members: list[AuthContext] | None = None) -> WarmRun:
+async def run_warm(
+    deps: JobDeps,
+    members: list[AuthContext] | None = None,
+    *,
+    before: Callable[[], Awaitable[None]] | None = None,
+    trigger: str = "morning",
+) -> WarmRun:
+    """Warm every enrolled member's kept routes. `before`, when given, is awaited right
+    before each route is asked (the start warm, api/kept_start_warm.py, waits there for a
+    person's request to end); `trigger` names the caller in the log line."""
     kept: KeptAnswers | None = deps.kept_answers
     run = WarmRun()
     if kept is None or not kept.enabled or kept.app is None:
@@ -81,12 +91,13 @@ async def run_warm(deps: JobDeps, members: list[AuthContext] | None = None) -> W
 
     today = deps.clock().astimezone(LOCAL_TIME_ZONE).date()
     for auth in members:
-        result = await warm_member(kept, auth, today)
+        result = await warm_member(kept, auth, today, before=before)
         run.members += 1
         run.requests += result.requests
         run.failed += result.failed
     fields = {
         "event": "kept_answers_warmed",
+        "trigger": trigger,
         "members": run.members,
         "requests": run.requests,
         "failed": run.failed,

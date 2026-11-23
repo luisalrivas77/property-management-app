@@ -7,6 +7,7 @@ can arrive while the shutdown is waiting for the worker.
 """
 
 import asyncio
+import logging
 import time
 
 import pytest
@@ -226,6 +227,151 @@ def test_the_kept_answers_refresh_starts_and_stops_with_the_app(own_engine, tmp_
     assert asyncio.run(scenario()) == (True, False)
     assert log == [("dispose", True)]
     assert asyncio.run(scenario(kept_refresh=False)) == (False, False)
+
+
+async def _until(predicate, timeout: float = 60.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        assert time.monotonic() < deadline, "timed out"
+        await asyncio.sleep(0.01)
+
+
+def _start_warm(app, sessions, **attributes):
+    """The app's start warm with no delay, warming member A only (the test database holds
+    other tests' workspaces)."""
+    start_warm = app.state.kept_start_warm
+    start_warm.delay_s = 0
+    start_warm.idle_s = 0.01
+    start_warm.pause_s = 0.01
+    start_warm.members = [sessions[TOKEN_A]]
+    for name, value in attributes.items():
+        setattr(start_warm, name, value)
+    return start_warm
+
+
+def test_a_start_warms_the_kept_answers_once(own_engine, tmp_path, sessions, caplog):
+    """After a start the pages' kept routes are kept before anyone asks, once; the next
+    request of the member is a kept hit."""
+    caplog.set_level(logging.INFO, logger="hausbuch.jobs.kept_answers")
+    log: list = []
+
+    async def scenario():
+        app = _app(own_engine, tmp_path, sessions, None, log, kept_refresh=False)
+        start_warm = _start_warm(app, sessions)
+        kept = app.state.kept_answers
+        lifespan = Lifespan(app)
+        await lifespan.startup()
+        await _until(lambda: not start_warm.running)
+        result = start_warm.result
+        kept_after_warm = len(kept)
+        hits = kept.counters.hits
+        status, _, _ = await call(app, "GET", "/api/properties", token=TOKEN_A)
+        assert status == 200
+        hit = kept.counters.hits - hits
+        lifespan.begin_shutdown()
+        await lifespan.shutdown_complete()
+        return result, kept_after_warm, hit
+
+    result, kept_after_warm, hit = asyncio.run(scenario())
+    assert (result.members, result.failed) == (1, 0)
+    assert result.requests == kept_after_warm > 0
+    assert hit == 1
+    warmed = [
+        r.fields
+        for r in caplog.records
+        if getattr(r, "fields", {}).get("event") == "kept_answers_warmed"
+    ]
+    assert [w["trigger"] for w in warmed] == ["start"]  # one line, once
+    assert log == [("dispose", True)]
+
+
+def test_a_persons_request_during_the_start_warm_is_answered_first(own_engine, tmp_path, sessions):
+    """The start warm waits while a person's request runs, and until it has ended for the
+    idle time, before it asks its next route."""
+    from hausbuch.api.kept_answers import KeptAnswersMiddleware
+
+    log: list = []
+    order: list[str] = []
+
+    async def scenario():
+        app = _app(own_engine, tmp_path, sessions, None, log, kept_refresh=False)
+        kept = app.state.kept_answers
+        start_warm = _start_warm(app, sessions, idle_s=0.3)
+        real = kept.internal_get
+
+        async def recording(*args, **kwargs):
+            order.append("warm request")
+            return await real(*args, **kwargs)
+
+        kept.internal_get = recording
+        release = asyncio.Event()
+
+        async def person_app(scope, receive, send):  # a person's request, still running
+            order.append("person starts")
+            await release.wait()
+            order.append("person ends")
+
+        scope = {"type": "http", "method": "POST", "path": "/api/owners", "headers": []}
+        person = asyncio.create_task(KeptAnswersMiddleware(person_app, kept)(scope, None, None))
+        await asyncio.sleep(0)
+        assert kept.in_flight == 1
+        lifespan = Lifespan(app)
+        await lifespan.startup()
+        await asyncio.sleep(0.3)
+        assert order == ["person starts"]  # the warm waits
+        release.set()
+        await person
+        await _until(lambda: not start_warm.running)
+        lifespan.begin_shutdown()
+        await lifespan.shutdown_complete()
+        return start_warm.result
+
+    result = asyncio.run(scenario())
+    assert order[:3] == ["person starts", "person ends", "warm request"]
+    assert result.failed == 0
+    assert result.requests == order.count("warm request")
+
+
+def test_the_start_warm_switched_off_does_nothing(own_engine, tmp_path, sessions):
+    log: list = []
+
+    async def scenario():
+        app = _app(
+            own_engine, tmp_path, sessions, None, log, kept_refresh=False, kept_warm_at_start=False
+        )
+        start_warm = _start_warm(app, sessions)
+        lifespan = Lifespan(app)
+        await lifespan.startup()
+        await asyncio.sleep(0.2)
+        running, result = start_warm.running, start_warm.result
+        kept = len(app.state.kept_answers)
+        lifespan.begin_shutdown()
+        await lifespan.shutdown_complete()
+        return running, result, kept
+
+    assert asyncio.run(scenario()) == (False, None, 0)
+
+
+def test_a_shutdown_cancels_a_waiting_start_warm(own_engine, tmp_path, sessions):
+    """A shutdown before the delay has passed ends the start warm at once; nothing was
+    warmed and the engine is still disposed last."""
+    log: list = []
+
+    async def scenario():
+        app = _app(own_engine, tmp_path, sessions, None, log, kept_refresh=False)
+        start_warm = _start_warm(app, sessions, delay_s=3600)
+        lifespan = Lifespan(app)
+        await lifespan.startup()
+        running = start_warm.running
+        started = time.monotonic()
+        lifespan.begin_shutdown()
+        await lifespan.shutdown_complete()
+        return running, start_warm.running, start_warm.result, time.monotonic() - started
+
+    running, after, result, elapsed = asyncio.run(scenario())
+    assert (running, after, result) == (True, False, None)
+    assert elapsed < 5
+    assert log == [("dispose", True)]
 
 
 # --- /healthz ---------------------------------------------------------------------------

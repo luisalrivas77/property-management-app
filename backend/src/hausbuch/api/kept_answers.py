@@ -51,7 +51,8 @@ the data version covers.
 §7.5 (a) applied that audit to every other GET route and kept those that read only the
 workspace's rows, the day and the code. Left out, besides the above: `/api/events` and the
 property History routes (they show the sign-in and passkey events, which since migration 0051
-move no version); every route that reads
+move no version, and the sign-out events, which since migration 0055 move none either); every
+route that reads
 the clock finer than the day (`/api/inbound-mail`, signed URLs: `/api/exports/holdings`,
 `/api/tax-exports/{id}`, which also reads the job queue), settings or typed secrets
 (`/api/app-secrets`, `/api/bank-credential-slots`, `/api/inbound-mail/address`,
@@ -81,7 +82,7 @@ import re
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from importlib.metadata import PackageNotFoundError, version
@@ -807,15 +808,24 @@ def last_full_month(today: date) -> str:
     return f"{year:04d}-{month:02d}"
 
 
-async def warm_member(kept: KeptAnswers, auth: AuthContext, today: date) -> WarmResult:
+async def warm_member(
+    kept: KeptAnswers,
+    auth: AuthContext,
+    today: date,
+    *,
+    before: Callable[[], Awaitable[None]] | None = None,
+) -> WarmResult:
     """Ask the kept routes of Übersicht and Zu prüfen once as `auth`, in the order and with
     the parameters the pages use, so their answers are kept. A failed route is counted and
-    logged by its template only; the others still run."""
+    logged by its template only; the others still run. `before`, when given, is awaited right
+    before each route, with nothing awaited between it and the request."""
     result = WarmResult(members=1)
     month = last_full_month(today)
     year = today.year
 
     async def get(path: str, query: dict[str, Any] | None = None) -> Any:
+        if before is not None:
+            await before()
         result.requests += 1
         try:
             response = await kept.internal_get(auth, path, query)

@@ -2,21 +2,34 @@
 
 Queued by POST /crypto/refresh (services.crypto_refresh) for one workspace:
 
-1. every active wallet address of the household is read again through its existing sync
+1. first, a current price for every coin held now (services.prices.spot): Kraken's ticker,
+   else CoinGecko's simple price with the workspace's key (phase 6 D260), stored as `spot`,
+   so the values change within seconds of the press (GET /crypto/refresh's `prices_done`;
+   one press had taken 43 s live when the prices came last, 23 Nov 2026);
+2. then every active wallet address of the household is read again through its existing sync
    (services.chain.sync.sync_wallets, phase 7 D182: the same cursor, so only new
    transactions are read; each address its own run and `wallet_sync` row, a failed address
-   recorded there), then its coin transfers relinked once (relink_after_sync);
-2. then, whatever step 1 did, a current price for every held coin
-   (services.prices.spot): Kraken's ticker, else CoinGecko's simple price with the
-   workspace's key (phase 6 D260), stored as `spot`.
+   recorded there), one after another as every wallet sync reads them, then its coin
+   transfers relinked once (relink_after_sync);
+3. then a current price for the coins held only since step 2 (a coin first received, a token
+   first priced through its coin), none asked when there is none.
 
-Step 1 failing as a whole (its first read, say) never stops step 2: it is logged by its
-exception class and the prices are still read. A failure of step 2 is logged the same way and
-raised, so the job ends `failed` and GET /crypto/refresh says so. No retry: the household
-presses again. The lock is the wallet syncs' own (`wallets:sync`), so the daily run, „Jetzt
-abrufen“ and this job never read one address at once.
+Step 1 failing never stops step 2: it is logged by its exception class, the wallets are still
+read, and then it is raised, so the job ends `failed` and GET /crypto/refresh says so. Step 2
+failing as a whole (its first read, say) is logged the same way and stops nothing. Step 3
+failing (a database error: the sources' failures are counts) is logged and the run is recorded
+with step 1's counts. No retry: the household presses again. The lock is the wallet syncs' own
+(`wallets:sync`), so the daily run, „Jetzt abrufen“ and this job never read one address at
+once.
 
-A run whose step 2 finished appends one `workspace.crypto_refreshed` event with its counts
+The wallets are read one after another, not side by side, so a press takes about as long as
+before in total; only its prices come first. Every sync's start (services.chain.sync._begin)
+creates the chain's coins it lacks, under no lock: the native coin, and through adopt_registry
+the chainless coin it is priced as (Ether on Ethereum and Ether (Portal) on Solana are both
+priced as ETH). Two chains read side by side could both create that coin, and the unique index
+on a symbol (migration 0041) would then fail one of the two reads.
+
+A run whose step 1 finished appends one `workspace.crypto_refreshed` event with its counts
 (schemas.events.CryptoRefreshed, tied to its job id), so GET /crypto/refresh can name the
 coins that got no current price and the addresses that were not read (principle 7). An
 address counts as not read when its run did not end `succeeded` (failed, refused, throttled,
@@ -121,17 +134,9 @@ def record_run(
         )
 
 
-def run_refresh_crypto(
-    deps: JobDeps,
-    *,
-    workspace_id: UUID,
-    fetch: Fetch = urllib_fetch,
-    job_id: int | None = None,
-) -> RefreshResult:
-    """One press of „Jetzt aktualisieren“. `fetch` is for tests (the price sources only; the
-    chain sources come from the settings as in every wallet sync); `job_id` is the
-    refresh_crypto job's, kept in the run's event."""
-    result = RefreshResult()
+def _read_wallets(deps: JobDeps, workspace_id: UUID, result: RefreshResult) -> None:
+    """Step 2: every active address read again, then its coin transfers relinked; a failure is
+    logged by its class name and never raised."""
     try:
         outcomes = sync_wallets(
             deps.engine,
@@ -145,23 +150,56 @@ def run_refresh_crypto(
         result.wallets_aborted = True
         fields = {"event": "crypto_refresh_wallets_failed", "exc_type": type(exc).__name__}
         logger.error("the wallets were not read again", extra={"fields": fields})
-    else:
-        result.addresses = len(outcomes)
-        result.wallets_failed = sum(o.status is not WalletSyncStatus.SUCCEEDED for o in outcomes)
-        try:
-            relink_after_sync(deps.engine, workspace_id, actor=SYSTEM_ACTOR, clock=deps.clock)
-        except Exception as exc:  # noqa: BLE001 - class name only; the reads stand
-            fields = {"event": "crypto_refresh_relink_failed", "exc_type": type(exc).__name__}
-            logger.error("the coin transfers were not relinked", extra={"fields": fields})
+        return
+    result.addresses = len(outcomes)
+    result.wallets_failed = sum(o.status is not WalletSyncStatus.SUCCEEDED for o in outcomes)
     try:
+        relink_after_sync(deps.engine, workspace_id, actor=SYSTEM_ACTOR, clock=deps.clock)
+    except Exception as exc:  # noqa: BLE001 - class name only; the reads stand
+        fields = {"event": "crypto_refresh_relink_failed", "exc_type": type(exc).__name__}
+        logger.error("the coin transfers were not relinked", extra={"fields": fields})
+
+
+def run_refresh_crypto(
+    deps: JobDeps,
+    *,
+    workspace_id: UUID,
+    fetch: Fetch = urllib_fetch,
+    job_id: int | None = None,
+) -> RefreshResult:
+    """One press of „Jetzt aktualisieren“. `fetch` is for tests (the price sources only; the
+    chain sources come from the settings as in every wallet sync); `job_id` is the
+    refresh_crypto job's, kept in the run's event."""
+    result = RefreshResult()
+    key: SecretStr | None = None
+    failed: Exception | None = None
+    try:  # 1. the coins held now, priced first (GET /crypto/refresh: prices_done)
         key = _coingecko_key(deps, workspace_id, result)
         result.prices = refresh_prices(
             deps.engine, workspace_id, clock=deps.clock, fetch=fetch, coingecko_key=key
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - raised once the wallets are read
+        failed = exc
         fields = {"event": "crypto_refresh_prices_failed", "exc_type": type(exc).__name__}
         logger.error("no current prices read", extra={"fields": fields})
-        raise
+    try:
+        _read_wallets(deps, workspace_id, result)  # 2. the wallets, then the relink
+        if failed is not None:
+            raise failed
+        try:  # 3. the coins held only since step 2 (none: no source is asked)
+            result.prices.add(
+                refresh_prices(
+                    deps.engine,
+                    workspace_id,
+                    clock=deps.clock,
+                    fetch=fetch,
+                    coingecko_key=key,
+                    skip=result.prices.asset_ids,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - step 1's prices stand; the run is recorded
+            fields = {"event": "crypto_refresh_new_prices_failed", "exc_type": type(exc).__name__}
+            logger.error("no current prices read for new coins", extra={"fields": fields})
     finally:
         _log(result)
     try:

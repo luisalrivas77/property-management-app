@@ -1,14 +1,16 @@
 "use client";
 
 // „Jetzt aktualisieren“ (docs/phases/phase-10.md §7.7, D291), on Anlagen › Krypto and in the
-// Übersicht's net-worth panel: POST /crypto/refresh queues one run per household (the wallets
-// read again, then a current price per held coin), „läuft …“ while GET /crypto/refresh says it
-// runs, then the caller reloads its figures. A press while a run waits or within two minutes of
+// Übersicht's net-worth panel: POST /crypto/refresh queues one run per household (a current
+// price per held coin first, then the wallets read again), „läuft …“ while GET /crypto/refresh
+// says it runs, „Kurse aktualisiert – Wallets werden geprüft …“ once it says the prices are
+// stored (`prices_done`, when the caller reloads its figures a first time), then the caller
+// reloads them again at the end. A press while a run waits or within two minutes of
 // its end queues nothing (`queued` false) and shows that run. A succeeded run that left coins
 // without a current price, or wallet addresses unread, says so (principle 7), for a run this
 // view watched or one that finished today (Berlin); never for an older one. Every figure stays
 // the server's; the browser only polls the state and formats the time.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
@@ -34,7 +36,17 @@ export function CryptoRefresh({ onRefreshed }: { onRefreshed: () => void }) {
   const [tick, setTick] = useState(0);
   // Whether this view pressed or watched the newest run: only then is its failure news.
   const [watched, setWatched] = useState(false);
+  // The run whose stored prices the caller has already reloaded (once per run).
+  const pricesShownFor = useRef<number | null>(null);
   const running = state?.status === "running";
+  const pricesDone = running && state?.prices_done === true;
+  const jobId = state?.job_id ?? null;
+
+  useEffect(() => {
+    if (!pricesDone || jobId == null || pricesShownFor.current === jobId) return;
+    pricesShownFor.current = jobId;
+    onRefreshed();
+  }, [pricesDone, jobId, onRefreshed]);
 
   // A run started elsewhere (the other screen, another device) shows as running here too.
   useEffect(() => {
@@ -96,7 +108,9 @@ export function CryptoRefresh({ onRefreshed }: { onRefreshed: () => void }) {
   }
 
   const status = running
-    ? t.refreshRunning
+    ? pricesDone
+      ? t.refreshCheckingWallets
+      : t.refreshRunning
     : watched && state?.status === "failed"
       ? t.refreshFailed
       : refused

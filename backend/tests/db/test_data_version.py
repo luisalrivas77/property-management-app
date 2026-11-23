@@ -9,7 +9,7 @@ skipped; the excluded session table never bumps; the version can only grow; the 
 table is empty after every commit; and a written table stays free for TRUNCATE and ALTER
 TABLE in the same transaction (the deferred event sits on the pending table only). Since
 migration 0051 (phase 10 §7.5 (a)): a sign-in's own event and the passkey events move no
-version, every other event still does.
+version, and since migration 0055 neither do the sign-out events; every other event still does.
 """
 
 import os
@@ -27,8 +27,10 @@ from hausbuch.db.session import workspace_transaction
 from hausbuch.schemas.events import (
     Empty,
     EventType,
+    UserInvited,
     UserPasskeyEnrolled,
     UserPasskeyRef,
+    UserSessionsRevoked,
     UserSignedIn,
 )
 
@@ -211,6 +213,9 @@ _SIGN_IN_EVENTS = (
     (EventType.USER_PASSKEY_ENROLLED, UserPasskeyEnrolled(passkey_id=_PASSKEY, label="A")),
     (EventType.USER_PASSKEY_RENAMED, UserPasskeyRef(passkey_id=_PASSKEY)),
     (EventType.USER_PASSKEY_REMOVED, UserPasskeyRef(passkey_id=_PASSKEY)),
+    # Migration 0055: signing out, from one session or from all.
+    (EventType.USER_SIGNED_OUT, Empty()),
+    (EventType.USER_SESSIONS_REVOKED, UserSessionsRevoked(count=2)),
 )
 
 
@@ -219,7 +224,8 @@ _SIGN_IN_EVENTS = (
 )
 def test_a_sign_in_event_does_not_bump(dbname, fresh_workspaces, app_engine, type, payload):
     """Phase 10 §7.5 (a), migration 0051: a sign-in's own event and the passkey events move
-    no version (no kept answer shows them), so the first load after a sign-in is kept."""
+    no version (no kept answer shows them), so the first load after a sign-in is kept; since
+    migration 0055 the sign-out events neither."""
     ws, _ = fresh_workspaces
     start = _version(dbname, ws)
     with workspace_transaction(app_engine, ws) as conn:
@@ -231,7 +237,8 @@ def test_any_other_event_still_bumps(dbname, fresh_workspaces, app_engine):
     ws, _ = fresh_workspaces
     start = _version(dbname, ws)
     with workspace_transaction(app_engine, ws) as conn:
-        _user_event(conn, ws, EventType.USER_SIGNED_OUT, Empty())
+        invited = UserInvited(invite_id=uuid.uuid4(), invited_user_id=uuid.uuid4())
+        _user_event(conn, ws, EventType.USER_INVITED, invited)
     assert _version(dbname, ws) == start + 1
     with _admin(dbname) as conn:
         insert_event(conn, ws)

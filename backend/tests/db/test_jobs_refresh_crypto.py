@@ -12,11 +12,12 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from db.test_services_prices_fetch import _setup
+from db.test_services_prices_fetch import _asset, _held, _setup
 from pydantic import SecretStr
 from sqlalchemy import select
 
 from hausbuch.api.kept_answers import read_data_version
+from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import price as price_table
 from hausbuch.jobs import refresh_crypto as job
@@ -249,3 +250,128 @@ def test_a_failed_event_write_never_fails_a_run_whose_prices_are_stored(
     assert result.prices.stored == 1 and len(_spot_rows(read, ws)) == 1
     assert any(r.fields.get("event") == "crypto_refresh_record_failed" for r in caplog.records)
     assert _runs(read, ws) == []
+
+
+def test_the_prices_are_stored_before_any_wallet_is_read(
+    run, read, app_engine, blob_store, fresh_workspaces, monkeypatch
+):
+    """A press values the coins within seconds (23 Nov 2026: 43 s when the prices came last):
+    the wallets are read only once the held coins' prices are stored."""
+    ws, _ = fresh_workspaces
+    held = _setup(run, ws)
+    seen: list = []
+
+    def wallets(*args, **kwargs):
+        seen.append([r.asset_id for r in _spot_rows(read, ws)])
+        return [SyncOutcome(uuid4(), Chain.SOLANA, uuid4(), WalletSyncStatus.SUCCEEDED)]
+
+    monkeypatch.setattr(job, "sync_wallets", wallets)
+    fake = Fake({"Ticker?pair=INVEUR": (200, TICKER)})
+    result = job.run_refresh_crypto(
+        _deps(app_engine, blob_store), workspace_id=ws, fetch=fake, job_id=45
+    )
+    assert seen == [[held["coin"]]]  # one wallet step, after the price was stored
+    # No coin held since: the second read asks no source.
+    assert [url for url, _ in fake.calls] == ["https://api.kraken.com/0/public/Ticker?pair=INVEUR"]
+    assert (result.addresses, result.prices.coins, result.prices.stored) == (1, 1, 1)
+    [recorded] = _runs(read, ws)
+    assert (recorded["job_id"], recorded["coins"], recorded["stored"]) == (45, 1, 1)
+
+
+def test_a_coin_first_held_after_the_wallet_read_is_priced_too(
+    run, read, app_engine, blob_store, fresh_workspaces, monkeypatch
+):
+    ws, _ = fresh_workspaces
+    held = _setup(run, ws)
+    new: dict = {}
+
+    def wallets(*args, **kwargs):  # the read books a coin the household did not hold before
+        def seed(ctx):
+            m = movement_table.c
+            account_id = ctx.conn.execute(
+                select(m.account_id).where(m.asset_id == held["coin"]).limit(1)
+            ).scalar_one()
+            new["coin"] = _asset(
+                ctx, kind="crypto", symbol="NEWINV", name="New Coin", kraken_pair="NEWINVEUR"
+            )
+            _held(ctx, account_id, new["coin"])
+
+        run(ws, seed, now=NOW)
+        return [SyncOutcome(uuid4(), Chain.SOLANA, uuid4(), WalletSyncStatus.SUCCEEDED)]
+
+    monkeypatch.setattr(job, "sync_wallets", wallets)
+    new_ticker = json.dumps({"error": [], "result": {"NEWINVEUR": {"c": ["2.5", "1"]}}}).encode()
+    fake = Fake({"pair=INVEUR": (200, TICKER), "pair=NEWINVEUR": (200, new_ticker)})
+    result = job.run_refresh_crypto(
+        _deps(app_engine, blob_store), workspace_id=ws, fetch=fake, job_id=46
+    )
+    # The old coin once, before the read; the new one once, after it.
+    assert [url for url, _ in fake.calls] == [
+        "https://api.kraken.com/0/public/Ticker?pair=INVEUR",
+        "https://api.kraken.com/0/public/Ticker?pair=NEWINVEUR",
+    ]
+    assert {(r.asset_id, r.price_eur) for r in _spot_rows(read, ws)} == {
+        (held["coin"], Decimal("120.50000000")),
+        (new["coin"], Decimal("2.50000000")),
+    }
+    p = result.prices
+    assert (p.coins, p.kraken, p.stored, p.unpriced) == (2, 2, 2, 0)
+    [recorded] = _runs(read, ws)
+    assert (recorded["coins"], recorded["stored"], recorded["unpriced"]) == (2, 2, 0)
+
+
+def test_a_failed_first_price_read_still_reads_the_wallets_then_fails_the_run(
+    run, read, app_engine, blob_store, fresh_workspaces, monkeypatch, caplog
+):
+    ws, _ = fresh_workspaces
+    _setup(run, ws)
+    calls: list[str] = []
+
+    def wallets(*args, **kwargs):
+        calls.append("wallets")
+        return []
+
+    def broken(*args, **kwargs):
+        calls.append("prices")
+        raise RuntimeError("prices")
+
+    monkeypatch.setattr(job, "sync_wallets", wallets)
+    monkeypatch.setattr(job, "refresh_prices", broken)
+    with (
+        caplog.at_level(logging.INFO, logger="hausbuch.jobs.refresh_crypto"),
+        pytest.raises(RuntimeError),
+    ):
+        job.run_refresh_crypto(_deps(app_engine, blob_store), workspace_id=ws, job_id=47)
+    assert calls == ["prices", "wallets"]  # never asked again after the wallets
+    assert _runs(read, ws) == []
+    events = [r.fields.get("event") for r in caplog.records if hasattr(r, "fields")]
+    assert events == ["crypto_refresh_prices_failed", "crypto_refreshed"]
+
+
+def test_a_failed_read_of_new_coins_keeps_the_first_prices_and_records_the_run(
+    run, read, app_engine, blob_store, fresh_workspaces, monkeypatch, caplog
+):
+    ws, _ = fresh_workspaces
+    held = _setup(run, ws)
+    real = job.refresh_prices
+
+    def second_breaks(*args, **kwargs):
+        if kwargs.get("skip"):
+            raise RuntimeError("database")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(job, "sync_wallets", lambda *a, **k: [])
+    monkeypatch.setattr(job, "refresh_prices", second_breaks)
+    fake = Fake({"Ticker?pair=INVEUR": (200, TICKER)})
+    with caplog.at_level(logging.INFO, logger="hausbuch.jobs.refresh_crypto"):
+        result = job.run_refresh_crypto(
+            _deps(app_engine, blob_store), workspace_id=ws, fetch=fake, job_id=48
+        )
+    assert result.prices.stored == 1
+    assert [r.asset_id for r in _spot_rows(read, ws)] == [held["coin"]]
+    assert any(
+        getattr(r, "fields", {}).get("event") == "crypto_refresh_new_prices_failed"
+        for r in caplog.records
+    )
+    [recorded] = _runs(read, ws)
+    assert (recorded["job_id"], recorded["coins"], recorded["stored"]) == (48, 1, 1)

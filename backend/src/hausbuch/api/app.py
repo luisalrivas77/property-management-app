@@ -30,6 +30,7 @@ from .csrf import OriginCheckMiddleware
 from .errors import ERROR_RESPONSES, install_error_handlers
 from .kept_answers import KeptAnswers, KeptAnswersMiddleware
 from .kept_refresh import KeptRefresher
+from .kept_start_warm import StartWarm
 from .lifespan import DrainMiddleware, lifespan
 from .limits import BodyLimitMiddleware
 from .logging import RequestMiddleware
@@ -174,6 +175,8 @@ def create_app(
     app.state.kept_answers = kept
     # §7.5 (c): started and stopped by the lifespan when settings.kept_refresh is on.
     app.state.kept_refresher = KeptRefresher(kept, quiet_s=settings.kept_refresh_quiet_s)
+    # Started once by the lifespan when settings.kept_warm_at_start is on.
+    app.state.kept_start_warm = StartWarm(kept, engine)
     install_error_handlers(app)
     # add_middleware wraps: the last one added is the outermost. Kept answers are innermost:
     # inside the request log (its language) and the origin check, around the routes.

@@ -61,6 +61,7 @@ def test_one_refresh_at_a_time_and_none_within_two_minutes_of_the_last(
         "queued": False,
         "finished_at": None,
         "spot_read_at": None,
+        "prices_done": False,
         "stored": None,
         "unpriced": None,
         "wallets_failed": None,
@@ -109,6 +110,40 @@ def test_a_failed_run_is_reported_and_refuses_a_press_for_two_minutes(client_a, 
     assert ok(client_a.post("/api/crypto/refresh"), 202)["queued"] is False
     _age(admin_sql, job_id, 3)
     assert ok(client_a.post("/api/crypto/refresh"), 202)["queued"] is True
+
+
+def _spot(admin_sql, workspace_id, fetched: str, symbol: str) -> None:
+    """One `spot` price of today (Berlin) read at `fetched` (an SQL expression)."""
+    admin_sql(
+        "WITH a AS (INSERT INTO asset (workspace_id, kind, symbol, name, created_at, updated_at)"
+        " VALUES (%s, 'crypto', %s, 'Invented Coin', now(), now()) RETURNING id)"
+        ' INSERT INTO price (workspace_id, asset_id, "on", price_eur, source, fetched_at, raw,'
+        " created_at) SELECT %s, a.id, (now() AT TIME ZONE 'Europe/Berlin')::date, 1, 'spot',"
+        f" {fetched}, '{{}}', now() FROM a",
+        workspace_id,
+        symbol,
+        workspace_id,
+    )
+
+
+def test_a_running_refresh_says_when_its_prices_are_stored(client_a, client_b, auth_a, admin_sql):
+    """The job prices the held coins before it reads the wallets: GET says so while it still
+    runs (`prices_done`), so the card shows the prices and that the wallets are being checked.
+    A price read before the run started (an earlier press today) does not count."""
+    job_id = ok(client_a.post("/api/crypto/refresh"), 202)["job_id"]
+    _spot(admin_sql, auth_a.workspace_id, "now() - interval '1 hour'", "OLDINV")
+    assert ok(client_a.get("/api/crypto/refresh"))["prices_done"] is False  # waits, not started
+    admin_sql("UPDATE procrastinate_jobs SET status = 'doing' WHERE id = %s", job_id)
+    state = ok(client_a.get("/api/crypto/refresh"))
+    assert (state["status"], state["prices_done"]) == ("running", False)  # the old price only
+
+    _spot(admin_sql, auth_a.workspace_id, "now() + interval '1 second'", "INV")
+    state = ok(client_a.get("/api/crypto/refresh"))
+    assert (state["status"], state["job_id"], state["prices_done"]) == ("running", job_id, True)
+    assert ok(client_b.get("/api/crypto/refresh"))["prices_done"] is False
+
+    admin_sql("UPDATE procrastinate_jobs SET status = 'succeeded' WHERE id = %s", job_id)
+    assert ok(client_a.get("/api/crypto/refresh"))["prices_done"] is False  # running only
 
 
 def _record(app_engine, workspace_id, job_id, **counts) -> None:
