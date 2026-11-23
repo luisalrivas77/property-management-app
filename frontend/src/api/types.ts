@@ -2924,6 +2924,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crypto/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Crypto Refresh State */
+        get: operations["crypto_refresh_state_api_crypto_refresh_get"];
+        put?: never;
+        /** Crypto Refresh Start */
+        post: operations["crypto_refresh_start_api_crypto_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/holdings/crypto": {
         parameters: {
             query?: never;
@@ -6626,6 +6644,9 @@ export interface components {
             price_eur?: string | null;
             /** Price On */
             price_on?: string | null;
+            price_source?: components["schemas"]["PriceSourceKind"] | null;
+            /** Price Read At */
+            price_read_at?: string | null;
             /** Value Eur */
             value_eur?: string | null;
             /** Cost Eur */
@@ -6697,6 +6718,8 @@ export interface components {
             unfilled_account_ids?: string[];
             /** Waiting */
             waiting?: components["schemas"]["WalletWaiting"][];
+            /** Spot Read At */
+            spot_read_at?: string | null;
         };
         /**
          * CryptoLot
@@ -6758,6 +6781,34 @@ export interface components {
             value_eur?: string | null;
             /** Price Needs */
             price_needs?: components["schemas"]["LotPriceNeed"][];
+        };
+        /**
+         * CryptoRefreshState
+         * @description GET /crypto/refresh, and POST's answer.
+         *
+         *     status: `idle` (never pressed), `running` (queued or reading), `succeeded`, `failed`.
+         *     queued (POST only): whether this press queued a new run; false while one runs or one
+         *     finished less than two minutes ago, whose state is then returned (one at a time per
+         *     household). spot_read_at: the moment of the newest price read on demand today (Berlin),
+         *     null when none was read today.
+         */
+        CryptoRefreshState: {
+            /** Job Id */
+            job_id?: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "idle" | "running" | "succeeded" | "failed";
+            /**
+             * Queued
+             * @default false
+             */
+            queued: boolean;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Spot Read At */
+            spot_read_at?: string | null;
         };
         /**
          * Currency
@@ -11456,6 +11507,8 @@ export interface components {
             price_eur: string;
             /** Issuer */
             issuer?: string | null;
+            /** Read At */
+            read_at?: string | null;
         };
         /**
          * PriceSourceKind
@@ -11463,7 +11516,7 @@ export interface components {
          *     protocol below. The precedence among one day's rows is rules.valuation's data.
          * @enum {string}
          */
-        PriceSourceKind: "trade" | "statement" | "issuer_nav" | "coingecko_daily" | "kraken_daily" | "ecb_fx" | "user" | "exchange_close";
+        PriceSourceKind: "trade" | "statement" | "issuer_nav" | "coingecko_daily" | "kraken_daily" | "ecb_fx" | "user" | "exchange_close" | "spot";
         /** PriceSplit */
         PriceSplit: {
             /**
@@ -21863,6 +21916,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MovementAnswered"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    crypto_refresh_state_api_crypto_refresh_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CryptoRefreshState"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    crypto_refresh_start_api_crypto_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CryptoRefreshState"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

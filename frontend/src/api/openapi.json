@@ -7746,6 +7746,60 @@
         }
       }
     },
+    "/api/crypto/refresh": {
+      "get": {
+        "summary": "Crypto Refresh State",
+        "operationId": "crypto_refresh_state_api_crypto_refresh_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CryptoRefreshState"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Crypto Refresh Start",
+        "operationId": "crypto_refresh_start_api_crypto_refresh_post",
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CryptoRefreshState"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/holdings/crypto": {
       "get": {
         "summary": "Crypto Holdings",
@@ -17189,6 +17243,28 @@
             ],
             "title": "Price On"
           },
+          "price_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PriceSourceKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Read At"
+          },
           "value_eur": {
             "anyOf": [
               {
@@ -17386,6 +17462,18 @@
             },
             "type": "array",
             "title": "Waiting"
+          },
+          "spot_read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spot Read At"
           }
         },
         "additionalProperties": false,
@@ -17522,6 +17610,67 @@
         ],
         "title": "CryptoLot",
         "description": "An open lot as the tab shows it: tax-free today or from `tax_free_from`, its value at\nthe coin's price, and what resolves a missing cost. A lot of source `unknown` (an in-leg\nno transfer explains, a correction) has no price need: its cost is unknown for another\nreason, and the tab names that instead."
+      },
+      "CryptoRefreshState": {
+        "properties": {
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "queued": {
+            "type": "boolean",
+            "title": "Queued",
+            "default": false
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "spot_read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spot Read At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "CryptoRefreshState",
+        "description": "GET /crypto/refresh, and POST's answer.\n\nstatus: `idle` (never pressed), `running` (queued or reading), `succeeded`, `failed`.\nqueued (POST only): whether this press queued a new run; false while one runs or one\nfinished less than two minutes ago, whose state is then returned (one at a time per\nhousehold). spot_read_at: the moment of the newest price read on demand today (Berlin),\nnull when none was read today."
       },
       "Currency": {
         "type": "string",
@@ -29014,6 +29163,18 @@
               }
             ],
             "title": "Issuer"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
           }
         },
         "additionalProperties": false,
@@ -29036,7 +29197,8 @@
           "kraken_daily",
           "ecb_fx",
           "user",
-          "exchange_close"
+          "exchange_close",
+          "spot"
         ],
         "title": "PriceSourceKind",
         "description": "price.source (migration 0025). Named ...Kind because §11's PriceSource is the fetcher\nprotocol below. The precedence among one day's rows is rules.valuation's data."
