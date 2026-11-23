@@ -347,7 +347,9 @@ What Luis has put on next week's list (added 22 Nov 2026). An entry leaves this 
 
 | Added | What | State | Detail |
 | --- | --- | --- | --- |
-| — | Nothing open. The Quirion fix (added 22 Nov 2026) left the list on 23 Nov 2026, merged and deployed (PR #551, migration 0052) | — | `docs/phases/phase-6.md` D292 |
+| 23 Nov 2026 | **„Jetzt aktualisieren“ prices first** (Luis: „I clicked the refresh now button and nothing has happen for more than 30 secs. It's too slow.“): the button's run took 43 s on the live data (read from the request log), about 30 s of it reading the three wallet addresses one after another (Bitcoin's public service allows one request a second) before any price; the prices are fetched and shown first, the wallets read afterwards and side by side, the card saying which part is done | Go given 23 Nov 2026, being built | `docs/phases/phase-10.md` D291 |
+| 23 Nov 2026 | **Pages ready right after a deploy** (Luis: „It still takes time to load the overview page after signing in. And in general switching from one section to another feels slow still.“): the kept answers (§7.4) live in the API's memory, so every deploy empties them and the list of pages to compute after a change (§7.5 (c)); the first visit to each section after a deploy was computed on the spot (Übersicht about 6–7 s on 23 Nov 2026, after a deploy that morning); the API runs the 09:00 warm step once after each start | Go given 23 Nov 2026, being built | `docs/phases/phase-10.md` §7.5 |
+| 23 Nov 2026 | **Signing out moves no data version**: `user.signed_out` (and `user.sessions_revoked`) still move the household's data version (migration 0051 exempted the sign-in only), so a sign-out and sign-in recomputed every kept answer although nothing had changed (seen live 23 Nov 2026); a reversible trigger change, migration 0055 | Go given 23 Nov 2026, being built | `docs/phases/phase-10.md` §7.5 (a) |
 
 ## Parked for later („Für später geparkt“)
 
