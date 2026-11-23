@@ -885,7 +885,7 @@ function ownQuestion(item: InboxItem): string | null {
 }
 
 /** A bank line in two rows (phase 10 §7.6): date, payee and amount; then the kind,
- * „Vorschlag: <Kategorie>“ and the model's question, cut to one line. The whole row is the
+ * „Vorschlag: <Kategorie>“ (or the kind, when there is none) and the model's question, cut to one line. The whole row is the
  * button that opens the detail panel, which keeps the purpose, the private account, the
  * reasoning and the whole question. */
 function LineEntry({
@@ -912,8 +912,13 @@ function LineEntry({
         {line ? signedMoney(line.amount) : "–"}
       </span>
       <span className="inbox-line-second">
-        <span className={PILL_CLASS[item.kind]}>{INBOX_ITEM_KIND[item.kind]}</span>
-        {item.category ? <span className="inbox-suggestion">{t.suggestion(ALLOCATION_CATEGORY[item.category])}</span> : null}
+        {/* „Vorschlag: <Kategorie>“ says what „Vorschlag prüfen“ would; the kind shows when there
+            is no suggestion („Nicht zugeordnet“). */}
+        {item.category ? (
+          <span className="inbox-suggestion">{t.suggestion(ALLOCATION_CATEGORY[item.category])}</span>
+        ) : (
+          <span className={PILL_CLASS[item.kind]}>{INBOX_ITEM_KIND[item.kind]}</span>
+        )}
         {question ? (
           <span className="inbox-line-question" title={question}>
             {question}

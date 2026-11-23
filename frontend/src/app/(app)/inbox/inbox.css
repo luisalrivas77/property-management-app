@@ -64,9 +64,13 @@ label.inbox-head-button.busy {
   outline-offset: 3px;
 }
 
-/* An upload notice is one short paragraph; the queue follows close under it. */
+/* An upload notice is one line (§7.6 (2)); the document's link comes first, so it stays
+   visible and tappable when the rest is cut. */
 .inbox-head-notices > .notice p {
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .inbox-head-error {
@@ -114,6 +118,7 @@ label.inbox-head-button.busy {
 .inbox-line-second .badge {
   flex: none;
   margin-left: 0;
+  padding: 0 8px;
 }
 
 .inbox-suggestion {

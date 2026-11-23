@@ -220,7 +220,7 @@ function Inbox() {
             </button>
           ) : null}
           <HeadUpload t={t} onUploaded={noteUpload} />
-          <PhotoInput className="inbox-head-button" disabled={strip.full} onFiles={addPhotos}>
+          <PhotoInput className="inbox-head-button" disabled={strip.busy || strip.full} onFiles={addPhotos}>
             <CameraIcon />
             {t.photoButton}
           </PhotoInput>

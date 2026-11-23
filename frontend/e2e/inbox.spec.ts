@@ -409,3 +409,23 @@ test("Foto opens the camera and the page strip in the panel; Hochladen stores a 
   expect((await stored).status()).toBe(201);
   await expect(page.getByRole("status").filter({ hasText: "brief.png" })).toBeVisible();
 });
+
+// Phase 10 §7.6 (5): ten waiting bank lines fit a phone screen. Each line is two rows (date,
+// payee, amount; then the kind or „Vorschlag: …“ and the question cut to one line), so ten of
+// them take well under the 844 px of a 390 px wide phone, its bottom menu included.
+test("ten waiting bank lines fit a phone screen", async ({ page, signedIn }) => {
+  void signedIn;
+  await importSample(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/inbox");
+  await openSection(page, "Zahlungen zuordnen");
+  const lines = page.getByRole("list", { name: "Zahlungen zuordnen" }).getByRole("button");
+  await expect(lines).toHaveCount(22);
+  const first = await lines.nth(0).boundingBox();
+  const tenth = await lines.nth(9).boundingBox();
+  expect(first).not.toBeNull();
+  expect(tenth).not.toBeNull();
+  if (!first || !tenth) return;
+  expect(tenth.y + tenth.height - first.y).toBeLessThanOrEqual(700);
+  for (let i = 0; i < 10; i++) expect((await lines.nth(i).boundingBox())?.height ?? 0).toBeLessThanOrEqual(70);
+});
