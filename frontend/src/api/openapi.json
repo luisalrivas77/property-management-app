@@ -22132,6 +22132,16 @@
                 "type": "null"
               }
             ]
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Verdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -39011,6 +39021,247 @@
         "type": "object",
         "title": "ValueChange",
         "description": "The yearly change of a class's value without its distributions (§7.5 (10)), typed by\na member. Neither field has a default value or an example: an empty field means no\nprojection, a typed 0 is a rate (D247 amended)."
+      },
+      "Verdict": {
+        "properties": {
+          "word": {
+            "$ref": "#/components/schemas/VerdictWord"
+          },
+          "weakest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MarkedFigure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "type": "string",
+            "title": "Line"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/VerdictPart"
+            },
+            "type": "array",
+            "title": "Parts"
+          },
+          "todos": {
+            "items": {
+              "$ref": "#/components/schemas/HealthTodo"
+            },
+            "type": "array",
+            "title": "Todos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "word",
+          "line"
+        ],
+        "title": "Verdict",
+        "description": "GET /health's `verdict`: computed on read from the same figures, never stored."
+      },
+      "VerdictOrigin": {
+        "type": "string",
+        "enum": [
+          "household",
+          "default"
+        ],
+        "title": "VerdictOrigin"
+      },
+      "VerdictPart": {
+        "properties": {
+          "figure": {
+            "$ref": "#/components/schemas/MarkedFigure"
+          },
+          "state": {
+            "$ref": "#/components/schemas/VerdictState"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "months": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Months"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "target_months": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Months"
+          },
+          "good": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Good"
+          },
+          "strained": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strained"
+          },
+          "strained_amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strained Amount"
+          },
+          "good_origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerdictOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "strained_origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerdictOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerdictOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "no_loan": {
+            "type": "boolean",
+            "title": "No Loan",
+            "default": false
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline"
+          },
+          "why": {
+            "type": "string",
+            "title": "Why"
+          },
+          "reference": {
+            "type": "string",
+            "title": "Reference"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "figure",
+          "state",
+          "question",
+          "headline",
+          "why",
+          "reference"
+        ],
+        "title": "VerdictPart",
+        "description": "One of the three questions: its figure, its state against the limits used, and where\neach limit came from. The savings rate and the Schuldendienstquote are ratios (`value`,\n`good`, `strained`); the reserve is compared in euros (`amount` against `target`, good at\nor above it, strained below `strained_amount` = `strained` × target). Texts are German,\nfigure-free, from verdict.yaml; the English is swapped in on read (services/read_texts)."
+      },
+      "VerdictState": {
+        "type": "string",
+        "enum": [
+          "good",
+          "ok",
+          "strained",
+          "missing"
+        ],
+        "title": "VerdictState"
+      },
+      "VerdictWord": {
+        "type": "string",
+        "enum": [
+          "very_good",
+          "good",
+          "strained",
+          "too_little_data"
+        ],
+        "title": "VerdictWord",
+        "description": "The household's financial health in one word (rules/verdict)."
       },
       "VorsorgeOverride": {
         "properties": {

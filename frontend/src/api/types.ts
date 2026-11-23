@@ -8555,6 +8555,7 @@ export interface components {
             /** Todos */
             todos?: components["schemas"]["HealthTodo"][];
             last_ended?: components["schemas"]["HouseholdMonth"] | null;
+            verdict?: components["schemas"]["Verdict"] | null;
         };
         /**
          * HealthMonthView
@@ -15354,6 +15355,80 @@ export interface components {
             /** Crypto */
             crypto?: string | null;
         };
+        /**
+         * Verdict
+         * @description GET /health's `verdict`: computed on read from the same figures, never stored.
+         */
+        Verdict: {
+            word: components["schemas"]["VerdictWord"];
+            weakest?: components["schemas"]["MarkedFigure"] | null;
+            /** Line */
+            line: string;
+            /** Parts */
+            parts?: components["schemas"]["VerdictPart"][];
+            /** Todos */
+            todos?: components["schemas"]["HealthTodo"][];
+        };
+        /**
+         * VerdictOrigin
+         * @enum {string}
+         */
+        VerdictOrigin: "household" | "default";
+        /**
+         * VerdictPart
+         * @description One of the three questions: its figure, its state against the limits used, and where
+         *     each limit came from. The savings rate and the Schuldendienstquote are ratios (`value`,
+         *     `good`, `strained`); the reserve is compared in euros (`amount` against `target`, good at
+         *     or above it, strained below `strained_amount` = `strained` × target). Texts are German,
+         *     figure-free, from verdict.yaml; the English is swapped in on read (services/read_texts).
+         */
+        VerdictPart: {
+            figure: components["schemas"]["MarkedFigure"];
+            state: components["schemas"]["VerdictState"];
+            /** Value */
+            value?: string | null;
+            /** Amount */
+            amount?: string | null;
+            /** Months */
+            months?: string | null;
+            /** Target */
+            target?: string | null;
+            /** Target Months */
+            target_months?: string | null;
+            /** Good */
+            good?: string | null;
+            /** Strained */
+            strained?: string | null;
+            /** Strained Amount */
+            strained_amount?: string | null;
+            good_origin?: components["schemas"]["VerdictOrigin"] | null;
+            strained_origin?: components["schemas"]["VerdictOrigin"] | null;
+            origin?: components["schemas"]["VerdictOrigin"] | null;
+            /**
+             * No Loan
+             * @default false
+             */
+            no_loan: boolean;
+            /** Question */
+            question: string;
+            /** Headline */
+            headline: string;
+            /** Why */
+            why: string;
+            /** Reference */
+            reference: string;
+        };
+        /**
+         * VerdictState
+         * @enum {string}
+         */
+        VerdictState: "good" | "ok" | "strained" | "missing";
+        /**
+         * VerdictWord
+         * @description The household's financial health in one word (rules/verdict).
+         * @enum {string}
+         */
+        VerdictWord: "very_good" | "good" | "strained" | "too_little_data";
         /** VorsorgeOverride */
         VorsorgeOverride: {
             /** Pension */
