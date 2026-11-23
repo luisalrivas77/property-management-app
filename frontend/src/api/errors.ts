@@ -167,6 +167,15 @@ const RULE_CODE_TEXT_DE: Record<string, string> = {
   "tax_input.movable_asset_separate_unsupported":
     "Eine gesondert gekaufte Küche wird noch nicht unterstützt; sie braucht ihr Anschaffungsdatum.",
   "tax_input.movable_asset_no_purchase_date": "Zuerst das Übergabedatum der Immobilie eintragen.",
+  // the seller's renovation inside the purchase price (D287)
+  "tax_input.price_renovation_no_purchase_date":
+    "Zuerst das Übergabedatum der Immobilie eintragen: die Renovierung zählt nur, wenn sie nach der Übergabe beginnt.",
+  "tax_input.price_renovation_before_handover":
+    "Die Renovierung beginnt vor der Übergabe; dann ist sie Sache des Verkäufers und zählt nicht als eure. Bitte den Zeitraum der Arbeiten prüfen.",
+  "tax_input.price_renovation_paid_before_handover_year":
+    "Das Zahlungsdatum liegt in einem Jahr vor dem Jahr der Übergabe. Bitte den Tag eintragen, an dem der restliche Kaufpreis bezahlt wurde.",
+  "tax_input.price_renovation_exceeds_building":
+    "Der Betrag der Renovierung (mit einer mitgekauften Küche) muss kleiner sein als der Gebäudeanteil des Kaufpreises. Bitte den Betrag oder die Kaufpreisaufteilung prüfen.",
   // household income and the tax effect (phase-4.md §8, D83)
   "income_input.scope_invalid":
     "Diese Angabe passt nicht zu ihrem Eintrag: eine Korrektur gilt für dieselbe Art, dasselbe Jahr und dieselbe Person, eine Rücknahme wiederholt den Wert.",

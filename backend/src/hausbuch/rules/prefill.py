@@ -305,6 +305,19 @@ _LIFE_UNREADABLE_NOTE = (
     "Die Restnutzungsdauer des Gutachtens ließ sich nicht als Zahl lesen. Sie lässt sich unter "
     "Steuern bei „Kürzere Nutzungsdauer (Gutachten)“ eintragen."
 )
+# Phase 3 D287: a Kaufvertrag's renovation clause, proposed as the seller's renovation in the
+# price. Saving claims it; skipping it leaves the AfA as it is.
+_CLAUSE_MAX = 1000
+_PRICE_RENOVATION_NOTE = (
+    "Der Kaufvertrag verpflichtet den Verkäufer, nach der Übergabe zu renovieren, bezahlt mit "
+    "dem Kaufpreis. Mit „Übernehmen“ macht ihr diesen Teil des Kaufpreises offen als eigene "
+    "Renovierung geltend: er verlässt die AfA-Bemessungsgrundlage des Gebäudes, zählt netto "
+    "zur 15 %-Grenze und ist darunter Erhaltungsaufwand im Jahr der Zahlung. Der BFH (IX R "
+    "34/03) rechnet eine solche Renovierung eher den Anschaffungskosten zu; lehnt das "
+    "Finanzamt ab, gilt wieder die AfA wie ohne diese Angabe. „Bezahlt am“ ist der Tag, an dem "
+    "der Kaufpreis gezahlt wurde; was der Vertrag nicht nennt, bitte eintragen. Ohne Haken "
+    "bleibt die AfA, wie sie ist."
+)
 # A catalogue document whose link was not found (D131): typing only, and what to do.
 _NO_PROPERTY_NOTE = (
     "Zu diesem Dokument wurde kein Objekt gefunden: die Adresse passt zu keinem oder zu "
@@ -1359,6 +1372,7 @@ class _Builder:
         self._unit(prop)
         self._price_split()
         self._ownership()
+        self._price_renovation()
         self.link("link:property", None if prop is None else prop.id)
 
     def _match_record(
@@ -1447,6 +1461,44 @@ class _Builder:
         value = None if share is None else str(share)
         derived = _derived(value, [("purchase_price", price), ("land_value", land)])
         self.add("price_split", "price_split", "create", {"building_share": derived})
+
+    def _price_renovation(self) -> None:
+        """Phase 3 D287 (Q-O180): a renovation clause read (the seller renovates after the
+        handover, paid inside the price) proposes tax_input:price_renovation for the user to
+        complete and save: the gross as printed, the net as printed, else computed by code from
+        the gross and a stated USt. rate, else left to type; the period only as printed; the
+        day the price was paid always typed. Saving it claims the renovation (status claimed,
+        set at apply); the note says what that means. No clause read: nothing."""
+        clause = self.ev("renovation_clause")
+        if clause.value is None:
+            return
+        gross = self.ev("renovation_amount")
+        net = self.ev("renovation_amount_net")
+        if net.value is None:
+            rate = self.ev("renovation_vat_rate")
+            amount, vat = _decimal(gross.value), _decimal(rate.value)
+            if amount is not None and vat is not None and amount > 0 and 0 < vat < 1:
+                value = (amount / (1 + vat)).quantize(_CENTS, rounding=ROUND_HALF_UP)
+                inputs = [("renovation_amount", gross), ("renovation_vat_rate", rate)]
+                net = _derived(str(value), inputs)
+        if isinstance(clause.value, str) and len(clause.value) > _CLAUSE_MAX:
+            # the row keeps at most 1,000 characters of the clause (schemas.tax.PriceRenovation)
+            clause = clause.model_copy(update={"value": clause.value[:_CLAUSE_MAX]})
+        proposed = {
+            "value.amount": gross,
+            "value.amount_net": net,
+            "value.period_start": self.ev("renovation_start"),
+            "value.period_end": self.ev("renovation_end"),
+            "value.clause": clause,
+        }
+        fields = {f: v for f, v in proposed.items() if v.value is not None}
+        self.add(
+            "tax_input:price_renovation",
+            "tax_input",
+            "create",
+            fields,
+            notes=[_PRICE_RENOVATION_NOTE],
+        )
 
     def _ownership(self) -> None:
         buyers, clause = self.ev("buyers"), self.ev("ownership_clause")

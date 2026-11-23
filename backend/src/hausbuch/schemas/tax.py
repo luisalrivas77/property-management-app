@@ -259,6 +259,9 @@ class TaxInputKind(StrEnum):
     PRIVATE_COST = "private_cost"  # a rental cost paid privately, per year (phase 4b D111)
     # Phase 5 D126: the Grundsteuerbescheid's instalments, per property from its first year
     GRUNDSTEUER_SCHEDULE = "grundsteuer_schedule"
+    # Phase 3 D287: the seller's renovation inside the purchase price, claimed as the
+    # household's own; per property, one current row, document required (the Kaufvertrag)
+    PRICE_RENOVATION = "price_renovation"
 
 
 class Spread82b(Schema):
@@ -452,6 +455,54 @@ class GrundsteuerSchedule(Schema):
         return self
 
 
+PriceRenovationStatus = Literal["claimed", "accepted", "declined"]
+
+
+class PriceRenovation(Schema):
+    """Phase 3 D287 (Q-O180, Luis 23 Nov 2026): the Kaufvertrag obliges the seller to renovate
+    the flat after the handover, paid inside the price; the household claims that part as its
+    own renovation, openly (BFH IX R 34/03 points the other way, so the Finanzamt may refuse).
+
+    While `claimed` (or `accepted`, after the Finanzamt's assessment said yes) the gross
+    `amount` leaves the building's share of the AfA basis (never the land's), counts in the
+    15 % test at `amount_net` as work done on `period_end` (D76), and within the limit is
+    Erhaltungsaufwand in the year of `paid_on` (§11 EStG, the day the price was paid). Over the
+    limit it returns to the basis (limit_exceeded). `declined` (the Finanzamt's „Nein“) and no
+    row leave the draft exactly as without the claim.
+
+    document_id on the row is the Kaufvertrag; `clause` quotes its renovation clause (free text:
+    it stays in the row and never enters the event payload). The row has no tax_year."""
+
+    status: PriceRenovationStatus
+    amount: PositiveMoney  # gross, VAT included, as the price contains it
+    amount_net: PositiveMoney
+    period_start: date
+    period_end: date
+    paid_on: date
+    clause: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("amount_net")
+    @classmethod
+    def _net_within_amount(cls, net: Decimal, info: ValidationInfo) -> Decimal:
+        amount = info.data.get("amount")
+        if amount is not None and net > amount:
+            raise ValueError("Der Nettobetrag kann nicht höher sein als der Betrag.")
+        return net
+
+    @field_validator("period_end")
+    @classmethod
+    def _end_after_start(cls, end: date, info: ValidationInfo) -> date:
+        start = info.data.get("period_start")
+        if start is not None and end < start:
+            raise ValueError("Das Ende der Arbeiten liegt nicht vor ihrem Beginn.")
+        return end
+
+    @property
+    def counts(self) -> bool:
+        """The claim stands: claimed, or accepted by the Finanzamt."""
+        return self.status != "declined"
+
+
 TaxInputValue = (
     Spread82b
     | RenovationTreatment
@@ -464,6 +515,7 @@ TaxInputValue = (
     | MovableAsset
     | PrivateCostValue
     | GrundsteuerSchedule
+    | PriceRenovation
 )
 
 K = TaxInputKind
@@ -479,6 +531,7 @@ TAX_INPUT_VALUES: dict[TaxInputKind, type[Schema]] = {
     K.MOVABLE_ASSET: MovableAsset,
     K.PRIVATE_COST: PrivateCostValue,
     K.GRUNDSTEUER_SCHEDULE: GrundsteuerSchedule,
+    K.PRICE_RENOVATION: PriceRenovation,
 }
 # The scope each kind needs; migration 0013's CHECKs say the same.
 ALLOCATION_SCOPED = frozenset({K.SPREAD_82B, K.RENOVATION_TREATMENT, K.EXCLUDE_FROM_15PCT})
@@ -494,9 +547,16 @@ YEAR_SCOPED = frozenset(
     }
 )
 # A document required: the certificate, the Abrechnung, the Gutachten (D79). A movable asset's
-# evidence is optional (D80: its value is often an estimate).
+# evidence is optional (D80: its value is often an estimate). The seller's renovation needs
+# the Kaufvertrag (D287).
 DOCUMENT_REQUIRED = frozenset(
-    {K.RUECKLAGE_SPENT, K.INTEREST_CERTIFIED, K.USEFUL_LIFE, K.GRUNDSTEUER_SCHEDULE}
+    {
+        K.RUECKLAGE_SPENT,
+        K.INTEREST_CERTIFIED,
+        K.USEFUL_LIFE,
+        K.GRUNDSTEUER_SCHEDULE,
+        K.PRICE_RENOVATION,
+    }
 )
 # The yearly kinds a row may be confirmed from last year's (the questionnaire's copy, D110).
 CARRIED_KINDS = frozenset({K.PRIVATE_COST})
@@ -574,7 +634,8 @@ class TaxInputCreate(Schema):
             problems.append("carried_from_id belongs to private_cost only")
         if k in DOCUMENT_REQUIRED and self.document_id is None:
             problems.append(
-                "a certificate figure, a useful life or a Grundsteuer schedule needs its document"
+                "a certificate figure, a useful life, a Grundsteuer schedule or the seller's"
+                " renovation needs its document"
             )
         if self.withdrawn and self.supersedes_id is None:
             problems.append("a withdrawal supersedes the row it withdraws")
@@ -649,6 +710,12 @@ class WarningCode(StrEnum):
     TAX_PRIVATE_COST_PAID_FROM_ACCOUNT = "tax.private_cost_paid_from_account"
     # Phase 3 D143: a counted bill no bank line paid and no matching payment proof proves
     PAYMENT_PROOF_MISSING = "payment_proof.missing"
+    # Phase 3 D287: the seller's renovation claimed out of the price, the year's assessment
+    # confirmed: did the Finanzamt accept it? („Ja“ / „Nein“)
+    TAX_PRICE_RENOVATION_ASK = "tax.price_renovation_ask"
+    # D287: a claim in force that the draft cannot apply (its work begins before the handover,
+    # or it does not fit in the building's share of the price); the draft is as without it
+    TAX_PRICE_RENOVATION_NOT_APPLIED = "tax.price_renovation_not_applied"
     ANLAGE_N_CERTIFICATE_MISSING = "anlage_n.certificate_missing"
     ANLAGE_N_CHURCH_MISMATCH = "anlage_n.church_mismatch"
     ANLAGE_N_TAX_CLASS_6 = "anlage_n.tax_class_6"
@@ -718,6 +785,8 @@ WARNING_SEVERITY: dict[WarningCode, Severity] = {
     W.TAX_TRAVEL_FREQUENCY: "info",
     W.TAX_PRIVATE_COST_PAID_FROM_ACCOUNT: "warning",
     W.PAYMENT_PROOF_MISSING: "warning",
+    W.TAX_PRICE_RENOVATION_ASK: "warning",
+    W.TAX_PRICE_RENOVATION_NOT_APPLIED: "warning",
     W.ANLAGE_N_CERTIFICATE_MISSING: "warning",
     W.ANLAGE_N_CHURCH_MISMATCH: "warning",
     W.ANLAGE_N_TAX_CLASS_6: "warning",
@@ -953,6 +1022,21 @@ class MovableAssetFact(Schema):
     document_id: UUID | None = None
 
 
+class PriceRenovationFact(Schema):
+    """A price_renovation tax input in force that counts (D287: claimed or accepted, its work
+    begun on or after the handover): its gross amount leaves the building's share of the AfA
+    basis, its net counts in the 15 % test as work done on period_end, and within the limit it
+    is Erhaltungsaufwand in the year of paid_on."""
+
+    tax_input_id: UUID
+    amount: PositiveMoney
+    amount_net: PositiveMoney
+    period_start: date
+    period_end: date
+    paid_on: date
+    document_id: UUID | None = None
+
+
 class AfaFacts(Schema):
     property_id: UUID
     purchase_price: PositiveMoney
@@ -966,6 +1050,7 @@ class AfaFacts(Schema):
     allocations: list[AllocationFact] = Field(default_factory=list)
     useful_lives: list[UsefulLifeFact] = Field(default_factory=list)  # in force only (D79)
     movable_assets: list[MovableAssetFact] = Field(default_factory=list)  # in force only (D80)
+    price_renovation: PriceRenovationFact | None = None  # D287, only while it counts
 
 
 AfaMethod = Literal["statutory", "useful_life"]
@@ -1167,6 +1252,9 @@ class DraftFacts(Schema):
     # Phase 3 D150: per bill (document id), the amounts of the cost lines its current reading
     # states; the rules use them only when they sum to the bill's combined total.
     bill_parts: dict[UUID, list[Money]] = Field(default_factory=dict)
+    # Phase 3 D287: the tax years whose Einkommensteuerbescheid is confirmed (a bescheid_zve
+    # income input in force); a claimed seller's renovation then asks whether it was accepted.
+    assessed_years: list[TaxYear] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:

@@ -13,6 +13,23 @@ export const proposalFields = defineMessages({
     ulFromL: "Gilt ab Steuerjahr",
     ulFromD:
       "Das erste Jahr, für das die kürzere Nutzungsdauer gilt: das Jahr der Übergabe, oder das Jahr des Stichtags, wenn das Gutachten erst Jahre nach dem Kauf erstellt wurde. Davor bleibt es bei der gesetzlichen AfA.",
+    // the seller's renovation in the price, from the Kaufvertrag (phase 3 D287)
+    prAmountL: "Renovierung im Kaufpreis, brutto (€)",
+    prAmountD:
+      "Der Teil des Kaufpreises, der laut Kaufvertrag auf die Renovierung durch den Verkäufer entfällt, mit Umsatzsteuer. Er verlässt mit „Übernehmen“ die AfA-Bemessungsgrundlage des Gebäudes (nie den Grund und Boden) und muss unter dem Gebäudeanteil bleiben.",
+    prNetL: "Renovierung, netto (€)",
+    prNetD:
+      "Der Betrag ohne Umsatzsteuer: wie im Vertrag gedruckt, sonst von Hausbuch aus dem Bruttobetrag und dem genannten Umsatzsteuersatz gerechnet. Nennt der Vertrag beides nicht, bitte eintragen. Die 15-%-Grenze der ersten drei Jahre rechnet netto.",
+    prStartL: "Beginn der Arbeiten",
+    prStartD: "Der Tag, an dem die Renovierung beginnt. Er muss am oder nach dem Tag der Übergabe liegen.",
+    prEndL: "Ende der Arbeiten",
+    prEndD: "Der Tag, an dem die Renovierung fertig ist. An diesem Tag zählt sie für die 15-%-Grenze als ausgeführt.",
+    prPaidL: "Kaufpreis bezahlt am",
+    prPaidD:
+      "Der Tag, an dem der Kaufpreis (mit dieser Renovierung) bezahlt wurde. In diesem Jahr ist die Renovierung Erhaltungsaufwand (§ 11 EStG). Der Kaufvertrag nennt ihn nicht, daher bitte eintragen.",
+    prClauseL: "Renovierungsklausel",
+    prClauseD:
+      "Der Satz des Kaufvertrags, der den Verkäufer zur Renovierung nach der Übergabe verpflichtet. Er bleibt bei der Angabe und wird beim Finanzamt zitiert, wenn es nachfragt.",
     // shared labels
     amountL: "Betrag (€)",
     nameL: "Bezeichnung",
@@ -268,6 +285,22 @@ export const proposalFields = defineMessages({
     ulFromL: "Applies from tax year",
     ulFromD:
       "The first year the shorter useful life applies to: the year of the handover, or the year of the valuation date if the appraisal was made years after the purchase. Before it, the statutory AfA (depreciation) stays.",
+    prAmountL: "Renovation in the price, gross (€)",
+    prAmountD:
+      "The part of the purchase price that the purchase contract (Kaufvertrag) assigns to the seller's renovation, VAT included. With “Apply” it leaves the building's AfA (depreciation) basis (never the land's) and must stay below the building's share.",
+    prNetL: "Renovation, net (€)",
+    prNetD:
+      "The amount without VAT: as printed in the contract, else computed by Hausbuch from the gross amount and the VAT rate the contract names. If the contract names neither, please type it. The 15% limit of the first three years is computed net.",
+    prStartL: "Work begins",
+    prStartD: "The day the renovation begins. It must be on or after the day of the handover.",
+    prEndL: "Work ends",
+    prEndD: "The day the renovation is finished. On this day it counts as done for the 15% limit.",
+    prPaidL: "Purchase price paid on",
+    prPaidD:
+      "The day the purchase price (with this renovation) was paid. In that year the renovation is a repair expense (Erhaltungsaufwand, § 11 EStG). The contract does not state it, so please type it.",
+    prClauseL: "Renovation clause",
+    prClauseD:
+      "The sentence of the purchase contract that obliges the seller to renovate after the handover. It stays with the entry and is quoted to the tax office if it asks.",
     amountL: "Amount (€)",
     nameL: "Name",
     kindL: "Type",
@@ -825,12 +858,14 @@ export const TAX_INPUT_TITLE_DE: Record<string, string> = {
   ruecklage_spent: "Hausgeldabrechnung: Entnahme aus der Rücklage",
   grundsteuer_schedule: "Grundsteuerbescheid: Jahresbetrag und Fälligkeiten",
   useful_life: "Gutachten: kürzere Nutzungsdauer des Gebäudes",
+  price_renovation: "Kaufvertrag: Renovierung des Verkäufers im Kaufpreis",
 };
 export const TAX_INPUT_TITLE_EN: Record<string, string> = {
   interest_certified: "Interest certificate: interest paid",
   ruecklage_spent: "Hausgeldabrechnung (owners' association annual statement): withdrawal from the reserve",
   grundsteuer_schedule: "Grundsteuerbescheid (property tax notice): annual amount and due dates",
   useful_life: "Appraisal (Gutachten): shorter useful life of the building",
+  price_renovation: "Purchase contract (Kaufvertrag): the seller's renovation in the price",
 };
 
 /** The extraction fields a derived value names in `derived_from`. */
@@ -859,6 +894,9 @@ export const DERIVED_INPUT_DE: Record<string, string> = {
   amount_total: "Gesamtbetrag",
   remaining_useful_life: "Restnutzungsdauer laut Gutachten",
   valuation_date: "Bewertungsstichtag des Gutachtens",
+  // Phase 3 D287: the Kaufvertrag's renovation clause
+  renovation_amount: "Renovierung im Kaufpreis (brutto)",
+  renovation_vat_rate: "Umsatzsteuersatz der Renovierung",
   // Phase 6 step 4: a depot reading's fields
   side: "Kauf oder Verkauf",
   units: "Stückzahl",
@@ -893,6 +931,8 @@ export const DERIVED_INPUT_EN: Record<string, string> = {
   amount_total: "Total amount",
   remaining_useful_life: "Remaining useful life per the appraisal",
   valuation_date: "The appraisal's valuation date",
+  renovation_amount: "Renovation in the price (gross)",
+  renovation_vat_rate: "The renovation's VAT rate",
   side: "Purchase or sale",
   units: "Number of units",
   net_amount: "Final amount (Ausmachender Betrag)",

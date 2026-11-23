@@ -81,6 +81,17 @@ TAX_INPUT_MOVABLE_ASSET_NO_SPLIT = "tax_input.movable_asset_no_split"
 TAX_INPUT_MOVABLE_ASSET_SEPARATE_UNSUPPORTED = "tax_input.movable_asset_separate_unsupported"
 # D80 review: without the handover date there is no first year and no AfA start.
 TAX_INPUT_MOVABLE_ASSET_NO_PURCHASE_DATE = "tax_input.movable_asset_no_purchase_date"
+# D287: the seller's renovation inside the price is work after the handover (so the handover
+# date is needed), and its gross, with a kitchen bought with the flat, stays below the
+# building's share of the price (checked when a split is selected).
+TAX_INPUT_PRICE_RENOVATION_NO_PURCHASE_DATE = "tax_input.price_renovation_no_purchase_date"
+TAX_INPUT_PRICE_RENOVATION_BEFORE_HANDOVER = "tax_input.price_renovation_before_handover"
+TAX_INPUT_PRICE_RENOVATION_EXCEEDS_BUILDING = "tax_input.price_renovation_exceeds_building"
+# the price paid in a year before the handover's: its deduction would fall in a year whose
+# draft holds no AfA and that the performance view never reads (D287 review)
+TAX_INPUT_PRICE_RENOVATION_PAID_BEFORE_HANDOVER_YEAR = (
+    "tax_input.price_renovation_paid_before_handover_year"
+)
 TAX_EXPORT_FAILED = "tax_export.failed"
 TAX_EXPORT_TOO_LARGE = "tax_export.too_large"  # an archive over 100 MiB
 # phase 4b D104: an Anlage N sheet is exported per owner, every other kind per property

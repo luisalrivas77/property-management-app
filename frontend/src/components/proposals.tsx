@@ -193,6 +193,7 @@ type FieldTexts = (typeof proposalFields)["de"];
 interface Specs {
   FIELDS: Record<string, Record<string, FieldSpec>>;
   USEFUL_LIFE_FIELDS: Readonly<Record<string, FieldSpec>>;
+  PRICE_RENOVATION_FIELDS: Readonly<Record<string, FieldSpec>>;
   PRIVATE_COST_AMOUNT: FieldSpec;
   MANAGEMENT_FEE: FieldSpec;
 }
@@ -214,6 +215,17 @@ function buildSpecs(m: FieldTexts): Specs {
   const USEFUL_LIFE_FIELDS: Readonly<Record<string, FieldSpec>> = {
     "value.years": { label: m.ulYearsL, kind: "count", description: m.ulYearsD },
     tax_year: { label: m.ulFromL, kind: "year", description: m.ulFromD },
+  };
+
+  /** The seller's renovation in the price (tax_input:price_renovation, phase 3 D287), from the
+   * Kaufvertrag's clause: what it prints is proposed, the rest typed; saving it claims it. */
+  const PRICE_RENOVATION_FIELDS: Readonly<Record<string, FieldSpec>> = {
+    "value.amount": money(m.prAmountL, m.prAmountD),
+    "value.amount_net": money(m.prNetL, m.prNetD),
+    "value.period_start": date(m.prStartL, m.prStartD),
+    "value.period_end": date(m.prEndL, m.prEndD),
+    "value.paid_on": date(m.prPaidL, m.prPaidD),
+    "value.clause": text(m.prClauseL, m.prClauseD),
   };
 
   /** A cost paid from another account's amount (D135): one row per bill and category, so it
@@ -386,7 +398,7 @@ function buildSpecs(m: FieldTexts): Specs {
   /** A Verwaltervertrag's Betrag holds its monthly fee with MwSt., so it is named so (as on the page). */
   const MANAGEMENT_FEE: FieldSpec = { label: m.feeL, kind: "money", signed: true, description: m.feeD };
 
-  return { FIELDS, USEFUL_LIFE_FIELDS, PRIVATE_COST_AMOUNT, MANAGEMENT_FEE };
+  return { FIELDS, USEFUL_LIFE_FIELDS, PRICE_RENOVATION_FIELDS, PRIVATE_COST_AMOUNT, MANAGEMENT_FEE };
 }
 
 /** Four instalment slots of the Grundsteuer schedule: a due day and an amount each. */
@@ -475,6 +487,15 @@ const CREATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
   income_input: ["tax_year", "value.amount"],
   // GrundsteuerSchedule (by the record's whole key: the certificates' tax_input records keep
   // their proposed fields only), so the payment mode can be chosen before applying.
+  // PriceRenovation (phase 3 D287): the status is set by the apply (claimed), never typed here
+  "tax_input:price_renovation": [
+    "value.amount",
+    "value.amount_net",
+    "value.period_start",
+    "value.period_end",
+    "value.paid_on",
+    "value.clause",
+  ],
   "tax_input:grundsteuer_schedule": [
     "tax_year",
     "value.annual_amount",
@@ -548,10 +569,11 @@ function prefixOf(key: string): [string, string] {
 }
 
 function specFor(record: ProposalRecord, name: string): FieldSpec {
-  const { FIELDS, USEFUL_LIFE_FIELDS, PRIVATE_COST_AMOUNT, MANAGEMENT_FEE } = specs();
+  const { FIELDS, USEFUL_LIFE_FIELDS, PRICE_RENOVATION_FIELDS, PRIVATE_COST_AMOUNT, MANAGEMENT_FEE } = specs();
   if (name === "amount_total" && isHandField(record, name) && record.fields?.subtype?.value === "management_contract") return MANAGEMENT_FEE;
   if (name === "value.amount" && record.key.startsWith("tax_input:private_cost:")) return PRIVATE_COST_AMOUNT;
   if (record.key === "tax_input:useful_life" && USEFUL_LIFE_FIELDS[name]) return USEFUL_LIFE_FIELDS[name];
+  if (record.key === "tax_input:price_renovation" && PRICE_RENOVATION_FIELDS[name]) return PRICE_RENOVATION_FIELDS[name];
   return FIELDS[prefixOf(record.key)[0]]?.[name] ?? text(name);
 }
 

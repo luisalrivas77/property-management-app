@@ -1,0 +1,425 @@
+# Rule fixture: the seller's renovation inside the purchase price (hausbuch.rules.tax.draft.draft,
+# hausbuch.rules.tax.price_renovation)
+#
+# draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft
+# Spec: docs/phases/phase-3.md D287, Q-O180 (Luis, 23 Nov 2026: the work is done and paid in the
+# same calendar year). The Kaufvertrag obliges the seller to renovate the flat after the
+# handover, paid inside the price; the household claims that part of the price as its own
+# renovation, openly (BFH IX R 34/03 points the other way, so the Finanzamt may refuse it).
+# Synthetic figures only: the flat, the clause and every amount are invented (public repo).
+#
+# facts.tax_inputs holds a property-scoped `price_renovation` row (document: the Kaufvertrag):
+#   value {status claimed | accepted | declined, amount (gross), amount_net, period_start,
+#          period_end, paid_on (the day the price was paid), clause (optional quote)}
+# While the row in force is claimed or accepted, its work begins on or after the handover and
+# its gross amount (plus any movable asset in the price) stays below the building's share:
+#   AfA basis   = building share − movable assets − amount (never the land's share)
+#   15 % limit  = 15 % of that basis; the claim counts at amount_net, tested on period_end (D76),
+#                 in the running sum on paid_on
+#   within      → wk.maintenance += amount (gross) in paid_on's year, sources: the input and the
+#                 Kaufvertrag
+#   over        → a limit_exceeded basis addition of paid_on's year (gross), nothing on
+#                 wk.maintenance; every other counted cost moves too, as without the claim
+#   declined, or no row → the draft without the claim, to the cent
+#   not applied (period before the handover, paid in a year before the handover's, or
+#                 amount ≥ the building's share less movable
+#                 assets) → the draft without the claim plus tax.price_renovation_not_applied
+#                 (params: reason, amount)
+#   tax.price_renovation_ask (params: amount, tax_year) in paid_on's year once that year's
+#                 Einkommensteuerbescheid is confirmed (facts.assessed_years), while claimed and
+#                 booked; never once accepted or declined
+#
+# The flat: price 300,000.00 + cost rows 25,000.00 (both paid by bank lines, so no to-do),
+# building share 72 % → 234,000.00; built 1998 → 2 %; handover 1 Jul 2026 (6 months in 2026);
+# window 2026-07-01 .. 2029-07-01. No tenancy, so no income. No Hausgeldabrechnung yet, so
+# wk.maintenance is provisional in every case (hausgeld.abrechnung_pending), 0.00 or not. The claim: gross 23,800.00, net
+# 20,000.00, work 1 Jul – 30 Sep 2026, paid with the price on 1 Jul 2026.
+#
+# Hand calculation:
+#   without the claim  basis 234,000.00; AfA 2026 = 234,000.00 × 2 % × 6/12 = 2,340.00;
+#                      limit 35,100.00
+#   claimed            basis 234,000.00 − 23,800.00 = 210,200.00; AfA 2026 = 2,102.00,
+#                      2027 = 4,204.00; limit 31,530.00; used 20,000.00 (63.4 %) → within;
+#                      wk.maintenance 2026 = 23,800.00; wk.total 25,902.00
+#   plus a painter     a repair of 14,280.00 gross, 12,000.00 net, done 1–10 Oct 2026: used
+#                      20,000.00 + 12,000.00 = 32,000.00 > 31,530.00 (101.5 %) → exceeded in
+#                      2026; both return to the basis: AfA 2026 = (210,200.00 + 23,800.00 +
+#                      14,280.00) × 2 % × 6/12 = 2,482.80, 2027 = 4,965.60. Without the claim the
+#                      same painter (12,000.00 of 35,100.00) would be deductible in full.
+
+ids:
+  property: &P 0000000b-0000-4000-8000-000000000001
+  split: &S 0000005a-0000-4000-8000-000000000001
+  owner_a: &OA 0000000a-0000-4000-8000-000000000001
+  owner_b: &OB 0000000a-0000-4000-8000-000000000002
+  cost_grest: &C1 000000ac-0000-4000-8000-000000000001
+  cost_notar: &C2 000000ac-0000-4000-8000-000000000002
+  doc_kaufvertrag: &D_KV 00000d0c-0000-4000-8000-000000000001
+  doc_painter: &D_P 00000d0c-0000-4000-8000-00000000000d
+  input_claim: &TI1 00000081-0000-4000-8000-000000000001
+  input_answer: &TI2 00000081-0000-4000-8000-000000000002
+  painter: &A_P 000000a1-0000-4000-8000-000000000801
+
+bases:
+  facts: &facts
+    property:
+      id: *P
+      label: Musterwohnung
+      kind: etw
+      build_year: 1998
+      notarized_on: 2026-03-02
+      purchase_date: 2026-07-01
+      purchase_price: "300000.00"
+    owners:
+      - {owner_id: *OA, share: {numerator: 1, denominator: 2}}
+      - {owner_id: *OB, share: {numerator: 1, denominator: 2}}
+    split: {id: *S, source: purchase_contract, building_share: "0.720000", evidence_document_id: *D_KV}
+    cost_rows:
+      - {id: *C1, kind: real_estate_transfer_tax, amount: "19500.00",
+         paid_by: [000000a1-0000-4000-8000-0000000000f1]}
+      - {id: *C2, kind: notary, amount: "5500.00", paid_by: [000000a1-0000-4000-8000-0000000000f2]}
+  claim_value: &claim_value
+    status: claimed
+    amount: "23800.00"
+    amount_net: "20000.00"
+    period_start: 2026-07-01
+    period_end: 2026-09-30
+    paid_on: 2026-07-01
+    clause: Der Verkäufer verpflichtet sich, die Wohnung nach Übergabe zu renovieren; die Kosten sind im Kaufpreis enthalten.
+  claim: &claim {id: *TI1, property_id: *P, kind: price_renovation, document_id: *D_KV,
+                 value: *claim_value}
+  painter: &painter
+    allocation_id: *A_P
+    booking_date: 2026-10-15
+    amount: "-14280.00"
+    category: repairs
+    property_id: *P
+    invoice_net: "12000.00"
+    document_id: *D_P
+    service_period: {start: 2026-10-01, end: 2026-10-10}
+  afa_sources: &afa_sources
+    - {kind: property, id: *P}
+    - {kind: price_split, id: *S}
+    - {kind: document, id: *D_KV}
+    - {kind: acquisition_cost, id: *C1}
+    - {kind: acquisition_cost, id: *C2}
+  afa_sources_claim: &afa_sources_claim
+    - {kind: property, id: *P}
+    - {kind: price_split, id: *S}
+    - {kind: document, id: *D_KV}
+    - {kind: acquisition_cost, id: *C1}
+    - {kind: acquisition_cost, id: *C2}
+    - {kind: tax_input, id: *TI1}
+  claim_sources: &claim_sources
+    - {kind: tax_input, id: *TI1}
+    - {kind: document, id: *D_KV}
+  window: &window {window_start: 2026-07-01, window_end: 2029-07-01}
+  w_always: &w_always
+    - {code: hausgeld.abrechnung_pending}
+    - {code: draft.form_provisional}
+  # The draft without any claim (2026): the declined and not-applied cases expect exactly this.
+  without_2026: &without_2026
+    lines:
+      - {key: wk.afa, amount: "2340.00", amount_rounded: 2340, sources: *afa_sources}
+      - {key: wk.maintenance, amount: "0.00", provisional: true}
+      - {key: wk.total, amount: "2340.00", amount_rounded: 2340}
+      - {key: result.surplus, amount: "-2340.00", amount_rounded: -2340}
+      - {key: result.owner_a, amount: "-1170.00", amount_rounded: -1170}
+      - {key: result.owner_b, amount: "-1170.00", amount_rounded: -1170}
+    totals: {income: "0.00", costs: "2340.00", result: "-2340.00", income_rounded: 0,
+             costs_rounded: 2340, result_rounded: -2340}
+    owners:
+      - {owner_id: *OA, amount: "-1170.00", amount_rounded: -1170}
+      - {owner_id: *OB, amount: "-1170.00", amount_rounded: -1170}
+    afa: {amount: "2340.00", basis: "234000.00", months: 6, method_code: 2}
+    limit_15: {<<: *window, basis_building_cost: "234000.00", limit: "35100.00", counted: [],
+               used_net: "0.00", ratio_percent: "0.0", exceeded: false}
+  claimed_2026_lines: &claimed_2026_lines
+    - {key: wk.afa, amount: "2102.00", amount_rounded: 2102, sources: *afa_sources_claim}
+    - {key: wk.maintenance, amount: "23800.00", amount_rounded: 23800, provisional: true,
+       sources: *claim_sources}
+    - {key: wk.total, amount: "25902.00", amount_rounded: 25902}
+    - {key: result.surplus, amount: "-25902.00", amount_rounded: -25902}
+    - {key: result.owner_a, amount: "-12951.00", amount_rounded: -12951}
+    - {key: result.owner_b, amount: "-12951.00", amount_rounded: -12951}
+  claimed_2026_totals: &claimed_2026_totals
+    {income: "0.00", costs: "25902.00", result: "-25902.00", income_rounded: 0,
+     costs_rounded: 25902, result_rounded: -25902}
+  claimed_2026_owners: &claimed_2026_owners
+    - {owner_id: *OA, amount: "-12951.00", amount_rounded: -12951}
+    - {owner_id: *OB, amount: "-12951.00", amount_rounded: -12951}
+  claimed_limit: &claimed_limit
+    {<<: *window, basis_building_cost: "210200.00", limit: "31530.00", counted: [*TI1],
+     used_net: "20000.00", ratio_percent: "63.4", exceeded: false}
+
+cases:
+  - id: claimed_within_limit_year_paid
+    description: >
+      The claim stands: its gross 23,800.00 leaves the building's share (basis 210,200.00, AfA
+      2,102.00 for six months), it counts in the 15 % test at its net 20,000.00 of a limit of
+      31,530.00, and it is Erhaltungsaufwand of 2026, the year the price was paid.
+    tax_year: 2026
+    rule_set_year: 2026
+    facts: {<<: *facts, tax_inputs: [*claim]}
+    expect:
+      lines: *claimed_2026_lines
+      totals: *claimed_2026_totals
+      owners: *claimed_2026_owners
+      afa: {amount: "2102.00", basis: "210200.00", months: 6, method_code: 2}
+      limit_15: *claimed_limit
+      warnings: *w_always
+
+  - id: claimed_within_limit_next_year
+    description: >
+      2027: the claim was paid in 2026, so nothing on wk.maintenance; the AfA stays on the
+      reduced basis, 210,200.00 × 2 % = 4,204.00.
+    tax_year: 2027
+    rule_set_year: 2026
+    facts: {<<: *facts, tax_inputs: [*claim]}
+    expect:
+      lines:
+        - {key: wk.afa, amount: "4204.00", amount_rounded: 4204, sources: *afa_sources_claim}
+        - {key: wk.maintenance, amount: "0.00", provisional: true}
+        - {key: wk.total, amount: "4204.00", amount_rounded: 4204}
+        - {key: result.surplus, amount: "-4204.00", amount_rounded: -4204}
+        - {key: result.owner_a, amount: "-2102.00", amount_rounded: -2102}
+        - {key: result.owner_b, amount: "-2102.00", amount_rounded: -2102}
+      totals: {income: "0.00", costs: "4204.00", result: "-4204.00", income_rounded: 0,
+               costs_rounded: 4204, result_rounded: -4204}
+      owners:
+        - {owner_id: *OA, amount: "-2102.00", amount_rounded: -2102}
+        - {owner_id: *OB, amount: "-2102.00", amount_rounded: -2102}
+      afa: {amount: "4204.00", basis: "210200.00", months: 12, method_code: 1}
+      limit_15: *claimed_limit
+      warnings: *w_always
+
+  - id: claimed_over_limit_returns_to_basis
+    description: >
+      A painter's repair of 12,000.00 net in October 2026 brings the counted net to 32,000.00,
+      above the reduced limit of 31,530.00: the claim and the painter both join the AfA basis
+      in 2026 (limit_exceeded), nothing is Erhaltungsaufwand; AfA (210,200.00 + 23,800.00 +
+      14,280.00) × 2 % × 6/12 = 2,482.80.
+    tax_year: 2026
+    rule_set_year: 2026
+    facts: {<<: *facts, tax_inputs: [*claim], allocations: [*painter]}
+    expect:
+      lines:
+        - key: wk.afa
+          amount: "2482.80"
+          amount_rounded: 2483
+          sources:
+            - {kind: property, id: *P}
+            - {kind: price_split, id: *S}
+            - {kind: document, id: *D_KV}
+            - {kind: acquisition_cost, id: *C1}
+            - {kind: acquisition_cost, id: *C2}
+            - {kind: tax_input, id: *TI1}
+            - {kind: allocation, id: *A_P}
+        - {key: wk.maintenance, amount: "0.00", provisional: true}
+        - {key: wk.total, amount: "2482.80", amount_rounded: 2483}
+        - {key: result.surplus, amount: "-2482.80", amount_rounded: -2483}
+        - {key: result.owner_a, amount: "-1241.40", amount_rounded: -1242}
+        - {key: result.owner_b, amount: "-1241.40", amount_rounded: -1241}
+      totals: {income: "0.00", costs: "2482.80", result: "-2482.80", income_rounded: 0,
+               costs_rounded: 2483, result_rounded: -2483}
+      owners:
+        - {owner_id: *OA, amount: "-1241.40", amount_rounded: -1242}
+        - {owner_id: *OB, amount: "-1241.40", amount_rounded: -1241}
+      afa: {amount: "2482.80", basis: "210200.00", months: 6, method_code: 2}
+      limit_15: {<<: *window, basis_building_cost: "210200.00", limit: "31530.00",
+                 counted: [*TI1, *A_P], used_net: "32000.00", ratio_percent: "101.5",
+                 exceeded: true}
+      warnings:
+        - {code: limit.exceeded, params: {exceeded_in_year: "2026"}}
+        - {code: hausgeld.abrechnung_pending}
+        - {code: draft.form_provisional}
+
+  - id: claimed_over_limit_next_year
+    description: >
+      2027 after the crossing: the whole basis 248,280.00 at 2 % = 4,965.60.
+    tax_year: 2027
+    rule_set_year: 2026
+    facts: {<<: *facts, tax_inputs: [*claim], allocations: [*painter]}
+    expect:
+      lines:
+        - {key: wk.afa, amount: "4965.60", amount_rounded: 4966}
+        - {key: wk.maintenance, amount: "0.00", provisional: true}
+        - {key: wk.total, amount: "4965.60", amount_rounded: 4966}
+        - {key: result.surplus, amount: "-4965.60", amount_rounded: -4966}
+        - {key: result.owner_a, amount: "-2482.80", amount_rounded: -2483}
+        - {key: result.owner_b, amount: "-2482.80", amount_rounded: -2483}
+      totals: {income: "0.00", costs: "4965.60", result: "-4965.60", income_rounded: 0,
+               costs_rounded: 4966, result_rounded: -4966}
+      owners:
+        - {owner_id: *OA, amount: "-2482.80", amount_rounded: -2483}
+        - {owner_id: *OB, amount: "-2482.80", amount_rounded: -2483}
+      warnings:
+        - {code: limit.exceeded, params: {exceeded_in_year: "2026"}}
+        - {code: hausgeld.abrechnung_pending}
+        - {code: draft.form_provisional}
+
+  - id: declined_is_the_draft_without_it
+    description: >
+      „Nein“: a declined row supersedes the claim, so the draft is exactly the draft without
+      any claim (basis 234,000.00, AfA 2,340.00, limit 35,100.00, nothing on wk.maintenance);
+      the claim's row stays in the history.
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      tax_inputs:
+        - *claim
+        - {id: *TI2, property_id: *P, kind: price_renovation, document_id: *D_KV,
+           supersedes_id: *TI1, value: {<<: *claim_value, status: declined}}
+    expect: {<<: *without_2026, warnings: *w_always}
+
+  - id: declined_painter_deductible_again
+    description: >
+      Declined with the painter: without the claim the painter's 12,000.00 net stays below the
+      limit of 35,100.00, so its 14,280.00 is Erhaltungsaufwand of 2026 again.
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      allocations: [*painter]
+      tax_inputs:
+        - *claim
+        - {id: *TI2, property_id: *P, kind: price_renovation, document_id: *D_KV,
+           supersedes_id: *TI1, value: {<<: *claim_value, status: declined}}
+    expect:
+      lines:
+        - {key: wk.afa, amount: "2340.00", amount_rounded: 2340, sources: *afa_sources}
+        - key: wk.maintenance
+          amount: "14280.00"
+          amount_rounded: 14280
+          provisional: true
+          sources: [{kind: allocation, id: *A_P}, {kind: document, id: *D_P}]
+        - {key: wk.total, amount: "16620.00", amount_rounded: 16620}
+        - {key: result.surplus, amount: "-16620.00", amount_rounded: -16620}
+        - {key: result.owner_a, amount: "-8310.00", amount_rounded: -8310}
+        - {key: result.owner_b, amount: "-8310.00", amount_rounded: -8310}
+      totals: {income: "0.00", costs: "16620.00", result: "-16620.00", income_rounded: 0,
+               costs_rounded: 16620, result_rounded: -16620}
+      owners:
+        - {owner_id: *OA, amount: "-8310.00", amount_rounded: -8310}
+        - {owner_id: *OB, amount: "-8310.00", amount_rounded: -8310}
+      limit_15: {<<: *window, basis_building_cost: "234000.00", limit: "35100.00",
+                 counted: [*A_P], used_net: "12000.00", ratio_percent: "34.2", exceeded: false}
+      warnings: *w_always
+
+  - id: claimed_assessed_asks_the_finanzamt_answer
+    description: >
+      Once the Einkommensteuerbescheid 2026 is confirmed, the claim still `claimed` asks „Hat das
+      Finanzamt die Renovierung im Kaufpreis anerkannt?“ in 2026, the year it was booked; the
+      figures are unchanged.
+    tax_year: 2026
+    rule_set_year: 2026
+    facts: {<<: *facts, tax_inputs: [*claim], assessed_years: [2026]}
+    expect:
+      lines: *claimed_2026_lines
+      totals: *claimed_2026_totals
+      owners: *claimed_2026_owners
+      limit_15: *claimed_limit
+      warnings:
+        - {code: tax.price_renovation_ask, params: {amount: "23800.00", tax_year: "2026"}}
+        - {code: hausgeld.abrechnung_pending}
+        - {code: draft.form_provisional}
+
+  - id: claimed_assessed_other_year_no_question
+    description: >
+      A confirmed Bescheid of 2027 asks nothing in 2026: the question belongs to the year paid.
+    tax_year: 2026
+    rule_set_year: 2026
+    facts: {<<: *facts, tax_inputs: [*claim], assessed_years: [2027]}
+    expect:
+      lines: *claimed_2026_lines
+      totals: *claimed_2026_totals
+      owners: *claimed_2026_owners
+      warnings: *w_always
+
+  - id: accepted_counts_and_asks_nothing
+    description: >
+      „Ja“: an accepted row supersedes the claim; it counts exactly as the claim did and the
+      question is answered.
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      assessed_years: [2026]
+      tax_inputs:
+        - *claim
+        - {id: *TI2, property_id: *P, kind: price_renovation, document_id: *D_KV,
+           supersedes_id: *TI1, value: {<<: *claim_value, status: accepted}}
+    expect:
+      lines:
+        - {key: wk.afa, amount: "2102.00", amount_rounded: 2102}
+        - key: wk.maintenance
+          amount: "23800.00"
+          amount_rounded: 23800
+          provisional: true
+          sources: [{kind: tax_input, id: *TI2}, {kind: document, id: *D_KV}]
+        - {key: wk.total, amount: "25902.00", amount_rounded: 25902}
+        - {key: result.surplus, amount: "-25902.00", amount_rounded: -25902}
+        - {key: result.owner_a, amount: "-12951.00", amount_rounded: -12951}
+        - {key: result.owner_b, amount: "-12951.00", amount_rounded: -12951}
+      totals: *claimed_2026_totals
+      owners: *claimed_2026_owners
+      limit_15: {<<: *window, basis_building_cost: "210200.00", limit: "31530.00", counted: [*TI2],
+                 used_net: "20000.00", ratio_percent: "63.4", exceeded: false}
+      warnings: *w_always
+
+  - id: claimed_before_handover_not_applied
+    description: >
+      Work that begins before the handover is the seller's own, never the household's: the
+      claim changes nothing and the draft names it (reason before_handover).
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      tax_inputs:
+        - {<<: *claim, value: {<<: *claim_value, period_start: 2026-06-15}}
+    expect:
+      <<: *without_2026
+      warnings:
+        - {code: tax.price_renovation_not_applied,
+           params: {reason: before_handover, amount: "23800.00"}}
+        - {code: hausgeld.abrechnung_pending}
+        - {code: draft.form_provisional}
+
+  - id: claimed_paid_before_handover_year_not_applied
+    description: >
+      A payment dated in a year before the handover's (a typo, or an instalment of an earlier
+      year) would put the deduction in a year with no AfA that the performance view never
+      reads: the claim changes nothing and the draft names it (reason paid_before_handover_year,
+      D287 review).
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      tax_inputs:
+        - {<<: *claim, value: {<<: *claim_value, paid_on: 2025-12-20}}
+    expect:
+      <<: *without_2026
+      warnings:
+        - {code: tax.price_renovation_not_applied,
+           params: {reason: paid_before_handover_year, amount: "23800.00"}}
+        - {code: hausgeld.abrechnung_pending}
+        - {code: draft.form_provisional}
+
+  - id: claimed_above_building_share_not_applied
+    description: >
+      An amount of 234,000.00 or more would take the whole building's share: the claim changes
+      nothing and the draft names it (reason exceeds_building).
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      tax_inputs:
+        - {<<: *claim, value: {<<: *claim_value, amount: "234000.00", amount_net: "196638.66"}}
+    expect:
+      <<: *without_2026
+      warnings:
+        - {code: tax.price_renovation_not_applied,
+           params: {reason: exceeds_building, amount: "234000.00"}}
+        - {code: hausgeld.abrechnung_pending}
+        - {code: draft.form_provisional}

@@ -9162,7 +9162,7 @@
       },
       "post": {
         "summary": "Tax Input Create",
-        "description": "One new row and its property.tax_input_recorded event. 422 tax_input.scope_invalid,\ntax_input.not_current (supersedes_id is not the current row of this kind and scope, or\nanother current row already answers it), tax_input.allocation_not_confirmed,\ntax_input.extension_needs_herstellung (an Erweiterung excluded from the 15 % test needs a\nrenovation elected herstellung, and that election stays while the exclusion is current),\ntax_input.useful_life_not_shorter (a useful_life must be shorter than the statutory life\nfor the build year, D79), tax_input.movable_asset_year (a movable asset starts in the\npurchase year when bought with the flat, else not before it, D80),\ntax_input.movable_asset_exceeds_building (its basis with its Nebenkosten share is not below\nthe building's), tax_input.movable_asset_no_split (no price split selected yet),\ntax_input.movable_asset_separate_unsupported (a movable asset bought separately, not yet\nsupported: it needs its own acquisition date) and tax_input.movable_asset_no_purchase_date\n(the property has no handover date yet).",
+        "description": "One new row and its property.tax_input_recorded event. 422 tax_input.scope_invalid,\ntax_input.not_current (supersedes_id is not the current row of this kind and scope, or\nanother current row already answers it), tax_input.allocation_not_confirmed,\ntax_input.extension_needs_herstellung (an Erweiterung excluded from the 15 % test needs a\nrenovation elected herstellung, and that election stays while the exclusion is current),\ntax_input.useful_life_not_shorter (a useful_life must be shorter than the statutory life\nfor the build year, D79), tax_input.movable_asset_year (a movable asset starts in the\npurchase year when bought with the flat, else not before it, D80),\ntax_input.movable_asset_exceeds_building (its basis with its Nebenkosten share is not below\nthe building's), tax_input.movable_asset_no_split (no price split selected yet),\ntax_input.movable_asset_separate_unsupported (a movable asset bought separately, not yet\nsupported: it needs its own acquisition date), tax_input.movable_asset_no_purchase_date\n(the property has no handover date yet), and for the seller's renovation in the price\n(D287) tax_input.price_renovation_no_purchase_date, tax_input.price_renovation_before_handover\n(its work begins before the handover), tax_input.price_renovation_paid_before_handover_year\n(paid in a year before the handover's) and tax_input.price_renovation_exceeds_building (its\ngross with the kitchens bought with the flat is not below the building's share).",
         "operationId": "tax_input_create_api_properties__property_id__tax_inputs_post",
         "parameters": [
           {
@@ -29245,6 +29245,68 @@
         "title": "PriceLabel",
         "description": "Where a shown price comes from, in the screen's words (D174 (4))."
       },
+      "PriceRenovation": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "claimed",
+              "accepted",
+              "declined"
+            ],
+            "title": "Status"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "amount_net": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount Net"
+          },
+          "period_start": {
+            "type": "string",
+            "format": "date",
+            "title": "Period Start"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Period End"
+          },
+          "paid_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Paid On"
+          },
+          "clause": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clause"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "amount",
+          "amount_net",
+          "period_start",
+          "period_end",
+          "paid_on"
+        ],
+        "title": "PriceRenovation",
+        "description": "Phase 3 D287 (Q-O180, Luis 23 Nov 2026): the Kaufvertrag obliges the seller to renovate\nthe flat after the handover, paid inside the price; the household claims that part as its\nown renovation, openly (BFH IX R 34/03 points the other way, so the Finanzamt may refuse).\n\nWhile `claimed` (or `accepted`, after the Finanzamt's assessment said yes) the gross\n`amount` leaves the building's share of the AfA basis (never the land's), counts in the\n15 % test at `amount_net` as work done on `period_end` (D76), and within the limit is\nErhaltungsaufwand in the year of `paid_on` (§11 EStG, the day the price was paid). Over the\nlimit it returns to the basis (limit_exceeded). `declined` (the Finanzamt's „Nein“) and no\nrow leave the draft exactly as without the claim.\n\ndocument_id on the row is the Kaufvertrag; `clause` quotes its renovation clause (free text:\nit stays in the row and never enters the event payload). The row has no tax_year."
+      },
       "PriceSourceKind": {
         "type": "string",
         "enum": [
@@ -31018,6 +31080,36 @@
             "$ref": "#/components/schemas/ExtractedValue",
             "description": "e.g. je zur Hälfte",
             "value_kind": "text"
+          },
+          "renovation_clause": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the sentence obliging the seller to renovate or refurbish the flat after the handover, paid with the Kaufpreis, as written, if the contract has one",
+            "value_kind": "text"
+          },
+          "renovation_amount": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the part of the Kaufpreis for that renovation as printed (brutto, incl. USt.), if stated",
+            "value_kind": "money"
+          },
+          "renovation_amount_net": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "that renovation's net amount (netto, without USt.), only if printed",
+            "value_kind": "money"
+          },
+          "renovation_vat_rate": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the Umsatzsteuer rate the contract states for that renovation, if stated",
+            "value_kind": "rate"
+          },
+          "renovation_start": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date that renovation begins, only if printed as a date",
+            "value_kind": "date"
+          },
+          "renovation_end": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date that renovation is to be finished, only if printed as a date",
+            "value_kind": "date"
           }
         },
         "additionalProperties": false,
@@ -36266,6 +36358,9 @@
               },
               {
                 "$ref": "#/components/schemas/GrundsteuerSchedule"
+              },
+              {
+                "$ref": "#/components/schemas/PriceRenovation"
               }
             ],
             "title": "Value"
@@ -36457,6 +36552,9 @@
               },
               {
                 "$ref": "#/components/schemas/GrundsteuerSchedule"
+              },
+              {
+                "$ref": "#/components/schemas/PriceRenovation"
               }
             ],
             "title": "Value"
@@ -36526,7 +36624,8 @@
           "useful_life",
           "movable_asset",
           "private_cost",
-          "grundsteuer_schedule"
+          "grundsteuer_schedule",
+          "price_renovation"
         ],
         "title": "TaxInputKind"
       },
@@ -40257,6 +40356,8 @@
           "tax.travel_frequency",
           "tax.private_cost_paid_from_account",
           "payment_proof.missing",
+          "tax.price_renovation_ask",
+          "tax.price_renovation_not_applied",
           "anlage_n.certificate_missing",
           "anlage_n.church_mismatch",
           "anlage_n.tax_class_6",

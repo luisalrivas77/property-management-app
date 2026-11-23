@@ -99,6 +99,30 @@ class PurchaseContractExtraction(_Typing):
     floor_area_m2: ExtractedValue = ev("decimal", "Wohnfläche in m², if stated")
     buyers: ExtractedValue = ev("text_list", "the buyers' full names")
     ownership_clause: ExtractedValue = ev("text", "e.g. je zur Hälfte")
+    # Phase 3 D287: a seller's obligation to renovate after the handover, paid inside the
+    # price. Code proposes the price_renovation input from these (rules.prefill); only what is
+    # printed is read, never a date worked out from a duration.
+    renovation_clause: ExtractedValue = ev(
+        "text",
+        "the sentence obliging the seller to renovate or refurbish the flat after the handover,"
+        " paid with the Kaufpreis, as written, if the contract has one",
+    )
+    renovation_amount: ExtractedValue = ev(
+        "money",
+        "the part of the Kaufpreis for that renovation as printed (brutto, incl. USt.), if stated",
+    )
+    renovation_amount_net: ExtractedValue = ev(
+        "money", "that renovation's net amount (netto, without USt.), only if printed"
+    )
+    renovation_vat_rate: ExtractedValue = ev(
+        "rate", "the Umsatzsteuer rate the contract states for that renovation, if stated"
+    )
+    renovation_start: ExtractedValue = ev(
+        "date", "the date that renovation begins, only if printed as a date"
+    )
+    renovation_end: ExtractedValue = ev(
+        "date", "the date that renovation is to be finished, only if printed as a date"
+    )
 
 
 class LoanContractExtraction(_Typing):

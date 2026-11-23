@@ -64,6 +64,7 @@ from reportlab.platypus import (
 
 from hausbuch.rules.categories import CATEGORY_LABEL, tax_treatment
 from hausbuch.rules.iban import mask_ibans_in_text
+from hausbuch.rules.tax._common import afa_facts
 from hausbuch.rules.tax.field_sheet import UNIT_ROWS, FieldSheetRow, field_sheet
 from hausbuch.rules.tax.rounding import cents
 from hausbuch.schemas.allocation import AllocationCategory, TaxTreatment
@@ -78,6 +79,7 @@ from hausbuch.schemas.tax import (
     FormStatus,
     RuleSet,
     SourceRef,
+    TaxInputKind,
     WarningCode,
 )
 
@@ -367,6 +369,19 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
     ),
     # Phase 3 D143, D150.
     WarningCode.PAYMENT_PROOF_MISSING: lambda p: _proof_missing_text(p),
+    # Phase 3 D287.
+    WarningCode.TAX_PRICE_RENOVATION_ASK: lambda p: (
+        f"Der Einkommensteuerbescheid {p.get('tax_year', '')} liegt vor: hat das Finanzamt die "
+        f"Renovierung im Kaufpreis ({_p(p)}) als Erhaltungsaufwand anerkannt?"
+    ),
+    WarningCode.TAX_PRICE_RENOVATION_NOT_APPLIED: lambda p: (
+        f"Die Renovierung im Kaufpreis ({_p(p)}) zählt nicht: "
+        + (
+            "die Arbeiten beginnen vor der Übergabe."
+            if p.get("reason") == "before_handover"
+            else "der Betrag ist nicht kleiner als der Gebäudeanteil des Kaufpreises."
+        )
+    ),
     WarningCode.ANLAGE_N_CERTIFICATE_MISSING: lambda p: (
         "Keine Lohnsteuerbescheinigung für dieses Jahr: die Zahlen beruhen auf "
         "Gehaltsabrechnungen oder der Schätzung."
@@ -689,13 +704,24 @@ def _afa_annex(draft: AnlageVDraft, facts: DraftFacts) -> list:
             "",
         ]
     )
-    if afa.movable_deducted:  # D80: the kitchen bought with the flat leaves the building
+    claim = afa_facts(facts).price_renovation  # D287: only while it counts
+    if afa.movable_deducted or claim is not None:
         building = cents((prop.purchase_price + cost_total) * share)
         rows.append(["= Anteil Gebäude", _money(building)])
+    if afa.movable_deducted:  # D80: the kitchen bought with the flat leaves the building
         rows.append(
             [
                 "− Einbauküche mit ihrem Anteil an den Nebenkosten (eigene AfA, Zeile 42–45)",
                 _money(afa.movable_deducted),
+            ]
+        )
+    if claim is not None:  # D287: the seller's renovation claimed out of the price
+        rows.append(
+            [
+                "− Renovierung des Verkäufers im Kaufpreis, als eigene Renovierung geltend "
+                f"gemacht (ausgeführt {_date(claim.period_start)} bis "
+                f"{_date(claim.period_end)}; siehe Ergänzende Angaben)",
+                _money(claim.amount),
             ]
         )
     rows.append(["= AfA-Bemessungsgrundlage Gebäude", _money(afa.basis)])
@@ -715,6 +741,15 @@ def _afa_annex(draft: AnlageVDraft, facts: DraftFacts) -> list:
         for b in [] if limit is None else limit.basis_additions:
             row = private.get(b.tax_input_id) if b.tax_input_id is not None else None
             if row is None or b.tax_year > draft.tax_year:
+                continue
+            if row.kind is TaxInputKind.PRICE_RENOVATION:  # D287: back over the limit
+                rows.append(
+                    [
+                        "+ Renovierung des Verkäufers im Kaufpreis, über der 15 %-Grenze "
+                        f"(anschaffungsnahe Herstellungskosten, Steuerjahr {b.tax_year})",
+                        _money(b.amount),
+                    ]
+                )
                 continue
             label = getattr(row.value, "label", None) or "Kosten"
             rows.append(
@@ -774,6 +809,59 @@ def _afa_annex(draft: AnlageVDraft, facts: DraftFacts) -> list:
         )
     )
     return [KeepTogether(out + keep)]
+
+
+def price_renovation_statement(draft: AnlageVDraft, facts: DraftFacts) -> str | None:
+    """D287: the sentence for „Ergänzende Angaben zur Steuererklärung“ in the year the price
+    was paid, while the claim counts (claimed or accepted); None otherwise. The claim is made
+    openly: it names the Kaufvertrag, the amounts, the period and the contrary ruling."""
+    claim = afa_facts(facts).price_renovation
+    if claim is None or claim.paid_on.year != draft.tax_year:
+        return None
+    limit = draft.limit_15
+    over = limit is not None and any(
+        b.tax_input_id == claim.tax_input_id for b in limit.basis_additions
+    )
+    treatment = (
+        "Da zusammen mit unseren übrigen Renovierungskosten die 15 %-Grenze des § 6 Abs. 1 "
+        "Nr. 1a EStG überschritten ist, ist er als anschaffungsnaher Herstellungsaufwand in "
+        "der AfA-Bemessungsgrundlage enthalten."
+        if over
+        else "Er ist in die Prüfung der 15 %-Grenze des § 6 Abs. 1 Nr. 1a EStG eingerechnet "
+        f"(netto {_money(claim.amount_net)}) und als Erhaltungsaufwand im Jahr der Zahlung "
+        "angesetzt."
+    )
+    prop = facts.property
+    return (
+        f"Im Kaufpreis laut Kaufvertrag vom {_date(prop.notarized_on)} ist eine Renovierung "
+        "der Immobilie enthalten, die der Verkäufer nach der Übergabe am "
+        f"{_date(prop.purchase_date)} ausführt ({_money(claim.amount)} brutto, "
+        f"{_money(claim.amount_net)} netto, ausgeführt {_date(claim.period_start)} bis "
+        f"{_date(claim.period_end)}). Wir machen diesen Teil des Kaufpreises als eigenen "
+        "Renovierungsaufwand geltend und haben ihn aus dem Gebäudeanteil der "
+        f"AfA-Bemessungsgrundlage herausgenommen. {treatment} Uns ist bekannt, dass der BFH "
+        "(IX R 34/03) eine solche Renovierung den Anschaffungskosten "
+        "zurechnen kann; der Kaufvertrag liegt auf Anforderung vor."
+    )
+
+
+def _price_renovation_note(draft: AnlageVDraft, facts: DraftFacts) -> list:
+    text = price_renovation_statement(draft, facts)
+    if text is None:
+        return []
+    return [
+        KeepTogether(
+            [
+                _para("Ergänzende Angaben zur Steuererklärung", _H2),
+                _para(
+                    "In ELSTER im Hauptvordruck unter „Ergänzende Angaben zur "
+                    "Steuererklärung“ das Kästchen ankreuzen und diesen Text eintragen:",
+                    _SMALL,
+                ),
+                _para(f"„{text}“"),
+            ]
+        )
+    ]
 
 
 MOVABLE_LABEL = {"einbaukueche": "Einbauküche"}
@@ -894,6 +982,7 @@ def render_field_sheet(
 
     story += _afa_annex(draft, facts)
     story += _movable_annex(draft, facts)
+    story += _price_renovation_note(draft, facts)
 
     warnings = [warning_text(w) for w in draft.warnings]
     if finanzamt_copies:

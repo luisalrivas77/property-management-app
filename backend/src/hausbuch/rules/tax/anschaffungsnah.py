@@ -22,6 +22,10 @@ warnings depend on the year.
   confirmed allocation is left out (D135). In the running sum a row stands on the last day of
   its tax year, after the allocations of that day. When exceeded it becomes a limit_exceeded
   addition like an allocation, and draft._private_costs no longer books it.
+- D287: the seller's renovation claimed out of the purchase price (facts.afa.price_renovation)
+  counts at its net, tested on its period's end (D76), and stands in the running sum on the
+  day the price was paid, like an allocation of that day. When exceeded it becomes a
+  limit_exceeded addition of the year paid, and price_renovation.lines no longer books it.
 """
 
 from datetime import date, timedelta
@@ -119,6 +123,22 @@ def limit_status(
                     gross=gross,
                     net=net,
                     net_source=source,
+                ),
+            )
+        )
+
+    claim = facts.afa.price_renovation  # D287: only while it counts
+    if claim is not None and start <= claim.period_end <= end:
+        counted.append(
+            (
+                claim.paid_on,
+                0,
+                CountedCost(
+                    tax_input_id=claim.tax_input_id,
+                    tax_year=claim.paid_on.year,
+                    gross=claim.amount,
+                    net=claim.amount_net,
+                    net_source="invoice",
                 ),
             )
         )

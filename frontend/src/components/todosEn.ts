@@ -51,6 +51,20 @@ export const WARNING_EN: Record<string, WarningEn> = {
             ? `The uploaded proof is for ${money(p.proof_amount)}, the invoice for ${money(p.amount)}. If it was paid in parts, upload the receipt of the other payment too; the invoice counts in the meantime anyway.`
             : "The invoice already counts; only the receipt that it was paid is missing. In your online banking, save the transfer receipt or the payment details of this one payment as a PDF and upload it here, not the whole statement. The app reads the date and amount; if the invoice was paid in another year, it proposes the right year.",
   },
+  "tax.price_renovation_ask": {
+    title: () => "Did the Finanzamt accept the renovation in the purchase price?",
+    text: (p) =>
+      `The ${p.tax_year ?? ""} income tax assessment (Einkommensteuerbescheid) is confirmed. Check in the assessment or its notes whether the renovation in the purchase price${p.amount ? ` (${money(p.amount)})` : ""} was accepted as maintenance costs (Erhaltungsaufwand). “Yes” ends the question. “No” counts the amount as part of the purchase price again, and so in the depreciation (AfA); the earlier drafts stay in the history.`,
+  },
+  "tax.price_renovation_not_applied": {
+    title: () => "Renovation in the purchase price does not count",
+    text: (p) =>
+      p.reason === "before_handover"
+        ? "According to the entry, the work begins before the handover; then it is the seller's own. Check and correct the period of the renovation, or withdraw the entry."
+        : p.reason === "paid_before_handover_year"
+          ? "The payment date is in a year before the year of the handover. Enter the day the rest of the purchase price was paid, or withdraw the entry."
+          : "The amount is not below the building's share of the purchase price, which cannot be right. Check and correct the amount, or withdraw the entry.",
+  },
   "afa.acquisition_cost_without_row": {
     title: () => "Purchase cost not entered",
     text: () =>
@@ -467,6 +481,8 @@ export const LABEL_EN: Record<string, string> = {
   "Mietspiegel-Wert prüfen": "Check the rent index value",
   "Mietverhältnis öffnen": "Open tenancy",
   "Nebenkosten ansehen": "View Nebenkosten",
+  "Renovierung im Kaufpreis öffnen": "Open the renovation in the purchase price",
+  "Renovierung im Kaufpreis prüfen": "Check the renovation in the purchase price",
   "Steuerjahr eintragen": "Enter the tax year",
   "Unter Dokumente verknüpfen": "Link under Documents",
   "Unter Nebenkosten eintragen": "Enter under Nebenkosten",

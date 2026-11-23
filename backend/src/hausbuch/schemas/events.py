@@ -108,6 +108,7 @@ from .reminders import (
 from .tax import (
     TAX_INPUT_VALUES,
     FormStatus,
+    PriceRenovation,
     PrivateCostValue,
     TaxExportKind,
     TaxInputKind,
@@ -624,7 +625,8 @@ class PrivateCostRecorded(Schema):
 class TaxInputRecorded(Schema):
     """property.tax_input_recorded: one tax_input row as written (a correction or withdrawal
     is a new row, so a new event with supersedes_id; D58). A private_cost value is recorded as
-    PrivateCostRecorded (no free text)."""
+    PrivateCostRecorded (no free text); a price_renovation value without its quoted clause
+    (phase 3 D287: the Kaufvertrag's wording stays in the row)."""
 
     tax_input_id: UUID
     kind: TaxInputKind
@@ -650,7 +652,10 @@ class TaxInputRecorded(Schema):
             elif isinstance(value, dict):
                 value = PrivateCostRecorded.model_validate(value)
             return data | {"value": value}
-        return value_by_kind(data)
+        parsed = value_by_kind(data)
+        if isinstance(parsed, dict) and isinstance(parsed.get("value"), PriceRenovation):
+            return parsed | {"value": parsed["value"].model_copy(update={"clause": None})}
+        return parsed
 
     @model_validator(mode="after")
     def _value_matches_kind(self) -> Self:

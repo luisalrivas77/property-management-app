@@ -51,6 +51,7 @@ from hausbuch.schemas.property import (
     UnitCreate,
 )
 from hausbuch.schemas.proposal import ProposalApplyBody, ProposalApplyRecord
+from hausbuch.schemas.tax import TaxInputCreate, TaxInputKind
 from hausbuch.schemas.tenancy import TenancyCreate, TenancyParty, TenantCreate
 from hausbuch.services import proposals
 from hausbuch.services.context import Actor, new_command
@@ -69,6 +70,7 @@ from hausbuch.services.properties import (
     select_price_split,
 )
 from hausbuch.services.review import inbox
+from hausbuch.services.tax_inputs import create_tax_input, find_current, list_tax_inputs
 from hausbuch.services.tenancies import (
     create_tenancy,
     deposit_receipts,
@@ -1452,3 +1454,124 @@ def test_two_contracts_stating_different_meas_give_the_context_no_contract_mea(
     assert existing.id == prop.id
     assert existing.contract_mea is None
     assert existing.contract_unit_label == "WE 3"
+
+
+# --- Phase 3 D287 (6): the seller's renovation in the price, from the Kaufvertrag -----------
+
+RENOVATION_CLAUSE = "Der Verkäufer renoviert die Wohnung nach der Übergabe auf eigene Kosten."
+RENOVATION_VALUES = PURCHASE_VALUES | {
+    "renovation_clause": _v(RENOVATION_CLAUSE, page=5),
+    "renovation_amount": _v("23800.00", page=5),
+    "renovation_vat_rate": _v("0.19", page=5),
+    "renovation_start": _v("2024-05-06", page=5),
+    "renovation_end": _v("2024-07-31", page=5),
+}
+RENOVATION_KEY = "tax_input:price_renovation"
+
+
+def _renovation_body(ready, **typed) -> ProposalApplyBody:
+    """Every record as proposed, the day the price was paid typed on the renovation card."""
+    return _accept_all(ready, **{RENOVATION_KEY: {"value.paid_on": "2024-05-02"} | typed})
+
+
+def _only_renovation(body: ProposalApplyBody) -> ProposalApplyBody:
+    """A second Kaufvertrag of a property that exists: the renovation card and the link."""
+    keep = (RENOVATION_KEY, "link:property")
+    return ProposalApplyBody(records=[r for r in body.records if r.key in keep])
+
+
+def test_a_kaufvertrag_claims_the_renovation_on_the_property_it_creates(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """D287 (6): one form with the property; the net computed by code (23,800 ÷ 1.19), the day
+    paid typed, the status set to claimed at apply, the Kaufvertrag the row's document."""
+    ws, _ = fresh_workspaces
+    doc, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, PURCHASE, RENOVATION_VALUES, b"%PDF renovation"
+    )
+    [card] = [r for r in ready.records if r.key == RENOVATION_KEY]
+    assert card.fields["value.amount_net"].value == "20000.00"
+    assert "value.paid_on" not in card.fields and "value.status" not in card.fields
+
+    # The day paid is required: without it the apply names the record and writes nothing.
+    with pytest.raises(ValidationError) as invalid:
+        run(ws, proposals.apply_proposal, ready.id, _accept_all(ready), iban_key=TEST_IBAN_KEY)
+    assert {e["loc"][0] for e in invalid.value.errors()} == {RENOVATION_KEY}
+    assert read(ws, list_properties) == []
+
+    result = run(
+        ws, proposals.apply_proposal, ready.id, _renovation_body(ready), iban_key=TEST_IBAN_KEY
+    )
+    [prop] = read(ws, list_properties)
+    [row] = read(ws, list_tax_inputs, prop.id, kind=TaxInputKind.PRICE_RENOVATION)
+    assert {a.key: a.entity_id for a in result.applied}[RENOVATION_KEY] == row.id
+    assert (row.document_id, row.value.status) == (doc.id, "claimed")
+    assert (row.value.amount, row.value.amount_net) == (Decimal("23800.00"), Decimal("20000.00"))
+    assert (row.value.period_start, row.value.paid_on) == (date(2024, 5, 6), date(2024, 5, 2))
+    assert row.value.clause == RENOVATION_CLAUSE
+
+
+def test_skipping_the_renovation_claims_nothing_and_a_sent_status_is_ignored(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    ws, _ = fresh_workspaces
+    _, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, PURCHASE, RENOVATION_VALUES, b"%PDF skip renovation"
+    )
+    records = [
+        r.model_copy(update={"skip": r.key == RENOVATION_KEY})
+        for r in _renovation_body(ready).records
+    ]
+    result = run(
+        ws,
+        proposals.apply_proposal,
+        ready.id,
+        ProposalApplyBody(records=records),
+        iban_key=TEST_IBAN_KEY,
+    )
+    assert {a.key for a in result.applied if a.skipped} == {RENOVATION_KEY}
+    [prop] = read(ws, list_properties)
+    assert read(ws, list_tax_inputs, prop.id, kind=TaxInputKind.PRICE_RENOVATION) == []
+
+    # A status typed into the card is not taken: saving it claims.
+    _, again, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, PURCHASE, RENOVATION_VALUES, b"%PDF status sent"
+    )
+    body = _only_renovation(_renovation_body(again, **{"value.status": "accepted"}))
+    run(ws, proposals.apply_proposal, again.id, body, iban_key=TEST_IBAN_KEY)
+    [row] = read(ws, list_tax_inputs, prop.id, kind=TaxInputKind.PRICE_RENOVATION)
+    assert row.value.status == "claimed"
+
+
+@pytest.mark.parametrize("answer", ["declined", "accepted"])
+def test_a_kaufvertrag_read_again_never_replaces_the_finanzamts_answer(
+    run, read, job, fresh_workspaces, blob_store, enqueued, answer
+):
+    """D287: once the Finanzamt answered, a re-applied Kaufvertrag (even with another amount)
+    leaves the answer current; a change after it goes through Eure Angaben."""
+    ws, _ = fresh_workspaces
+    _, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, PURCHASE, RENOVATION_VALUES, b"%PDF first read"
+    )
+    run(ws, proposals.apply_proposal, ready.id, _renovation_body(ready), iban_key=TEST_IBAN_KEY)
+    [prop] = read(ws, list_properties)
+    [claim] = read(ws, find_current, prop.id, TaxInputKind.PRICE_RENOVATION)
+    data = TaxInputCreate.model_validate(
+        {
+            "property_id": prop.id,
+            "kind": TaxInputKind.PRICE_RENOVATION,
+            "document_id": claim.document_id,
+            "supersedes_id": claim.id,
+            "value": claim.value.model_dump(mode="json") | {"status": answer},
+        }
+    )
+    answered = run(ws, create_tax_input, prop.id, data)
+
+    other = RENOVATION_VALUES | {"renovation_amount": _v("17850.00", page=5)}
+    _, again, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, PURCHASE, other, b"%PDF second read"
+    )
+    body = _only_renovation(_renovation_body(again))
+    result = run(ws, proposals.apply_proposal, again.id, body, iban_key=TEST_IBAN_KEY)
+    assert {a.key: a.entity_id for a in result.applied}[RENOVATION_KEY] == answered.id
+    assert read(ws, find_current, prop.id, TaxInputKind.PRICE_RENOVATION) == [answered]
