@@ -124,6 +124,12 @@ export const RULE_CODE_TEXT_EN: Record<string, string> = {
   "tax_input.movable_asset_separate_unsupported":
     "A kitchen bought separately is not supported yet; it needs its own purchase date.",
   "tax_input.movable_asset_no_purchase_date": "Enter the property's handover date first.",
+  "tax_input.price_renovation_no_purchase_date":
+    "Enter the property's handover date first: the renovation only counts if it begins after the handover.",
+  "tax_input.price_renovation_before_handover":
+    "The renovation begins before the handover; then it is the seller's own and does not count as yours. Please check the period of the work.",
+  "tax_input.price_renovation_exceeds_building":
+    "The renovation's amount (with a kitchen bought with the flat) must be smaller than the building share of the purchase price. Please check the amount or the purchase price split.",
   "income_input.scope_invalid":
     "This entry does not fit its record: a correction applies to the same kind, year and person, a withdrawal repeats the value.",
   "income_input.not_current":

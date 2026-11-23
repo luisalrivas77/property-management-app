@@ -51,6 +51,9 @@ def tax_input_create(property_id: UUID, body: TaxInputCreate, cmd: Cmd) -> TaxIn
     tax_input.movable_asset_exceeds_building (its basis with its Nebenkosten share is not below
     the building's), tax_input.movable_asset_no_split (no price split selected yet),
     tax_input.movable_asset_separate_unsupported (a movable asset bought separately, not yet
-    supported: it needs its own acquisition date) and tax_input.movable_asset_no_purchase_date
-    (the property has no handover date yet)."""
+    supported: it needs its own acquisition date), tax_input.movable_asset_no_purchase_date
+    (the property has no handover date yet), and for the seller's renovation in the price
+    (D287) tax_input.price_renovation_no_purchase_date, tax_input.price_renovation_before_handover
+    (its work begins before the handover) and tax_input.price_renovation_exceeds_building (its
+    gross with the kitchens bought with the flat is not below the building's share)."""
     return cmd.run(create_tax_input, property_id, body)

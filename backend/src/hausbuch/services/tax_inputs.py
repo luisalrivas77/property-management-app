@@ -84,6 +84,9 @@ from hausbuch.rules.errors import (
     TAX_INPUT_MOVABLE_ASSET_NO_SPLIT,
     TAX_INPUT_MOVABLE_ASSET_SEPARATE_UNSUPPORTED,
     TAX_INPUT_MOVABLE_ASSET_YEAR,
+    TAX_INPUT_PRICE_RENOVATION_BEFORE_HANDOVER,
+    TAX_INPUT_PRICE_RENOVATION_EXCEEDS_BUILDING,
+    TAX_INPUT_PRICE_RENOVATION_NO_PURCHASE_DATE,
     TAX_INPUT_USEFUL_LIFE_NOT_SHORTER,
 )
 from hausbuch.rules.tax import registry
@@ -99,6 +102,7 @@ from hausbuch.schemas.tax import (
     AfaSplit,
     MovableAsset,
     MovableAssetFact,
+    PriceRenovation,
     TaxInput,
     TaxInputCreate,
     TaxInputKind,
@@ -227,8 +231,8 @@ def create_tax_input(ctx: CommandContext, property_id: UUID, data: TaxInputCreat
     the checks). Raises NotFoundError for an unknown property, unit, loan, allocation,
     document or superseded row; RuleViolationError tax_input.scope_invalid,
     tax_input.not_current, tax_input.allocation_not_confirmed,
-    tax_input.extension_needs_herstellung or tax_input.useful_life_not_shorter. Nothing is
-    written then."""
+    tax_input.extension_needs_herstellung, tax_input.useful_life_not_shorter, a movable
+    asset's or a price renovation's (D287) codes. Nothing is written then."""
     if data.property_id != property_id:
         raise RuleViolationError(
             [TAX_INPUT_SCOPE_INVALID], "the body names another property than the path"
@@ -237,6 +241,7 @@ def create_tax_input(ctx: CommandContext, property_id: UUID, data: TaxInputCreat
     allocation = _check_scope(ctx.conn, prop, data)
     _check_useful_life(prop, data)
     _check_movable_asset(ctx.conn, prop, data)
+    _check_price_renovation(ctx.conn, prop, data)
     require_document(ctx.conn, data.document_id)
     if data.supersedes_id is not None:
         _check_supersedes(ctx.conn, data)
@@ -471,6 +476,7 @@ def _check_movable_asset(conn: Connection, prop: Row, data: TaxInputCreate) -> N
         (asset_basis(facts, _asset_fact(r.id, r.tax_year, r.value)) for r in others),  # type: ignore[arg-type]
         Decimal("0"),
     )
+    taken += _claimed_renovation(conn, data.property_id)  # D287: it leaves the share too
     own = asset_basis(facts, _asset_fact(None, data.tax_year, value))
     if own >= building - taken:
         raise RuleViolationError(
@@ -478,6 +484,54 @@ def _check_movable_asset(conn: Connection, prop: Row, data: TaxInputCreate) -> N
             f"the asset's basis {own} (with its share of the Nebenkosten) is not below the"
             f" building's basis {building - taken}",
         )
+
+
+def _check_price_renovation(conn: Connection, prop: Row, data: TaxInputCreate) -> None:
+    """D287: a claim that counts (claimed or accepted) is work begun on or after the handover,
+    and its gross, with the kitchens bought with the flat, stays below the building's share of
+    the price; the share is checked only when a split is selected (without one there is no AfA
+    to reduce, and the draft warns tax.price_renovation_not_applied should it fail later). A
+    declined answer or a withdrawal repeats an accepted row and is not re-checked."""
+    if data.kind is not TaxInputKind.PRICE_RENOVATION or data.withdrawn:
+        return
+    assert isinstance(data.value, PriceRenovation)
+    value = data.value
+    if not value.counts:
+        return
+    if prop.purchase_date is None:
+        raise RuleViolationError(
+            [TAX_INPUT_PRICE_RENOVATION_NO_PURCHASE_DATE],
+            "enter the property's handover date first: the renovation counts only after it",
+        )
+    if value.period_start < prop.purchase_date:
+        raise RuleViolationError(
+            [TAX_INPUT_PRICE_RENOVATION_BEFORE_HANDOVER],
+            f"the work begins on {value.period_start}, before the handover on"
+            f" {prop.purchase_date}: then it is the seller's",
+        )
+    facts = _basis_facts(conn, prop)
+    if facts is None:
+        return
+    building = building_share(facts)
+    assert building is not None
+    kitchens = [r for r in _current_movable(conn, prop.id) if r.value.in_purchase_price]  # type: ignore[union-attr]
+    taken = sum(
+        (asset_basis(facts, _asset_fact(r.id, r.tax_year, r.value)) for r in kitchens),  # type: ignore[arg-type]
+        Decimal("0"),
+    )
+    if value.amount + taken >= building:
+        raise RuleViolationError(
+            [TAX_INPUT_PRICE_RENOVATION_EXCEEDS_BUILDING],
+            f"the renovation's {value.amount} with the kitchens' {taken} is not below the"
+            f" building's share {building}",
+        )
+
+
+def _claimed_renovation(conn: Connection, property_id: UUID) -> Decimal:
+    """D287: the gross of the property's current price_renovation claim while it counts."""
+    rows = find_current(conn, property_id, TaxInputKind.PRICE_RENOVATION)
+    counting = [r.value for r in rows if r.value.counts]  # type: ignore[union-attr]
+    return sum((v.amount for v in counting), Decimal("0"))  # type: ignore[union-attr]
 
 
 def _asset_fact(row_id: UUID | None, tax_year: int, value: MovableAsset) -> MovableAssetFact:
