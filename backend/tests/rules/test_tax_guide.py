@@ -116,6 +116,48 @@ def test_everything_done_is_ready_and_jetzt_dran_is_the_last_step():
     assert result.waiting_from is None
 
 
+def test_the_review_step_is_done_only_when_every_other_step_is():
+    """No pay, three questions open and a Beleg past its day: Prüfen has no point of its own,
+    yet it is not „bereit“ and not counted as a done step."""
+    zins = item(RequirementCode.ZINSBESCHEINIGUNG, ChecklistStatus.MISSING, date(2027, 2, 28))
+    result = rule.guide(
+        facts(
+            today=AFTER_JUNE,
+            properties=[rule.PropertyFacts(P1, [zins], [])],
+            owners=[rule.OwnerFacts(A, None, (), no_pay=True)],
+            answered=5,
+            total=8,
+        )
+    )
+    review = result.steps[-1]
+    assert (review.kind, review.state, review.open, review.waiting_from) == (
+        "review",
+        "waiting",
+        0,
+        None,
+    )
+    assert [s.state for s in result.steps] == ["open", "done", "open", "open", "waiting"]
+    assert result.steps_done == 1  # the Immobilie step only
+    assert result.ready is False
+    assert result.next_step == 0
+
+
+def test_the_review_step_waits_with_a_month_only_for_belege_still_to_come():
+    zins = item(RequirementCode.ZINSBESCHEINIGUNG, ChecklistStatus.EXPECTED, date(2027, 2, 28))
+    waiting = rule.guide(facts(properties=[rule.PropertyFacts(P1, [zins], [])]))
+    assert (waiting.steps[-1].state, waiting.steps[-1].waiting_from) == (
+        "waiting",
+        date(2027, 1, 1),
+    )
+    with_questions = rule.guide(
+        facts(properties=[rule.PropertyFacts(P1, [zins], [])], answered=5, total=8)
+    )
+    assert (with_questions.steps[-1].state, with_questions.steps[-1].waiting_from) == (
+        "waiting",
+        None,
+    )
+
+
 def test_open_questions_make_jetzt_dran_the_questions_step():
     result = rule.guide(facts(answered=5, total=8))
     questions = result.steps[2]

@@ -17,7 +17,9 @@ from .common import Money, Schema, TaxYear
 from .tax import DraftWarning
 
 GuideStepKind = Literal["angaben", "property", "questions", "documents", "review"]
-# done: „erledigt“ (the review step: ready to file); open: „N offen“; waiting: „ab <Monat>“.
+# done: „erledigt“ (the review step: ready to file, only when every other step is done);
+# open: „N offen“; waiting: „ab <Monat>“, or „noch nicht“ without a month (the review step
+# while another step is not done).
 GuideStepState = Literal["done", "open", "waiting"]
 # Who sends a Beleg; the frontend holds the words.
 GuideSender = Literal[

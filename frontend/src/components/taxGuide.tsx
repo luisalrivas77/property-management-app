@@ -203,7 +203,8 @@ function StepState({ step }: { step: GuideStep }) {
     return <span className="badge">{step.kind === "review" ? t.stateReady : t.stateDone}</span>;
   }
   if (step.state === "waiting") {
-    return <span className="badge badge-muted">{step.waiting_from ? t.stateWaiting(f.month(step.waiting_from)) : t.stateWaiting("…")}</span>;
+    // Without a month: the review step while another step is not done yet („noch nicht“).
+    return <span className="badge badge-muted">{step.waiting_from ? t.stateWaiting(f.month(step.waiting_from)) : t.stateNotYet}</span>;
   }
   return <span className="badge badge-warn">{t.stateOpen(step.open)}</span>;
 }

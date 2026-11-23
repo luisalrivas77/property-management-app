@@ -41,6 +41,7 @@ export const taxGuide = defineMessages({
     stateReady: "bereit",
     stateOpen: (n: number) => `${n} offen`,
     stateWaiting: (month: string) => `ab ${month}`,
+    stateNotYet: "noch nicht",
     formsLine: "Formulare ansehen:",
     kapSoLater: "KAP und SO folgen später",
     back: "‹ Steuern",
@@ -121,7 +122,11 @@ export const taxGuide = defineMessages({
     elsterTitle: "An ELSTER übergeben",
     elsterButton: "ELSTER-Ausfüllhilfe erstellen",
     elsterNotYet: (n: number) =>
-      n === 1 ? "Geht, sobald der eine Punkt geklärt ist." : `Geht, sobald die ${n} Punkte geklärt sind.`,
+      n === 0
+        ? "Geht, sobald alle Schritte erledigt sind."
+        : n === 1
+          ? "Geht, sobald der eine Punkt geklärt ist."
+          : `Geht, sobald die ${n} Punkte geklärt sind.`,
     elsterStepsOpen: "Noch nicht erledigt:",
     elsterAnyway:
       "Die Feldblätter und das Archiv lassen sich auch jetzt schon in jedem Formular erstellen; sie nennen dann die offenen Punkte:",
@@ -193,6 +198,7 @@ export const taxGuide = defineMessages({
     stateReady: "ready",
     stateOpen: (n: number) => `${n} open`,
     stateWaiting: (month: string) => `from ${month}`,
+    stateNotYet: "not yet",
     formsLine: "View the forms:",
     kapSoLater: "KAP and SO come later",
     back: "‹ Taxes",
@@ -270,7 +276,11 @@ export const taxGuide = defineMessages({
     elsterTitle: "Hand over to ELSTER",
     elsterButton: "Make the ELSTER filling aid",
     elsterNotYet: (n: number) =>
-      n === 1 ? "Possible once the one point is cleared." : `Possible once the ${n} points are cleared.`,
+      n === 0
+        ? "Possible once every step is done."
+        : n === 1
+          ? "Possible once the one point is cleared."
+          : `Possible once the ${n} points are cleared.`,
     elsterStepsOpen: "Not done yet:",
     elsterAnyway:
       "The field sheets and the archive can be made in each form already now; they then name the open points:",

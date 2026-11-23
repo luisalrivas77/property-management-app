@@ -34,6 +34,7 @@ from hausbuch.schemas.tax_guide import (
     GuideSender,
     GuideStep,
     GuideStepKind,
+    GuideStepState,
 )
 
 R = RequirementCode
@@ -363,7 +364,9 @@ def _month(day: date) -> date:
 def guide(facts: GuideInput) -> GuideResult:
     """The steps with their states, the points, the Belege and „Jetzt dran“: the first step
     with something to do today. When nothing is open but a Beleg is still to come,
-    `waiting_from` is the first month one of them usually comes (never before this month)."""
+    `waiting_from` is the first month one of them usually comes (never before this month).
+    Prüfen und abgeben is "done" only when every other step is; until then it is "open" with
+    its own points, else "waiting", so it never reads „bereit“ while another step is open."""
     docs = documents(facts)
     pts = points(facts, docs)
 
@@ -420,13 +423,26 @@ def guide(facts: GuideInput) -> GuideResult:
             waiting_from=None if missing else waiting_from,
         )
     )
+    # Prüfen und abgeben is done (ready to file) only when every other step is done; while one
+    # is not, it waits, with a month only when Belege still to come are all that is left.
     n = open_points("review")
+    if n:
+        review_state: GuideStepState = "open"
+    elif all(s.state == "done" for s in steps):
+        review_state = "done"
+    else:
+        review_state = "waiting"
+    only_belege_to_come = all(
+        s.state == "done" or (s.kind == "documents" and s.state == "waiting") for s in steps
+    )
     steps.append(
         GuideStep(
             kind="review",
-            state="open" if n else ("waiting" if expected else "done"),
+            state=review_state,
             open=n,
-            waiting_from=None if n else waiting_from,
+            waiting_from=waiting_from
+            if review_state == "waiting" and only_belege_to_come
+            else None,
         )
     )
     next_step = next((i for i, s in enumerate(steps) if s.state == "open"), None)
