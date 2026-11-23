@@ -282,9 +282,14 @@ def import_statement(
         # D162 amended 15 Nov 2026: a depot's cash lines carry no IBAN, so the bank debits
         # naming the depot book and link them (follow-accounts and „Auf Konto importieren“
         # import through here too). Only a reconciled import's lines are legs.
+        from .depot import book_statement_trades  # it imports the asset services
         from .transfers import relink  # transfers imports the statement services
 
         relink(ctx, account_id)
+        # D292 (1): its trade lines already confirmed (a statement imported again after its
+        # lines were booked) become their movements; a new line's turn comes when its match
+        # confirms it (services.allocations).
+        book_statement_trades(ctx, account_ids=[account_id])
     return checked.model_copy(
         update={
             "stated_closing": statement.stated_balance,
@@ -1070,6 +1075,10 @@ def resolve_duplicate(
             )
         if later.excluded_as_duplicate_of is not None:
             raise ConflictError(f"transaction {later.id} is already excluded as a duplicate")
+        from . import depot  # it imports the asset services
+
+        # Phase 6 D292 amended (c): a line that booked a trade is never merged away.
+        depot.refuse_unbooking_trade_line(ctx.conn, exclusion.excluded_id)
         ctx.conn.execute(
             update(transaction_table)
             .where(transaction_table.c.id == exclusion.excluded_id)

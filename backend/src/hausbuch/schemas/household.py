@@ -275,6 +275,9 @@ class MovementSource(StrEnum):
     SECURITIES_TRANSFER = "securities_transfer"
     # Phase 7 (migration 0041, D182): read from a chain by a wallet sync.
     CHAIN = "chain"
+    # D292 (migration 0052): a security_purchase or security_sale line of a depot's cash
+    # statement, its ISIN and units printed on the line; names the line and the statement.
+    DEPOT_STATEMENT = "depot_statement"
 
 
 class MovementStatus(StrEnum):
@@ -319,11 +322,14 @@ class AssetMovementDraft(Schema):
             MovementSource.DISTRIBUTION_NOTE,
             MovementSource.REPORT,
             MovementSource.SECURITIES_TRANSFER,
+            MovementSource.DEPOT_STATEMENT,
         }
         if self.source in documented and self.document_id is None:
             raise ValueError(f"a movement read from a {self.source} names its document")
         if self.source is MovementSource.CHAIN and (self.address_id is None or self.index is None):
             raise ValueError("a movement read from a chain names its address and index")
+        if self.source is MovementSource.DEPOT_STATEMENT and self.transaction_id is None:
+            raise ValueError("a movement read from a depot statement names its cash line")
         if self.kind in _CHAIN_KINDS and self.source not in (
             MovementSource.CHAIN,
             MovementSource.USER,

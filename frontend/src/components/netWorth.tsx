@@ -119,6 +119,7 @@ function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverv
 
   const estimates = today.lines.filter((line) => line.estimate && line.value_eur != null);
   const paid = today.lines.filter(isPaidBeforeHandover);
+  const moving = today.lines.filter((line) => line.in_transit && line.value_eur != null);
   const older = today.lines.filter((line) => line.kind === "account" && line.as_of != null && line.as_of < today.on);
   const names = new Map(owners.map((owner) => [owner.id, owner.full_name]));
   const byOwner = Object.entries(today.by_owner);
@@ -156,6 +157,7 @@ function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverv
           ) : null}
           {older.length > 0 ? <BalanceDates lines={older} /> : null}
           {paid.length > 0 ? <PaidNote lines={paid} /> : null}
+          {moving.length > 0 ? <TransitNote lines={moving} /> : null}
           {estimates.length > 0 ? <EstimateNote lines={estimates} /> : null}
         </>
       )}
@@ -217,6 +219,26 @@ function PaidNote({ lines }: { lines: NetWorthLine[] }) {
           <li key={`${line.kind}-${line.property_id ?? ""}-${line.loan_id ?? ""}-${index}`}>
             {line.kind === "loan" ? t.loan : ""}
             {quoted(f.locale, line.label)} {f.money(line.value_eur)}
+            {line.note ? ` · ${line.note}` : ""}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Phase 6 D292 (3): money sent to an own account whose statements do not reach the payment
+ * yet („Unterwegs zu …“), each with the server's note (when it was sent, until when it counts). */
+function TransitNote({ lines }: { lines: NetWorthLine[] }) {
+  const t = useT(netWorthText);
+  const f = useFormat();
+  return (
+    <div className="notice notice-info">
+      <p>{t.inTransit}</p>
+      <ul>
+        {lines.map((line, index) => (
+          <li key={`transit-${line.account_id ?? ""}-${index}`}>
+            {line.label} {f.money(line.value_eur)}
             {line.note ? ` · ${line.note}` : ""}
           </li>
         ))}

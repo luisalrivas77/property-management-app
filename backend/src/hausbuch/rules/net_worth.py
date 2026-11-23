@@ -24,6 +24,10 @@ the Anlagen overview's valuations and hands them here. Built in phase 6 step 6.
 - `month_end_codes(as_of, today)`: which month-ends may be stored (phase 9 D241, amending
   D167 (5)): any closed month-end from 31 Jan 2026 on (the bank history starts on 1 Jan
   2026, design §10) up to the last one before `today`, not only the last one.
+- `in_transit(paid_on, opened_on, through, receiver_history, linked=)`: phase 6 D292 (3),
+  whether a booked transfer to an own account counts as „unterwegs zu <Konto>“ on a day.
+- `transit_counted(amounts, card_balance)`: D292 amended (a), what each transfer in transit
+  to one account counts; a credit card takes them only up to its known debt.
 """
 
 from collections.abc import Hashable, Iterable, Mapping, Sequence
@@ -146,11 +150,61 @@ def totals[K: Hashable](parts: Iterable[Part[K]], owners: Iterable[K]) -> Totals
     )
 
 
+def in_transit(
+    paid_on: date,
+    opened_on: date,
+    through: date,
+    receiver_history: date | None,
+    *,
+    linked: bool,
+) -> bool:
+    """Phase 6 D292 (3), 22 Nov 2026: whether a booked transfer from an own account to another
+    own account counts in the net worth as money „unterwegs zu <Konto>“ on a day.
+
+    `paid_on` is the debit's booking day on the sending account, `opened_on` and `through`
+    that account's anchor day and the last day its balance counts on that day (bank_balance),
+    `receiver_history` the day the receiving account's imported history reaches (the history
+    end of D162 amended (9); None when it has none), `linked` whether the debit is a leg of a
+    current transfer link. It counts when the sending balance holds the debit (the anchor day
+    before it, `through` on or after it) and the receiver's history ends before the payment's
+    day, so neither account counts the money; then once, on the receiving account. A linked
+    debit never counts: its counterpart is booked, so the receiving account holds it (a
+    depot's or card's credit can be booked up to three banking days before the debit, D162).
+    A receiver without any history never counts: nothing says the money reached an account
+    the app follows."""
+    if linked or receiver_history is None:
+        return False
+    if not opened_on < paid_on <= through:
+        return False
+    return receiver_history < paid_on
+
+
+def transit_counted(amounts: Sequence[Decimal], card_balance: Decimal | None) -> list[Decimal]:
+    """Phase 6 D292 amended (a), 23 Nov 2026: what each transfer in transit to one receiving
+    account counts, `amounts` (positive) in payment order. Any receiver but a credit card
+    (`card_balance` None) takes each in full. A credit card takes them only until its balance
+    line (`card_balance`, negative for a debt) plus them reaches 0: a card more than one
+    statement behind would otherwise count every later payment, and money that paid charges
+    on a statement not yet in the app would turn the card into an asset. The payment that
+    crosses 0 counts in part, the later ones 0; a card already at or above 0 takes nothing."""
+    if card_balance is None:
+        return list(amounts)
+    room = max(-card_balance, Decimal("0"))
+    out = []
+    for amount in amounts:
+        take = min(amount, room)
+        out.append(take)
+        room -= take
+    return out
+
+
 __all__ = [
     "Part",
     "Totals",
     "bank_balance",
     "class_of",
+    "in_transit",
+    "transit_counted",
     "loan_balance",
     "split",
     "totals",

@@ -793,7 +793,10 @@ def inbox_timed(
     Logs one line, `inbox sections`, with each section's milliseconds and item count (field
     names and numbers only, never an item's content), so a slow queue can be traced to its
     section in the production log."""
-    from .depot import holdings_inbox_items  # it imports the asset services
+    from .depot import (  # it imports the asset services
+        holdings_inbox_items,
+        statement_trade_inbox_items,
+    )
     from .exchange.imports import exchange_inbox_items  # it imports the transfer services
     from .property_costs import property_cost_items  # it imports the matching services
     from .returns import return_inbox_items  # it imports the transfer services
@@ -804,6 +807,7 @@ def inbox_timed(
         ("allocations", lambda: _allocation_items(conn)),
         ("property_costs", lambda: property_cost_items(conn)),
         ("holdings", lambda: holdings_inbox_items(conn)),
+        ("statement_trades", lambda: statement_trade_inbox_items(conn)),
         ("exchange", lambda: exchange_inbox_items(conn)),
         ("returns", lambda: return_inbox_items(conn)),
     ]

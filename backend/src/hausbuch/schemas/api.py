@@ -679,6 +679,12 @@ class InboxItemKind(StrEnum):
     # movements to its date, re-checked on every read; `account_id` is the depot,
     # `document_id` the report.
     HOLDINGS_MISMATCH = "holdings_mismatch"
+    # D292 (1): a trade line of a depot's cash statement whose ISIN or units cannot be read
+    # and whose trade no movement carries („Kauf ohne Stückzahl“).
+    DEPOT_TRADE_WITHOUT_UNITS = "depot_trade_without_units"
+    # D292 amended (b), 23 Nov 2026: a statement line whose trade a confirmation or a report
+    # booked with other units or another amount.
+    DEPOT_STATEMENT_TRADE_DIFFERS = "depot_statement_trade_differs"
     # Phase 6 step 5b (D174 (4), D167 (1)), computed on read; `asset_id` is the asset:
     # an ETF whose issuer's NAV file failed on seven daily runs in a row („Kurs
     # eintragen“), and a held asset nothing can price („Kursquelle wählen“).

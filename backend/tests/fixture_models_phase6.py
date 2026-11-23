@@ -878,6 +878,86 @@ class DepotLinesFixture(_Fixture):
     cases: list[DepotLineCase] = Field(min_length=1)
 
 
+# --- depot_statement_trades.yaml: rules.depot.statement_trade, statement_window,
+# statement_booked (D292 (1), (2)) -----------------------------------------------------------
+
+
+class StatementTradeExpect(Schema):
+    kind: MovementKind
+    isin: str
+    units: Quantity
+    tax_withheld: Decimal | None = None
+
+
+class StatementLineCase(_Case):
+    category: AllocationCategory
+    amount: Money
+    raw: dict[str, str]
+    expect: StatementTradeExpect | None
+
+
+class StatementWindowCase(_Case):
+    trade_on: date
+    line_on: date
+    expect: bool
+
+
+class StatementReportTrade(Schema):
+    isin: str
+    trade_date: date
+    units: Quantity
+
+
+class StatementBookedRow(Schema):
+    isin: str
+    units: Quantity
+    value_date: date
+
+
+class StatementReportCase(_Case):
+    trade: StatementReportTrade
+    booked: list[StatementBookedRow]
+    expect: bool
+
+
+class StatementTransitCase(_Case):
+    paid_on: date
+    opened_on: date
+    through: date
+    receiver_history: date | None
+    linked: bool = False
+    expect: bool
+
+
+class StatementTransitCardCase(_Case):
+    card_balance: Money | None
+    amounts: list[Money] = Field(min_length=1)
+    expect: list[Money]
+
+    @model_validator(mode="after")
+    def _one_per_amount(self) -> Self:
+        if len(self.expect) != len(self.amounts):
+            raise ValueError(f"{self.id}: one expected figure per amount")
+        return self
+
+
+class StatementTwinCase(_Case):
+    line_reference: str | None
+    line_on: date
+    other_reference: str | None
+    trade_on: date
+    expect: bool
+
+
+class DepotStatementTradesFixture(_Fixture):
+    lines: list[StatementLineCase] = Field(min_length=5)
+    windows: list[StatementWindowCase] = Field(min_length=3)
+    report_trades: list[StatementReportCase] = Field(min_length=3)
+    transit: list[StatementTransitCase] = Field(min_length=3)
+    transit_to_card: list[StatementTransitCardCase] = Field(min_length=3)
+    twins: list[StatementTwinCase] = Field(min_length=4)
+
+
 # --- holdings_reconcile.yaml: rules.depot.reconcile_holdings (§7) ---------------------------
 
 
@@ -2747,6 +2827,7 @@ MODELS: dict[str, type[Schema]] = {
     "transfers": TransfersFixture,
     "private_cost_link": PrivateCostLinkFixture,
     "depot_lines": DepotLinesFixture,
+    "depot_statement_trades": DepotStatementTradesFixture,
     "holdings_reconcile": HoldingsFixture,
     "quirion_documents": QuirionFixture,
     "bison_csv": ExchangeFixture,

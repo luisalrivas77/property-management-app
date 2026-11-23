@@ -125,11 +125,18 @@ def record_set(
     RuleViolationError allocation.excluded_transaction for a line merged away as a
     duplicate, allocation.scope_mismatch when a unit, tenancy or loan is not of the
     allocation's property, allocation.category_not_for_account for a category the line's
-    account does not take (phase 6 D159), whoever answers: a person, a rule or the model."""
+    account does not take (phase 6 D159), depot.line_books_trade for a depot's cash line
+    that booked a trade, re-booked to anything but its trade category (phase 6 D292 amended
+    (c)), whoever answers: a person, a rule or the model."""
     tx = _lock_transaction(ctx, allocation_set.transaction_id)
     check_sum(tx.amount, allocation_set.allocations)
     check_categories(ctx.conn, tx.account_id, allocation_set.allocations)
     _check_scope(ctx.conn, allocation_set.allocations)
+    from . import depot  # it imports the asset services
+
+    depot.refuse_unbooking_trade_line(
+        ctx.conn, tx.id, [d.category for d in allocation_set.allocations]
+    )
     previous = current_allocations(ctx.conn, tx.id)
     if previous:
         ctx.conn.execute(
@@ -301,6 +308,12 @@ def _confirmed(
         # Nebenkosten row as a rental line booked acquisition_cost does.
         if a.category in _PAYS_COST_ROW and a.document_id is not None:
             _set_paid_on(ctx, a.document_id, a.property_id, tx.booking_date)
+    if any(a.category in _DEPOT_TRADES for a in rows):
+        # Phase 6 D292 (1): a depot's confirmed trade line becomes the trade's movement (only
+        # on a depot account, with a readable ISIN and units; services.depot decides).
+        from . import depot  # it imports the asset services
+
+        depot.book_statement_trades(ctx, transaction_ids=[tx.id])
 
 
 def _part(a: Allocation) -> AllocatedPart:
@@ -319,6 +332,7 @@ def _part(a: Allocation) -> AllocatedPart:
 
 
 _PAYS_COST_ROW = (AllocationCategory.ACQUISITION_COST, AllocationCategory.HH_PROPERTY_COST)
+_DEPOT_TRADES = (AllocationCategory.SECURITY_PURCHASE, AllocationCategory.SECURITY_SALE)
 
 
 def _set_paid_on(

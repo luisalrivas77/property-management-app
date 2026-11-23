@@ -4918,6 +4918,57 @@
         }
       }
     },
+    "/api/depot/statement-trades/{transaction_id}/resolve": {
+      "post": {
+        "summary": "Depot Statement Trade Resolve",
+        "description": "The card „Kontoauszug und Abrechnung weichen ab“ (phase 6 D292 amended (b), 23 Nov\n2026): `keep: statement` („Kontoauszug übernehmen“) supersedes the confirmation's or\nreport's movement with the cash statement line's units and amount; `keep: document`\n(„Abrechnung behalten“) supersedes it with an identical movement linked to the line.\nEither way the line is linked and the card goes; both rows stay, with their events. The\npair is found again under the depot's lock, never sent by the page. 404 for no such line,\n409 when the line has no differing trade to decide.",
+        "operationId": "depot_statement_trade_resolve_api_depot_statement_trades__transaction_id__resolve_post",
+        "parameters": [
+          {
+            "name": "transaction_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transaction Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatementTradeResolve"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementTradeResolved"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/accounts/{account_id}/imports": {
       "post": {
         "summary": "Account Import",
@@ -23677,6 +23728,8 @@
           "property_cost_year",
           "property_cost_document",
           "holdings_mismatch",
+          "depot_trade_without_units",
+          "depot_statement_trade_differs",
           "price_source_failed",
           "price_no_source",
           "price_report_differs",
@@ -26313,7 +26366,8 @@
           "report",
           "user",
           "securities_transfer",
-          "chain"
+          "chain",
+          "depot_statement"
         ],
         "title": "MovementSource",
         "description": "asset_movement.source: where the row was read from."
@@ -26638,6 +26692,11 @@
               }
             ],
             "title": "Note"
+          },
+          "in_transit": {
+            "type": "boolean",
+            "title": "In Transit",
+            "default": false
           },
           "not_valued_reason": {
             "anyOf": [
@@ -35281,6 +35340,43 @@
         ],
         "title": "StatementRefusal",
         "description": "A statement file the app tried to import onto its account by itself and the import\nrefused (phase 6, 14 Nov 2026): the document keeps its „Auf Konto importieren“ offer, and\n`code` is the import's statement.* (or other rule) code, which says why."
+      },
+      "StatementTradeKeep": {
+        "type": "string",
+        "enum": [
+          "statement",
+          "document"
+        ],
+        "title": "StatementTradeKeep",
+        "description": "Which reading „Kontoauszug und Abrechnung weichen ab“ keeps (D292 amended (b))."
+      },
+      "StatementTradeResolve": {
+        "properties": {
+          "keep": {
+            "$ref": "#/components/schemas/StatementTradeKeep"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "keep"
+        ],
+        "title": "StatementTradeResolve"
+      },
+      "StatementTradeResolved": {
+        "properties": {
+          "movement_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Movement Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "movement_id"
+        ],
+        "title": "StatementTradeResolved"
       },
       "StatementsRefusal": {
         "properties": {

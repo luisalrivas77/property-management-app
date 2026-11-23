@@ -273,6 +273,10 @@ const RULE_CODE_TEXT_DE: Record<string, string> = {
   "depot.account_required": "Bitte als Konto ein Depot wählen; Wertpapiere werden nur auf einem Depot gebucht.",
   "depot.movement_exists":
     "Dieser Vorgang (gleiche Referenz oder gleicher Tag und Betrag) ist auf dem Depot schon gebucht. Das Dokument wurde vermutlich zweimal hochgeladen; diesen Eintrag überspringen.",
+  "depot.statement_trade_differs":
+    "Dieser Kauf oder Verkauf ist schon aus dem Kontoauszug des Depots gebucht, mit anderen Anteilen oder einem anderen Betrag als in dieser Abrechnung. Es wurde nichts geändert; bitte beide Dokumente vergleichen.",
+  "depot.line_books_trade":
+    "Diese Zeile des Depot-Kontoauszugs hat einen Kauf oder Verkauf im Depot gebucht. Sie bleibt als Wertpapierkauf oder -verkauf gebucht und wird nicht als Doppelbuchung zusammengeführt, sonst zählten ihre Anteile weiter ohne passende Buchung. Stimmt der Umsatz nicht, bitte die Wertpapierabrechnung hochladen.",
   "depot.holding_exists":
     "Dieser Bericht ist für dieses Depot und diesen Stichtag schon übernommen. Diesen Eintrag überspringen.",
   "depot.holdings_mismatch":

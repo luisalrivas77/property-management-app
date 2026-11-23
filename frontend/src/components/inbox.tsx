@@ -169,6 +169,10 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   property_cost_document: "property_costs",
   // Phase 6 step 4: a depot report that disagrees with the booked trades.
   holdings_mismatch: "other",
+  // Phase 6 D292: a trade line of a depot's cash statement without ISIN or units.
+  depot_trade_without_units: "other",
+  // D292 amended (b): a statement line whose confirmation or report reads other units.
+  depot_statement_trade_differs: "other",
   // Phase 6 step 5b: a fund's daily price missing seven runs (D174 (4)), an asset no source
   // prices (D167).
   price_source_failed: "automatic",
@@ -225,6 +229,8 @@ const PILL_CLASS: Record<InboxItemKind, string> = {
   property_cost_year: "badge badge-info",
   property_cost_document: "badge badge-warn",
   holdings_mismatch: "badge badge-warn",
+  depot_trade_without_units: "badge badge-warn",
+  depot_statement_trade_differs: "badge badge-warn",
   price_source_failed: "badge badge-danger",
   price_no_source: "badge badge-warn",
   price_report_differs: "badge badge-warn",
@@ -938,7 +944,11 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
       </strong>
     );
   }
-  if (item.kind === "holdings_mismatch") {
+  if (
+    item.kind === "holdings_mismatch" ||
+    item.kind === "depot_trade_without_units" ||
+    item.kind === "depot_statement_trade_differs"
+  ) {
     const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
     return (
       <strong>
@@ -1285,6 +1295,25 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
           {item.account_id ? <Link href={`/accounts/${item.account_id}`}>{t.toDepot}</Link> : null}
         </>
       );
+    case "depot_trade_without_units":
+      // D292: no „Abrechnung hochladen“; the app keeps no flag of which provider issues trade
+      // confirmations. The next quarterly report's „Umsätze aus dem Bericht buchen“ books it.
+      return (
+        <>
+          {item.document_id ? <Link href={`/documents/${item.document_id}`}>{t.openDocument}</Link> : null}
+          {item.account_id ? <Link href={`/accounts/${item.account_id}`}>{t.toDepot}</Link> : null}
+        </>
+      );
+    case "depot_statement_trade_differs":
+      // D292 amended (b): the person says which reading is right; the server finds the pair
+      // again (POST /depot/statement-trades/{id}/resolve).
+      return (
+        <>
+          {item.transaction_id ? <StatementTradeButtons transactionId={item.transaction_id} onDone={onChanged} /> : null}
+          {item.document_id ? <Link href={`/documents/${item.document_id}`}>{t.openDocument}</Link> : null}
+          {item.account_id ? <Link href={`/accounts/${item.account_id}`}>{t.toDepot}</Link> : null}
+        </>
+      );
     case "price_source_failed":
       return item.asset_id ? <Link href={`/assets?kurs=${item.asset_id}`}>{t.enterPrice}</Link> : null;
     case "price_no_source":
@@ -1301,6 +1330,46 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
     default:
       return null;
   }
+}
+
+/** „Kontoauszug übernehmen“ and „Abrechnung behalten“ on the card „Kontoauszug und Abrechnung
+ * weichen ab“ (phase 6 D292 amended (b), 23 Nov 2026): either links the cash line to one
+ * trade, superseding the other reading; the card goes. */
+function StatementTradeButtons({ transactionId, onDone }: { transactionId: string; onDone: () => void }) {
+  const t = useT(inbox);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  async function resolve(keep: "statement" | "document") {
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(
+        api.POST("/api/depot/statement-trades/{transaction_id}/resolve", {
+          params: { path: { transaction_id: transactionId } },
+          body: { keep },
+        }),
+      );
+      notifyInboxChanged();
+      onDone();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button type="button" onClick={() => void resolve("statement")} disabled={busy}>
+        {t.useStatement}
+      </button>
+      <button type="button" className="secondary" onClick={() => void resolve("document")} disabled={busy}>
+        {t.keepDocument}
+      </button>
+      <ErrorNotice error={error} />
+    </>
+  );
 }
 
 /** „Umsätze aus dem Bericht buchen“ on the depot's holdings card (phase 6 D165 amended,

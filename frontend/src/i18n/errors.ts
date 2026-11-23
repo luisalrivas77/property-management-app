@@ -216,6 +216,10 @@ export const RULE_CODE_TEXT_EN: Record<string, string> = {
   "depot.account_required": "Please choose a depot as the account; securities are booked on a depot only.",
   "depot.movement_exists":
     "This transaction (same reference, or same day and amount) is already booked on the depot. The document was probably uploaded twice; skip this entry.",
+  "depot.statement_trade_differs":
+    "This purchase or sale is already booked from the depot's cash statement, with other units or another amount than this trade confirmation. Nothing was changed; please compare both documents.",
+  "depot.line_books_trade":
+    "This line of the depot's cash statement booked a purchase or sale on the depot. It stays booked as a securities purchase or sale and is not merged as a duplicate, or its units would keep counting without a matching booking. If the trade is wrong, please upload the trade confirmation.",
   "depot.holding_exists": "This report has already been applied for this depot and this reference date. Skip this entry.",
   "depot.holdings_mismatch":
     "The depot report names other unit counts than the booked trade confirmations give. Please upload the missing trade confirmations.",
