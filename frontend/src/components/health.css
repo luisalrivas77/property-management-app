@@ -298,3 +298,49 @@
   line-height: 1.5;
   color: var(--muted);
 }
+
+/* Vermögen im Verlauf (phase 10 §7.6, Luis 23 Nov 2026): no sideways scroll on a phone. Below
+   720 px each month is one row of a list (net worth, change, saved); the table with its five
+   columns is shown from 720 px on. The bar chart's month labels never widen the card. */
+.health-series-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.health-series-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.health-series-line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.health-series-line.muted {
+  font-size: 13px;
+}
+
+.health-series .planning-bar-year {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.health-series-table {
+  display: none;
+}
+
+@media (min-width: 720px) {
+  .health-series-list {
+    display: none;
+  }
+
+  .health-series-table {
+    display: block;
+  }
+}

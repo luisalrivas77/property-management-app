@@ -1,64 +1,82 @@
 "use client";
 
-// Anlagen › Übersicht (phase 6 step 5b, §13; phase 10 mockup 20): every depot, exchange and
-// wallet account with its positions on today's date, from GET /assets/overview. Each position
-// shows its units, the price with its source and day, and the value; a price older than seven
-// days is marked, a fund no issuer adapter prices shows „Kurs aus dem Bericht vom …“ (D174 (4)),
-// and a position no source prices is a to-do with its button (principle 7). A depot fund whose
-// latest report disagrees with the booked trades is not valued (D165 (3), valuation.not_valued)
-// and links to its Zu prüfen card, as on the ETF tab.
-//
-// A tapped position opens the detail panel (D267, `#d-position-<account>~<asset>`) with its
-// figures and the price forms: „Kursquelle wählen“ (a coin's CoinGecko id and Kraken pair,
-// PATCH /assets/{id}) and „Kurs eintragen“ (POST /assets/{id}/prices). `?kurs=<asset id>`
-// (`&tag=<day>`, from a lot's „Kurs fehlt“ on the Krypto tab and the price cards on Zu prüfen)
-// opens the same forms in the panel for one asset.
+// Anlagen › Übersicht (phase 6 step 5b, §13; phase 10 mockup 20, §7.6): what the household holds
+// in investments, as one headline figure and one card per kind; no fund and no coin is listed
+// here (Luis, 23 Nov 2026): they open on the ETF and Krypto tabs and in their portfolio's panel.
+// - The total card: GET /assets/performance's `total_eur` (the depots, exchanges and wallets at
+//   today's price as on GET /assets/overview, plus the property's equity, its estimate less its
+//   loans), large, with the split of the assets inside it: GET /assets/overview's `by_kind`
+//   (funds, crypto, cash: a depot's cash, an exchange's euros, money on its way) and the
+//   property's equity, each with its amount. It replaces the card „Aufteilung des Vermögens“.
+// - „ETF und Krypto: Gewinn seit Beginn“ (./Performance.tsx), then a card per kind (ETF, Krypto,
+//   Immobilie), each opening its tab; the Immobilie card shows the equity and „X von Y eigenem
+//   Geld zurück“ from GET /properties/payback's totals (`cash_back`, `paid_in`).
+// - `?kurs=<asset id>` (`&tag=<day>`, from a lot's „Kurs fehlt“, a portfolio's missing price and
+//   the price cards on Zu prüfen) opens „Kursquelle wählen“ (a coin's CoinGecko id and Kraken
+//   pair, PATCH /assets/{id}) and „Kurs eintragen“ (POST /assets/{id}/prices) in the panel.
 //
 // A wallet whose read movements wait for a person (a first sync proposes the whole history) is
-// counted nowhere yet: its line names the coins not yet counted and links „Transaktionen prüfen“
-// on the wallet's page, inside the wallet's card, or on its own while nothing is confirmed.
+// counted nowhere yet: its line names the coins not yet counted and links „Transaktionen prüfen“.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useState, type FormEvent } from "react";
+import { type ReactNode, useCallback, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
-import type { AssetRow, AssetsOverview, OverviewAccount, OverviewPosition, WalletWaiting } from "@/api/schemas";
+import type { AssetRow, AssetsOverview, WalletWaiting } from "@/api/schemas";
+import type { components } from "@/api/types";
 import { todayIso } from "@/components/format";
 import { decimalInput, toDecimalString } from "@/components/input";
-import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
+import { DetailLayout, DetailPanel } from "@/components/DetailPanel";
 import { Loading, Notice } from "@/components/ui";
 import { useLoad, type Loaded } from "@/components/useLoad";
 import { useFormat, useT, type Formatter, type Translation } from "@/i18n";
 import { assets } from "@/i18n/assets";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
-import { PortfolioParts } from "./PortfolioParts";
-import { accountKindLabel, assetKindLabel, priceText, sourceLabel } from "./words";
+import { type AssetsPerformance, GainKpi, gainSub, loadPerformance } from "./Performance";
+import { MoneyBack } from "./Property";
+import { assetKindLabel, sourceLabel } from "./words";
 
 type T = Translation<(typeof assets)["de"]>;
+type PropertiesPayback = components["schemas"]["PropertiesPayback"];
 
 const KIND_COLOUR: Record<string, string> = {
   etf: "var(--kind-funds)",
   stock: "var(--kind-funds)",
   crypto: "var(--kind-crypto)",
   cash: "var(--kind-cash)",
+  property: "var(--kind-property)",
 };
 
 export function OverviewTab({ priceFor, priceDay = null }: { priceFor: string | null; priceDay?: string | null }) {
-  const load = useCallback(() => ok(api.GET("/api/assets/overview")), []);
-  const overview = useLoad(load);
-  return <Loading state={overview}>{(data) => <Overview data={data} priceFor={priceFor} priceDay={priceDay} onSaved={overview.reload} />}</Loading>;
+  const load = useCallback(async () => {
+    const [overview, performance, payback] = await Promise.all([
+      ok(api.GET("/api/assets/overview")),
+      loadPerformance(),
+      // The Immobilie card's „Geld zurück“ only; Anlagen shows without it.
+      ok(api.GET("/api/properties/payback")).catch(() => null),
+    ]);
+    return { overview, performance, payback };
+  }, []);
+  const state = useLoad(load);
+  return (
+    <Loading state={state}>
+      {(data) => <Overview {...data} priceFor={priceFor} priceDay={priceDay} onSaved={state.reload} />}
+    </Loading>
+  );
 }
 
-const positionKey = (accountId: string, assetId: string) => `${accountId}~${assetId}`;
-
 function Overview({
-  data,
+  overview,
+  performance,
+  payback,
   priceFor,
   priceDay,
   onSaved,
 }: {
-  data: AssetsOverview;
+  overview: AssetsOverview;
+  performance: AssetsPerformance;
+  payback: PropertiesPayback | null;
   priceFor: string | null;
   priceDay: string | null;
   onSaved: () => void;
@@ -66,35 +84,17 @@ function Overview({
   const t = useT(assets);
   const f = useFormat();
   const router = useRouter();
-  const detail = useDetail("position");
-  const accounts = data.accounts ?? [];
-  const waiting = data.waiting ?? [];
-  const withRow = new Set(accounts.map((account) => account.account_id));
-  const alone = waiting.filter((line) => !withRow.has(line.account_id));
-
-  let panel = null;
-  const open = accounts.flatMap((account) => (account.positions ?? []).map((position) => ({ account, position })));
-  const selected = open.find(({ account, position }) => positionKey(account.account_id, position.asset_id) === detail.id);
-  if (selected) {
-    panel = (
-      <DetailPanel title={selected.position.name} backLabel={t.tabOverview} onClose={detail.close}>
-        <PositionPanel account={selected.account} position={selected.position} onSaved={onSaved} />
-      </DetailPanel>
-    );
-  } else if (priceFor) {
-    const close = () => router.replace("/assets", { scroll: false });
-    panel = (
-      <DetailPanel title={t.typePrice} backLabel={t.tabOverview} onClose={close}>
-        <PriceForms assetId={priceFor} day={priceDay} onSaved={onSaved} titled />
-      </DetailPanel>
-    );
-  }
-
-  if (accounts.length === 0) {
+  const panel = priceFor ? (
+    <DetailPanel title={t.typePrice} backLabel={t.tabOverview} onClose={() => router.replace("/assets", { scroll: false })}>
+      <PriceForms assetId={priceFor} day={priceDay} onSaved={onSaved} titled />
+    </DetailPanel>
+  ) : null;
+  const hasProperty = (payback?.properties ?? []).length > 0 || Number(performance.property_estimate_eur) !== 0;
+  if ((overview.accounts ?? []).length === 0 && !hasProperty) {
     return (
       <DetailLayout panel={panel}>
         <div className="stack">
-          <WaitingNotices lines={alone} />
+          <WaitingNotices lines={overview.waiting ?? []} />
           <section className="card stack">
             <h2>{t.positions}</h2>
             <p className="muted">{t.noAssets}</p>
@@ -106,53 +106,110 @@ function Overview({
       </DetailLayout>
     );
   }
-  const kinds = Object.entries(data.by_kind ?? {}).filter((entry): entry is [string, string] => entry[1] != null);
-  const total = Number(data.total_eur);
+  const portfolios = performance.portfolios ?? [];
   return (
     <DetailLayout panel={panel}>
       <div className="stack">
-        <section className="card stack" aria-label={t.totalValue}>
-          <p className="planning-kpi-label">{t.totalValue}</p>
-          <p className="planning-kpi-value">{f.money(data.total_eur)}</p>
-          <p className="muted">{t.onDay(f.date(data.on))}</p>
-          {kinds.length > 0 && total > 0 ? (
-            <>
-              <div className="asset-kind-bar" aria-hidden="true">
-                {kinds.map(([kind, value]) => (
-                  <span key={kind} style={{ width: `${Math.max(0, (Number(value) / total) * 100)}%`, background: KIND_COLOUR[kind] }} />
-                ))}
-              </div>
-              <ul className="asset-kinds">
-                {kinds.map(([kind, value]) => (
-                  <li key={kind}>
-                    <span className="muted">
-                      <span className="dot" style={{ background: KIND_COLOUR[kind] }} />
-                      {assetKindLabel(t, kind)}
-                    </span>
-                    <strong>{f.money(value)}</strong>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : null}
-        </section>
-        {(data.unvalued_positions ?? 0) > 0 || (data.stale_positions ?? 0) > 0 ? (
+        <TotalCard overview={overview} performance={performance} hasProperty={hasProperty} />
+        {(overview.unvalued_positions ?? 0) > 0 || (overview.stale_positions ?? 0) > 0 ? (
           <div className="notice notice-warn" role="status">
-            <p>{coverageText(t, data.unvalued_positions ?? 0, data.stale_positions ?? 0)}</p>
+            <p>{coverageText(t, overview.unvalued_positions ?? 0, overview.stale_positions ?? 0)}</p>
           </div>
         ) : null}
-        <WaitingNotices lines={alone} />
-        {accounts.map((account) => (
-          <AccountPositions
-            key={account.account_id}
-            account={account}
-            waiting={waiting.find((line) => line.account_id === account.account_id) ?? null}
-            linkProps={(assetId) => detail.linkProps(positionKey(account.account_id, assetId))}
+        <WaitingNotices lines={overview.waiting ?? []} />
+        <div className="planning-kpis">
+          <GainKpi title={t.investedGain} figures={performance.invested} portfolios={portfolios} main />
+          <KindCard
+            title={t.kindEtf}
+            href="/assets?tab=etf"
+            value={performance.etf.value_eur}
+            sub={performance.etf.gain_eur != null ? `${t.gainSince}: ${gainSub(t, f, performance.etf)}` : null}
           />
-        ))}
+          <KindCard
+            title={t.kindCrypto}
+            href="/assets?tab=krypto"
+            value={performance.crypto.value_eur}
+            sub={performance.crypto.gain_eur != null ? `${t.gainSince}: ${gainSub(t, f, performance.crypto)}` : null}
+          />
+          {hasProperty ? (
+            <KindCard title={t.kindProperty} href="/assets?tab=immobilie" value={performance.property_equity_eur}>
+              {payback ? <MoneyBack payback={payback} /> : null}
+            </KindCard>
+          ) : null}
+        </div>
         <p className="muted hint">{t.attribution}</p>
       </div>
     </DetailLayout>
+  );
+}
+
+/** The tab's headline: the total, large, and the split of the assets with each amount inside
+ * the same card (Luis, 23 Nov 2026). The split's widths are the returned amounts relative to the
+ * total, for display only; a negative equity (a loan above the estimate) shows its amount and no
+ * width. */
+function TotalCard({ overview, performance, hasProperty }: { overview: AssetsOverview; performance: AssetsPerformance; hasProperty: boolean }) {
+  const t = useT(assets);
+  const f = useFormat();
+  const kinds: [string, string][] = Object.entries(overview.by_kind ?? {}).filter(
+    (entry): entry is [string, string] => entry[1] != null,
+  );
+  if (hasProperty) kinds.push(["property", performance.property_equity_eur]);
+  const widths = kinds.map(([, value]) => Math.max(0, Number(value)));
+  const sum = widths.reduce((a, b) => a + b, 0);
+  return (
+    <section className="card stack asset-total" aria-label={t.totalTitle}>
+      <p className="planning-kpi-label">{t.totalTitle}</p>
+      <p className="asset-total-value">{f.money(performance.total_eur)}</p>
+      <p className="muted">
+        {t.onDay(f.date(performance.as_of))}
+        {hasProperty ? ` · ${t.totalEstimate}` : ""}
+      </p>
+      {kinds.length > 0 && sum > 0 ? (
+        <>
+          <div className="asset-kind-bar" aria-hidden="true">
+            {kinds.map(([kind], index) => (
+              <span key={kind} style={{ width: `${((widths[index] ?? 0) / sum) * 100}%`, background: KIND_COLOUR[kind] }} />
+            ))}
+          </div>
+          <ul className="asset-kinds">
+            {kinds.map(([kind, value]) => (
+              <li key={kind}>
+                <span className="muted">
+                  <span className="dot" style={{ background: KIND_COLOUR[kind] }} />
+                  {kind === "property" ? t.kindProperty : assetKindLabel(t, kind)}
+                </span>
+                <strong>{f.money(value)}</strong>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function KindCard({
+  title,
+  href,
+  value,
+  sub = null,
+  children,
+}: {
+  title: string;
+  href: string;
+  value: string;
+  sub?: string | null;
+  children?: ReactNode;
+}) {
+  const t = useT(assets);
+  const f = useFormat();
+  return (
+    <Link href={href} className="planning-kpi asset-kind-card" aria-label={t.openTab(title)}>
+      <p className="planning-kpi-label">{title} ›</p>
+      <p className="planning-kpi-value">{f.money(value)}</p>
+      {sub ? <p className="planning-kpi-sub">{sub}</p> : null}
+      {children}
+    </Link>
   );
 }
 
@@ -175,142 +232,6 @@ export function WaitingNotices({ lines }: { lines: WalletWaiting[] }) {
         </Notice>
       ))}
     </>
-  );
-}
-
-type LinkProps = ReturnType<ReturnType<typeof useDetail>["linkProps"]>;
-
-function AccountPositions({
-  account,
-  waiting,
-  linkProps,
-}: {
-  account: OverviewAccount;
-  waiting: WalletWaiting | null;
-  linkProps: (assetId: string) => LinkProps;
-}) {
-  const t = useT(assets);
-  const f = useFormat();
-  const cash = (account.cash ?? []).filter((line) => line.value_eur != null);
-  return (
-    <section className="card stack" aria-label={t.positionsOf(account.label)}>
-      <div className="asset-section-head">
-        <h2>
-          <Link href={`/accounts/${account.account_id}`}>{account.label}</Link>
-        </h2>
-        <span className="badge badge-muted">{accountKindLabel(t, account.kind)}</span>
-        <span className="spacer" />
-        <strong>{f.money(account.total_eur)}</strong>
-      </div>
-      {cash.length > 0 ? <PortfolioParts label={account.label} funds={account.value_eur} cash={cash} /> : null}
-      <WaitingNotices lines={waiting ? [waiting] : []} />
-      <ul className="asset-rows" data-cols="overview">
-        <li className="asset-rows-head asset-col" aria-hidden="true">
-          <span>{t.colAsset}</span>
-          <span className="num">{t.colUnits}</span>
-          <span className="num">{t.colPrice}</span>
-          <span className="num">{t.colValue}</span>
-        </li>
-        {(account.positions ?? []).map((position) => (
-          <li key={position.asset_id}>
-            <PositionRow position={position} link={linkProps(position.asset_id)} />
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function PositionRow({ position, link }: { position: OverviewPosition; link: LinkProps }) {
-  const t = useT(assets);
-  const f = useFormat();
-  const todo = positionTodo(t, position);
-  const price = position.price ? priceText(t, f, position.price, position.from_report ?? false) : null;
-  return (
-    <a {...link} className="asset-row">
-      <span className="asset-row-name">
-        <strong>{position.name}</strong>
-        <span className="asset-row-sub">
-          {[assetKindLabel(t, position.kind), position.symbol ?? position.isin].filter(Boolean).join(" · ")}
-        </span>
-        <span className="asset-row-sub asset-phone">
-          {[t.unitsOf(f.decimal(position.units)), price].filter(Boolean).join(" · ")}
-        </span>
-        {position.stale ? <span className="badge badge-warn">{t.stale}</span> : null}
-        {todo ? <span className="asset-row-sub todo-text">{todo.text}</span> : null}
-      </span>
-      <span className="num asset-col">{f.decimal(position.units)}</span>
-      <span className="num asset-col">
-        {position.price ? (
-          <>
-            {f.money(position.price.price_eur)}
-            <span className="asset-row-sub" style={{ display: "block" }}>
-              {price}
-            </span>
-          </>
-        ) : (
-          "–"
-        )}
-      </span>
-      <span className="num asset-value">{position.value_eur != null ? f.money(position.value_eur) : t.noValue}</span>
-    </a>
-  );
-}
-
-/** What to do about a position without a current value; null when nothing is to do. */
-function positionTodo(t: T, position: OverviewPosition): { text: string; action: string; href: string | null } | null {
-  if (position.not_valued_reason === "valuation.not_valued") {
-    return { text: t.todoNotValued, action: t.actionInbox, href: "/inbox" };
-  }
-  if (position.kind === "cash") return null;
-  if (position.value_eur == null) {
-    if (position.kind === "crypto") return { text: t.todoNoCoinSource, action: t.actionChooseSource, href: null };
-    return { text: t.todoNoFundPrice, action: t.actionTypePrice, href: null };
-  }
-  if (position.stale && !position.from_report) return { text: t.todoStale, action: t.actionTypePrice, href: null };
-  return null;
-}
-
-/** The panel of a tapped position: its figures, its to-do and the price forms. */
-function PositionPanel({ account, position, onSaved }: { account: OverviewAccount; position: OverviewPosition; onSaved: () => void }) {
-  const t = useT(assets);
-  const f = useFormat();
-  const todo = positionTodo(t, position);
-  return (
-    <div className="stack">
-      <p className="muted">{[account.label, accountKindLabel(t, account.kind)].join(" · ")}</p>
-      <dl className="facts">
-        <div>
-          <dt>{t.units}</dt>
-          <dd>{f.decimal(position.units)}</dd>
-        </div>
-        <div>
-          <dt>{t.priceToday}</dt>
-          <dd>
-            {position.price ? f.money(position.price.price_eur) : "–"}
-            {position.price ? <span className="asset-row-sub" style={{ display: "block" }}>{priceText(t, f, position.price, position.from_report ?? false)}</span> : null}
-          </dd>
-        </div>
-        <div>
-          <dt>{t.valueToday}</dt>
-          <dd>
-            <strong>{position.value_eur != null ? f.money(position.value_eur) : t.noValue}</strong>
-          </dd>
-        </div>
-      </dl>
-      {position.stale ? <span className="badge badge-warn">{t.stale}</span> : null}
-      {todo ? (
-        <div className="notice notice-warn" role="status">
-          <p>
-            {todo.text} {todo.href ? <Link href={todo.href}>{todo.action}</Link> : null}
-          </p>
-        </div>
-      ) : null}
-      {position.kind === "cash" && position.symbol === "EUR" ? null : <PriceForms assetId={position.asset_id} day={null} onSaved={onSaved} />}
-      <Link href={`/accounts/${account.account_id}`} className="button-link secondary">
-        {t.openAccount(account.label)}
-      </Link>
-    </div>
   );
 }
 

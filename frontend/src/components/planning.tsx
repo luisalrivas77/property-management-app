@@ -203,14 +203,15 @@ function readParams(search: { get(name: string): string | null }): LeverParams {
 }
 
 function planningHref(propertyId: string | null, params: LeverParams): string {
-  // Planung's Immobilie section (phase 10 D270): the section stays in the URL with the levers.
-  const query = new URLSearchParams({ section: "immobilie" });
+  // Anlagen › Immobilie (phase 10 §7.6, D288; Planung's Immobilie section until then): the tab
+  // stays in the URL with the levers.
+  const query = new URLSearchParams({ tab: "immobilie" });
   if (propertyId) query.set("immobilie", propertyId);
   if (params.scenario) query.set(PARAM.scenario, params.scenario);
   if (params.valueGrowth !== null) query.set(PARAM.valueGrowth, params.valueGrowth);
   if (params.rentGrowth !== null) query.set(PARAM.rentGrowth, params.rentGrowth);
   if (params.saleYear !== null) query.set(PARAM.saleYear, String(params.saleYear));
-  return `/planning?${query.toString()}`;
+  return `/assets?${query.toString()}`;
 }
 
 const RATE_PLACES = 6;
@@ -258,7 +259,16 @@ function useStickyLoad<T>(load: () => Promise<T>): Loaded<T> {
 
 // --- The screen -------------------------------------------------------------------------------
 
-export function PlanningScreen({ property, properties }: { property: Property; properties: Property[] }) {
+export function PlanningScreen({
+  property,
+  properties,
+  head,
+}: {
+  property: Property;
+  properties: Property[];
+  /** Cards above the actuals, given the projection once it is read (Anlagen › Immobilie). */
+  head?: (projection: Projection | undefined) => ReactNode;
+}) {
   const router = useRouter();
   const search = useSearchParams();
   const ids = useId();
@@ -339,6 +349,7 @@ export function PlanningScreen({ property, properties }: { property: Property; p
         ) : null}
       </div>
       <div className="stack planning">
+        {head ? head(projection.data !== undefined && !isRefused(projection.data) ? projection.data : undefined) : null}
         {flatRate.data !== undefined || flatRate.error != null ? (
           <Loading state={flatRate}>
             {(check) => <FlatRateCard check={check} actualYears={actualYears} propertyId={property.id} />}
