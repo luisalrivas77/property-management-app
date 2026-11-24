@@ -96,7 +96,7 @@ class OneOffCandidate(Schema):
     one (None for a candidate)."""
 
     payment: GroupPayment
-    code_median: NonNegativeMoney
+    code_median: Money  # negative only for a code whose refunds outweigh it most months
     answer: SpendingMarkAnswer | None = None
 
 

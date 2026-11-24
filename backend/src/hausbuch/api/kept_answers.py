@@ -182,6 +182,10 @@ KEPT_ROUTES: tuple[str, ...] = (
     "/api/household-plan/comparison",
     "/api/household-plan/explanation",
     "/api/household-budget",
+    # Phase 10 §7.9 (b), (c): the confirmed private lines and the spending marks (migration
+    # 0056, its data-version triggers) and the Berlin day only
+    "/api/household/recurring",
+    "/api/household/one-off-candidates",
     "/api/owners/{owner_id}",
     "/api/owners/{owner_id}/anlage-n/exports",
     "/api/income-inputs",

@@ -6719,6 +6719,138 @@
         }
       }
     },
+    "/api/household/recurring": {
+      "get": {
+        "summary": "Household Recurring",
+        "operationId": "household_recurring_api_household_recurring_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringPayments"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/household/one-off-candidates": {
+      "get": {
+        "summary": "Household One Off Candidates",
+        "operationId": "household_one_off_candidates_api_household_one_off_candidates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OneOffCandidates"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/household/one-off-marks": {
+      "post": {
+        "summary": "Household One Off Mark",
+        "operationId": "household_one_off_mark_api_household_one_off_marks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OneOffMarkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingMarkRecorded"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/household/recurring-marks": {
+      "post": {
+        "summary": "Household Recurring Mark",
+        "operationId": "household_recurring_mark_api_household_recurring_marks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeriesMarkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingMarkRecorded"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/transactions/{transaction_id}/private-costs": {
       "post": {
         "summary": "Private Costs Record",
@@ -28126,6 +28258,90 @@
         "title": "OneOff",
         "description": "A one-off in `month`. §7.3 amended (PR #434 review D): a one-off in a month at or\nbefore the newest closed month may stay in a scenario row; the plan ignores it, since the\nmeasured months already hold it. Only a month after the horizon's end is refused."
       },
+      "OneOffCandidate": {
+        "properties": {
+          "payment": {
+            "$ref": "#/components/schemas/GroupPayment"
+          },
+          "code_median": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Code Median"
+          },
+          "answer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpendingMarkAnswer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "payment",
+          "code_median"
+        ],
+        "title": "OneOffCandidate",
+        "description": "One payment that may be one-off (D297): its line, what was paid (`payment.amount`,\npositive), its code's median month over the window, and the newest answer when it has\none (None for a candidate)."
+      },
+      "OneOffCandidates": {
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "window": {
+            "$ref": "#/components/schemas/Window"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/OneOffCandidate"
+            },
+            "type": "array",
+            "title": "Candidates"
+          },
+          "answered": {
+            "items": {
+              "$ref": "#/components/schemas/OneOffCandidate"
+            },
+            "type": "array",
+            "title": "Answered"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "as_of",
+          "window"
+        ],
+        "title": "OneOffCandidates",
+        "description": "GET /household/one-off-candidates (§7.9 (c) 1): the payments not answered yet that\nmay be one-off, and the window's payments a person answered, with their newest answer,\nso an answer can be changed. Nothing while the window has fewer than three closed\nmonths."
+      },
+      "OneOffMarkRequest": {
+        "properties": {
+          "allocation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Allocation Id"
+          },
+          "answer": {
+            "$ref": "#/components/schemas/SpendingMarkAnswer"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "allocation_id",
+          "answer"
+        ],
+        "title": "OneOffMarkRequest",
+        "description": "POST /household/one-off-marks: a person's answer on one confirmed private payment."
+      },
       "OneOffSource": {
         "type": "string",
         "enum": [
@@ -32966,6 +33182,176 @@
         "title": "RebookBlocker",
         "description": "An earlier confirmed line of the payee that „Diese auch auf … umbuchen“ would refuse\nto re-book (phase 6 D160): it must be changed by hand first. category: its one row's\ncategory, or None for a split; a line already in the chosen category is not re-booked,\nso it blocks nothing for that answer."
       },
+      "RecurringInterval": {
+        "type": "string",
+        "enum": [
+          "monthly",
+          "quarterly",
+          "yearly"
+        ],
+        "title": "RecurringInterval"
+      },
+      "RecurringPayments": {
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "history_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History Start"
+          },
+          "yearly_detectable": {
+            "type": "boolean",
+            "title": "Yearly Detectable"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Count"
+          },
+          "yearly_total": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Yearly Total"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/RecurringSeries"
+            },
+            "type": "array",
+            "title": "Series"
+          },
+          "hidden": {
+            "items": {
+              "$ref": "#/components/schemas/RecurringSeries"
+            },
+            "type": "array",
+            "title": "Hidden"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "as_of",
+          "yearly_detectable",
+          "count",
+          "yearly_total"
+        ],
+        "title": "RecurringPayments",
+        "description": "GET /household/recurring (§7.9 (b) 5). `series`: the shown ones, price changes first;\n`hidden`: the ones a person marked „kein Abo“. `count` and `yearly_total` are over the\nshown active series (a series that may have ended is not counted). `yearly_detectable`\nis false while the history is shorter than 350 days: no yearly series can be found yet."
+      },
+      "RecurringSeries": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "interval": {
+            "$ref": "#/components/schemas/RecurringInterval"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RecurringState"
+          },
+          "last_amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Last Amount"
+          },
+          "last_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Last On"
+          },
+          "yearly_total": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Yearly Total"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "payments": {
+            "type": "integer",
+            "minimum": 2.0,
+            "title": "Payments"
+          },
+          "sources": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/GroupPayment"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "interval",
+          "state",
+          "last_amount",
+          "last_on",
+          "yearly_total",
+          "payments"
+        ],
+        "title": "RecurringSeries",
+        "description": "One payee paid at one interval (D296). `change` is the newest amount less the one the\nseries held before, with `since` the month of the first payment at the new amount; both\nNone without a price change. `sources` are the allocations behind it, oldest first;\n`lines` the same payments for the panel (filled by the service)."
+      },
+      "RecurringState": {
+        "type": "string",
+        "enum": [
+          "active",
+          "maybe_ended"
+        ],
+        "title": "RecurringState",
+        "description": "`active`: at most one interval without a payment; `maybe_ended`: two („Vielleicht\nbeendet“). Three or more: the series is left out of every list."
+      },
       "ReducedRentCheck": {
         "properties": {
           "wohnung": {
@@ -35542,6 +35928,31 @@
         "title": "SecuritiesTransferExtraction",
         "description": "Einbuchung / Ausbuchung von Wertpapieren (securities_transfer, step 4, §14.1): units\nmoved into or out of the depot without a trade. Both sides of one transfer carry the same\nreference; the other depot named in the Hinweistext is scrubbed and never asked."
       },
+      "SeriesMarkRequest": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Key"
+          },
+          "interval": {
+            "$ref": "#/components/schemas/RecurringInterval"
+          },
+          "answer": {
+            "$ref": "#/components/schemas/SpendingMarkAnswer"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "interval",
+          "answer"
+        ],
+        "title": "SeriesMarkRequest",
+        "description": "POST /household/recurring-marks: „kein Abo“ (`hidden`) or „Wieder anzeigen“\n(`shown`) on a series, by its payee key and interval."
+      },
       "ServicePeriod": {
         "properties": {
           "start": {
@@ -35977,6 +36388,43 @@
         ],
         "title": "SpendingComparisonRow",
         "description": "One code the scenario plans for the month (§7.7)."
+      },
+      "SpendingMarkAnswer": {
+        "type": "string",
+        "enum": [
+          "one_off",
+          "regular",
+          "hidden",
+          "shown"
+        ],
+        "title": "SpendingMarkAnswer",
+        "description": "A person's answer (§7.9 (f)): `one_off` and `regular` on a single payment (an\nallocation, (c)); `hidden` („kein Abo“) and `shown` („Wieder anzeigen“) on a series (its\npayee key and interval, (b))."
+      },
+      "SpendingMarkRecorded": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "answer": {
+            "$ref": "#/components/schemas/SpendingMarkAnswer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "answer",
+          "created_at"
+        ],
+        "title": "SpendingMarkRecorded",
+        "description": "The answer as stored: the row's id and when."
       },
       "SpendingPlay": {
         "properties": {

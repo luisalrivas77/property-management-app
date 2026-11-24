@@ -27,6 +27,15 @@
   has them already. 404 for a line that is no private property-cost payment with a bill.
 - POST /transactions/{id}/private-costs/year: the bill's private_cost rows moved to the year
   the confirmed private line paid them (D161 (1), D143's rule). 404 as above.
+- GET /household/recurring (phase 10 §7.9 (b), D296): the recurring payments as of today
+  (Berlin), the shown ones and those marked „kein Abo“.
+- GET /household/one-off-candidates (§7.9 (c), D297): the payments over the closed months'
+  window that may be one-off, and those a person answered.
+- POST /household/one-off-marks {allocation_id, answer}: „Ja, einmalig“ (`one_off`) or
+  „Nein, normal“ (`regular`) on one confirmed private spending payment; 201 with the stored
+  answer; 404 for any other allocation. The newest answer counts.
+- POST /household/recurring-marks {key, interval, answer}: „kein Abo“ (`hidden`) or „Wieder
+  anzeigen“ (`shown`) on a series; 201 with the stored answer.
 """
 
 from datetime import datetime
@@ -45,8 +54,22 @@ from hausbuch.schemas.household import (
     TransferLinkView,
     TransferUnlinkBody,
 )
+from hausbuch.schemas.recurring import (
+    OneOffCandidates,
+    OneOffMarkRequest,
+    RecurringPayments,
+    SeriesMarkRequest,
+    SpendingMarkRecorded,
+)
 from hausbuch.schemas.tax import TaxInput
-from hausbuch.services import household, property_costs, returns, transfers
+from hausbuch.services import (
+    household,
+    property_costs,
+    recurring,
+    returns,
+    spending_marks,
+    transfers,
+)
 from hausbuch.services.documents import LOCAL_TIME_ZONE
 
 from ..deps import Cmd, SettingsDep, domain_router
@@ -106,6 +129,26 @@ def returned_payment(body: ReturnedPaymentCreate, cmd: Cmd, settings: SettingsDe
 @router.get("/household/cashflow")
 def household_cashflow(month: Month, cmd: Cmd) -> HouseholdCashflow:
     return cmd.read(household.cashflow, month)
+
+
+@router.get("/household/recurring")
+def household_recurring(cmd: Cmd) -> RecurringPayments:
+    return cmd.read(recurring.recurring_payments, datetime.now(LOCAL_TIME_ZONE).date())
+
+
+@router.get("/household/one-off-candidates")
+def household_one_off_candidates(cmd: Cmd) -> OneOffCandidates:
+    return cmd.read(recurring.one_off_candidates, datetime.now(LOCAL_TIME_ZONE).date())
+
+
+@router.post("/household/one-off-marks", status_code=201)
+def household_one_off_mark(body: OneOffMarkRequest, cmd: Cmd) -> SpendingMarkRecorded:
+    return cmd.run(spending_marks.record_one_off, body)
+
+
+@router.post("/household/recurring-marks", status_code=201)
+def household_recurring_mark(body: SeriesMarkRequest, cmd: Cmd) -> SpendingMarkRecorded:
+    return cmd.run(spending_marks.record_series, body)
 
 
 @router.post("/transactions/{transaction_id}/private-costs")

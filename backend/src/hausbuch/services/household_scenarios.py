@@ -254,7 +254,12 @@ def window_means(reads: dict[str, MonthRead]) -> dict[AllocationCategory, Decima
     win = _window(reads)
     if not win.enough:
         return {}
-    return SP.code_means([SP.month_spending(reads[m].private.cashflow) for m in win.months])
+    return SP.code_means(
+        [
+            SP.month_spending(r.private.cashflow, r.private.lines, r.one_off_ids)
+            for r in (reads[m] for m in win.months)
+        ]
+    )
 
 
 def withdraw_scenario(ctx: CommandContext, scenario_id: UUID) -> HouseholdScenario:
