@@ -619,8 +619,31 @@ test("on the phone, Haushalt › Budget with a planned change, Reserve, „Annah
     await page.getByRole("link", { name: /Annahmen$/ }).click();
     const sheet = page.getByRole("dialog", { name: "Eure Annahmen" });
     await expect(sheet.locator(".annahmen-group").first()).toHaveAttribute("data-group", "ausgaben");
-    await sheet.getByRole("region", { name: "Ausgaben durchspielen" }).getByRole("button", { name: "Essen gehen & bestellen" }).click();
+    const play = sheet.getByRole("region", { name: "Ausgaben durchspielen" });
+    // The group of a planned code may already be open; open it if not.
+    const dining = play.getByRole("button", { name: "Essen gehen & bestellen" });
+    if ((await dining.getAttribute("aria-expanded")) !== "true") await dining.click();
+    await expect(dining).toHaveAttribute("aria-expanded", "true");
     expect(await sheet.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+    // Each category is a stacked row on the phone: the table scrolls nowhere, and the first
+    // category's „Geplant“ field, the planned Restaurant's field, its unit and its month are
+    // inside the screen without a sideways scroll (Luis, 18 Nov 2026).
+    const wrap = play.locator(".table-wrap").first();
+    expect(await wrap.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+    for (const field of [
+      play.locator(".spending-play-table input").first(),
+      play.getByLabel("Geplant pro Monat: Restaurant"),
+      play.getByRole("group", { name: "Betrag oder Prozent: Restaurant" }),
+      play.getByLabel("von: Restaurant"),
+    ]) {
+      await field.scrollIntoViewIfNeeded();
+      const box = await field.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+      expect((box?.x ?? 0) + (box?.width ?? 999)).toBeLessThanOrEqual(390);
+    }
+    expect(await wrap.evaluate((element) => element.scrollLeft)).toBe(0);
+    expect(await page.evaluate(() => window.scrollX)).toBe(0);
     expect(await pageWidth()).toBeLessThanOrEqual(390);
     await page.screenshot({ path: test.info().outputPath(`annahmen-${scheme}.png`) });
 
