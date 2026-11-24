@@ -185,3 +185,19 @@ def test_a_goal_not_due_after_the_current_month_is_refused_unless_carried(world)
         household_scenarios.check_levers(conn, row.levers, later)
     got = world.query(goal_service.goal, later)
     assert (got.word, got.issue) == (None, GoalIssue.DUE_PASSED)
+
+
+def test_spending_changes_without_a_choice_are_not_the_goals_projection(world):
+    """goal.yaml defines `projected` as the value without any change, and counts the saved
+    spending changes (D263) only once a budget is adopted (`goal_choice.spending`). Changes
+    played on Haushalt without a choice move the plan's own point, not the goal's."""
+    _projected_world(world)
+    row = _save(world, _goal("10000000.00"))
+    without = _read(world).projected
+    assert without == {p.on: p.total for p in _plan(world).projection.points}[date(2028, 12, 31)]
+    cut = {"code": C.HH_RESTAURANT, "monthly": "0.00", "from_month": "2027-05", "to_month": DUE}
+    _save(world, _goal("10000000.00"), supersedes=row.id, spending_changes=[cut])
+    plan_point = {p.on: p.total for p in _plan(world).projection.points}[date(2028, 12, 31)]
+    got = _read(world)
+    assert plan_point > without  # the plan counts the changes
+    assert got.projected == without and got.reached_with_budget is None
