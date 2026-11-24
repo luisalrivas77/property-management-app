@@ -1,0 +1,150 @@
+/* The recurring payments on Haushalt › Monat and the one-off check on Haushalt › Budget (phase 10
+   §7.9 (b), (c); mockup 19c panels 4 to 7). Tokens from globals.css only, so light and dark follow
+   the theme; every row wraps on the phone, nothing scrolls sideways. */
+
+.recurring-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.recurring-card-head h2 {
+  margin: 0;
+}
+
+.recurring-card-head:hover h2 {
+  color: var(--accent-strong);
+}
+
+.recurring-total {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.recurring-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.recurring-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  color: inherit;
+  text-decoration: none;
+}
+
+.recurring-row:hover .recurring-row-title {
+  color: var(--accent-strong);
+}
+
+.recurring-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.recurring-row-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.recurring-row-sub {
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.recurring-row strong,
+.recurring-panel-row strong {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.recurring-up {
+  color: var(--warn);
+}
+
+.recurring-down {
+  color: var(--accent-strong);
+}
+
+.recurring-foot {
+  margin: 0;
+}
+
+.recurring-panel h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.recurring-panel p {
+  margin: 0;
+}
+
+.recurring-panel .detail-row-title {
+  overflow-wrap: anywhere;
+}
+
+.recurring-panel-row button {
+  flex: none;
+}
+
+/* „<N> Zahlungen vielleicht einmalig · Prüfen ›“ under the Budget. */
+.recurring-oneoff-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.recurring-oneoff-action {
+  font-weight: 600;
+  color: var(--accent-strong);
+  white-space: nowrap;
+}
+
+.recurring-oneoff-item {
+  display: grid;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.recurring-oneoff-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.recurring-oneoff-head strong {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.recurring-oneoff-answers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.recurring-oneoff-answers button {
+  flex: 1 1 140px;
+}
