@@ -214,6 +214,8 @@ const RULE_CODE_TEXT_DE: Record<string, string> = {
     "Für diese Kategorie gibt es noch keine gemessenen Ausgaben, deshalb geht keine Änderung in Prozent. Bitte einen Betrag pro Monat eintragen.",
   "household_scenario.budget_class_invalid":
     "Diese Kategorie lässt sich nicht zwischen Notwendiges und Wünsche verschieben: einmalige Ausgaben und Umsätze ohne Einordnung gehören zu keiner der beiden. Bitte die Seite neu laden.",
+  "household_scenario.goal_invalid":
+    "Der Zielmonat muss nach dem laufenden Monat liegen. Bitte einen späteren Monat wählen.",
   "scenario.not_current":
     "Das Szenario ist nicht mehr aktuell, oder es gibt schon ein Standard-Szenario. Bitte die Seite neu laden.",
   "scenario.scope_invalid": "Das Szenario passt nicht zu dieser Immobilie oder ihren Darlehen.",

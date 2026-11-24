@@ -166,6 +166,8 @@ export const RULE_CODE_TEXT_EN: Record<string, string> = {
     "There is no measured spending for this category yet, so a change in percent does not work. Please enter an amount per month.",
   "household_scenario.budget_class_invalid":
     "This category cannot be moved between Needs and Wants: one-off spending and unclassified transactions belong to neither. Please reload the page.",
+  "household_scenario.goal_invalid":
+    "The goal's month must lie after the current month. Please choose a later month.",
   "scenario.not_current":
     "The scenario is no longer current, or there already is a default scenario. Please reload the page.",
   "scenario.scope_invalid": "The scenario does not fit this property or its loans.",
