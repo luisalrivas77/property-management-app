@@ -256,6 +256,9 @@ HOUSEHOLD_SCENARIO_SPENDING_INVALID = "household_scenario.spending_invalid"
 # Phase 10 D272 (2): a budget class override of a code that may not move (one-off,
 # uncategorized, a code without a class)
 HOUSEHOLD_SCENARIO_BUDGET_CLASS_INVALID = "household_scenario.budget_class_invalid"
+# Phase 10 §7.9 (d): a goal, new or altered against the superseded row, due in the current
+# month or before it (D289 (1): the household types the due month; the app proposes none)
+HOUSEHOLD_SCENARIO_GOAL_INVALID = "household_scenario.goal_invalid"
 # Phase 6 step 5b (PATCH /assets/{id}, POST /assets/{id}/prices)
 ASSET_NOT_CRYPTO = "asset.not_crypto"  # a CoinGecko id or Kraken pair on a fund or cash
 ASSET_IS_EURO = "asset.is_euro"  # a typed price for the euro, which is 1.0

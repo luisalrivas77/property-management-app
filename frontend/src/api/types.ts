@@ -2817,6 +2817,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/household-goal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Household Goal Get */
+        get: operations["household_goal_get_api_household_goal_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts/{account_id}/movement-imports": {
         parameters: {
             query?: never;
@@ -8551,6 +8568,112 @@ export interface components {
             notes?: components["schemas"]["ExtractedValue"];
         };
         /**
+         * Goal
+         * @description The household's own goal (D289 (1)): a target and a due month the household typed; the
+         *     app proposes neither. `target` is euros, or months for `reserve_months`. Only the shape is
+         *     checked here; that the due month lies after the current month is refused when a scenario
+         *     is saved (services.household_scenarios.check_levers), so a stored goal whose month has
+         *     passed still reads.
+         */
+        Goal: {
+            kind: components["schemas"]["GoalKind"];
+            /** Target */
+            target: string;
+            /** Due Month */
+            due_month: string;
+            /**
+             * Set On
+             * Format: date
+             */
+            set_on: string;
+        };
+        /**
+         * GoalBudget
+         * @description One category of a spending scenario: its measured mean and its budget (D272's class).
+         */
+        GoalBudget: {
+            code: components["schemas"]["AllocationCategory"];
+            budget_class: components["schemas"]["BudgetClass"];
+            /** Mean */
+            mean: string;
+            /** Budget */
+            budget: string;
+        };
+        /**
+         * GoalChoice
+         * @description What the household chose for its goal, each with the day chosen (§7.9 (d), (e)). The
+         *     adopted budget itself is the scenario's `spending_changes` („Als Budget übernehmen“
+         *     supersedes the default scenario with them); `investment` is a placeholder for §7.9 (e).
+         */
+        GoalChoice: {
+            spending?: components["schemas"]["GoalSpending"] | null;
+            /** Spending Chosen On */
+            spending_chosen_on?: string | null;
+            /** Investment */
+            investment?: string | null;
+            /** Investment Chosen On */
+            investment_chosen_on?: string | null;
+        };
+        /**
+         * GoalIssue
+         * @description Why a set goal has no word yet; the card shows the plan's to-dos or the sentence.
+         * @enum {string}
+         */
+        GoalIssue: "no_projection" | "due_passed" | "beyond_projection" | "used_up" | "no_need";
+        /**
+         * GoalKind
+         * @description What a household goal measures (phase 10 §7.9 (d), D289 (1)).
+         * @enum {string}
+         */
+        GoalKind: "net_worth" | "saved_sum" | "reserve_months";
+        /**
+         * GoalScenario
+         * @description A spending scenario (§7.9 (d) 3). `cut` is what it takes off the spending each month
+         *     (the Σ of its codes' cuts), `rest` what it still misses a month when its codes cannot give
+         *     the cut, `saving` „Heute im Monat“ + `cut`. `spending_changes` are what „Als Budget
+         *     übernehmen“ stores (D263 planned amounts from next month to the due month); `closes` is
+         *     true when the projection with them reaches the target by the due month.
+         */
+        GoalScenario: {
+            kind: components["schemas"]["GoalSpending"];
+            /** Closes */
+            closes: boolean;
+            /** Cut */
+            cut: string;
+            /** Rest */
+            rest: string;
+            /** Saving */
+            saving: string;
+            /** Budgets */
+            budgets?: components["schemas"]["GoalBudget"][];
+            /** Spending Changes */
+            spending_changes?: components["schemas"]["SpendingChange"][];
+        };
+        /**
+         * GoalSpending
+         * @description The spending scenario the household adopted for its goal (§7.9 (d)).
+         * @enum {string}
+         */
+        GoalSpending: "wants_only" | "all_equal" | "own";
+        /**
+         * GoalUnreachable
+         * @description §7.9 (d) 4: what the household reaches instead. `later` is the month the goal is
+         *     reached without change (None beyond the projection); `reaches_by_due` the value at the due
+         *     month without change.
+         */
+        GoalUnreachable: {
+            /** Later */
+            later: string | null;
+            /** Reaches By Due */
+            reaches_by_due: string;
+        };
+        /**
+         * GoalWord
+         * @description The one word Übersicht shows beside the financial-health verdict (§7.9 (d) 5).
+         * @enum {string}
+         */
+        GoalWord: "none" | "on_track" | "behind" | "unreachable";
+        /**
          * GroupDifference
          * @description A spending group whose month differs from its own mean over the closed months before
          *     it (phase 10 §7.6 Haushalt (3), build decision (a)); `difference` = `amount` − `mean`.
@@ -9172,6 +9295,41 @@ export interface components {
             };
         };
         /**
+         * HouseholdGoal
+         * @description `GET /household-goal`: the card on Übersicht and the Ziel tab read the same answer.
+         */
+        HouseholdGoal: {
+            word: components["schemas"]["GoalWord"] | null;
+            goal?: components["schemas"]["Goal"] | null;
+            choice?: components["schemas"]["GoalChoice"] | null;
+            issue?: components["schemas"]["GoalIssue"] | null;
+            /** Target */
+            target?: string | null;
+            /** Value Today */
+            value_today?: string | null;
+            /** Percent */
+            percent?: string | null;
+            /** Months Left */
+            months_left?: number | null;
+            /** Heute */
+            heute?: string | null;
+            /** Noetig */
+            noetig?: string | null;
+            /** Projected */
+            projected?: string | null;
+            /** Reached */
+            reached?: string | null;
+            /** Reached With Budget */
+            reached_with_budget?: string | null;
+            /** Used Up */
+            used_up?: string | null;
+            /** Scenarios */
+            scenarios?: components["schemas"]["GoalScenario"][];
+            unreachable?: components["schemas"]["GoalUnreachable"] | null;
+            /** Todos */
+            todos?: components["schemas"]["HealthTodo"][];
+        };
+        /**
          * HouseholdGroup
          * @description The group a household code is shown under (mockup 10's spending groups and the
          *     others; rules/household/taxonomy.py).
@@ -9220,6 +9378,8 @@ export interface components {
             budget_class_overrides?: {
                 [key: string]: components["schemas"]["BudgetClass"];
             };
+            goal?: components["schemas"]["Goal"] | null;
+            goal_choice?: components["schemas"]["GoalChoice"] | null;
         };
         /**
          * HouseholdMonth
@@ -22582,6 +22742,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BudgetView"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_goal_get_api_household_goal_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseholdGoal"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

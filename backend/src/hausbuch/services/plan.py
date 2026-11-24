@@ -47,7 +47,8 @@ rules/plan/. Nothing here writes, and no figure is computed outside those rules.
   the first plan month is not shown as a monthly rate (PR #434 review B).
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID
@@ -61,6 +62,7 @@ from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.rules.categories import CATEGORY_LABEL
 from hausbuch.rules.errors import RuleError
+from hausbuch.rules.goal.walk import Projection as GoalProjection
 from hausbuch.rules.health.window import window_todos
 from hausbuch.rules.plan import levers as L
 from hausbuch.rules.plan import projection as N
@@ -78,7 +80,7 @@ from hausbuch.schemas.enums import (
     IncomeInputKind,
     ReturnInputKind,
 )
-from hausbuch.schemas.health import HealthTodo, HealthTodoCode
+from hausbuch.schemas.health import HealthTodo, HealthTodoCode, HouseholdMonth, Reserve
 from hausbuch.schemas.household import NetWorthClass
 from hausbuch.schemas.net_worth import NetWorth
 from hausbuch.schemas.performance import YearKind
@@ -512,6 +514,7 @@ def preview_plan(
         reads,
         previous=previous,
         previous_overrides=carried_overrides(levers, row),
+        previous_goal=None if row is None else row.levers.goal,
     )
     if row is not None:
         row = row.model_copy(update={"levers": levers})
@@ -529,6 +532,19 @@ def window_spending(
     ]
 
 
+@dataclass(frozen=True)
+class PlanParts:
+    """What the household goal reads beside the plan (phase 10 §7.9 (d), services.goal): the
+    window's household months, the codes' means, the reserve and the projection's inputs, so
+    the goal walks phase 9's projection month by month without computing any of it again.
+    `projection` is None while the plan's projection has to-dos."""
+
+    months: tuple[HouseholdMonth, ...]
+    means: Mapping[AllocationCategory, Decimal]
+    reserve: Reserve
+    projection: GoalProjection | None
+
+
 def _plan(
     conn: Connection,
     today: date,
@@ -536,6 +552,17 @@ def _plan(
     levers: HouseholdLevers,
     reads: dict[str, MonthRead] | None = None,
 ) -> HouseholdPlan:
+    return plan_parts(conn, today, row, levers, reads)[0]
+
+
+def plan_parts(
+    conn: Connection,
+    today: date,
+    row: HouseholdScenario | None,
+    levers: HouseholdLevers,
+    reads: dict[str, MonthRead] | None = None,
+) -> tuple[HouseholdPlan, PlanParts | None]:
+    """The plan and, from three closed months on, the parts the goal reads (PlanParts)."""
     if reads is None:
         reads = read_months(conn, ended_months(today), today)
     win = _window(reads)
@@ -551,7 +578,7 @@ def _plan(
         todos += spending_todos(levers, {})  # no mean below three closed months (§7.6 (2))
         return plan.model_copy(
             update={"todos": todos, "projection": NetWorthProjection(todos=list(todos))}
-        )
+        ), None
     assert newest is not None
     months = [reads[m].household for m in win.months]
     sur = surplus(months, levers.buffer_percent)
@@ -614,6 +641,7 @@ def _plan(
     )
     rental_counted = any(a.counted and a.account_id in rental_ids for a in reserve.accounts)
 
+    walked: GoalProjection | None = None
     if row is None:
         projection = NetWorthProjection(todos=[_no_scenario_todo()])
     elif refused := [t for t in flat_todos if t.code is HealthTodoCode.SCENARIO_CHECK]:
@@ -621,19 +649,30 @@ def _plan(
     elif run is not None and _incomplete(again := net_worth(conn, month_end)):
         projection = NetWorthProjection(todos=[_incomplete_run_todo(month_end, again)])
     else:
+        start = projection_start(month_end, run)
         projection = N.project_net_worth(
             basis,
-            projection_start(month_end, run),
+            start,
             month_end,
             reserve.amount,
             plans,
             flats,
             levers,
         ).projection
+        if not projection.todos and start is not None:
+            walked = GoalProjection(
+                basis=basis,
+                start=start,
+                reserve_start=reserve.amount,
+                plans=tuple(plans),
+                flats=with_scenario,
+                levers=levers,
+            )
         if projection.points:
             projection = projection.model_copy(
                 update={"assumptions": _rate_assumptions(row) + flat_assumptions}
             )
+    parts = PlanParts(months=tuple(months), means=means, reserve=reserve, projection=walked)
     return plan.model_copy(
         update={
             "surplus": sur,
@@ -662,7 +701,7 @@ def _plan(
             "projection": projection,
             "todos": todos,
         }
-    )
+    ), parts
 
 
 # --- GET /household-plan/comparison (D263 (d), §7.7) ------------------------------------------

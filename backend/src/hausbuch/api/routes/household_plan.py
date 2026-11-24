@@ -30,6 +30,12 @@ replaces (supersedes_id); services/household_scenarios.py holds the checks.
   of closed months with the targets and class overrides of the scenario named, else of the
   default in force, else none; 404 for an unknown scenario. Phase 10 names the parameter
   `scenario_id` (the plan's endpoints call it `scenario`).
+- GET /household-goal (phase 10 §7.9 (d), D289, D298): the goal of the default scenario in
+  force with its figures, word and spending scenarios on read for today (Berlin time); word
+  `none` without a default scenario or a goal. A goal is saved, and a spending scenario
+  adopted („Als Budget übernehmen“: its `spending_changes` and `goal_choice`), through
+  POST /household-scenarios superseding the default (422 household_scenario.goal_invalid for
+  a new or altered goal not due after the current month).
 - POST /household-plan/explanation {scenario} („Neu erklären“): 202 with `queued`; queues one
   explain_plan job, nothing while ai_private_accounts is off (D253); 404 and nothing queued
   for an unknown, superseded or withdrawn scenario.
@@ -47,6 +53,7 @@ from hausbuch.schemas.advice import (
     PlanExplanationRequest,
 )
 from hausbuch.schemas.budget import BudgetView
+from hausbuch.schemas.goal import HouseholdGoal
 from hausbuch.schemas.plan import (
     HouseholdPlan,
     HouseholdPlanPreview,
@@ -56,6 +63,7 @@ from hausbuch.schemas.plan import (
 )
 from hausbuch.services import advice as advice_service
 from hausbuch.services import budget as budget_service
+from hausbuch.services import goal as goal_service
 from hausbuch.services import household_scenarios as scenarios
 from hausbuch.services import plan as plan_service
 from hausbuch.services.documents import LOCAL_TIME_ZONE
@@ -115,3 +123,8 @@ def household_plan_explain(body: PlanExplanationRequest, cmd: Cmd) -> PlanExplan
 @router.get("/household-budget")
 def household_budget_get(cmd: Cmd, scenario_id: UUID | None = None) -> BudgetView:
     return english(cmd.read(budget_service.household_budget, _today(), scenario_id))
+
+
+@router.get("/household-goal")
+def household_goal_get(cmd: Cmd) -> HouseholdGoal:
+    return english(cmd.read(goal_service.goal, _today()))

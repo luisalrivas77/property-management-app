@@ -39,6 +39,11 @@ beyond HouseholdScenarioCreate's own validator (HouseholdLevers checks the range
 - budget class overrides (phase 10 D272 (2)): a code that cannot move between Notwendiges and
   Wünsche (a one-off code, `uncategorized`, a code without a class;
   `household_scenario.budget_class_invalid`). rules/budget ignores such a stored override.
+- a goal (phase 10 §7.9 (d), D289 (1)), new or altered against the row being superseded,
+  due in the current month (Berlin) or before it (`household_scenario.goal_invalid`); its
+  target above 0 and a reserve goal's months (up to 24, in half months) are Goal's own
+  checks. A goal carried unaltered is never refused, so a goal whose month has passed does
+  not block saving another lever; GET /household-goal names it (`issue` due_passed).
 
 A withdrawal is not re-checked against the accounts, the horizon or the spending: it only
 ends a row, and it repeats the withdrawn row's levers with their `mean_at_save` as stored.
@@ -65,6 +70,7 @@ from hausbuch.rules.categories import CATEGORY_LABEL
 from hausbuch.rules.errors import (
     HOUSEHOLD_SCENARIO_ACCOUNT_INVALID,
     HOUSEHOLD_SCENARIO_BUDGET_CLASS_INVALID,
+    HOUSEHOLD_SCENARIO_GOAL_INVALID,
     HOUSEHOLD_SCENARIO_NOT_CURRENT,
     HOUSEHOLD_SCENARIO_ONE_OFF_OUTSIDE,
     HOUSEHOLD_SCENARIO_SPENDING_INVALID,
@@ -78,6 +84,7 @@ from hausbuch.schemas.events import EventType, HouseholdScenarioRecorded
 from hausbuch.schemas.health import month_of
 from hausbuch.schemas.household import BudgetClass
 from hausbuch.schemas.plan import (
+    Goal,
     HouseholdLevers,
     HouseholdScenario,
     HouseholdScenarioCreate,
@@ -164,6 +171,7 @@ def create_scenario(ctx: CommandContext, data: HouseholdScenarioCreate) -> House
             today,
             previous=previous,
             previous_overrides=carried_overrides(data.levers, old, default_scenario(ctx.conn)),
+            previous_goal=None if old is None else old.levers.goal,
         )
         if data.is_default:
             _check_one_default(ctx.conn, data)
@@ -196,6 +204,7 @@ def check_levers(
     *,
     previous: Sequence[SpendingChange] = (),
     previous_overrides: Mapping[AllocationCategory, BudgetClass] | None = None,
+    previous_goal: Goal | None = None,
 ) -> dict[AllocationCategory, Decimal]:
     """The checks of a scenario's levers beyond HouseholdLevers' own (the module doc), for a
     new row and for the preview; returns the codes' means over today's window (§7.6 (2)).
@@ -205,8 +214,10 @@ def check_levers(
     in force); only a change new or altered against them is refused as a percent of
     nothing (§7.6 (1) amended). `previous_overrides`: the overrides counted as carried
     (`carried_overrides`); one carried unaltered is not refused (phase 10 D272 (2), as a
-    carried spending change)."""
+    carried spending change). `previous_goal`: the goal of that row; only a goal new or
+    altered against it is checked (phase 10 §7.9 (d))."""
     _check_accounts(conn, levers)
+    _check_goal(levers, today, previous_goal)
     _check_budget_classes(levers, previous_overrides or {})
     if not levers.one_offs and not levers.spending_changes:
         return {}
@@ -224,6 +235,17 @@ def check_levers(
             "measured spending in the window",
         )
     return means
+
+
+def _check_goal(levers: HouseholdLevers, today: date, previous: Goal | None) -> None:
+    goal = levers.goal
+    if goal is None or goal == previous:
+        return
+    if goal.due_month <= month_of(today):
+        raise RuleViolationError(
+            [HOUSEHOLD_SCENARIO_GOAL_INVALID],
+            f"a goal due in {goal.due_month}, which is not after the current month",
+        )
 
 
 def _check_budget_classes(

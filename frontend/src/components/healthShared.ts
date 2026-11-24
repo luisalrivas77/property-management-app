@@ -328,6 +328,10 @@ export function fillLevers(levers: HouseholdLevers | null | undefined): Househol
       housing_max: levers?.budget_targets?.housing_max ?? null,
     },
     budget_class_overrides: levers?.budget_class_overrides ?? {},
+    // Phase 10 §7.9 (d): the goal and its chosen scenario, kept on every save (a save without
+    // them would drop the goal).
+    goal: levers?.goal ?? null,
+    goal_choice: levers?.goal_choice ?? null,
     // Every key, so a lever added to the schema and not carried here fails the typecheck instead
     // of being dropped by a save.
   } satisfies Required<HouseholdLevers>;

@@ -22,7 +22,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Literal, Self
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import yaml
@@ -44,6 +44,7 @@ from hausbuch.schemas.budget import (
 from hausbuch.schemas.common import _STRING_ONLY, Money, Schema
 from hausbuch.schemas.health import HealthTodoCode, HouseholdMonth, MonthLine, YearMonth
 from hausbuch.schemas.household import BudgetClass
+from hausbuch.schemas.plan import HouseholdLevers
 from hausbuch.schemas.recurring import RecurringInterval, RecurringState, SpendingMarkAnswer
 
 FIXTURES = Path(__file__).parent / "fixtures" / "phase10"
@@ -311,6 +312,98 @@ class OneOffFixture(Schema):
     cases: list[OneOffCase]
 
 
+# --- goal.yaml (§7.9 (d), D289, D298) -----------------------------------------------------
+
+
+class GoalMonthIn(Schema):
+    mean_income: Money
+    mean_regular_spending: Money
+    mean_rental_cash: Money
+    buffer_percent: Dec
+
+
+class GoalStartIn(Schema):
+    month_end: date
+    bank: Money
+    depot: Money
+    crypto: Money
+    property: Money
+    loans: Money
+    other_liabilities: Money
+
+
+class GoalReserveIn(Schema):
+    amount: Money
+    need: Money
+
+
+class GoalTodayIn(Schema):
+    net_worth: Money
+    reserve: Money
+
+
+class GoalChangeExpect(Schema):
+    code: AllocationCategory
+    monthly: Money
+    from_month: YearMonth
+    to_month: YearMonth
+
+
+class GoalScenarioExpect(Schema):
+    closes: bool
+    cut: Money
+    rest: Money
+    saving: Money
+    budgets: dict[AllocationCategory, Money]
+    changes: list[GoalChangeExpect]
+
+
+class GoalUnreachableExpect(Schema):
+    later: YearMonth | None
+    reaches_by_due: Money
+
+
+class GoalExpect(Schema):
+    word: Literal["none", "on_track", "behind", "unreachable"]
+    target: Money | None = None
+    value_today: Money | None = None
+    percent: Money | None = None
+    months_left: int | None = None
+    heute: Money | None = None
+    projected: Money | None = None
+    noetig: Money | None = None
+    reached: YearMonth | None = None
+    reached_with_budget: YearMonth | None = None
+    scenarios: dict[Literal["wants_only", "all_equal"], GoalScenarioExpect] = Field(
+        default_factory=dict
+    )
+    unreachable: GoalUnreachableExpect | None = None
+
+
+class GoalCase(Lenient):
+    today: date
+    newest_closed: YearMonth
+    month: GoalMonthIn
+    start: GoalStartIn
+    reserve: GoalReserveIn
+    saved_mean: Money
+    value_today: GoalTodayIn
+    means: dict[AllocationCategory, Money]
+    levers: HouseholdLevers
+    expect: GoalExpect
+
+    @model_validator(mode="after")
+    def _regular(self) -> Self:
+        if sum(self.means.values(), Decimal(0)) != self.month.mean_regular_spending:
+            raise ValueError(f"{self.id}: the codes' means must add up to the regular spending")
+        return self
+
+
+class GoalFixture(Schema):
+    bases: dict[str, Any] = Field(default_factory=dict)  # YAML anchors only
+    cases: list[GoalCase]
+
+
 MODELS: dict[str, type[Schema]] = {
     "budget_partition": BudgetFixture,
     "budget_overrides": BudgetFixture,
@@ -318,6 +411,7 @@ MODELS: dict[str, type[Schema]] = {
     "budget_references": ReferencesFixture,
     "recurring": RecurringFixture,
     "one_off_marks": OneOffFixture,
+    "goal": GoalFixture,
 }
 
 

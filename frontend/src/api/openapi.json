@@ -7488,6 +7488,34 @@
         }
       }
     },
+    "/api/household-goal": {
+      "get": {
+        "summary": "Household Goal Get",
+        "operationId": "household_goal_get_api_household_goal_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdGoal"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/accounts/{account_id}/movement-imports": {
       "post": {
         "summary": "Movement Import Create",
@@ -22024,6 +22052,246 @@
         "title": "GeneralExtraction",
         "description": "The general reading (D130): title and date for every document without a reader of its\nown, plus the one field set its subtype's group needs to find its link (D131): the\nproperty's address for the property, WEG, running-costs and tenancy groups, the lender and\ncontract number for the loan group. A request asks only those (asked_fields); an\nowner's home address is never asked. A Wohnflächenberechnung (building_records) is also\nasked its list of dwellings (D139), a Gutachten (appraisal) its remaining useful life and\nStichtag (D147)."
       },
+      "Goal": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/GoalKind"
+          },
+          "target": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Target"
+          },
+          "due_month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Due Month"
+          },
+          "set_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Set On"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "target",
+          "due_month",
+          "set_on"
+        ],
+        "title": "Goal",
+        "description": "The household's own goal (D289 (1)): a target and a due month the household typed; the\napp proposes neither. `target` is euros, or months for `reserve_months`. Only the shape is\nchecked here; that the due month lies after the current month is refused when a scenario\nis saved (services.household_scenarios.check_levers), so a stored goal whose month has\npassed still reads."
+      },
+      "GoalBudget": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "budget_class": {
+            "$ref": "#/components/schemas/BudgetClass"
+          },
+          "mean": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Mean"
+          },
+          "budget": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Budget"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "budget_class",
+          "mean",
+          "budget"
+        ],
+        "title": "GoalBudget",
+        "description": "One category of a spending scenario: its measured mean and its budget (D272's class)."
+      },
+      "GoalChoice": {
+        "properties": {
+          "spending": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalSpending"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "spending_chosen_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spending Chosen On"
+          },
+          "investment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investment"
+          },
+          "investment_chosen_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investment Chosen On"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "GoalChoice",
+        "description": "What the household chose for its goal, each with the day chosen (§7.9 (d), (e)). The\nadopted budget itself is the scenario's `spending_changes` („Als Budget übernehmen“\nsupersedes the default scenario with them); `investment` is a placeholder for §7.9 (e)."
+      },
+      "GoalIssue": {
+        "type": "string",
+        "enum": [
+          "no_projection",
+          "due_passed",
+          "beyond_projection",
+          "used_up",
+          "no_need"
+        ],
+        "title": "GoalIssue",
+        "description": "Why a set goal has no word yet; the card shows the plan's to-dos or the sentence."
+      },
+      "GoalKind": {
+        "type": "string",
+        "enum": [
+          "net_worth",
+          "saved_sum",
+          "reserve_months"
+        ],
+        "title": "GoalKind",
+        "description": "What a household goal measures (phase 10 §7.9 (d), D289 (1))."
+      },
+      "GoalScenario": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/GoalSpending"
+          },
+          "closes": {
+            "type": "boolean",
+            "title": "Closes"
+          },
+          "cut": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Cut"
+          },
+          "rest": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Rest"
+          },
+          "saving": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Saving"
+          },
+          "budgets": {
+            "items": {
+              "$ref": "#/components/schemas/GoalBudget"
+            },
+            "type": "array",
+            "title": "Budgets"
+          },
+          "spending_changes": {
+            "items": {
+              "$ref": "#/components/schemas/SpendingChange"
+            },
+            "type": "array",
+            "title": "Spending Changes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "closes",
+          "cut",
+          "rest",
+          "saving"
+        ],
+        "title": "GoalScenario",
+        "description": "A spending scenario (§7.9 (d) 3). `cut` is what it takes off the spending each month\n(the Σ of its codes' cuts), `rest` what it still misses a month when its codes cannot give\nthe cut, `saving` „Heute im Monat“ + `cut`. `spending_changes` are what „Als Budget\nübernehmen“ stores (D263 planned amounts from next month to the due month); `closes` is\ntrue when the projection with them reaches the target by the due month."
+      },
+      "GoalSpending": {
+        "type": "string",
+        "enum": [
+          "wants_only",
+          "all_equal",
+          "own"
+        ],
+        "title": "GoalSpending",
+        "description": "The spending scenario the household adopted for its goal (§7.9 (d))."
+      },
+      "GoalUnreachable": {
+        "properties": {
+          "later": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Later"
+          },
+          "reaches_by_due": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Reaches By Due"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "later",
+          "reaches_by_due"
+        ],
+        "title": "GoalUnreachable",
+        "description": "§7.9 (d) 4: what the household reaches instead. `later` is the month the goal is\nreached without change (None beyond the projection); `reaches_by_due` the value at the due\nmonth without change."
+      },
+      "GoalWord": {
+        "type": "string",
+        "enum": [
+          "none",
+          "on_track",
+          "behind",
+          "unreachable"
+        ],
+        "title": "GoalWord",
+        "description": "The one word Übersicht shows beside the financial-health verdict (§7.9 (d) 5)."
+      },
       "GroupDifference": {
         "properties": {
           "group": {
@@ -23599,6 +23867,200 @@
         "title": "HouseholdCashflow",
         "description": "GET /household/cashflow?month= (the Haushalt screen): confirmed allocations only."
       },
+      "HouseholdGoal": {
+        "properties": {
+          "word": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalWord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Goal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "choice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalChoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalIssue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "value_today": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Today"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          },
+          "months_left": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Months Left"
+          },
+          "heute": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heute"
+          },
+          "noetig": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Noetig"
+          },
+          "projected": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projected"
+          },
+          "reached": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reached"
+          },
+          "reached_with_budget": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reached With Budget"
+          },
+          "used_up": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Up"
+          },
+          "scenarios": {
+            "items": {
+              "$ref": "#/components/schemas/GoalScenario"
+            },
+            "type": "array",
+            "title": "Scenarios"
+          },
+          "unreachable": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalUnreachable"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "todos": {
+            "items": {
+              "$ref": "#/components/schemas/HealthTodo"
+            },
+            "type": "array",
+            "title": "Todos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "word"
+        ],
+        "title": "HouseholdGoal",
+        "description": "`GET /household-goal`: the card on Übersicht and the Ziel tab read the same answer."
+      },
       "HouseholdGroup": {
         "type": "string",
         "enum": [
@@ -23715,6 +24177,26 @@
             },
             "type": "object",
             "title": "Budget Class Overrides"
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Goal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "goal_choice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalChoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
