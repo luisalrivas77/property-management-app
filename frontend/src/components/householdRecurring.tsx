@@ -158,6 +158,7 @@ export function useRecurringPayments(backLabel: string): RecurringView {
       panel = (
         <DetailPanel title={series.label} backLabel={t.recurringTitle} onClose={() => list.open(foundHidden ? HIDDEN : ALL)}>
           <SeriesPanel
+            key={seriesId(series)}
             series={series}
             hidden={foundHidden !== undefined}
             onDone={() => {
