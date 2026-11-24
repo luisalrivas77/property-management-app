@@ -38,4 +38,5 @@ def household_budget(conn: Connection, today: date, scenario_id: UUID | None = N
         as_of=today,
         scenario_id=None if row is None else row.id,
         references=references()[1],
+        one_off_ids=reads[win.months[-1]].one_off_ids if win.months else frozenset(),
     )

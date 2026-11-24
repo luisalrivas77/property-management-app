@@ -2516,6 +2516,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/household/recurring": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Household Recurring */
+        get: operations["household_recurring_api_household_recurring_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/household/one-off-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Household One Off Candidates */
+        get: operations["household_one_off_candidates_api_household_one_off_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/household/one-off-marks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Household One Off Mark */
+        post: operations["household_one_off_mark_api_household_one_off_marks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/household/recurring-marks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Household Recurring Mark */
+        post: operations["household_recurring_mark_api_household_recurring_marks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/transactions/{transaction_id}/private-costs": {
         parameters: {
             query?: never;
@@ -7655,7 +7723,7 @@ export interface components {
          * @description Entities that carry events. Also the prefix of every event type.
          * @enum {string}
          */
-        EntityType: "owner" | "property" | "unit" | "tenant" | "tenancy" | "loan" | "document" | "user" | "proposal" | "account" | "statement" | "transaction" | "rule" | "workspace" | "asset" | "movement" | "transfer" | "wallet" | "wallet_address" | "movement_group" | "household_scenario" | "health" | "plan";
+        EntityType: "owner" | "property" | "unit" | "tenant" | "tenancy" | "loan" | "document" | "user" | "proposal" | "account" | "statement" | "transaction" | "rule" | "workspace" | "asset" | "movement" | "transfer" | "wallet" | "wallet_address" | "movement_group" | "household_scenario" | "health" | "plan" | "household";
         /** EquipmentComponent */
         EquipmentComponent: {
             /** Amount */
@@ -7968,7 +8036,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.crypto_refreshed" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "workspace.app_secret_set" | "workspace.app_secret_deleted" | "workspace.advice_mode_changed" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.movement_times_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "account.holdings_exported" | "account.deposit_address_learned" | "account.deposit_address_forgotten" | "account.withdrawal_pair_learned" | "account.withdrawal_pair_forgotten" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "wallet.payee_answered" | "wallet.deposit_looked_up" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled" | "health.snapshot_stored" | "household_scenario.created" | "household_scenario.withdrawn" | "plan.explanation_stored";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.crypto_refreshed" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "workspace.app_secret_set" | "workspace.app_secret_deleted" | "workspace.advice_mode_changed" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.movement_times_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "account.holdings_exported" | "account.deposit_address_learned" | "account.deposit_address_forgotten" | "account.withdrawal_pair_learned" | "account.withdrawal_pair_forgotten" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "wallet.payee_answered" | "wallet.deposit_looked_up" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled" | "health.snapshot_stored" | "household_scenario.created" | "household_scenario.withdrawn" | "plan.explanation_stored" | "household.mark_recorded";
         /**
          * ExchangeImport
          * @description An import on the exchange account's page, with its balances per asset.
@@ -10963,6 +11031,49 @@ export interface components {
             source: components["schemas"]["OneOffSource"] | string;
         };
         /**
+         * OneOffCandidate
+         * @description One payment that may be one-off (D297): its line, what was paid (`payment.amount`,
+         *     positive), its code's median month over the window, and the newest answer when it has
+         *     one (None for a candidate).
+         */
+        OneOffCandidate: {
+            payment: components["schemas"]["GroupPayment"];
+            /** Code Median */
+            code_median: string;
+            answer?: components["schemas"]["SpendingMarkAnswer"] | null;
+        };
+        /**
+         * OneOffCandidates
+         * @description GET /household/one-off-candidates (§7.9 (c) 1): the payments not answered yet that
+         *     may be one-off, and the window's payments a person answered, with their newest answer,
+         *     so an answer can be changed. Nothing while the window has fewer than three closed
+         *     months.
+         */
+        OneOffCandidates: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            window: components["schemas"]["Window"];
+            /** Candidates */
+            candidates?: components["schemas"]["OneOffCandidate"][];
+            /** Answered */
+            answered?: components["schemas"]["OneOffCandidate"][];
+        };
+        /**
+         * OneOffMarkRequest
+         * @description POST /household/one-off-marks: a person's answer on one confirmed private payment.
+         */
+        OneOffMarkRequest: {
+            /**
+             * Allocation Id
+             * Format: uuid
+             */
+            allocation_id: string;
+            answer: components["schemas"]["SpendingMarkAnswer"];
+        };
+        /**
          * OneOffSource
          * @enum {string}
          */
@@ -12982,6 +13093,78 @@ export interface components {
             category?: components["schemas"]["AllocationCategory"] | null;
         };
         /**
+         * RecurringInterval
+         * @enum {string}
+         */
+        RecurringInterval: "monthly" | "quarterly" | "yearly";
+        /**
+         * RecurringPayments
+         * @description GET /household/recurring (§7.9 (b) 5). `series`: the shown ones, price changes first;
+         *     `hidden`: the ones a person marked „kein Abo“. `count` and `yearly_total` are over the
+         *     shown active series (a series that may have ended is not counted). `yearly_detectable`
+         *     is false while the history is shorter than 350 days: no yearly series can be found yet.
+         */
+        RecurringPayments: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** History Start */
+            history_start?: string | null;
+            /** Yearly Detectable */
+            yearly_detectable: boolean;
+            /** Count */
+            count: number;
+            /** Yearly Total */
+            yearly_total: string;
+            /** Series */
+            series?: components["schemas"]["RecurringSeries"][];
+            /** Hidden */
+            hidden?: components["schemas"]["RecurringSeries"][];
+        };
+        /**
+         * RecurringSeries
+         * @description One payee paid at one interval (D296). `change` is the newest amount less the one the
+         *     series held before, with `since` the month of the first payment at the new amount; both
+         *     None without a price change. `sources` are the allocations behind it, oldest first;
+         *     `lines` the same payments for the panel (filled by the service).
+         */
+        RecurringSeries: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            interval: components["schemas"]["RecurringInterval"];
+            state: components["schemas"]["RecurringState"];
+            /** Last Amount */
+            last_amount: string;
+            /**
+             * Last On
+             * Format: date
+             */
+            last_on: string;
+            /** Yearly Total */
+            yearly_total: string;
+            /** Change */
+            change?: string | null;
+            /** Since */
+            since?: string | null;
+            /** Payments */
+            payments: number;
+            /** Sources */
+            sources?: string[];
+            /** Lines */
+            lines?: components["schemas"]["GroupPayment"][];
+        };
+        /**
+         * RecurringState
+         * @description `active`: at most one interval without a payment; `maybe_ended`: two („Vielleicht
+         *     beendet“). Three or more: the series is left out of every list.
+         * @enum {string}
+         */
+        RecurringState: "active" | "maybe_ended";
+        /**
          * ReducedRentCheck
          * @description §5.8 per Wohnung, monthly figures. market_warm = cold_rent_per_m2 × area + the year's
          *     umlagefähige costs ÷ months owned. ratio_percent: agreed ÷ market_warm, one decimal; the
@@ -13915,6 +14098,17 @@ export interface components {
             /** @description every security the document moves, one item per security, each written `ISIN | name | units`, as printed (the units without ST); never the WKN or a depot number */
             positions?: components["schemas"]["ExtractedValue"];
         };
+        /**
+         * SeriesMarkRequest
+         * @description POST /household/recurring-marks: „kein Abo“ (`hidden`) or „Wieder anzeigen“
+         *     (`shown`) on a series, by its payee key and interval.
+         */
+        SeriesMarkRequest: {
+            /** Key */
+            key: string;
+            interval: components["schemas"]["RecurringInterval"];
+            answer: components["schemas"]["SpendingMarkAnswer"];
+        };
         /** ServicePeriod */
         ServicePeriod: {
             /**
@@ -14118,6 +14312,31 @@ export interface components {
             text: string;
             /** Sources */
             sources?: string[];
+        };
+        /**
+         * SpendingMarkAnswer
+         * @description A person's answer (§7.9 (f)): `one_off` and `regular` on a single payment (an
+         *     allocation, (c)); `hidden` („kein Abo“) and `shown` („Wieder anzeigen“) on a series (its
+         *     payee key and interval, (b)).
+         * @enum {string}
+         */
+        SpendingMarkAnswer: "one_off" | "regular" | "hidden" | "shown";
+        /**
+         * SpendingMarkRecorded
+         * @description The answer as stored: the row's id and when.
+         */
+        SpendingMarkRecorded: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            answer: components["schemas"]["SpendingMarkAnswer"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /**
          * SpendingPlay
@@ -21767,6 +21986,130 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HouseholdCashflow"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_recurring_api_household_recurring_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringPayments"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_one_off_candidates_api_household_one_off_candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OneOffCandidates"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_one_off_mark_api_household_one_off_marks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OneOffMarkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpendingMarkRecorded"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_recurring_mark_api_household_recurring_marks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeriesMarkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpendingMarkRecorded"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

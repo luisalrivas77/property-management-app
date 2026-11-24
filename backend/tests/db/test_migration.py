@@ -98,6 +98,8 @@ MIGRATION_TABLES = {
     # Phase 10 §7.4 (migration 0050)
     "workspace_data_version",
     "workspace_data_version_pending",
+    # Phase 10 wave 3 §7.9 (f) (migration 0056)
+    "spending_mark",
 }
 # Procrastinate's own tables (0005): not RLS'd, no workspace_id (D20). The one exclusion.
 QUEUE_TABLE_PREFIX = "procrastinate_"

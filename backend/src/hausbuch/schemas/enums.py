@@ -271,6 +271,8 @@ class EntityType(StrEnum):
     HOUSEHOLD_SCENARIO = "household_scenario"  # a household_scenario row (D248)
     HEALTH = "health"  # health.snapshot_stored (entity_id = health_snapshot.id)
     PLAN = "plan"  # plan.explanation_stored (entity_id = plan_explanation.id)
+    # Phase 10 wave 3 (migration 0056, §7.9 (f)).
+    HOUSEHOLD = "household"  # household.mark_recorded (entity_id = spending_mark.id)
 
 
 class LinkTarget(StrEnum):

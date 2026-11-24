@@ -1257,3 +1257,18 @@ workspace_data_version_pending = Table(
     _id(),
     _workspace_id(),
 )
+
+# Phase 10 wave 3 §7.9 (f) (migration 0056): a person's answer on a payment (one_off,
+# regular) or a recurring series (hidden, shown); append-only, the newest per target counts.
+spending_mark = Table(
+    "spending_mark",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("allocation_id", nullable=True),
+    _text("series_key", nullable=True),
+    _text("series_interval", nullable=True),
+    _text("answer"),
+    _uuid("created_by", nullable=True),
+    _created_at(),
+)

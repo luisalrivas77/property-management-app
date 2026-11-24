@@ -34,6 +34,7 @@ from hausbuch.schemas.household import (
     TransferMatchedBy,
 )
 from hausbuch.schemas.inbound_mail import InboundDecision
+from hausbuch.schemas.recurring import RecurringInterval, SpendingMarkAnswer
 from hausbuch.schemas.reminders import (
     NotificationChannel,
     NotificationStatus,
@@ -128,6 +129,9 @@ COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("plan_explanation", "advice_mode"): AdviceMode,
     ("plan_explanation", "status"): ExplanationStatus,
     ("plan_explanation", "reason"): ExplanationReason,
+    # Phase 10 wave 3 (0056)
+    ("spending_mark", "series_interval"): RecurringInterval,
+    ("spending_mark", "answer"): SpendingMarkAnswer,
 }
 
 

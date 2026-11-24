@@ -24,9 +24,14 @@ AS_OF = date(2027, 6, 15)
 BUDGET_FILES = ("budget_partition", "budget_overrides", "budget_marks")
 CASES = [(name, case) for name in BUDGET_FILES for case in phase10.load(name).cases]
 
-# rule_version() on main before phase 10 (commit 052ce9b9): the hash of rules/health and
-# rules/plan, stored on every health_snapshot. Phase 10 must not change it (D271, D275).
+# rule_version(): the hash of rules/health and rules/plan, stored on every health_snapshot.
+# Phase 10 steps 0-4 and waves 1-2 left it at main's before phase 10 (commit 052ce9b9,
+# 1a81f628...f9784; D271, D275). Wave 3 changes it once, on purpose (§7.9 (c) 2, Q-O183 (a)):
+# a payment marked one-off moves to one-off spending in rules/health/month and
+# rules/plan/spending. A snapshot already stored keeps its old version and is never rewritten
+# (D242); only a month stored from now on carries this one.
 MAIN_RULE_VERSION = "1a81f62877cf958eca3c22b40e99c3ba14a5862844d95ed1e0fe983fe1cf9784"
+WAVE3_RULE_VERSION = "3d24e195585146a011f8ec677ef054a8d19cccd92998db4b178c357317f4551d"
 
 
 def _view(case: phase10.BudgetCase):
@@ -185,9 +190,9 @@ def test_fill(case) -> None:
 
 
 def test_references_do_not_touch_the_rule_version() -> None:
-    """D271, D275: phase 10 adds no file under rules/health or rules/plan, so the hash every
-    stored health_snapshot carries is the one on main before phase 10."""
-    assert rule_version() == MAIN_RULE_VERSION
+    """D271, D275: the Budget adds no file under rules/health or rules/plan; the hash moved
+    only with wave 3's one-off marks (§7.9 (c) 2), pinned so any other change shows."""
+    assert rule_version() == WAVE3_RULE_VERSION != MAIN_RULE_VERSION
     root = Path(B.__file__).resolve().parents[1]
     assert not list((root / "health").glob("*budget*"))
     assert not list((root / "plan").glob("*budget*"))

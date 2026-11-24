@@ -43,7 +43,7 @@ behind each month). Pure: no I/O, nothing stored.
 - Below three closed months (D231) no figure at all, the window's to-do instead.
 """
 
-from collections.abc import Hashable, Mapping, Sequence
+from collections.abc import Collection, Hashable, Mapping, Sequence
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from fractions import Fraction
@@ -279,6 +279,33 @@ def _uncategorized_todo(count: int, total: Decimal) -> HealthTodo:
     )
 
 
+def marked_one_off(rows: Sequence[MonthLine], one_off_ids: Collection[UUID]) -> dict[C, Decimal]:
+    """What the payments marked one-off (D297) moved per code in one month, positive: a
+    payment (money out) in a spending code that is not one-off, D234's recode applied, the
+    same test as rules.health.month's."""
+    moved: dict[C, Decimal] = {}
+    if not one_off_ids:
+        return moved
+    for line in rows:
+        if line.allocation_id not in one_off_ids or line.amount >= 0:
+            continue
+        code = cashflow_rows([line])[0][0]
+        if is_spending(code) and code not in ONE_OFF:
+            moved[code] = moved.get(code, ZERO) - line.amount
+    return moved
+
+
+def _joined(seen: BudgetCode | None, row: BudgetCode) -> BudgetCode:
+    """A code shown on two lines (its marked payments on „Einmalige Ausgaben“) counts once
+    in the housing share: its two rows summed, the class of the line it belongs to."""
+    if seen is None:
+        return row
+    first, other = (seen, row) if seen.budget_class is not None else (row, seen)
+    return first.model_copy(
+        update={"monthly": first.monthly + other.monthly, "total": first.total + other.total}
+    )
+
+
 def budget(
     months: Sequence[HouseholdMonth],
     lines: Sequence[Sequence[MonthLine]],
@@ -288,9 +315,14 @@ def budget(
     as_of: date,
     scenario_id: UUID | None = None,
     references: Sequence[BudgetReference] = (),
+    one_off_ids: Collection[UUID] = frozenset(),
 ) -> BudgetView:
     """The Budget over the window `months` (consecutive, oldest first; the closed months
-    phase 9's key figures use, D231), `lines` each month's private lines."""
+    phase 9's key figures use, D231), `lines` each month's private lines. `one_off_ids`: the
+    payments a person marked one-off (phase 10 §7.9 (c) 2, D297; empty by default); each
+    moves from its code's line to „Einmalige Ausgaben“, its code then shown on both lines,
+    as rules.health.month moves it from regular to one-off spending. The housing share
+    keeps it (D276: the Wohnen group's spending, whatever line a payment sits on)."""
     win = Window(months=[m.month for m in months], enough=len(months) >= MIN_MONTHS)
     base = {
         "as_of": as_of,
@@ -311,12 +343,17 @@ def budget(
 
     # Per month and over the window, exact sums (D273).
     month_rows = []
-    totals: dict[C, Decimal] = {}
-    for m, codes in zip(months, per_month, strict=True):
+    totals: dict[tuple[BudgetLineKey, C], Decimal] = {}
+    for m, codes, rows in zip(months, per_month, lines, strict=True):
         sums = dict.fromkeys(L, ZERO)
-        for code, amount in codes.items():
-            sums[line_of(code, overrides)] += amount
-            totals[code] = totals.get(code, ZERO) + amount
+        placed = {(line_of(code, overrides), code): amount for code, amount in codes.items()}
+        for code, amount in marked_one_off(rows, one_off_ids).items():
+            regular = (line_of(code, overrides), code)
+            placed[regular] = placed[regular] - amount
+            placed[(L.ONE_OFF, code)] = placed.get((L.ONE_OFF, code), ZERO) + amount
+        for (key, code), amount in placed.items():
+            sums[key] += amount
+            totals[(key, code)] = totals.get((key, code), ZERO) + amount
         month_rows.append(
             BudgetMonth(
                 month=m.month,
@@ -331,9 +368,9 @@ def budget(
     income_total = sum((m.income for m in months), ZERO)
     saved_total = sum((m.saved for m in months), ZERO)
     by_line: dict[BudgetLineKey, dict[C, Decimal]] = {key: {} for key in L}
-    for code, total in totals.items():
+    for (key, code), total in totals.items():
         if total:
-            by_line[line_of(code, overrides)][code] = total
+            by_line[key][code] = total
     line_totals = {key: sum(codes.values(), ZERO) for key, codes in by_line.items()}
     line_totals[L.SAVING] = saved_total
     if sum(line_totals.values(), ZERO) != income_total:  # pragma: no cover - checked per month
@@ -357,7 +394,7 @@ def budget(
     shares_ok = income_total > 0
     line_targets = {L.NEED: targets.needs_max, L.WANT: targets.wants_max}
     line_targets[L.SAVING] = targets.saving_min
-    lines: list[BudgetLine] = []
+    budget_lines: list[BudgetLine] = []
     all_codes: dict[C, BudgetCode] = {}
     for key in shown:
         codes = by_line[key]
@@ -384,11 +421,11 @@ def budget(
                 total=codes[code],
             )
             rows.append(row)
-            all_codes[code] = row
+            all_codes[code] = _joined(all_codes.get(code), row)
         share = ratio(line_totals[key], income_total) if shares_ok else None
         target = line_targets.get(key)
         monthly = _euros(line_cents[key])
-        lines.append(
+        budget_lines.append(
             BudgetLine(
                 key=key,
                 monthly=monthly,
@@ -419,12 +456,13 @@ def budget(
     )
     todos = []
     if uncategorized_lines:
-        todos.append(_uncategorized_todo(uncategorized_lines, line_totals[L.UNCATEGORIZED]))
+        uncategorized = sum((v for (_, code), v in totals.items() if code is C.UNCATEGORIZED), ZERO)
+        todos.append(_uncategorized_todo(uncategorized_lines, uncategorized))
     return BudgetView(
         **base,
         months=month_rows,
         income=income,
-        lines=lines,
+        lines=budget_lines,
         housing=housing,
         no_shares=None if shares_ok else NO_SHARES,
         todos=todos,

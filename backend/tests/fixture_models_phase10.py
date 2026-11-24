@@ -19,10 +19,11 @@ exactly the month phase 9's key figures are computed from.
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any, Self
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import yaml
 from fixture_models import Lenient
@@ -30,6 +31,7 @@ from pydantic import Field, model_validator
 
 from hausbuch.rules.health.month import cashflow_rows, household_month, rental_month
 from hausbuch.rules.household.cashflow import month_cashflow
+from hausbuch.rules.recurring import SpendingLine
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.budget import (
     BudgetLineKey,
@@ -42,6 +44,7 @@ from hausbuch.schemas.budget import (
 from hausbuch.schemas.common import _STRING_ONLY, Money, Schema
 from hausbuch.schemas.health import HealthTodoCode, HouseholdMonth, MonthLine, YearMonth
 from hausbuch.schemas.household import BudgetClass
+from hausbuch.schemas.recurring import RecurringInterval, RecurringState, SpendingMarkAnswer
 
 FIXTURES = Path(__file__).parent / "fixtures" / "phase10"
 ZERO = Decimal("0.00")
@@ -201,11 +204,120 @@ class ReferencesFixture(Schema):
     cases: list[FillCase]
 
 
+# --- recurring.yaml and one_off_marks.yaml (§7.9 (b), (c)) ---------------------------------
+
+
+class SpendingLineIn(Schema):
+    id: str
+    date: date
+    payee: str
+    purpose: str | None = None
+    category: AllocationCategory
+    amount: Money  # signed as on the account, money out negative
+
+
+def spending_lines(rows: list[SpendingLineIn], case_id: str) -> list[SpendingLine]:
+    """The fixture's lines as rules.recurring's input, each id an allocation id by uuid5."""
+    account = uuid5(NAMESPACE_URL, f"{case_id}:account")
+    return [
+        SpendingLine(
+            allocation_id=fixture_id(row.id),
+            transaction_id=uuid5(NAMESPACE_URL, f"{case_id}:transaction:{row.id}"),
+            account_id=account,
+            account_label="Girokonto",
+            booked_on=row.date,
+            payee=row.payee,
+            purpose=row.purpose,
+            category=row.category,
+            amount=row.amount,
+        )
+        for row in rows
+    ]
+
+
+def fixture_id(name: str) -> UUID:
+    return uuid5(NAMESPACE_URL, f"hausbuch:fixture:phase10:allocation:{name}")
+
+
+class SeriesMarkIn(Schema):
+    key: str
+    interval: RecurringInterval
+    answer: SpendingMarkAnswer
+
+
+class SeriesExpect(Schema):
+    key: str
+    interval: RecurringInterval
+    state: RecurringState
+    last_amount: Money
+    yearly_total: Money
+    change: Money | None
+    since: YearMonth | None
+    payments: int
+
+
+class RecurringExpect(Schema):
+    yearly_detectable: bool
+    series: list[SeriesExpect]
+    hidden: list[SeriesExpect]
+
+
+class RecurringCase(Lenient):
+    today: date
+    history_start: date
+    lines: list[SpendingLineIn]
+    marks: list[SeriesMarkIn] = Field(default_factory=list)
+    expect: RecurringExpect
+
+
+class RecurringFixture(Schema):
+    cases: list[RecurringCase]
+
+
+class AllocationMarkIn(Schema):
+    allocation: str
+    answer: SpendingMarkAnswer
+
+
+class OneOffMonthExpect(Schema):
+    month: YearMonth
+    private_spending: Money
+    one_off_spending: Money
+    regular_spending: Money
+
+    @model_validator(mode="after")
+    def _split(self) -> Self:
+        if self.one_off_spending + self.regular_spending != self.private_spending:
+            raise ValueError(f"{self.month}: one-off + regular must be the private spending")
+        return self
+
+
+class OneOffExpect(Schema):
+    candidates: list[str]
+    months: list[OneOffMonthExpect] = Field(default_factory=list)
+    mean_regular_spending: Money | None = None
+    code_means: dict[AllocationCategory, Money] = Field(default_factory=dict)
+    budget_one_off: dict[YearMonth, Money] = Field(default_factory=dict)
+
+
+class OneOffCase(Lenient):
+    today: date
+    lines: list[SpendingLineIn]
+    marks: list[AllocationMarkIn] = Field(default_factory=list)
+    expect: OneOffExpect
+
+
+class OneOffFixture(Schema):
+    cases: list[OneOffCase]
+
+
 MODELS: dict[str, type[Schema]] = {
     "budget_partition": BudgetFixture,
     "budget_overrides": BudgetFixture,
     "budget_marks": BudgetFixture,
     "budget_references": ReferencesFixture,
+    "recurring": RecurringFixture,
+    "one_off_marks": OneOffFixture,
 }
 
 

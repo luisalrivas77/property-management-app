@@ -22,7 +22,7 @@ D263). Fixtures: tests/fixtures/phase9/spending_play.yaml, spending_comparison.y
 Pure: no I/O.
 """
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
@@ -140,15 +140,34 @@ def refused_together(changes: Sequence[SpendingChange]) -> str | None:
 # --- Means and Δ (§7.6 (2), (3)) -------------------------------------------------------------
 
 
-def month_spending(cashflow: HouseholdCashflow) -> dict[AllocationCategory, Decimal]:
+def month_spending(
+    cashflow: HouseholdCashflow,
+    lines: Sequence[MonthLine] = (),
+    one_off_ids: Collection[UUID] = frozenset(),
+) -> dict[AllocationCategory, Decimal]:
     """A month's regular spending per code: the Haushalt screen's spending by category, less
-    the one-off codes. Σ = HouseholdMonth.regular_spending of the same month."""
+    the one-off codes and less the payments a person marked one-off (phase 10 §7.9 (c) 2,
+    D297; `lines` the month's private lines, `one_off_ids` the marked allocations, both empty
+    by default). Σ = HouseholdMonth.regular_spending of the same month, also when a marked
+    payment's code nets to 0 in it."""
     out: dict[AllocationCategory, Decimal] = {}
     for codes in cashflow.spending_by_category.values():
         for code, value in codes.items():
             if code not in ONE_OFF:
                 out[code] = out.get(code, ZERO) + value
+    for line in lines:
+        if marked_one_off(line, one_off_ids):
+            # month_cashflow drops a code (or a group) that nets to 0 in the month, a purchase
+            # and its refund; the marked payment still leaves it, the refund staying behind.
+            code = counted_as(line)
+            out[code] = out.get(code, ZERO) + line.amount
     return out
+
+
+def marked_one_off(line: MonthLine, one_off_ids: Collection[UUID]) -> bool:
+    """A payment a person marked one-off (D297) in a code counted as regular spending; the
+    same test as rules.health.month's, so the means add up to its regular spending."""
+    return line.allocation_id in one_off_ids and line.amount < 0 and counted(counted_as(line))
 
 
 def code_means(
@@ -447,10 +466,14 @@ def counted_as(line: MonthLine) -> AllocationCategory:
 
 
 def compare_rows(
-    month: str, changes: Sequence[SpendingChange], lines: Sequence[MonthLine]
+    month: str,
+    changes: Sequence[SpendingChange],
+    lines: Sequence[MonthLine],
+    one_off_ids: Collection[UUID] = frozenset(),
 ) -> list[SpendingComparisonRow]:
     """One row per change in force in `month`, in the scenario's order; `lines` are the
-    month's confirmed private lines (signed as booked, spending negative)."""
+    month's confirmed private lines (signed as booked, spending negative); a payment marked
+    one-off (`one_off_ids`, D297) is no regular spending and is left out."""
     rows = []
     for change in changes:
         if not change.in_force(month):
@@ -459,7 +482,9 @@ def compare_rows(
             raise ValueError(f"{change.code.value}: a stored change carries its mean_at_save")
         amount = planned(change, change.mean_at_save)
         covered = members(change.code) - ONE_OFF
-        mine = [li for li in lines if counted_as(li) in covered]
+        mine = [
+            li for li in lines if counted_as(li) in covered and not marked_one_off(li, one_off_ids)
+        ]
         actual = -sum((li.amount for li in mine), ZERO)
         actual = actual + ZERO  # never „-0.00“
         difference = actual - amount
@@ -531,6 +556,7 @@ def comparison(
     scenario: ScenarioRow | None,
     changes: Sequence[SpendingChange],
     lines: Sequence[MonthLine],
+    one_off_ids: Collection[UUID] = frozenset(),
 ) -> SpendingComparison:
     """§7.7 for `month`: final only for a closed month that has ended."""
     when = as_of(month, today)
@@ -540,5 +566,5 @@ def comparison(
         open_lines=open_lines,
         scenario_id=None if scenario is None else scenario.id,
         scenario_created_at=None if scenario is None else scenario.created_at,
-        rows=compare_rows(month, changes, lines) if scenario is not None else [],
+        rows=compare_rows(month, changes, lines, one_off_ids) if scenario is not None else [],
     )
