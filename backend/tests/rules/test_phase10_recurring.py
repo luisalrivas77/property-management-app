@@ -56,6 +56,7 @@ def test_recurring(case: phase10.RecurringCase):
         [SeriesMark(m.key, m.interval, m.answer) for m in case.marks],
         today=case.today,
         history_start=case.history_start,
+        accounts_through=phase10.accounts_through(case.accounts_through, case.id),
     )
     assert view.yearly_detectable is case.expect.yearly_detectable
     assert _rows(view.series) == _rows(case.expect.series)
@@ -83,6 +84,7 @@ def test_a_maybe_ended_series_is_not_counted():
         phase10.spending_lines(case.lines, case.id),
         today=case.today,
         history_start=case.history_start,
+        accounts_through=phase10.accounts_through(case.accounts_through, case.id),
     )
     assert [s.state for s in view.series] == [RecurringState.MAYBE_ENDED]
     assert view.count == 0 and view.yearly_total == 0

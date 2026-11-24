@@ -226,6 +226,11 @@ def account_id(case_id: str, name: str) -> UUID:
     return uuid5(NAMESPACE_URL, f"{case_id}:account:{name}")
 
 
+def accounts_through(through: dict[str, date], case_id: str) -> dict[UUID, date]:
+    """A case's `accounts_through` keyed by the accounts' ids, as rules.recurring reads it."""
+    return {account_id(case_id, name): day for name, day in through.items()}
+
+
 def spending_lines(rows: list[SpendingLineIn], case_id: str) -> list[SpendingLine]:
     """The fixture's lines as rules.recurring's input, each id an allocation id by uuid5."""
     return [
