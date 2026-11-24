@@ -217,7 +217,7 @@ def test_a_marked_payment_leaves_the_differences():
     assert gone == Decimal("870.00")
 
 
-def test_a_mark_on_a_refund_or_a_one_off_code_moves_nothing():
+def test_a_mark_on_a_refund_a_one_off_code_or_a_purchase_cost_moves_nothing():
     car = MonthLine(
         allocation_id=phase10.fixture_id("CAR"),
         category=AllocationCategory.HH_CAR_PURCHASE,
@@ -228,11 +228,23 @@ def test_a_mark_on_a_refund_or_a_one_off_code_moves_nothing():
         category=AllocationCategory.HH_REFUND,
         amount=Decimal("30.00"),
     )
-    rows = [car, refund]
+    notary = MonthLine(  # D234: invested, not spent
+        allocation_id=phase10.fixture_id("NOTARY"),
+        category=AllocationCategory.HH_PROPERTY_COST,
+        amount=Decimal("-4200.00"),
+        purchase_cost=True,
+    )
+    shop = MonthLine(
+        allocation_id=phase10.fixture_id("SHOP"),
+        category=AllocationCategory.HH_SUPERMARKET,
+        amount=Decimal("-100.00"),
+    )
+    rows = [car, refund, notary, shop]
     cashflow = month_cashflow("2026-03", cashflow_rows(rows), saved=Decimal("0.00"))
     plain = household_month(cashflow, lines=rows)
-    both = {car.allocation_id, refund.allocation_id}
-    assert household_month(cashflow, lines=rows, one_off_ids=both) == plain
+    marked = {car.allocation_id, refund.allocation_id, notary.allocation_id}
+    assert household_month(cashflow, lines=rows, one_off_ids=marked) == plain
+    assert SP.month_spending(cashflow, rows, marked) == SP.month_spending(cashflow)
 
 
 def _line(key: str, code: AllocationCategory, amount: str) -> MonthLine:

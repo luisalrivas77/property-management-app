@@ -346,6 +346,12 @@ def test_a_mark_is_refused_for_what_the_candidates_leave_out(world, private):
         )
         for year in (2026, 2027)
     ]
+    small = _booked(
+        world,
+        private.line(date(2027, 3, 24), "-120.00", name="Kabelhandel Beispiel"),
+        "-120.00",
+        C.HH_ELECTRONICS,
+    )
     later = _booked(
         world,
         private.line(date(2027, 4, 20), "-900.00", name="Elektromarkt Beispiel"),
@@ -359,7 +365,7 @@ def test_a_mark_is_refused_for_what_the_candidates_leave_out(world, private):
     got = world.query(recurring.one_off_candidates, TODAY)
     assert [c.payment.allocation_id for c in got.candidates] == [ids["workshop"]]
     refused = {
-        "under the limits": ids["groceries"],
+        "under the limits": small,  # once, in a code with nothing else in the window
         "a cash withdrawal": cash,
         "in a recurring series": insurance[1],
         "dated after today": later,
