@@ -233,3 +233,46 @@ def test_a_mark_on_a_refund_or_a_one_off_code_moves_nothing():
     plain = household_month(cashflow, lines=rows)
     both = {car.allocation_id, refund.allocation_id}
     assert household_month(cashflow, lines=rows, one_off_ids=both) == plain
+
+
+def _line(key: str, code: AllocationCategory, amount: str) -> MonthLine:
+    return MonthLine(allocation_id=phase10.fixture_id(key), category=code, amount=Decimal(amount))
+
+
+@pytest.mark.parametrize(
+    "refund_code",
+    [AllocationCategory.HH_SUPERMARKET, AllocationCategory.HH_GROCERIES],
+    ids=["code_nets_to_zero", "group_nets_to_zero_across_two_codes"],
+)
+def test_a_marked_payment_whose_code_or_group_nets_to_zero(refund_code):
+    """month_cashflow drops a code, and a group, that nets to 0 in a month (a purchase and its
+    refund); the marked purchase still leaves regular spending in month_spending as in
+    household_month, so the means sum to it and play holds (review of PR #590)."""
+    salary = _line("PAY", AllocationCategory.HH_SALARY, "3000.00")
+    usual = _line("USUAL", AllocationCategory.HH_SUPERMARKET, "-200.00")
+    bought = _line("BUY", AllocationCategory.HH_SUPERMARKET, "-600.00")
+    refunded = _line("BACK", refund_code, "600.00")
+    marked = frozenset({bought.allocation_id})
+    lines_by_month = {
+        "2027-01": [salary, usual],
+        "2027-02": [salary, usual],
+        "2027-03": [salary, bought, refunded],
+    }
+    window, spending = [], []
+    for month, rows in lines_by_month.items():
+        cashflow = month_cashflow(month, cashflow_rows(rows), saved=Decimal("0.00"))
+        hm = household_month(cashflow, lines=rows, one_off_ids=marked)
+        by_code = SP.month_spending(cashflow, rows, marked)
+        assert sum(by_code.values(), Decimal("0.00")) == hm.regular_spending
+        window.append(hm)
+        spending.append(by_code)
+    march_cashflow = month_cashflow(
+        "2027-03", cashflow_rows(lines_by_month["2027-03"]), saved=Decimal("0.00")
+    )
+    assert HouseholdGroup.GROCERIES not in march_cashflow.spending_by_group
+    march = window[-1]
+    assert (march.one_off_spending, march.regular_spending) == (
+        Decimal("600.00"),
+        Decimal("-600.00"),
+    )
+    SP.play(window, spending, [], [], 3)  # the invariant holds, nothing raised

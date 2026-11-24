@@ -148,16 +148,19 @@ def month_spending(
     """A month's regular spending per code: the Haushalt screen's spending by category, less
     the one-off codes and less the payments a person marked one-off (phase 10 §7.9 (c) 2,
     D297; `lines` the month's private lines, `one_off_ids` the marked allocations, both empty
-    by default). Σ = HouseholdMonth.regular_spending of the same month."""
+    by default). Σ = HouseholdMonth.regular_spending of the same month, also when a marked
+    payment's code nets to 0 in it."""
     out: dict[AllocationCategory, Decimal] = {}
     for codes in cashflow.spending_by_category.values():
         for code, value in codes.items():
             if code not in ONE_OFF:
                 out[code] = out.get(code, ZERO) + value
     for line in lines:
-        code = counted_as(line)
-        if marked_one_off(line, one_off_ids) and code in out:
-            out[code] += line.amount
+        if marked_one_off(line, one_off_ids):
+            # month_cashflow drops a code (or a group) that nets to 0 in the month, a purchase
+            # and its refund; the marked payment still leaves it, the refund staying behind.
+            code = counted_as(line)
+            out[code] = out.get(code, ZERO) + line.amount
     return out
 
 

@@ -31,7 +31,7 @@ CASES = [(name, case) for name in BUDGET_FILES for case in phase10.load(name).ca
 # rules/plan/spending. A snapshot already stored keeps its old version and is never rewritten
 # (D242); only a month stored from now on carries this one.
 MAIN_RULE_VERSION = "1a81f62877cf958eca3c22b40e99c3ba14a5862844d95ed1e0fe983fe1cf9784"
-WAVE3_RULE_VERSION = "eb38454248e6fceb9b5499feeb7eb0acef88624c0c31afd6768a5defca90a121"
+WAVE3_RULE_VERSION = "3d24e195585146a011f8ec677ef054a8d19cccd92998db4b178c357317f4551d"
 
 
 def _view(case: phase10.BudgetCase):
