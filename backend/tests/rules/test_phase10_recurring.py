@@ -7,12 +7,23 @@ from decimal import Decimal
 import fixture_models_phase10 as phase10
 import pytest
 
+from hausbuch.rules.budget import budget as B
+from hausbuch.rules.budget.differences import compared_by_group, compared_rows
+from hausbuch.rules.health.month import cashflow_rows, household_month
+from hausbuch.rules.household.cashflow import month_cashflow
+from hausbuch.rules.plan import spending as SP
+from hausbuch.rules.plan.surplus import mean_cent
 from hausbuch.rules.recurring import (
     SeriesMark,
     candidates,
     newest_allocation_marks,
+    one_off_ids,
     recurring,
 )
+from hausbuch.schemas.allocation import AllocationCategory
+from hausbuch.schemas.budget import BudgetTargets
+from hausbuch.schemas.health import MonthLine
+from hausbuch.schemas.household import HouseholdGroup
 from hausbuch.schemas.recurring import RecurringInterval, RecurringState, SpendingMarkAnswer
 
 RECURRING = phase10.load("recurring").cases
@@ -119,3 +130,106 @@ def test_newest_answer_counts():
         [(a, SpendingMarkAnswer.ONE_OFF), (a, SpendingMarkAnswer.REGULAR)]
     )
     assert answers == {a: SpendingMarkAnswer.REGULAR}
+
+
+# --- What a one-off mark changes (§7.9 (c) 2, Q-O183 (a)) -------------------------------------
+
+
+def _months(case: phase10.OneOffCase):
+    """The window's household months with the case's marks, their lines and the marked ids,
+    through the production functions (month_cashflow, household_month), as services.health
+    reads them."""
+    marked = one_off_ids(
+        newest_allocation_marks((phase10.fixture_id(m.allocation), m.answer) for m in case.marks)
+    )
+    months, lines = [], []
+    for month in _window(case.today):
+        rows = [
+            MonthLine(allocation_id=phase10.fixture_id(r.id), category=r.category, amount=r.amount)
+            for r in case.lines
+            if f"{r.date.year:04d}-{r.date.month:02d}" == month
+        ]
+        cashflow = month_cashflow(month, cashflow_rows(rows), saved=Decimal("0.00"))
+        months.append((cashflow, household_month(cashflow, lines=rows, one_off_ids=marked)))
+        lines.append(rows)
+    return months, lines, marked
+
+
+FIGURE_CASES = [c for c in ONE_OFF if c.expect.months]
+
+
+@pytest.mark.parametrize("case", FIGURE_CASES, ids=lambda c: c.id)
+def test_a_one_off_mark_moves_the_payment(case: phase10.OneOffCase):
+    months, lines, marked = _months(case)
+    by_month = {hm.month: hm for _, hm in months}
+    for want in case.expect.months:
+        got = by_month[want.month]
+        assert (got.private_spending, got.one_off_spending, got.regular_spending) == (
+            want.private_spending,
+            want.one_off_spending,
+            want.regular_spending,
+        )
+    regular = [hm.regular_spending for _, hm in months]
+    assert mean_cent(regular) == case.expect.mean_regular_spending
+
+    per_code = [
+        SP.month_spending(cf, rows, marked) for (cf, _), rows in zip(months, lines, strict=True)
+    ]
+    for (_, hm), codes in zip(months, per_code, strict=True):
+        assert sum(codes.values(), Decimal("0.00")) == hm.regular_spending
+    means = SP.code_means(per_code)
+    for code, want in case.expect.code_means.items():
+        assert means.get(code, Decimal("0.00")) == want
+
+    view = B.budget(
+        [hm for _, hm in months],
+        lines,
+        {},
+        BudgetTargets(),
+        as_of=case.today,
+        one_off_ids=marked,
+    )
+    one_off = {m.month: m.one_off for m in view.months}
+    for month, want in case.expect.budget_one_off.items():
+        assert one_off[month] == want
+    for m, (_, hm) in zip(view.months, months, strict=True):
+        assert m.one_off == hm.one_off_spending
+        assert m.need + m.want + m.uncategorized == hm.regular_spending
+
+
+def test_without_marks_nothing_moves():
+    """The default argument: every phase 9 and 10 figure as before (§7.9 (c) 2)."""
+    case = next(c for c in ONE_OFF if c.id == "no_marks")
+    months, lines, marked = _months(case)
+    assert marked == frozenset()
+    for (cf, hm), rows in zip(months, lines, strict=True):
+        assert household_month(cf, lines=rows) == hm
+        assert SP.month_spending(cf) == SP.month_spending(cf, rows, marked)
+
+
+def test_a_marked_payment_leaves_the_differences():
+    case = next(c for c in ONE_OFF if c.id == "both_marked")
+    _, lines, marked = _months(case)
+    october = lines[-1]
+    plain = compared_by_group(compared_rows(october))
+    moved = compared_by_group(compared_rows(october, marked))
+    gone = plain[HouseholdGroup.MOBILITY] - moved.get(HouseholdGroup.MOBILITY, Decimal("0"))
+    assert gone == Decimal("870.00")
+
+
+def test_a_mark_on_a_refund_or_a_one_off_code_moves_nothing():
+    car = MonthLine(
+        allocation_id=phase10.fixture_id("CAR"),
+        category=AllocationCategory.HH_CAR_PURCHASE,
+        amount=Decimal("-8500.00"),
+    )
+    refund = MonthLine(
+        allocation_id=phase10.fixture_id("REF"),
+        category=AllocationCategory.HH_REFUND,
+        amount=Decimal("30.00"),
+    )
+    rows = [car, refund]
+    cashflow = month_cashflow("2026-03", cashflow_rows(rows), saved=Decimal("0.00"))
+    plain = household_month(cashflow, lines=rows)
+    both = {car.allocation_id, refund.allocation_id}
+    assert household_month(cashflow, lines=rows, one_off_ids=both) == plain
