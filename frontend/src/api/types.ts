@@ -8551,6 +8551,53 @@ export interface components {
             notes?: components["schemas"]["ExtractedValue"];
         };
         /**
+         * Goal
+         * @description The household's own goal (D289 (1)): a target and a due month the household typed; the
+         *     app proposes neither. `target` is euros, or months for `reserve_months`. Only the shape is
+         *     checked here; that the due month lies after the current month is refused when a scenario
+         *     is saved (services.household_scenarios.check_levers), so a stored goal whose month has
+         *     passed still reads.
+         */
+        Goal: {
+            kind: components["schemas"]["GoalKind"];
+            /** Target */
+            target: string;
+            /** Due Month */
+            due_month: string;
+            /**
+             * Set On
+             * Format: date
+             */
+            set_on: string;
+        };
+        /**
+         * GoalChoice
+         * @description What the household chose for its goal, each with the day chosen (§7.9 (d), (e)). The
+         *     adopted budget itself is the scenario's `spending_changes` („Als Budget übernehmen“
+         *     supersedes the default scenario with them); `investment` is a placeholder for §7.9 (e).
+         */
+        GoalChoice: {
+            spending?: components["schemas"]["GoalSpending"] | null;
+            /** Spending Chosen On */
+            spending_chosen_on?: string | null;
+            /** Investment */
+            investment?: string | null;
+            /** Investment Chosen On */
+            investment_chosen_on?: string | null;
+        };
+        /**
+         * GoalKind
+         * @description What a household goal measures (phase 10 §7.9 (d), D289 (1)).
+         * @enum {string}
+         */
+        GoalKind: "net_worth" | "saved_sum" | "reserve_months";
+        /**
+         * GoalSpending
+         * @description The spending scenario the household adopted for its goal (§7.9 (d)).
+         * @enum {string}
+         */
+        GoalSpending: "wants_only" | "all_equal" | "own";
+        /**
          * GroupDifference
          * @description A spending group whose month differs from its own mean over the closed months before
          *     it (phase 10 §7.6 Haushalt (3), build decision (a)); `difference` = `amount` − `mean`.
@@ -9220,6 +9267,8 @@ export interface components {
             budget_class_overrides?: {
                 [key: string]: components["schemas"]["BudgetClass"];
             };
+            goal?: components["schemas"]["Goal"] | null;
+            goal_choice?: components["schemas"]["GoalChoice"] | null;
         };
         /**
          * HouseholdMonth

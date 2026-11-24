@@ -13,11 +13,11 @@ from enum import StrEnum
 from typing import Annotated, Self
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import Field, SerializerFunctionWrapHandler, model_serializer, model_validator
 
 from .allocation import AllocationCategory
 from .budget import BudgetTargets
-from .common import _STRING_ONLY, Money, NonNegativeMoney, Schema, _string_schema
+from .common import _STRING_ONLY, Money, NonNegativeMoney, PositiveMoney, Schema, _string_schema
 from .health import BandLimits, HealthTodo, Reserve, TargetMonths, YearMonth, is_month_end
 from .household import BudgetClass, HouseholdGroup
 from .household import SavingsRate as Ratio  # signed, four places
@@ -212,6 +212,69 @@ class SpendingChange(Schema):
         return self.from_month <= month and (self.to_month is None or month <= self.to_month)
 
 
+class GoalKind(StrEnum):
+    """What a household goal measures (phase 10 §7.9 (d), D289 (1))."""
+
+    NET_WORTH = "net_worth"  # the net worth on phase 9's projection (D247)
+    SAVED_SUM = "saved_sum"  # the reserve accounts' sum (D237)
+    RESERVE_MONTHS = "reserve_months"  # the reserve in months of the monthly need (D237)
+
+
+# A reserve goal's months: the reserve target's bounds (TargetMonths, D237), above 0.
+GOAL_RESERVE_MONTHS_MAX = Decimal("24")
+
+
+class Goal(Schema):
+    """The household's own goal (D289 (1)): a target and a due month the household typed; the
+    app proposes neither. `target` is euros, or months for `reserve_months`. Only the shape is
+    checked here; that the due month lies after the current month is refused when a scenario
+    is saved (services.household_scenarios.check_levers), so a stored goal whose month has
+    passed still reads."""
+
+    kind: GoalKind
+    target: PositiveMoney
+    due_month: YearMonth
+    set_on: date
+
+    @model_validator(mode="after")
+    def _months(self) -> Self:
+        if self.kind is GoalKind.RESERVE_MONTHS and (
+            self.target > GOAL_RESERVE_MONTHS_MAX or (self.target * 2) % 1 != 0
+        ):
+            raise ValueError(
+                f"{LEVER_INVALID}: a reserve goal is up to {GOAL_RESERVE_MONTHS_MAX} months, "
+                "in half months"
+            )
+        return self
+
+
+class GoalSpending(StrEnum):
+    """The spending scenario the household adopted for its goal (§7.9 (d))."""
+
+    WANTS_ONLY = "wants_only"  # „Nur Wünsche kürzen“
+    ALL_EQUAL = "all_equal"  # „Alles gleich kürzen“
+    OWN = "own"  # „Eigene Aufteilung“
+
+
+class GoalChoice(Schema):
+    """What the household chose for its goal, each with the day chosen (§7.9 (d), (e)). The
+    adopted budget itself is the scenario's `spending_changes` („Als Budget übernehmen“
+    supersedes the default scenario with them); `investment` is a placeholder for §7.9 (e)."""
+
+    spending: GoalSpending | None = None
+    spending_chosen_on: date | None = None
+    investment: str | None = Field(default=None, min_length=1, max_length=100)
+    investment_chosen_on: date | None = None
+
+    @model_validator(mode="after")
+    def _days(self) -> Self:
+        if (self.spending is None) != (self.spending_chosen_on is None):
+            raise ValueError(f"{LEVER_INVALID}: a spending choice comes with its day")
+        if (self.investment is None) != (self.investment_chosen_on is None):
+            raise ValueError(f"{LEVER_INVALID}: an investment choice comes with its day")
+        return self
+
+
 class HouseholdLevers(Schema):
     """`household_scenario.levers` (D248). The defaults are the spec's (§18 Q1)."""
 
@@ -233,6 +296,21 @@ class HouseholdLevers(Schema):
     # taxonomy no longer allows, so a later taxonomy change never breaks a stored row's read.
     budget_targets: BudgetTargets = Field(default_factory=BudgetTargets)
     budget_class_overrides: dict[AllocationCategory, BudgetClass] = Field(default_factory=dict)
+    # Phase 10 §7.9 (d): the household's goal and what it chose for it, None when unset. A
+    # None is left out of the dump, so a row stored without a goal stays byte for byte what it
+    # was, and every answer that shows levers is unchanged (_without_unset_goal).
+    goal: Goal | None = None
+    goal_choice: GoalChoice | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_unset_goal(self, handler: SerializerFunctionWrapHandler):
+        # No return annotation: pydantic then keeps the fields' JSON schema for the answer.
+        data = handler(self)
+        if isinstance(data, dict):
+            for key in ("goal", "goal_choice"):
+                if data.get(key) is None:
+                    data.pop(key, None)
+        return data
 
     @model_validator(mode="after")
     def _unique(self) -> Self:

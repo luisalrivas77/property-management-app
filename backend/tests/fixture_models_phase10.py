@@ -44,6 +44,7 @@ from hausbuch.schemas.budget import (
 from hausbuch.schemas.common import _STRING_ONLY, Money, Schema
 from hausbuch.schemas.health import HealthTodoCode, HouseholdMonth, MonthLine, YearMonth
 from hausbuch.schemas.household import BudgetClass
+from hausbuch.schemas.plan import HouseholdLevers
 from hausbuch.schemas.recurring import RecurringInterval, RecurringState, SpendingMarkAnswer
 
 FIXTURES = Path(__file__).parent / "fixtures" / "phase10"
@@ -388,7 +389,7 @@ class GoalCase(Lenient):
     saved_mean: Money
     value_today: GoalTodayIn
     means: dict[AllocationCategory, Money]
-    levers: dict[str, Any]
+    levers: HouseholdLevers
     expect: GoalExpect
 
     @model_validator(mode="after")
