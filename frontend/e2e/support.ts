@@ -73,10 +73,10 @@ export async function enroll(page: Page, enrollmentUrl: string, label = "Laptop"
   await expect(page).toHaveURL("/");
 }
 
-/** The entries the menu keeps under „Mehr“ (phase 10 D266). */
-const MORE_ENTRIES = new Set(["Konten", "Immobilien", "Steuern", "Planung", "Dokumente", "Einstellungen"]);
+/** The entries the menu keeps under „Mehr“ (phase 10 D266; Planung left it in wave 3 (a), D288). */
+const MORE_ENTRIES = new Set(["Konten", "Immobilien", "Steuern", "Dokumente", "Einstellungen"]);
 
-/** The menu (phase 10 D266): its five entries, „Mehr“ a button that opens the other six. */
+/** The menu (phase 10 D266): its five entries, „Mehr“ a button that opens the other five. */
 export function mainNav(page: Page): Locator {
   return page.getByRole("navigation", { name: "Hauptnavigation" });
 }

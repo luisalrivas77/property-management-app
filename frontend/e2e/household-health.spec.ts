@@ -429,27 +429,37 @@ test("the rate fields start empty, and the projection appears only after a rate 
     return plan(window, last ? `scenario-${posted.length}` : null, last?.levers?.value_change?.depot ?? null);
   });
 
+  // Planung › Vermögen's old link lands on the card on Anlagen › Übersicht (phase 10 §7.9 (a)).
   await page.goto("/planning?section=vermoegen");
+  await expect(page).toHaveURL("/assets#annahme");
   const card = page.getByRole("region", { name: "Vermögen in einigen Jahren: eure Annahme" });
-  const depot = card.getByLabel("Fonds und Wertpapiere (% pro Jahr)");
-  const crypto = card.getByLabel("Krypto (% pro Jahr)");
+  await expect(card.getByText("Annahme fehlt")).toBeVisible();
+  // The server's to-do href (`/planning?tab=haushalt`, rules/plan) opens „Annahmen“ at the rates.
+  const enter = card.getByRole("link", { name: "Annahme eintragen" });
+  await expect(enter).toHaveAttribute("href", "#d-annahmen-rendite");
+  await expect(card.getByText(/nach eurer Annahme:/)).toHaveCount(0);
+  await enter.click();
+
+  // The rate fields are in the panel „Annahmen“, its group „Rendite“ first.
+  const panel = page.getByRole("complementary", { name: "Eure Annahmen" });
+  await expect(panel.locator(".annahmen-group").first()).toHaveAttribute("data-group", "rendite");
+  const depot = panel.getByLabel("Fonds und Wertpapiere (% pro Jahr)");
+  const crypto = panel.getByLabel("Krypto (% pro Jahr)");
   for (const field of [depot, crypto]) {
     await expect(field).toHaveValue("");
     await expect(field).not.toHaveAttribute("placeholder");
   }
-  await expect(card.getByText("Annahme fehlt")).toBeVisible();
-  await expect(card.getByRole("link", { name: "Annahme eintragen" })).toHaveAttribute("href", "/planning?section=vermoegen#annahme");
-  await expect(card.getByText(/nach eurer Annahme:/)).toHaveCount(0);
 
   await depot.fill("5");
-  await expect(page.getByText("Geändert, noch nicht gespeichert")).toBeVisible();
+  // The card itself says it counts the unsaved change (D288: no separate effects box).
+  await expect(card.getByText(/Geändert, noch nicht gespeichert/)).toBeVisible();
   // An entry the field cannot take keeps the draft's 5 %: no save until it is fixed (review C).
   await depot.fill("60");
-  await expect(card.getByText("Zwischen −50 % und 50 % pro Jahr.")).toBeVisible();
-  await expect(card.getByRole("button", { name: "Szenario speichern" })).toBeDisabled();
+  await expect(panel.getByText("Zwischen −50 % und 50 % pro Jahr.")).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Szenario speichern" })).toBeDisabled();
   expect(posted).toHaveLength(0);
   await depot.fill("5");
-  await card.getByRole("button", { name: "Szenario speichern" }).click();
+  await panel.getByRole("button", { name: "Szenario speichern" }).click();
   await expect.poll(() => posted.length).toBe(1);
   expect(Number(posted[0]?.levers?.value_change?.depot)).toBe(0.05);
   expect(posted[0]?.levers?.value_change?.crypto ?? null).toBeNull();
@@ -493,8 +503,10 @@ test("below three closed months both screens show what holds the next month open
   );
   await serve(page, "/api/household-plan", () => ({ ...plan(window, null, null), surplus: null, todos: [TOO_FEW, monthEnd] }));
 
-  // Planung › Haushalt (12c): no figure, the to-dos instead.
+  // Haushalt › Budget (12c; Planung › Haushalt until phase 10 §7.9 (a), whose old link lands
+  // there): no figure, the to-dos instead.
   await page.goto("/planning?tab=haushalt");
+  await expect(page).toHaveURL("/household?tab=budget");
   const card = page.getByRole("region", { name: "Noch zu wenige abgeschlossene Monate" });
   await expect(card).toContainText("1 von 3 Monaten");
   await expect(page.getByText("Anlegbar pro Monat")).toHaveCount(0);
@@ -551,11 +563,16 @@ test("every figure opens what it is made of, and a month opens Haushalt with its
   await expect(reserve.locator(`a[href="/accounts/${SAVINGS}"]`)).toBeVisible();
   const debtService = page.locator('div.health-figure[aria-label="Schuldendienstquote"]');
   await debtService.getByText("Woraus die Zahl besteht").click();
-  await expect(debtService.locator('details a[href="/planning"]')).toBeVisible();
+  // The property's Planung is Anlagen › Immobilie since phase 10 §7.6.
+  await expect(debtService.locator('details a[href="/assets?tab=immobilie"]')).toBeVisible();
 
-  // Planung › Haushalt: each row of „So entsteht die Zahl“ that has months opens them.
+  // „Was mit dem Rest passiert“ at the foot of Haushalt › Budget (Planung › Anlegen until phase 10
+  // §7.9 (a), whose old link lands there): each row of „So entsteht die Zahl“ that has months opens them.
   await page.goto("/planning?section=anlegen");
-  const made = page.getByRole("region", { name: "So entsteht die Zahl" });
+  await expect(page).toHaveURL("/household?tab=budget#was-mit-dem-rest");
+  const rest = page.getByRole("region", { name: "Was mit dem Rest passiert" });
+  await rest.getByRole("button", { name: "So entsteht die Zahl" }).click();
+  const made = rest.getByRole("region", { name: "So entsteht die Zahl" });
   const rows = made.locator("details");
   await expect(rows).toHaveCount(3); // mean income, mean regular spending, free cash; the buffer and the result have none
   for (const row of await rows.all()) {
@@ -682,7 +699,7 @@ test("„Was diesen Monat anders ist“ names the server's groups and opens thei
   await expect(page.getByRole("region", { name: "Was diesen Monat anders ist" })).toHaveCount(0);
 });
 
-test("the Budget in one line on Haushalt: only once a target is saved, coloured as on Planung › Budget", async ({ page, signedIn }) => {
+test("the Budget in one line on Haushalt: only once a target is saved, coloured as on Haushalt › Budget", async ({ page, signedIn }) => {
   void signedIn;
   const window = [monthsBack(4), monthsBack(3), monthsBack(2)];
   type BudgetView = components["schemas"]["BudgetView"];
@@ -753,7 +770,7 @@ test("the Budget in one line on Haushalt: only once a target is saved, coloured 
   await expect(line.locator(".budget-dot-amber")).toHaveCount(1);
   await expect(line.locator(".budget-dot-green")).toHaveCount(2);
   await expect(line.locator(".budget-dot-red")).toHaveCount(0);
-  await expect(line.getByRole("link", { name: /Planung › Budget/ })).toHaveAttribute("href", "/planning?section=budget");
+  await expect(line.getByRole("link", { name: /Haushalt › Budget/ })).toHaveAttribute("href", "/household?tab=budget");
 
   // Before a target is saved there is no line.
   targets = false;

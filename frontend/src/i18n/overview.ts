@@ -102,7 +102,7 @@ export const overview = defineMessages({
           not_computable: "nicht berechenbar, nicht mitgezählt",
         } as Record<string, string>
       )[reason] ?? "nicht mitgezählt",
-    toPlanning: "Zur Planung",
+    toPlanning: "Zu Anlagen › Immobilie",
     depot: "ETF-Depot",
     crypto: "Krypto",
     bank: "Bank",
@@ -132,7 +132,6 @@ export const overview = defineMessages({
     toProperty: "Zur Immobilie",
     toProperties: "Zu Immobilien",
     toHousehold: (month: string) => `Zu Haushalt › ${month}`,
-    toBudget: "Zu Planung › Budget",
     toReview: "Zu prüfen öffnen",
     // property cards
     noProperty: "Noch keine Immobilie erfasst.",
@@ -240,7 +239,7 @@ export const overview = defineMessages({
           not_computable: "cannot be computed, not counted",
         } as Record<string, string>
       )[reason] ?? "not counted",
-    toPlanning: "To Planning",
+    toPlanning: "To Assets › Property",
     depot: "ETF account",
     crypto: "Crypto",
     bank: "Bank",
@@ -269,7 +268,6 @@ export const overview = defineMessages({
     toProperty: "To the property",
     toProperties: "To Properties",
     toHousehold: (month: string) => `To Household › ${month}`,
-    toBudget: "To Planning › Budget",
     toReview: "Open To review",
     noProperty: "No property yet.",
     noPropertyHint: "Best add the owners first, then the property with its purchase contract and handover.",

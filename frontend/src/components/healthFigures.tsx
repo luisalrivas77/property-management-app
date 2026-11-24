@@ -62,6 +62,13 @@ import { snapshotOutcomeText } from "./netWorth";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
+import {
+  assumptionsHref,
+  HOUSEHOLD_BUDGET,
+  HOUSEHOLD_RESERVE,
+  planTodoTarget,
+  propertyPlanningHref,
+} from "@/lib/planningRoutes";
 import { VerdictCards, type VerdictPart, VerdictWordLine } from "./verdict";
 
 import "./health.css";
@@ -133,7 +140,7 @@ export function HouseholdHealthSection({ onChanged, refresh = 0 }: { onChanged?:
  * (`?month_end=YYYY-MM-DD`) above the tab's own content (`children`), and „Vermögen im Verlauf“
  * below it. The split of the assets moved into the tab's total card (Luis, 23 Nov 2026), so the
  * card „Aufteilung des Vermögens“ is gone. Inside a Suspense boundary (useSearchParams). */
-export function AssetsHealthSection({ children }: { children?: ReactNode }) {
+export function AssetsHealthSection({ children, after }: { children?: ReactNode; after?: ReactNode }) {
   const health = useLoad(loadHealth);
   const requested = useSearchParams().get("month_end");
   return (
@@ -143,6 +150,7 @@ export function AssetsHealthSection({ children }: { children?: ReactNode }) {
       <Loading state={health}>
         {(data) => <SeriesCard series={data.series ?? []} onChanged={health.reload} />}
       </Loading>
+      {after}
     </div>
   );
 }
@@ -214,7 +222,9 @@ export function HealthTodoItem({ todo, onChanged }: { todo: HealthTodo; onChange
           {todo.action}
         </Link>
       ) : (
-        <Link href={todo.href} className="button-link secondary">
+        // A plan to-do's href from rules/plan/ still names Planung (D271), which left the menu in
+        // phase 10 §7.9 (a): it leads where that part of Planung is now.
+        <Link href={planTodoTarget(todo.href, todo.code, HOUSEHOLD_BUDGET)} className="button-link secondary">
           {todo.action}
         </Link>
       )}
@@ -346,7 +356,7 @@ function FigureDetails({ part, data, onChanged }: { part: VerdictPart; data: Hea
           </p>
           <p className="muted">
             {t.ownTarget(p.euro(reserve.target), p.short(reserve.target_months))}{" "}
-            <Link href="/planning?tab=haushalt">{t.change}</Link>
+            <Link href={assumptionsHref(HOUSEHOLD_RESERVE, "reserve")}>{t.change}</Link>
           </p>
           <details className="health-sources">
             <summary>{t.reserveSources}</summary>
@@ -362,7 +372,7 @@ function FigureDetails({ part, data, onChanged }: { part: VerdictPart; data: Hea
               ))}
             </ul>
             <p className="muted">
-              {t.needExplained(range)} <Link href="/planning?tab=haushalt">{t.changeReserveAccounts}</Link>
+              {t.needExplained(range)} <Link href={assumptionsHref(HOUSEHOLD_RESERVE, "reserve")}>{t.changeReserveAccounts}</Link>
             </p>
           </details>
           <HealthTodoList todos={reserve.todos ?? []} onChanged={onChanged} />
@@ -392,7 +402,7 @@ function FigureDetails({ part, data, onChanged }: { part: VerdictPart; data: Hea
             </ul>
             <p className="muted">
               {t.fromRentalBefore}
-              <Link href="/planning">{t.planningProperty}</Link>
+              <Link href={propertyPlanningHref()}>{t.planningProperty}</Link>
               {t.fromRentalAfter}
             </p>
           </details>
@@ -576,7 +586,7 @@ function BandsCard({
               {figure === "reserve" ? (
                 <p className="muted">
                   {t.reserveGreenBefore(p.short(targetMonths), target ? p.euro(target) : null)}
-                  <Link href="/planning?tab=haushalt">{t.planning}</Link>
+                  <Link href={assumptionsHref(HOUSEHOLD_RESERVE, "reserve")}>{t.planning}</Link>
                   {t.reserveGreenAfter}
                 </p>
               ) : (
@@ -613,7 +623,7 @@ function BandsCard({
         {scenarioRefused(error) ? (
           <p className="muted" role="note">
             {t.scenarioRefusedBefore}
-            <Link href="/planning?tab=haushalt">{t.planningHousehold}</Link>
+            <Link href={assumptionsHref(HOUSEHOLD_BUDGET, "reserve")}>{t.planningHousehold}</Link>
             {t.scenarioRefusedAfter}
           </p>
         ) : null}

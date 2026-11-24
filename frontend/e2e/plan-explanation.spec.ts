@@ -201,6 +201,13 @@ async function explanationRoute(
 
 const panelOf = (page: Page) => page.getByRole("complementary", { name: "Erklärung zu euren Zahlen" });
 
+/** The explanation sits behind „Erklärung“ in „Was mit dem Rest passiert“ at the foot of
+ * Haushalt › Budget since phase 10 §7.9 (a) (Planung › Anlegen until then); opened after each load. */
+async function openExplanation(page: Page) {
+  await page.getByRole("region", { name: "Was mit dem Rest passiert" }).getByRole("button", { name: "Erklärung", exact: true }).click();
+  return panelOf(page);
+}
+
 test("a template text shows „Standardtext“ and one sentence on why, a stale one that its figures changed", async ({ page, signedIn }) => {
   void signedIn;
   await planReads(page);
@@ -215,7 +222,8 @@ test("a template text shows „Standardtext“ and one sentence on why, a stale 
   await explanationRoute(page, () => shown);
 
   await page.goto("/planning?section=anlegen");
-  const panel = panelOf(page);
+  await expect(page).toHaveURL("/household?tab=budget#was-mit-dem-rest");
+  const panel = await openExplanation(page);
   await expect(panel.getByText("Standardtext", { exact: true })).toBeVisible();
   await expect(panel.getByText("Zahlen haben sich seitdem geändert", { exact: true })).toBeVisible();
   await expect(panel.getByText("Erklärung vom 19. November 2026")).toBeVisible();
@@ -235,6 +243,7 @@ test("a template text shows „Standardtext“ and one sentence on why, a stale 
   for (const [reason, sentence] of sentences) {
     shown = explanation({ status: "template", reason });
     await page.reload();
+    await openExplanation(page);
     await expect(panel.getByTestId("plan-ai-reason")).toContainText(sentence);
     await expect(panel.getByText("Standardtext", { exact: true })).toBeVisible();
     await expect(panel.getByText("Zahlen haben sich seitdem geändert", { exact: true })).toHaveCount(0);
@@ -243,6 +252,7 @@ test("a template text shows „Standardtext“ and one sentence on why, a stale 
   // A model text has neither chip and no reason.
   shown = explanation({});
   await page.reload();
+  await openExplanation(page);
   await expect(panel.getByText("Im Schnitt sind 1.170 € im Monat anlegbar.")).toBeVisible();
   await expect(panel.getByText("Standardtext", { exact: true })).toHaveCount(0);
   await expect(panel.getByTestId("plan-ai-reason")).toHaveCount(0);
@@ -255,8 +265,8 @@ test("with the AI off, „Neu erklären“ sends nothing and the panel links to 
     explanation({ id: null, status: "template", reason: "consent_off", created_at: null }),
   );
 
-  await page.goto("/planning?section=anlegen");
-  const panel = panelOf(page);
+  await page.goto("/household?tab=budget");
+  const panel = await openExplanation(page);
   const button = panel.getByRole("button", { name: "Neu erklären" });
   await expect(button).toBeDisabled();
   const off = panel.getByTestId("plan-ai-off");
@@ -281,8 +291,8 @@ test("a POST that queues nothing says the AI is off, never a spinner", async ({ 
   // The switch was turned off elsewhere after this page read it: the server queues nothing.
   const { posts } = await explanationRoute(page, () => explanation({ id: null, status: "template", reason: null, created_at: null }), false);
 
-  await page.goto("/planning?section=anlegen");
-  const panel = panelOf(page);
+  await page.goto("/household?tab=budget");
+  const panel = await openExplanation(page);
   await expect(panel.getByTestId("plan-ai-reason")).toHaveText("Die KI hat zu diesen Zahlen noch nichts geschrieben; „Neu erklären“ fragt sie.");
   await patchSettings(page, { ai_private_accounts: false });
   await panel.getByRole("button", { name: "Neu erklären" }).click();
@@ -297,13 +307,14 @@ test("a text written while the AI was off says „Neu erklären“ asks it, once
   await planReads(page);
   await explanationRoute(page, () => explanation({ status: "template", reason: "consent_off" }));
 
-  await page.goto("/planning?section=anlegen");
-  const panel = panelOf(page);
+  await page.goto("/household?tab=budget");
+  const panel = await openExplanation(page);
   await expect(panel.getByTestId("plan-ai-off")).toBeVisible();
   await expect(panel.getByTestId("plan-ai-reason")).toHaveCount(0);
 
   await patchSettings(page, { ai_private_accounts: true });
   await page.reload();
+  await openExplanation(page);
   await expect(panel.getByTestId("plan-ai-reason")).toHaveText("Beim letzten Mal war die KI ausgeschaltet. „Neu erklären“ fragt sie jetzt.");
   await expect(panel.getByTestId("plan-ai-off")).toHaveCount(0);
   await expect(panel.getByRole("button", { name: "Neu erklären" })).toBeEnabled();
@@ -320,8 +331,8 @@ test("„Neu erklären“ waits for the new text and shows it", async ({ page, s
       : explanation({ status: "template", reason: "error", paragraphs: [{ topic: "reserve", text: "Alter Text der App." }] }),
   );
 
-  await page.goto("/planning?section=anlegen");
-  const panel = panelOf(page);
+  await page.goto("/household?tab=budget");
+  const panel = await openExplanation(page);
   await expect(panel.getByText("Alter Text der App.")).toBeVisible();
   await panel.getByRole("button", { name: "Neu erklären" }).click();
   await expect(panel.getByRole("status")).toContainText("Die KI schreibt die Erklärung");
@@ -346,15 +357,15 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
       : explanation({ paragraphs: [{ topic: "basis", text: "In Fondsdepot A fließen 300 € im Monat." }] }),
   );
 
-  // Phase 10 D270: the explanation and „Schon angelegt“ under Anlegen, the paths under Reserve,
-  // „Weitere Annahmen“ in the scenario sheet.
-  await page.goto("/planning?section=anlegen");
-  const panel = panelOf(page);
+  // Phase 10 §7.9 (a): the explanation and the savings plans in „Was mit dem Rest passiert“ on
+  // Haushalt › Budget, the paths on Haushalt › Reserve, the plans' levers in „Annahmen“.
+  await page.goto("/household?tab=budget");
+  const panel = await openExplanation(page);
   const paths = page.getByRole("region", { name: "Wege zum Reserveziel" });
   await expect(panel.getByText("In Fondsdepot A fließen 300 € im Monat.")).toBeVisible();
   await expect(panel.getByText("(Modus: eigene Nutzung)")).toBeVisible();
-  // Eigene Nutzung names each plan by its account: the card, the paths and „Weitere Annahmen“.
-  const invested = page.locator(".planning-kpi").filter({ hasText: "Schon angelegt pro Monat" });
+  // Eigene Nutzung names each plan by its account: the rest card, the paths and „Annahmen“.
+  const invested = page.locator(".planning-rest li").filter({ hasText: "schon in Sparplänen" });
   await expect(invested).toContainText("450 €");
   await expect(invested).toContainText("Fondsdepot A 300 € · Kryptobörse B 100 € · Fondsdepot C 50 €");
   await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Reserve" }).click();
@@ -363,7 +374,11 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   await expect(paths.getByText("Weitere Sparpläne ohne eigene Zeile: Fondsdepot C.")).toBeVisible();
   // The scenario row opens the sheet; its „›“ is hidden from the accessible name.
   await page.getByRole("link", { name: /Annahmen$/ }).click();
-  const more = page.getByRole("region", { name: "Weitere Annahmen" });
+  await expect(page.getByRole("complementary", { name: "Eure Annahmen" }).locator(".annahmen-group").first()).toHaveAttribute(
+    "data-group",
+    "reserve",
+  );
+  const more = page.getByRole("complementary", { name: "Eure Annahmen" }).locator('[data-group="sparplaene"]');
   await expect(more.getByText("Kryptobörse B", { exact: true })).toBeVisible();
 
   await page.goto("/settings#d-setting-advice");
@@ -372,7 +387,8 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   expect((await saved).status()).toBe(200);
   await expect(page.getByTestId("advice-mode-saved")).toHaveText("Gespeichert: Allgemein");
 
-  await page.goto("/planning?section=anlegen");
+  await page.goto("/household?tab=budget");
+  await openExplanation(page);
   await expect(panel.getByText("In Fonds und Wertpapiere fließen 300 € im Monat.")).toBeVisible();
   await expect(panel.getByText("In Fondsdepot A fließen 300 € im Monat.")).toHaveCount(0);
   await expect(panel.getByText("nennt keine Produkte und keine Konten. Keine Anlageberatung.")).toBeVisible();
@@ -389,6 +405,10 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   await expect(paths.getByText("Weitere Sparpläne ohne eigene Zeile")).toHaveCount(0);
   for (const label of labels) await expect(page.getByText(label)).toHaveCount(0);
   await page.getByRole("link", { name: /Annahmen$/ }).click();
+  await expect(page.getByRole("complementary", { name: "Eure Annahmen" }).locator(".annahmen-group").first()).toHaveAttribute(
+    "data-group",
+    "reserve",
+  );
   await expect(more.getByTestId("plans-total")).toHaveText("450 € im Monat, aus 3 Sparplänen zusammen");
   for (const label of labels) await expect(page.getByText(label)).toHaveCount(0);
   await expect(more.getByRole("button", { name: "Betrag ändern" })).toHaveCount(0);

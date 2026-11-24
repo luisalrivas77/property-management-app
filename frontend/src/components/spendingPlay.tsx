@@ -1,23 +1,21 @@
 "use client";
 
-// Planung › Haushalt › „Ausgaben durchspielen“ (phase 9 D263, §7.6, §14; docs/mockups/
+// „Ausgaben durchspielen“ in the panel „Annahmen“ (phase 9 D263, §7.6, §14; docs/mockups/
 // 12d-planning-spending-play.png). One row per spending group of the Haushalt screen, opening
 // into its subcategories, each with its measured „Ø pro Monat“ and an empty field for the
 // planned amount (€ or % of the mean) from a month and optionally to a month; „Neue Ausgabe“
-// for a code with no history. „Was eure Änderungen bewirken“ compares today (no spending
-// change) with the typed changes, both from POST /household-plan/preview, called a moment after
-// a member stops typing; nothing is stored until „Szenario speichern“ (D263 (c)). Every figure
-// is the server's (means, planned amounts, the rate and „Anlegbar“ per stretch of months, the
-// reserve path, the net worth); this file only formats them. No colour, no mark: the app
-// proposes no amount and no target (D263 (e)), the mean is the starting value, never advice.
+// for a code with no history. The typed changes go to POST /household-plan/preview a moment after
+// a member stops typing; each place of the plan shows its figures from that answer (phase 10
+// D288: „Was eure Änderungen bewirken“ is gone); nothing is stored until „Szenario speichern“
+// (D263 (c)). Every figure is the server's (means, planned amounts); this file only formats
+// them. No colour, no mark: the app proposes no amount and no target (D263 (e)), the mean is the
+// starting value, never advice.
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { translate, useT } from "@/i18n";
-import { planning } from "@/i18n/planning";
 import { spendingPlay as spendingPlayText } from "@/i18n/spendingPlay";
-import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { type HouseholdLevers, type HouseholdPlan, toSignedRate } from "./healthShared";
 import { decimalInput, percentInput, toMoneyString } from "./input";
@@ -42,20 +40,18 @@ const GROUPS_SHOWN = 8;
 export interface PlanPreview {
   /** The plan with the typed levers (the saved plan while nothing is changed). */
   withChanges: HouseholdPlan;
-  /** The same levers without any spending change: the column „heute“; null until it arrives. */
-  base: HouseholdPlan | null;
   /** The last refusal of the preview; the figures stay at the last good answer. */
   error: unknown;
   pending: boolean;
 }
 
 /** POST /household-plan/preview for the draft, a moment after the last keystroke; an answer
- * that arrives after a newer request was sent is dropped. Nothing is stored (D263 (c)). */
+ * that arrives after a newer request was sent is dropped. Nothing is stored (D263 (c)). While
+ * nothing differs from the saved scenario no request is sent. */
 export function usePlanPreview(saved: HouseholdPlan, draft: HouseholdLevers, dirty: boolean): PlanPreview {
   const key = JSON.stringify(draft);
-  const needsBase = (draft.spending_changes ?? []).length > 0;
-  const idle = !dirty && !needsBase;
-  const [result, setResult] = useState<{ key: string; withChanges: HouseholdPlan; base: HouseholdPlan } | null>(null);
+  const idle = !dirty;
+  const [result, setResult] = useState<{ key: string; withChanges: HouseholdPlan } | null>(null);
   const [error, setError] = useState<{ key: string; error: unknown } | null>(null);
   const latest = useRef(0);
 
@@ -66,14 +62,10 @@ export function usePlanPreview(saved: HouseholdPlan, draft: HouseholdLevers, dir
     latest.current = id;
     const timer = window.setTimeout(() => {
       // The row previewed (phase 10 §6): its stored spending changes keep their mean_at_save.
-      const preview = (body: HouseholdLevers) =>
-        ok(api.POST("/api/household-plan/preview", { body: { levers: body, scenario_id: saved.scenario_id ?? null } }));
-      const withChanges = dirty ? preview(levers) : Promise.resolve(saved);
-      const base = (levers.spending_changes ?? []).length > 0 ? preview({ ...levers, spending_changes: [] }) : withChanges;
-      Promise.all([withChanges, base]).then(
-        ([w, b]) => {
+      ok(api.POST("/api/household-plan/preview", { body: { levers, scenario_id: saved.scenario_id ?? null } })).then(
+        (withChanges) => {
           if (id !== latest.current) return;
-          setResult({ key, withChanges: w, base: b });
+          setResult({ key, withChanges });
           setError(null);
         },
         (caught: unknown) => {
@@ -82,13 +74,12 @@ export function usePlanPreview(saved: HouseholdPlan, draft: HouseholdLevers, dir
       );
     }, DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [key, idle, dirty, saved]);
+  }, [key, idle, saved]);
 
-  if (idle) return { withChanges: saved, base: saved, error: null, pending: false };
+  if (idle) return { withChanges: saved, error: null, pending: false };
   const failed = error?.key === key ? error.error : null;
   return {
     withChanges: result?.withChanges ?? saved,
-    base: result?.base ?? null,
     error: failed,
     pending: result?.key !== key && failed == null,
   };
@@ -131,7 +122,7 @@ function hasSpending(value: string | null | undefined): boolean {
 
 /** The months of a stretch in words: „ab Juni 2027“ when it runs to the horizon, else „Juli bis
  * September 2027“ or one month. */
-function stretch(segment: RateSegment, last: string | undefined, f: PlanFormat): string {
+export function stretch(segment: RateSegment, last: string | undefined, f: PlanFormat): string {
   if (segment.to_month === last) return translate(spendingPlayText).from(f.month(segment.from_month));
   return f.monthRange([segment.from_month, segment.to_month]);
 }
@@ -623,118 +614,4 @@ function hint(played: PlayedChange, mean: string, f: PlanFormat): string {
     return t.thenBack(amount, f.monthRange([change.from_month, change.to_month]), f.money(mean));
   }
   return t.fromMonth(amount, f.month(change.from_month));
-}
-
-// --- Was eure Änderungen bewirken ---------------------------------------------------------------
-
-export function Effects({ saved, preview }: { saved: HouseholdPlan; preview: PlanPreview }) {
-  const t = useT(planning);
-  const f = usePlanFormat();
-  const now = preview.base;
-  const next = preview.withChanges;
-  const nowPlay = now?.spending_play;
-  const nextPlay = next.spending_play;
-  const months = (saved.months ?? []).map((m) => m.month);
-  const last = months[months.length - 1];
-  const segments = nextPlay?.rates ?? [];
-  const reached = (plan: HouseholdPlan | null) => {
-    if (!plan) return "…";
-    const path = (plan.paths ?? []).find((p) => p.key === "as_is");
-    if (!path) return "–";
-    return path.reached ? f.month(path.reached) : t.effectsNotIn(plan.levers.horizon_months);
-  };
-  const lastPoint = (plan: HouseholdPlan | null) => {
-    const points = plan?.projection?.points ?? [];
-    return points[points.length - 1] ?? null;
-  };
-  const nowPoint = lastPoint(now);
-  const nextPoint = lastPoint(next);
-  const year = (nextPoint ?? nowPoint)?.on.slice(0, 4);
-
-  // Phase 10 D271, in the screen only: the months before the first change are one grey stretch
-  // „wie bisher“, the stretch where a change starts is the bold one, and a stretch already begun
-  // or over says so against the plan's day.
-  const firstChange = (next.levers.spending_changes ?? []).map((c) => c.from_month).sort()[0] ?? null;
-  const today = saved.as_of.slice(0, 7);
-  const boldIndex = Math.max(
-    0,
-    firstChange ? segments.findIndex((segment) => segment.to_month >= firstChange) : 0,
-  );
-  const state = (segment: RateSegment) =>
-    segment.to_month < today ? ` (${t.over})` : segment.from_month <= today ? ` (${t.running})` : "";
-  const range = (segment: RateSegment) =>
-    segment.to_month === last ? t.from(f.month(segment.from_month)) : f.monthRange([segment.from_month, segment.to_month]);
-  const bySegment = (value: (segment: RateSegment) => string) =>
-    segments.length === 0 ? (
-      "–"
-    ) : (
-      <span className="spending-play-segments">
-        {segments.map((segment, index) => {
-          const before = firstChange !== null && segment.to_month < firstChange;
-          const label = `${before ? `${t.asBefore}, ` : ""}${range(segment)}${state(segment)}`;
-          return index === boldIndex ? (
-            <span key={segment.from_month} data-stretch="change">
-              <strong>{value(segment)}</strong> <span className="muted">{label}</span>
-            </span>
-          ) : (
-            <span key={segment.from_month} className="muted" data-stretch={before ? "before" : "after"}>
-              {label}: {value(segment)}
-            </span>
-          );
-        })}
-      </span>
-    );
-
-  return (
-    <div className="spending-play-effects stack" aria-live="polite">
-      <h3>{t.effectsTitle}</h3>
-      <p className="muted">
-        {t.effectsIntro}
-        {preview.pending ? t.effectsPending : ""}
-      </p>
-      {preview.error != null ? <ErrorNotice error={preview.error} /> : null}
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">
-                <span className="visually-hidden">{t.effectsFigure}</span>
-              </th>
-              <th scope="col">{t.effectsToday}</th>
-              <th scope="col">{t.effectsWith}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <th scope="row">{t.effectsRate}</th>
-              <td>{f.ratio(nowPlay?.rate_regular_now)}</td>
-              <td data-testid="effect-rate">{bySegment((segment) => f.ratio(segment.rate))}</td>
-            </tr>
-            <tr>
-              <th scope="row">{t.kpiInvestable}</th>
-              <td>{now ? f.money(nowPlay?.rates?.[0]?.investable) : "…"}</td>
-              <td data-testid="effect-investable">{bySegment((segment) => f.money(segment.investable))}</td>
-            </tr>
-            <tr>
-              <th scope="row">
-                {t.effectsReached}
-                <span className="muted spending-play-sub">{t.effectsReachedSub}</span>
-              </th>
-              <td>{reached(now)}</td>
-              <td>{reached(next)}</td>
-            </tr>
-            <tr>
-              <th scope="row">
-                {year ? t.effectsWorthOn(f.longDate(`${year}-12-31`)) : t.effectsWorthEnd}
-                <span className="muted spending-play-sub">{t.effectsWorthSub}</span>
-              </th>
-              <td>{now ? (nowPoint ? f.money(nowPoint.total) : "–") : "…"}</td>
-              <td>{nextPoint ? f.money(nextPoint.total) : "–"}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p className="muted">{t.effectsNote}</p>
-    </div>
-  );
 }
