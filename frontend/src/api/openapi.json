@@ -19709,7 +19709,8 @@
           "movement_group",
           "household_scenario",
           "health",
-          "plan"
+          "plan",
+          "household"
         ],
         "title": "EntityType",
         "description": "Entities that carry events. Also the prefix of every event type."
@@ -20702,7 +20703,8 @@
           "health.snapshot_stored",
           "household_scenario.created",
           "household_scenario.withdrawn",
-          "plan.explanation_stored"
+          "plan.explanation_stored",
+          "household.mark_recorded"
         ],
         "title": "EventType"
       },
