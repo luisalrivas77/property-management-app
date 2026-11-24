@@ -33,6 +33,7 @@ from hausbuch.schemas.property import AcquisitionCostCreate
 from hausbuch.schemas.recurring import (
     OneOffMarkRequest,
     RecurringInterval,
+    RecurringState,
     SeriesMarkRequest,
     SpendingMarkAnswer,
 )
@@ -155,6 +156,30 @@ def test_the_recurring_payments_and_a_series_answer(world, private):
         ]
     assert payloads and all(STREAMING.lower() not in str(p).lower() for p in payloads)
     assert all(series.key not in str(p) for p in payloads)  # never the payee's words
+
+
+def test_one_missed_payment_is_maybe_ended_once_the_account_reads_on(world, private):
+    """D296 amended (§7.9 (b) 3): a monthly series last paid 12 Feb 2027 has missed one
+    interval on 10 Apr (57 days). Active while the account's lines end before 19 Mar (the day
+    the next payment was due at the latest); maybe ended once any line on the account is later,
+    here one nobody has booked yet, which services.recurring reads by its booking date."""
+    for year, month in [(2026, m) for m in range(6, 13)] + [(2027, 1), (2027, 2)]:
+        _booked(
+            world,
+            private.line(date(year, month, 12), "-12.99", name=STREAMING),
+            "-12.99",
+            C.HH_STREAMING,
+        )
+
+    def state():
+        got = world.query(recurring.recurring_payments, TODAY)
+        (series,) = [s for s in got.series if s.last_amount == Decimal("12.99")]
+        return series.state
+
+    assert state() is RecurringState.ACTIVE
+    private.line(date(2027, 4, 1), "25.00", name="Erstattung Muster")  # not booked
+    assert world.query(recurring.accounts_through, TODAY)[private.account_id] == date(2027, 4, 1)
+    assert state() is RecurringState.MAYBE_ENDED
 
 
 def test_a_one_off_mark_moves_the_four_places_and_keeps_the_stored_month(world, private):

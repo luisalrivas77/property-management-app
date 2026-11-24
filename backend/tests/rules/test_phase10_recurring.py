@@ -11,6 +11,7 @@ from hausbuch.rules.budget import budget as B
 from hausbuch.rules.budget.differences import compared_by_group, compared_rows
 from hausbuch.rules.health.month import cashflow_rows, household_month
 from hausbuch.rules.household.cashflow import month_cashflow
+from hausbuch.rules.matching import payee, same_payee
 from hausbuch.rules.plan import spending as SP
 from hausbuch.rules.plan.surplus import mean_cent
 from hausbuch.rules.recurring import (
@@ -20,6 +21,7 @@ from hausbuch.rules.recurring import (
     one_off_ids,
     recurring,
 )
+from hausbuch.rules.recurring.series import payee_groups
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.budget import BudgetTargets
 from hausbuch.schemas.health import MonthLine
@@ -54,6 +56,7 @@ def test_recurring(case: phase10.RecurringCase):
         [SeriesMark(m.key, m.interval, m.answer) for m in case.marks],
         today=case.today,
         history_start=case.history_start,
+        accounts_through=phase10.accounts_through(case.accounts_through, case.id),
     )
     assert view.yearly_detectable is case.expect.yearly_detectable
     assert _rows(view.series) == _rows(case.expect.series)
@@ -81,6 +84,7 @@ def test_a_maybe_ended_series_is_not_counted():
         phase10.spending_lines(case.lines, case.id),
         today=case.today,
         history_start=case.history_start,
+        accounts_through=phase10.accounts_through(case.accounts_through, case.id),
     )
     assert [s.state for s in view.series] == [RecurringState.MAYBE_ENDED]
     assert view.count == 0 and view.yearly_total == 0
@@ -105,6 +109,80 @@ def test_a_rise_beyond_the_band_stays_a_price_change():
     assert series.interval is RecurringInterval.MONTHLY
     assert (series.change, series.since, series.payments) == (Decimal("10.00"), "2026-09", 11)
     assert view.yearly_detectable is False
+
+
+def _reference_groups(lines) -> set[frozenset]:
+    """payee_groups as first written: every pair of spellings through same_payee on the lines
+    themselves (the speed-up compares their words read once; the groups must not change)."""
+    by_words: dict = {}
+    first: dict = {}
+    for line in lines:
+        words = payee(line.payee, line.purpose).words
+        if words:
+            by_words.setdefault(words, []).append(line)
+            first.setdefault(words, line)
+    keys = list(by_words)
+    parent = list(range(len(keys)))
+
+    def root(i: int) -> int:
+        while parent[i] != i:
+            i = parent[i]
+        return i
+
+    for i in range(len(keys)):
+        for j in range(i + 1, len(keys)):
+            la, lb = first[keys[i]], first[keys[j]]
+            if root(i) != root(j) and same_payee(la.payee, lb.payee, la.purpose, lb.purpose):
+                parent[root(j)] = root(i)
+    groups: dict = {}
+    for i, words in enumerate(keys):
+        groups.setdefault(root(i), set()).update(li.allocation_id for li in by_words[words])
+    return {frozenset(g) for g in groups.values()}
+
+
+def test_payee_groups_equal_same_payee_pairwise():
+    names = [
+        ("PayPal Europe S.a.r.l. et Cie S.C.A", "PP.1 . Spotify AB, Ihr Einkauf bei Spotify AB"),
+        ("PayPal Europe S.a.r.l. et Cie S.C.A", "PP.2 . DisneyPlus, Ihr Einkauf bei DisneyPlus"),
+        ("PayPal Europe S.a.r.l. et Cie S.C.A", None),
+        ("SPOTIFY P1A2B3", None),
+        ("Spotify AB", None),
+        ("DisneyPlus - PayPal", None),
+        ("KAUFLAND DUESSELDORF 1234", None),
+        ("Kaufland", None),
+        ("ALDI TALK", None),
+        ("ALDI SUED", None),
+        ("ALDI", None),
+        ("BOOKINGCOMB BO MARKTPLEIN", None),
+        ("BOOKING BOOKIN MARKTPLEIN", None),
+        ("PENNY MARKT DUESSELDORF", None),
+        ("PENNYLANE PUB DUESSELDORF", None),
+        ("HOTEL AT BOOKING AMSTERDAM", None),
+        ("HOTEL AT BOOKING ROME", None),
+        ("VOLKSWAGEN AUTOVERSICHERUNG AG", None),
+        ("VOLKSWAGEN AUTOVERS AG", None),
+        ("WWW.DAZN.COM Huidekoper", None),
+        ("DAZN Limited", None),
+        ("12345", None),
+        ("", None),
+    ]
+    rows = [
+        phase10.SpendingLineIn(
+            id=f"P_{i:02d}_{k}",
+            date=date(2026, 1 + k, 3),
+            payee=name or " ",
+            purpose=purpose,
+            category="hh_streaming",
+            amount=Decimal("-9.99"),
+        )
+        for i, (name, purpose) in enumerate(names)
+        for k in range(2)
+    ]
+    for case in RECURRING:
+        rows += case.lines
+    lines = phase10.spending_lines(rows, "groups")
+    got = {frozenset(li.allocation_id for li in g) for g in payee_groups(lines)}
+    assert got == _reference_groups(lines)
 
 
 def _window(today: date) -> list[str]:

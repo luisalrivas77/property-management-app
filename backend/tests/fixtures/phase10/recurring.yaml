@@ -10,7 +10,8 @@
 # order stored (target = series key + interval, answer `hidden` or `shown`; the newest counts).
 #
 # Rules this file pins (§7.9 (b), with the details settled 24 Nov 2026 when the fixture was
-# written):
+# written, and D296 amended the same day: the cases one_missed_interval, switch_to_yearly and
+# switch_keeps_kein_abo, and `accounts_through` on `stopped`):
 # - A series is one payee as rules.matching.same_payee recognises it (D160 (4)); its key is
 #   the shortest rules.matching.payee_key among its lines, ties alphabetical.
 # - Intervals: monthly at least 3 payments, every gap 25-35 days; quarterly at least 3, gaps
@@ -21,7 +22,18 @@
 #   the month of the first payment at the new amount; `change` is new minus old.
 # - yearly_total = newest amount x 12, 4 or 1.
 # - Missed intervals = floor((today - last payment date) in days / the interval's upper gap
-#   (35, 100, 380)): 0 or 1 `active`, 2 `maybe_ended`, 3 or more left out of every list.
+#   (35, 100, 380)); 3 or more left out of every list. Below 3 (D296 amended 24 Nov 2026,
+#   Luis): `maybe_ended` when missed >= 1 and the account of the newest payment has a line
+#   dated after last payment + upper gap, else `active` (two missed intervals on an account
+#   whose lines end before that day read as active). An account's lines: the case's lines on
+#   it and `accounts_through` (the newest line the case leaves out: income, transfers).
+#   A line's `account` defaults to `giro`.
+# - A switch to yearly (D296 amended 24 Nov 2026): a monthly series' newest payment L (amount
+#   a) followed by exactly one payment P of the payee with 8a <= P <= 13a dated 1-70 days
+#   after L, and by no payment within 25 % of a after L: interval yearly, last amount and
+#   yearly total P, no price change, payments the monthly ones plus P, missed and state from
+#   P with the gap 380, the key the monthly payments'. A mark on the key counts across monthly
+#   and yearly for such a series, the newest in stored order deciding.
 # - `yearly_detectable` is false while today - history_start < 350 days (the card's note).
 # - A `hidden` series (newest mark per key+interval is `hidden`) is listed under `hidden`, not
 #   `series`; a mark whose key+interval matches no series is ignored.
@@ -119,7 +131,7 @@ cases:
     - {key: 'RUNDFUNK ARD ZDF DEUTSCHLANDRADIO', interval: quarterly, state: active, last_amount: '55.08', yearly_total: '220.32', change: null, since: null, payments: 4}
     hidden: []
 - id: stopped
-  description: "last paid 5 Sep (80 days: two intervals missed, maybe ended) and 10 Jul (137 days: three missed, left out)"
+  description: "last paid 5 Sep (80 days: two intervals missed, maybe ended, the account's lines reaching 20 Nov) and 10 Jul (137 days: three missed, left out)"
   today: '2026-11-24'
   history_start: '2026-01-01'
   lines:
@@ -139,6 +151,7 @@ cases:
   - {id: 'OLD_05', date: '2026-05-10', payee: 'Altabo Service GmbH', category: 'hh_subscriptions', amount: '-4.99'}
   - {id: 'OLD_06', date: '2026-06-10', payee: 'Altabo Service GmbH', category: 'hh_subscriptions', amount: '-4.99'}
   - {id: 'OLD_07', date: '2026-07-10', payee: 'Altabo Service GmbH', category: 'hh_subscriptions', amount: '-4.99'}
+  accounts_through: {giro: '2026-11-20'}
   marks: []
   expect:
     yearly_detectable: false
@@ -239,3 +252,102 @@ cases:
     series:
     - {key: 'HUK COBURG VERSICHERUNG', interval: yearly, state: active, last_amount: '438.50', yearly_total: '438.50', change: '26.50', since: '2026-01', payments: 2}
     hidden: []
+- id: one_missed_interval
+  description: "D296 amended (1): one interval missed (28 Sep, 57 days) on an account whose lines reach 20 Nov is maybe ended; one missed (26 Sep, 59 days) on a card whose lines end 30 Sep stays active (its October statement is not in yet)"
+  today: '2026-11-24'
+  history_start: '2026-01-01'
+  lines:
+  - {id: 'HBS_01', date: '2026-01-28', payee: 'Hörbuch Service GmbH', category: 'hh_music_audio', amount: '-12.49'}
+  - {id: 'HBS_02', date: '2026-02-28', payee: 'Hörbuch Service GmbH', category: 'hh_music_audio', amount: '-12.49'}
+  - {id: 'HBS_03', date: '2026-03-28', payee: 'Hörbuch Service GmbH', category: 'hh_music_audio', amount: '-12.49'}
+  - {id: 'HBS_04', date: '2026-04-28', payee: 'Hörbuch Service GmbH', category: 'hh_music_audio', amount: '-12.49'}
+  - {id: 'HBS_05', date: '2026-05-28', payee: 'Hörbuch Service GmbH', category: 'hh_music_audio', amount: '-12.49'}
+  - {id: 'HBS_06', date: '2026-06-28', payee: 'Hörbuch Service GmbH', category: 'hh_music_audio', amount: '-12.49'}
+  - {id: 'HBS_07', date: '2026-07-28', payee: 'Hörbuch Service GmbH', category: 'hh_music_audio', amount: '-12.49'}
+  - {id: 'HBS_08', date: '2026-08-28', payee: 'Hörbuch Service GmbH', category: 'hh_music_audio', amount: '-12.49'}
+  - {id: 'HBS_09', date: '2026-09-28', payee: 'Hörbuch Service GmbH', category: 'hh_music_audio', amount: '-12.49'}
+  - {id: 'CLS_01', date: '2026-01-26', payee: 'Cloudspeicher Muster AG', category: 'hh_subscriptions', amount: '-7.99', account: karte}
+  - {id: 'CLS_02', date: '2026-02-26', payee: 'Cloudspeicher Muster AG', category: 'hh_subscriptions', amount: '-7.99', account: karte}
+  - {id: 'CLS_03', date: '2026-03-26', payee: 'Cloudspeicher Muster AG', category: 'hh_subscriptions', amount: '-7.99', account: karte}
+  - {id: 'CLS_04', date: '2026-04-26', payee: 'Cloudspeicher Muster AG', category: 'hh_subscriptions', amount: '-7.99', account: karte}
+  - {id: 'CLS_05', date: '2026-05-26', payee: 'Cloudspeicher Muster AG', category: 'hh_subscriptions', amount: '-7.99', account: karte}
+  - {id: 'CLS_06', date: '2026-06-26', payee: 'Cloudspeicher Muster AG', category: 'hh_subscriptions', amount: '-7.99', account: karte}
+  - {id: 'CLS_07', date: '2026-07-26', payee: 'Cloudspeicher Muster AG', category: 'hh_subscriptions', amount: '-7.99', account: karte}
+  - {id: 'CLS_08', date: '2026-08-26', payee: 'Cloudspeicher Muster AG', category: 'hh_subscriptions', amount: '-7.99', account: karte}
+  - {id: 'CLS_09', date: '2026-09-26', payee: 'Cloudspeicher Muster AG', category: 'hh_subscriptions', amount: '-7.99', account: karte}
+  - {id: 'PIZ_01', date: '2026-09-30', payee: 'Pizzeria Sole', category: 'hh_restaurant', amount: '-23.50', account: karte}
+  accounts_through: {giro: '2026-11-20'}
+  marks: []
+  expect:
+    yearly_detectable: false
+    series:
+    - {key: 'HOERBUCH SERVICE GMBH', interval: monthly, state: maybe_ended, last_amount: '12.49', yearly_total: '149.88', change: null, since: null, payments: 9}
+    - {key: 'CLOUDSPEICHER MUSTER AG', interval: monthly, state: active, last_amount: '7.99', yearly_total: '95.88', change: null, since: null, payments: 9}
+    hidden: []
+- id: switch_to_yearly
+  description: "D296 amended (2): monthly 29.99 until 2 Sep, then one 299.99 (10 x) on 5 Oct from the card is a switch to yearly, active from 5 Oct; a 74.70 (3 x) after a monthly 24.90 stopped on 10 Sep is no switch, the monthly series maybe ended (75 days, the account's lines reach 20 Nov)"
+  today: '2026-11-24'
+  history_start: '2026-01-01'
+  lines:
+  - {id: 'SPK_01', date: '2026-01-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_02', date: '2026-02-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_03', date: '2026-03-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_04', date: '2026-04-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_05', date: '2026-05-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_06', date: '2026-06-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_07', date: '2026-07-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_08', date: '2026-08-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_09', date: '2026-09-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_Y1', date: '2026-10-05', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-299.99', account: karte}
+  - {id: 'FNC_01', date: '2026-01-10', payee: 'Fitnessclub Nord GmbH', category: 'hh_sport', amount: '-24.90'}
+  - {id: 'FNC_02', date: '2026-02-10', payee: 'Fitnessclub Nord GmbH', category: 'hh_sport', amount: '-24.90'}
+  - {id: 'FNC_03', date: '2026-03-10', payee: 'Fitnessclub Nord GmbH', category: 'hh_sport', amount: '-24.90'}
+  - {id: 'FNC_04', date: '2026-04-10', payee: 'Fitnessclub Nord GmbH', category: 'hh_sport', amount: '-24.90'}
+  - {id: 'FNC_05', date: '2026-05-10', payee: 'Fitnessclub Nord GmbH', category: 'hh_sport', amount: '-24.90'}
+  - {id: 'FNC_06', date: '2026-06-10', payee: 'Fitnessclub Nord GmbH', category: 'hh_sport', amount: '-24.90'}
+  - {id: 'FNC_07', date: '2026-07-10', payee: 'Fitnessclub Nord GmbH', category: 'hh_sport', amount: '-24.90'}
+  - {id: 'FNC_08', date: '2026-08-10', payee: 'Fitnessclub Nord GmbH', category: 'hh_sport', amount: '-24.90'}
+  - {id: 'FNC_09', date: '2026-09-10', payee: 'Fitnessclub Nord GmbH', category: 'hh_sport', amount: '-24.90'}
+  - {id: 'FNC_X1', date: '2026-10-01', payee: 'Fitnessclub Nord GmbH', category: 'hh_sport', amount: '-74.70'}
+  accounts_through: {giro: '2026-11-20'}
+  marks: []
+  expect:
+    yearly_detectable: false
+    series:
+    - {key: 'SPRACHKURS ONLINE GMBH', interval: yearly, state: active, last_amount: '299.99', yearly_total: '299.99', change: null, since: null, payments: 10}
+    - {key: 'FITNESSCLUB NORD GMBH', interval: monthly, state: maybe_ended, last_amount: '24.90', yearly_total: '298.80', change: null, since: null, payments: 9}
+    hidden: []
+- id: switch_keeps_kein_abo
+  description: "D296 amended (2): „kein Abo“ given on the monthly series before the switch keeps the yearly one hidden; a „Wieder anzeigen“ given on the yearly row after a monthly hide shows it (the newest answer across both intervals counts)"
+  today: '2026-11-24'
+  history_start: '2026-01-01'
+  lines:
+  - {id: 'SPK_01', date: '2026-01-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_02', date: '2026-02-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_03', date: '2026-03-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_04', date: '2026-04-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_05', date: '2026-05-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_06', date: '2026-06-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_07', date: '2026-07-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_08', date: '2026-08-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_09', date: '2026-09-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_Y1', date: '2026-10-05', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-299.99', account: karte}
+  - {id: 'LPM_01', date: '2026-01-05', payee: 'Lernportal Muster GmbH', category: 'hh_subscriptions', amount: '-19.99'}
+  - {id: 'LPM_02', date: '2026-02-05', payee: 'Lernportal Muster GmbH', category: 'hh_subscriptions', amount: '-19.99'}
+  - {id: 'LPM_03', date: '2026-03-05', payee: 'Lernportal Muster GmbH', category: 'hh_subscriptions', amount: '-19.99'}
+  - {id: 'LPM_04', date: '2026-04-05', payee: 'Lernportal Muster GmbH', category: 'hh_subscriptions', amount: '-19.99'}
+  - {id: 'LPM_05', date: '2026-05-05', payee: 'Lernportal Muster GmbH', category: 'hh_subscriptions', amount: '-19.99'}
+  - {id: 'LPM_06', date: '2026-06-05', payee: 'Lernportal Muster GmbH', category: 'hh_subscriptions', amount: '-19.99'}
+  - {id: 'LPM_07', date: '2026-07-05', payee: 'Lernportal Muster GmbH', category: 'hh_subscriptions', amount: '-19.99'}
+  - {id: 'LPM_08', date: '2026-08-05', payee: 'Lernportal Muster GmbH', category: 'hh_subscriptions', amount: '-19.99'}
+  - {id: 'LPM_Y1', date: '2026-09-20', payee: 'Lernportal Muster GmbH', category: 'hh_subscriptions', amount: '-199.99', account: karte}
+  marks:
+  - {key: 'SPRACHKURS ONLINE GMBH', interval: monthly, answer: hidden}
+  - {key: 'LERNPORTAL MUSTER GMBH', interval: monthly, answer: hidden}
+  - {key: 'LERNPORTAL MUSTER GMBH', interval: yearly, answer: shown}
+  expect:
+    yearly_detectable: false
+    series:
+    - {key: 'LERNPORTAL MUSTER GMBH', interval: yearly, state: active, last_amount: '199.99', yearly_total: '199.99', change: null, since: null, payments: 9}
+    hidden:
+    - {key: 'SPRACHKURS ONLINE GMBH', interval: yearly, state: active, last_amount: '299.99', yearly_total: '299.99', change: null, since: null, payments: 10}

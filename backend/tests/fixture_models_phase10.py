@@ -215,17 +215,30 @@ class SpendingLineIn(Schema):
     purpose: str | None = None
     category: AllocationCategory
     amount: Money  # signed as on the account, money out negative
+    account: str = "giro"  # the account's name in the case (D296 amended: its lines' reach)
+
+
+def account_id(case_id: str, name: str) -> UUID:
+    """A case's account by its name; `giro` keeps the id every case had before accounts were
+    named."""
+    if name == "giro":
+        return uuid5(NAMESPACE_URL, f"{case_id}:account")
+    return uuid5(NAMESPACE_URL, f"{case_id}:account:{name}")
+
+
+def accounts_through(through: dict[str, date], case_id: str) -> dict[UUID, date]:
+    """A case's `accounts_through` keyed by the accounts' ids, as rules.recurring reads it."""
+    return {account_id(case_id, name): day for name, day in through.items()}
 
 
 def spending_lines(rows: list[SpendingLineIn], case_id: str) -> list[SpendingLine]:
     """The fixture's lines as rules.recurring's input, each id an allocation id by uuid5."""
-    account = uuid5(NAMESPACE_URL, f"{case_id}:account")
     return [
         SpendingLine(
             allocation_id=fixture_id(row.id),
             transaction_id=uuid5(NAMESPACE_URL, f"{case_id}:transaction:{row.id}"),
-            account_id=account,
-            account_label="Girokonto",
+            account_id=account_id(case_id, row.account),
+            account_label="Girokonto" if row.account == "giro" else row.account,
             booked_on=row.date,
             payee=row.payee,
             purpose=row.purpose,
@@ -267,6 +280,8 @@ class RecurringCase(Lenient):
     today: date
     history_start: date
     lines: list[SpendingLineIn]
+    # the newest line on an account that `lines` leave out (income, transfers), by name
+    accounts_through: dict[str, date] = Field(default_factory=dict)
     marks: list[SeriesMarkIn] = Field(default_factory=list)
     expect: RecurringExpect
 

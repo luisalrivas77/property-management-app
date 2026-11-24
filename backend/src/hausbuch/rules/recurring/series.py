@@ -19,22 +19,33 @@ services.health.rule_version() does not change with it.
   at least 0.50 € from the amount before them, stay in the series even outside the band.
 - **A price change**: those newest payments; `change` = new − old, `since` = the month of
   the first payment at the new amount. yearly_total = the newest amount × 12, 4 or 1.
-- **State**: missed = (today − last payment) in days ÷ the interval's upper gap, rounded
-  down; 0 or 1 `active`, 2 `maybe_ended`, 3 or more left out of every list.
-- **„Kein Abo“**: the newest answer per (key, interval) decides; `hidden` lists the series
-  under `hidden`, `shown` (or none) under `series`; an answer matching no series is ignored,
-  so a changed payee key shows the series again (a failure that shows, never one that hides).
+- **State** (D296 amended 24 Nov 2026, Luis): missed = (today − last payment) in days ÷ the
+  interval's upper gap, rounded down; 3 or more left out of every list. Below that
+  `maybe_ended` when missed ≥ 1 and the account of the newest payment has a line dated after
+  last payment + upper gap (its reach: the newest of the lines given on it and
+  `accounts_through`, any line, whatever its sign or code), else `active`: a card whose
+  statement is not in yet makes nothing look ended.
+- **A switch to yearly** (D296 amended 24 Nov 2026): a monthly series' newest payment L
+  (amount a) followed among the group's lines by exactly one payment P with 8a ≤ P ≤ 13a
+  dated 1–70 days after L, and by no payment within 25 % of a after L, is one yearly series:
+  its payments the monthly ones plus P, last amount and yearly total P's, no price change,
+  missed and state from P with the yearly gap; its key and label the monthly payments'.
+- **„Kein Abo“**: the newest answer per (key, interval) decides, for a switched series the
+  newest across monthly and yearly; `hidden` lists the series under `hidden`, `shown` (or
+  none) under `series`; an answer matching no series is ignored, so a changed payee key shows
+  the series again (a failure that shows, never one that hides).
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
+from functools import lru_cache
 from statistics import median
 from uuid import UUID
 
 from hausbuch.rules.budget.budget import is_spending
-from hausbuch.rules.matching import payee, payee_key, same_payee
+from hausbuch.rules.matching import Payee, payee, same_words
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.health import GroupPayment
 from hausbuch.schemas.recurring import (
@@ -50,7 +61,9 @@ BAND = Decimal("0.25")
 MIN_CHANGE = Decimal("0.50")
 YEARLY_HISTORY_DAYS = 350
 LEFT_OUT_AFTER = 3  # missed intervals
-MAYBE_ENDED_AT = 2
+MAYBE_ENDED_AT = 1  # and the account's lines reach past the due day (D296 amended)
+SWITCH_MIN, SWITCH_MAX = 8, 13  # a yearly payment, × the monthly amount
+SWITCH_GAPS = 2  # within two monthly upper gaps after the last monthly payment
 
 
 @dataclass(frozen=True)
@@ -63,11 +76,10 @@ class Rhythm:
     change_run: int  # the newest payments at one amount that make a price change
 
 
-RHYTHMS = (
-    Rhythm(RecurringInterval.MONTHLY, 3, 25, 35, 12, 2),
-    Rhythm(RecurringInterval.QUARTERLY, 3, 80, 100, 4, 1),
-    Rhythm(RecurringInterval.YEARLY, 2, 350, 380, 1, 1),
-)
+MONTHLY = Rhythm(RecurringInterval.MONTHLY, 3, 25, 35, 12, 2)
+QUARTERLY = Rhythm(RecurringInterval.QUARTERLY, 3, 80, 100, 4, 1)
+YEARLY = Rhythm(RecurringInterval.YEARLY, 2, 350, 380, 1, 1)
+RHYTHMS = (MONTHLY, QUARTERLY, YEARLY)
 
 
 @dataclass(frozen=True)
@@ -120,6 +132,7 @@ class Found:
     missed: int
     change: Decimal | None
     since: str | None
+    switched: bool = False  # a monthly series switched to yearly (D296 amended)
 
     @property
     def last(self) -> SpendingLine:
@@ -140,17 +153,23 @@ def counted(line: SpendingLine) -> bool:
     )
 
 
+@lru_cache(maxsize=4096)
+def _payee(name: str | None, purpose: str | None) -> Payee:
+    """rules.matching.payee, read once per spelling: payee_groups compares every pair of
+    spellings, and _key and _label read the payee again (pure, so a cache changes no answer)."""
+    return payee(name, purpose)
+
+
 def payee_groups(lines: Iterable[SpendingLine]) -> list[list[SpendingLine]]:
     """The lines grouped by one payee (same_payee, closed transitively), each group oldest
-    first. A line without a payee key is in no group."""
+    first. A line without a payee key is in no group. Two spellings are compared on their
+    words (same_words), which is same_payee on the lines that carry them."""
     by_words: dict[tuple[str, ...], list[SpendingLine]] = {}
-    first: dict[tuple[str, ...], SpendingLine] = {}
     for line in lines:
-        words = payee(line.payee, line.purpose).words
+        words = _payee(line.payee, line.purpose).words
         if not words:
             continue
         by_words.setdefault(words, []).append(line)
-        first.setdefault(words, line)
     keys = list(by_words)
     parent = list(range(len(keys)))
 
@@ -161,10 +180,8 @@ def payee_groups(lines: Iterable[SpendingLine]) -> list[list[SpendingLine]]:
         return i
 
     for i, a in enumerate(keys):
-        la = first[a]
         for j in range(i + 1, len(keys)):
-            lb = first[keys[j]]
-            if root(i) != root(j) and same_payee(la.payee, lb.payee, la.purpose, lb.purpose):
+            if root(i) != root(j) and same_words(a, keys[j]):
                 parent[root(j)] = root(i)
     groups: dict[int, list[SpendingLine]] = {}
     for i, words in enumerate(keys):
@@ -175,13 +192,13 @@ def payee_groups(lines: Iterable[SpendingLine]) -> list[list[SpendingLine]]:
 
 
 def _key(lines: Sequence[SpendingLine]) -> str:
-    keys = {payee_key(li.payee, li.purpose) for li in lines}
+    keys = {" ".join(_payee(li.payee, li.purpose).words) for li in lines}
     return min((k for k in keys if k), key=lambda k: (len(k), k))
 
 
 def _label(line: SpendingLine) -> str:
     """The name the card shows: a payment service's merchant, else the payee as printed."""
-    found = payee(line.payee, line.purpose)
+    found = _payee(line.payee, line.purpose)
     return found.merchant or (line.payee or "").strip() or " ".join(found.words)
 
 
@@ -232,6 +249,23 @@ def _series(group: Sequence[SpendingLine], rhythm: Rhythm) -> list[SpendingLine]
     return kept if _in_rhythm(kept, rhythm) else None
 
 
+def _switch(group: Sequence[SpendingLine], kept: Sequence[SpendingLine]) -> SpendingLine | None:
+    """The one yearly payment P a monthly series switched to (see the module), else None."""
+    last = kept[-1]
+    a = -last.amount
+    after = [li for li in group if li.booked_on > last.booked_on]
+    if any(abs(-li.amount - a) <= a * BAND for li in after):
+        return None
+    window = SWITCH_GAPS * MONTHLY.max_gap
+    yearly = [
+        li
+        for li in after
+        if SWITCH_MIN * a <= -li.amount <= SWITCH_MAX * a
+        and (li.booked_on - last.booked_on).days <= window
+    ]
+    return yearly[0] if len(yearly) == 1 else None
+
+
 def find(lines: Iterable[SpendingLine], today: date) -> list[Found]:
     """Every series in the lines, the left-out ones included (one-off candidates are never
     a series' payment, whatever its state)."""
@@ -241,6 +275,21 @@ def find(lines: Iterable[SpendingLine], today: date) -> list[Found]:
             kept = _series(group, rhythm)
             if kept is None:
                 continue
+            paid = _switch(group, kept) if rhythm is MONTHLY else None
+            if paid is not None:
+                out.append(
+                    Found(
+                        key=_key(kept),
+                        label=_label(kept[-1]),
+                        rhythm=YEARLY,
+                        lines=(*kept, paid),
+                        missed=(today - paid.booked_on).days // YEARLY.max_gap,
+                        change=None,
+                        since=None,
+                        switched=True,
+                    )
+                )
+                break
             change = _price_change(kept, rhythm)
             out.append(
                 Found(
@@ -259,22 +308,57 @@ def find(lines: Iterable[SpendingLine], today: date) -> list[Found]:
 
 def newest_series_marks(
     marks: Iterable[SeriesMark],
-) -> dict[tuple[str, RecurringInterval], SpendingMarkAnswer]:
-    out: dict[tuple[str, RecurringInterval], SpendingMarkAnswer] = {}
-    for mark in marks:
-        out[(mark.key, mark.interval)] = mark.answer
+) -> dict[tuple[str, RecurringInterval], tuple[int, SpendingMarkAnswer]]:
+    """The newest answer per (key, interval), with its place in the stored order."""
+    out: dict[tuple[str, RecurringInterval], tuple[int, SpendingMarkAnswer]] = {}
+    for i, mark in enumerate(marks):
+        out[(mark.key, mark.interval)] = (i, mark.answer)
     return out
 
 
-def _shown(found: Found, *, with_lines: bool) -> RecurringSeries:
+def _answer(
+    found: Found, answers: Mapping[tuple[str, RecurringInterval], tuple[int, SpendingMarkAnswer]]
+) -> SpendingMarkAnswer | None:
+    """The answer that counts for a series: per its interval, for a switched series the newest
+    across monthly and yearly."""
+    intervals = (
+        (RecurringInterval.MONTHLY, RecurringInterval.YEARLY)
+        if found.switched
+        else (found.rhythm.interval,)
+    )
+    given = [answers[(found.key, i)] for i in intervals if (found.key, i) in answers]
+    return max(given, key=lambda g: g[0])[1] if given else None
+
+
+def reach(
+    lines: Iterable[SpendingLine], accounts_through: Mapping[UUID, date] | None = None
+) -> dict[UUID, date]:
+    """Per account the date its lines reach: the newest of the lines given on it and
+    `accounts_through` (the newest line the caller knows of, whatever its kind)."""
+    out = dict(accounts_through or {})
+    for line in lines:
+        if line.account_id not in out or line.booked_on > out[line.account_id]:
+            out[line.account_id] = line.booked_on
+    return out
+
+
+def state(found: Found, reached: Mapping[UUID, date]) -> RecurringState:
+    """`maybe_ended` when an interval is missed and the account of the newest payment has a
+    line after the day it was due at the latest, else `active` (D296 amended)."""
+    due = found.last.booked_on + timedelta(days=found.rhythm.max_gap)
+    through = reached.get(found.last.account_id)
+    if found.missed >= MAYBE_ENDED_AT and through is not None and through > due:
+        return RecurringState.MAYBE_ENDED
+    return RecurringState.ACTIVE
+
+
+def _shown(found: Found, reached: Mapping[UUID, date], *, with_lines: bool) -> RecurringSeries:
     last = -found.last.amount
     return RecurringSeries(
         key=found.key,
         label=found.label,
         interval=found.rhythm.interval,
-        state=RecurringState.ACTIVE
-        if found.missed < MAYBE_ENDED_AT
-        else RecurringState.MAYBE_ENDED,
+        state=state(found, reached),
         last_amount=last,
         last_on=found.last.booked_on,
         yearly_total=last * found.rhythm.per_year,
@@ -297,16 +381,21 @@ def recurring(
     today: date,
     history_start: date | None,
     with_lines: bool = True,
+    accounts_through: Mapping[UUID, date] | None = None,
 ) -> RecurringPayments:
-    """§7.9 (b): the series shown and hidden as of `today` (see the module)."""
+    """§7.9 (b): the series shown and hidden as of `today` (see the module).
+    `accounts_through`: per account the newest line the caller knows of (any line imported on
+    it), which the state reads beside the lines given."""
+    lines = list(lines)
+    reached = reach(lines, accounts_through)
     answers = newest_series_marks(marks)
     shown: list[RecurringSeries] = []
     hidden: list[RecurringSeries] = []
     for found in find(lines, today):
         if not found.listed:
             continue
-        row = _shown(found, with_lines=with_lines)
-        answer = answers.get((found.key, found.rhythm.interval))
+        row = _shown(found, reached, with_lines=with_lines)
+        answer = _answer(found, answers)
         (hidden if answer is SpendingMarkAnswer.HIDDEN else shown).append(row)
     shown.sort(key=_order)
     hidden.sort(key=_order)

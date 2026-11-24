@@ -16,7 +16,11 @@
 //   closed months the read lists nothing and every POST is a 404: then nothing is shown. A 404
 //   after the list was shown (the payment left the window, or it was booked again) reloads the
 //   list and says so in a plain sentence.
-import { type ReactNode, useCallback, useState } from "react";
+// - Every answer shows at once (optimistic, Luis 24 Nov 2026): the row takes its new state before
+//   the POST, only that row waits for its POST (a double tap on it is ignored, the other rows stay
+//   clickable), and a failure puts that row back as it was and shows the error. The reads are asked
+//   again afterwards as before.
+import { type ReactNode, useCallback, useRef, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import { ApiError } from "@/api/errors";
@@ -105,6 +109,14 @@ async function postSeriesMark(series: RecurringSeries, answer: "hidden" | "shown
   await ok(api.POST("/api/household/recurring-marks", { body: { key: series.key, interval: series.interval, answer } }));
 }
 
+/** A copy of `ids` with `id` in it (`on`) or not. */
+function withId(ids: ReadonlySet<string>, id: string, on: boolean): ReadonlySet<string> {
+  const next = new Set(ids);
+  if (on) next.add(id);
+  else next.delete(id);
+  return next;
+}
+
 // --- (b) the recurring payments ----------------------------------------------------------------
 
 export interface RecurringView {
@@ -146,6 +158,7 @@ export function useRecurringPayments(backLabel: string): RecurringView {
       panel = (
         <DetailPanel title={series.label} backLabel={t.recurringTitle} onClose={() => list.open(foundHidden ? HIDDEN : ALL)}>
           <SeriesPanel
+            key={seriesId(series)}
             series={series}
             hidden={foundHidden !== undefined}
             onDone={() => {
@@ -295,11 +308,15 @@ function ListPanel({
   );
 }
 
-function SeriesPanel({ series, hidden, onDone }: { series: RecurringSeries; hidden: boolean; onDone: () => void }) {
+function SeriesPanel({ series, hidden: hiddenRead, onDone }: { series: RecurringSeries; hidden: boolean; onDone: () => void }) {
   const t = useT(catalogue);
   const f = useFormat();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  // The answer just given, shown at once; null while none is in flight or after it failed.
+  const [given, setGiven] = useState<"hidden" | "shown" | null>(null);
+  const inFlight = useRef(false); // a double tap is ignored before the button is disabled
+  const hidden = given === null ? hiddenRead : given === "hidden";
   const lines = [...(series.lines ?? [])].reverse(); // newest first
   const first = series.lines?.[0]?.booked_on;
   const category = lines[0]?.category;
@@ -309,14 +326,20 @@ function SeriesPanel({ series, hidden, onDone }: { series: RecurringSeries; hidd
   );
 
   async function answer(next: "hidden" | "shown") {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    const before = given;
+    setGiven(next);
     setBusy(true);
     setError(null);
     try {
       await postSeriesMark(series, next);
       onDone();
     } catch (caught) {
+      setGiven(before);
       setError(caught);
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
@@ -369,19 +392,29 @@ function SeriesPanel({ series, hidden, onDone }: { series: RecurringSeries; hidd
 function HiddenPanel({ hidden, state }: { hidden: RecurringSeries[]; state: Loaded<RecurringPayments> }) {
   const t = useT(catalogue);
   const f = useFormat();
-  const [busy, setBusy] = useState<string | null>(null);
+  // Per row: the POST in flight, and the series shown again before the reload brings it back.
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
+  const inFlight = useRef(new Set<string>()); // a double tap is ignored before the row is disabled
+  const [shownNow, setShownNow] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState<unknown>(null);
+  const rows = hidden.filter((s) => !shownNow.has(seriesId(s)));
 
   async function show(series: RecurringSeries) {
-    setBusy(seriesId(series));
+    const id = seriesId(series);
+    if (inFlight.current.has(id)) return;
+    inFlight.current.add(id);
+    setBusy((previous) => withId(previous, id, true));
+    setShownNow((previous) => withId(previous, id, true));
     setError(null);
     try {
       await postSeriesMark(series, "shown");
       state.reload();
     } catch (caught) {
+      setShownNow((previous) => withId(previous, id, false));
       setError(caught);
     } finally {
-      setBusy(null);
+      inFlight.current.delete(id);
+      setBusy((previous) => withId(previous, id, false));
     }
   }
 
@@ -389,11 +422,11 @@ function HiddenPanel({ hidden, state }: { hidden: RecurringSeries[]; state: Load
     <div className="stack recurring-panel">
       <p className="muted">{t.hiddenIntro}</p>
       {error != null ? <ErrorNotice error={error} /> : null}
-      {hidden.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="muted">{t.hiddenNone}</p>
       ) : (
         <ul className="detail-rows">
-          {hidden.map((s) => (
+          {rows.map((s) => (
             <li key={seriesId(s)}>
               <div className="detail-row recurring-panel-row">
                 <span className="detail-row-text">
@@ -405,7 +438,7 @@ function HiddenPanel({ hidden, state }: { hidden: RecurringSeries[]; state: Load
                 <button
                   type="button"
                   className="secondary"
-                  disabled={busy !== null}
+                  disabled={busy.has(seriesId(s))}
                   aria-label={t.showAria(s.label)}
                   onClick={() => void show(s)}
                 >
@@ -533,25 +566,38 @@ function OneOffPanel({
 }) {
   const t = useT(catalogue);
   const f = useFormat();
-  const [busy, setBusy] = useState<string | null>(null);
+  // Per row: the POST in flight, and the answer just given, shown at once (before the POST) and
+  // kept until the reload brings it back from the server.
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
+  const inFlight = useRef(new Set<string>()); // a double tap is ignored before the row is disabled
   const [error, setError] = useState<unknown>(null);
-  // The answer just given, shown at once until the reload brings it back from the server.
   const [given, setGiven] = useState<Record<string, "one_off" | "regular">>({});
   const items = ordered(data);
 
   async function answer(candidate: OneOffCandidate, next: "one_off" | "regular") {
     const id = candidate.payment.allocation_id;
-    setBusy(id);
+    if (inFlight.current.has(id)) return;
+    inFlight.current.add(id);
+    const before = given[id];
+    setBusy((previous) => withId(previous, id, true));
+    setGiven((previous) => ({ ...previous, [id]: next }));
     setError(null);
     try {
       await ok(api.POST("/api/household/one-off-marks", { body: { allocation_id: id, answer: next } }));
-      setGiven((previous) => ({ ...previous, [id]: next }));
       onAnswered();
     } catch (caught) {
+      // That row as it was: its earlier answer given here, else the server's.
+      setGiven((previous) => {
+        const rest = { ...previous };
+        if (before === undefined) delete rest[id];
+        else rest[id] = before;
+        return rest;
+      });
       if (caught instanceof ApiError && caught.status === 404) onGone();
       else setError(caught);
     } finally {
-      setBusy(null);
+      inFlight.current.delete(id);
+      setBusy((previous) => withId(previous, id, false));
     }
   }
 
@@ -570,7 +616,9 @@ function OneOffPanel({
         <ul className="detail-rows">
           {items.map((c) => {
             const id = c.payment.allocation_id;
-            const current = c.answer === "one_off" || c.answer === "regular" ? c.answer : (given[id] ?? null);
+            const read = c.answer === "one_off" || c.answer === "regular" ? c.answer : null;
+            const current = given[id] ?? read;
+            const waiting = busy.has(id);
             const label = paymentLabel(c);
             const sub = [f.date(c.payment.booked_on), categoryLabel(c.payment.category), isPositive(c.code_median) ? t.otherwise(f.money(c.code_median)) : null].filter(
               (part): part is string => part !== null,
@@ -589,7 +637,7 @@ function OneOffPanel({
                     type="button"
                     className={current === "one_off" ? undefined : "secondary"}
                     aria-pressed={current === "one_off"}
-                    disabled={busy !== null}
+                    disabled={waiting}
                     onClick={() => void answer(c, "one_off")}
                   >
                     {t.yesOneOff}
@@ -598,7 +646,7 @@ function OneOffPanel({
                     type="button"
                     className={current === "regular" ? undefined : "secondary"}
                     aria-pressed={current === "regular"}
-                    disabled={busy !== null}
+                    disabled={waiting}
                     onClick={() => void answer(c, "regular")}
                   >
                     {t.noRegular}

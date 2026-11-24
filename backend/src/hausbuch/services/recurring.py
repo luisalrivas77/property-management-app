@@ -8,7 +8,9 @@ confirmed private lines; the only stored input is a person's answers (services.s
   recode applied by rules.health.month.cashflow_rows, the one place it lives).
 - **GET /household/recurring**: rules.recurring.recurring over those lines and the series
   answers, as of `today` (Berlin). A series' state and the yearly detection read the day, so
-  the kept answer's key (it holds the Berlin day, §7.4) covers it.
+  the kept answer's key (it holds the Berlin day, §7.4) covers it. The state also reads how
+  far each private account's lines reach (D296 amended 24 Nov 2026): the newest booking date
+  of any line on it that is no duplicate, up to `today`, whatever its status or sign.
 - **GET /household/one-off-candidates**: the window is phase 9's closed months (D231, the
   key figures' window, read by services.health.closed_month_facts); the candidates are
   rules.recurring.candidates over the lines up to `today` (a series is found over all of
@@ -18,8 +20,9 @@ confirmed private lines; the only stored input is a person's answers (services.s
 
 from datetime import date
 from decimal import Decimal
+from uuid import UUID
 
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection, func, select
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
@@ -89,6 +92,18 @@ def spending_lines(conn: Connection, today: date) -> list[SpendingLine]:
     return out
 
 
+def accounts_through(conn: Connection, today: date) -> dict[UUID, date]:
+    """Per private account the newest booking date of a line on it from HISTORY_START to
+    `today`, any line that is no duplicate (see the module)."""
+    t = transaction_table.c
+    rows = conn.execute(
+        select(t.account_id, func.max(t.booking_date))
+        .where(t.id.in_(_private_lines(HISTORY_START, today).scalar_subquery()))
+        .group_by(t.account_id)
+    )
+    return {account_id: day for account_id, day in rows}
+
+
 def recurring_payments(conn: Connection, today: date) -> RecurringPayments:
     """GET /household/recurring (see the module)."""
     return recurring(
@@ -96,6 +111,7 @@ def recurring_payments(conn: Connection, today: date) -> RecurringPayments:
         series_marks(conn),
         today=today,
         history_start=HISTORY_START,
+        accounts_through=accounts_through(conn, today),
     )
 
 
