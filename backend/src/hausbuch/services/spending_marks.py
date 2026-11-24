@@ -20,19 +20,18 @@
 Nothing here changes a stored figure: no month is rewritten (§7.9 (c) 3).
 """
 
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import Connection, func, insert, select
 
-from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import spending_mark as mark_table
-from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.rules.budget.budget import is_spending
 from hausbuch.rules.health.month import cashflow_rows
 from hausbuch.rules.recurring import SeriesMark, newest_allocation_marks, one_off_ids
 from hausbuch.schemas.allocation import AllocationCategory
-from hausbuch.schemas.enums import AccountPurpose, AllocationStatus
+from hausbuch.schemas.enums import AllocationStatus
 from hausbuch.schemas.events import EventType, SpendingMarkRecordedEvent
 from hausbuch.schemas.health import MonthLine
 from hausbuch.schemas.recurring import (
@@ -47,6 +46,9 @@ from .allocations import user_id
 from .context import CommandContext
 from .errors import NotFoundError
 from .events import append_event
+from .household import _private_lines, _purchase_cost
+
+HISTORY_START = date(2026, 1, 1)  # the household's bank history (§7.9 (b) 1)
 
 # --- Reads -------------------------------------------------------------------------------
 
@@ -85,24 +87,25 @@ def series_marks(conn: Connection) -> list[SeriesMark]:
 
 
 def _is_private_spending(conn: Connection, allocation_id: UUID) -> bool:
-    """Whether the allocation is a confirmed spending payment of a private account's line
-    that is no duplicate: money out in a code the household month counts as spending."""
-    a, t, acc = allocation_table.c, transaction_table.c, account_table.c
+    """Whether the allocation is one of the lines GET /household/recurring and the household
+    month read (a confirmed allocation of a private account's line that is no duplicate,
+    booked from HISTORY_START, `services.recurring.spending_lines`' predicate) and a payment
+    in a code the household month counts as spending, D234's recode applied."""
+    a = allocation_table.c
     row = conn.execute(
-        select(a.category, a.amount)
-        .join(transaction_table, t.id == a.transaction_id)
-        .join(account_table, acc.id == t.account_id)
-        .where(
+        select(a.category, a.amount, _purchase_cost().label("purchase_cost")).where(
             a.id == allocation_id,
             a.status == AllocationStatus.CONFIRMED.value,
-            acc.purpose == AccountPurpose.PRIVATE.value,
-            t.excluded_as_duplicate_of.is_(None),
+            a.transaction_id.in_(_private_lines(HISTORY_START, date.max).scalar_subquery()),
         )
     ).one_or_none()
     if row is None or row.amount >= 0:
         return False
     line = MonthLine(
-        allocation_id=allocation_id, category=AllocationCategory(row.category), amount=row.amount
+        allocation_id=allocation_id,
+        category=AllocationCategory(row.category),
+        amount=row.amount,
+        purchase_cost=bool(row.purchase_cost),
     )
     ((category, _),) = cashflow_rows([line])
     return is_spending(category)

@@ -10,10 +10,12 @@ from decimal import Decimal
 
 import pytest
 from db.matching_support import World
+from db.test_services_health import _book
 from db.test_services_private_matching import Private
 from sqlalchemy import select, update
 
 from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import health_snapshot as health_snapshot_table
 from hausbuch.db.tables import spending_mark as mark_table
@@ -25,7 +27,9 @@ from hausbuch.schemas.allocation import (
     AllocationSet,
 )
 from hausbuch.schemas.budget import BudgetLineKey as L
+from hausbuch.schemas.enums import AcquisitionCostKind
 from hausbuch.schemas.household import HouseholdGroup
+from hausbuch.schemas.property import AcquisitionCostCreate
 from hausbuch.schemas.recurring import (
     OneOffMarkRequest,
     RecurringInterval,
@@ -35,6 +39,7 @@ from hausbuch.schemas.recurring import (
 from hausbuch.services import allocations, health, net_worth, plan, recurring, spending_marks
 from hausbuch.services.budget import household_budget
 from hausbuch.services.errors import NotFoundError
+from hausbuch.services.properties import add_acquisition_cost
 
 pytestmark = pytest.mark.db
 
@@ -240,3 +245,74 @@ def test_only_a_confirmed_private_spending_payment_can_be_marked(world, private,
     assert payload == {"allocation_id": str(ids["workshop"]), "interval": None, "answer": "one_off"}
     assert world.query(spending_marks.one_off_marked) == frozenset({ids["workshop"]})
     assert other.query(spending_marks.one_off_marked) == frozenset()
+
+
+def test_a_privately_paid_purchase_cost_is_not_spending_and_cannot_be_marked(world, private):
+    """D234: the notary's bill of the purchase, paid privately and booked hh_property_cost
+    with the bill, is invested, not spent: no candidate and 404 for a mark, as the household
+    month counts it; a repair paid the same way is spending and can be marked."""
+    _household(world, private)
+    notary = world.document("invoice", {})
+    world.cmd(
+        add_acquisition_cost,
+        AcquisitionCostCreate(
+            property_id=world.property_id,
+            kind=AcquisitionCostKind.NOTARY,
+            amount=Decimal("4200.00"),
+            document_id=notary,
+        ),
+    )
+    paid = _book(
+        world,
+        private.line(date(2027, 2, 14), "-4200.00", name="Notarin Beispiel"),
+        "-4200.00",
+        C.HH_PROPERTY_COST,
+        property_id=world.property_id,
+        document_id=notary,
+    )[0].id
+    fixed = _book(
+        world,
+        private.line(date(2027, 2, 22), "-300.00", name="Malerei Beispiel"),
+        "-300.00",
+        C.HH_PROPERTY_COST,
+        property_id=world.property_id,
+        document_id=world.document("invoice", {}),
+    )[0].id
+    got = world.query(recurring.one_off_candidates, TODAY)
+    found = {c.payment.allocation_id for c in got.candidates}
+    assert paid not in found and fixed in found
+    with pytest.raises(NotFoundError):
+        world.cmd(
+            spending_marks.record_one_off, OneOffMarkRequest(allocation_id=paid, answer=A.ONE_OFF)
+        )
+    world.cmd(
+        spending_marks.record_one_off, OneOffMarkRequest(allocation_id=fixed, answer=A.ONE_OFF)
+    )
+
+
+def test_a_re_booked_payment_is_asked_again(world, private):
+    """§7.9 (c) 4: a correction gives the payment a new allocation; the old one's mark no
+    longer counts, the old id cannot be marked, the new one is a candidate again."""
+    ids = _household(world, private)
+    world.cmd(
+        spending_marks.record_one_off,
+        OneOffMarkRequest(allocation_id=ids["workshop"], answer=A.ONE_OFF),
+    )
+    with workspace_transaction(world.engine, world.ws) as conn:
+        tx = conn.execute(
+            select(allocation_table.c.transaction_id).where(
+                allocation_table.c.id == ids["workshop"]
+            )
+        ).scalar_one()
+    rebooked = _booked(world, tx, "-870.00", C.HH_CAR_SERVICE)
+    assert rebooked != ids["workshop"]
+    got = world.query(recurring.one_off_candidates, TODAY)
+    assert [c.payment.allocation_id for c in got.candidates] == [rebooked]
+    assert got.answered == []
+    march = world.query(health.read_months, ["2027-03"], TODAY)["2027-03"].household
+    assert march.one_off_spending == 0
+    with pytest.raises(NotFoundError):
+        world.cmd(
+            spending_marks.record_one_off,
+            OneOffMarkRequest(allocation_id=ids["workshop"], answer=A.REGULAR),
+        )

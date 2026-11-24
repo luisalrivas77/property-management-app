@@ -34,9 +34,8 @@ from hausbuch.schemas.recurring import OneOffCandidate, OneOffCandidates, Recurr
 
 from .health import closed_month_facts, ended_months
 from .household import _private_lines, _purchase_cost
-from .spending_marks import allocation_answers, series_marks
+from .spending_marks import HISTORY_START, allocation_answers, series_marks
 
-HISTORY_START = date(2026, 1, 1)  # the household's bank history (§7.9 (b) 1)
 ZERO = Decimal("0.00")
 
 
