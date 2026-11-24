@@ -93,7 +93,8 @@ def _booked(world: World, tx, amount: str, category: C):
 def _household(world: World, private: Private) -> dict[str, object]:
     """A year of household lines from April 2026: the flat's rent on the rental account, and
     on the private account the salary, groceries and a streaming plan each month, and one
-    workshop bill of 870 € in March 2027. Returns the allocation ids by name."""
+    workshop bill of 870 € in March 2027. Returns the allocation ids by name (the streaming
+    and groceries ids March 2027's)."""
     ids: dict[str, object] = {}
     for year, month in [(2026, m) for m in range(4, 13)] + [(2027, m) for m in range(1, 4)]:
         _booked(world, world.line(date(year, month, 3), "950.00"), "950.00", C.RENT_COLD)
@@ -103,7 +104,7 @@ def _household(world: World, private: Private) -> dict[str, object]:
             "3100.00",
             C.HH_SALARY,
         )
-        _booked(
+        ids["groceries"] = _booked(
             world,
             private.line(date(year, month, 9), "-180.00", name="Markt"),
             "-180.00",
@@ -177,6 +178,7 @@ def test_a_one_off_mark_moves_the_four_places_and_keeps_the_stored_month(world, 
     recorded = world.cmd(
         spending_marks.record_one_off,
         OneOffMarkRequest(allocation_id=ids["workshop"], answer=A.ONE_OFF),
+        TODAY,
     )
     assert recorded.answer is A.ONE_OFF
 
@@ -212,6 +214,7 @@ def test_a_one_off_mark_moves_the_four_places_and_keeps_the_stored_month(world, 
     world.cmd(
         spending_marks.record_one_off,
         OneOffMarkRequest(allocation_id=ids["workshop"], answer=A.REGULAR),
+        TODAY,
     )
     again = world.query(health.read_months, ["2027-03"], TODAY)["2027-03"].household
     assert again.one_off_spending == 0
@@ -232,10 +235,12 @@ def test_only_a_confirmed_private_spending_payment_can_be_marked(world, private,
             world.cmd(
                 spending_marks.record_one_off,
                 OneOffMarkRequest(allocation_id=allocation, answer=A.ONE_OFF),
+                TODAY,
             )
     world.cmd(
         spending_marks.record_one_off,
         OneOffMarkRequest(allocation_id=ids["workshop"], answer=A.ONE_OFF),
+        TODAY,
     )
     with workspace_transaction(world.engine, world.ws) as conn:
         assert conn.execute(select(mark_table.c.allocation_id)).scalars().all() == [ids["workshop"]]
@@ -283,10 +288,14 @@ def test_a_privately_paid_purchase_cost_is_not_spending_and_cannot_be_marked(wor
     assert paid not in found and fixed in found
     with pytest.raises(NotFoundError):
         world.cmd(
-            spending_marks.record_one_off, OneOffMarkRequest(allocation_id=paid, answer=A.ONE_OFF)
+            spending_marks.record_one_off,
+            OneOffMarkRequest(allocation_id=paid, answer=A.ONE_OFF),
+            TODAY,
         )
     world.cmd(
-        spending_marks.record_one_off, OneOffMarkRequest(allocation_id=fixed, answer=A.ONE_OFF)
+        spending_marks.record_one_off,
+        OneOffMarkRequest(allocation_id=fixed, answer=A.ONE_OFF),
+        TODAY,
     )
 
 
@@ -297,6 +306,7 @@ def test_a_re_booked_payment_is_asked_again(world, private):
     world.cmd(
         spending_marks.record_one_off,
         OneOffMarkRequest(allocation_id=ids["workshop"], answer=A.ONE_OFF),
+        TODAY,
     )
     with workspace_transaction(world.engine, world.ws) as conn:
         tx = conn.execute(
@@ -315,4 +325,52 @@ def test_a_re_booked_payment_is_asked_again(world, private):
         world.cmd(
             spending_marks.record_one_off,
             OneOffMarkRequest(allocation_id=ids["workshop"], answer=A.REGULAR),
+            TODAY,
         )
+
+
+def test_a_mark_is_refused_for_what_the_candidates_leave_out(world, private):
+    """Review of PR #590: the POST accepts exactly what GET /household/one-off-candidates
+    lists as of the same day, so a payment under the limits, a cash withdrawal, a payment of
+    a recurring series and one dated after today are each a 404, as an unknown id is."""
+    ids = _household(world, private)
+    cash = _booked(
+        world, private.line(date(2027, 3, 20), "-900.00", name="Geldautomat"), "-900.00", C.HH_CASH
+    )
+    insurance = [
+        _booked(
+            world,
+            private.line(date(year, 3, 1), "-600.00", name="Versicherung Beispiel"),
+            "-600.00",
+            C.HH_INSURANCE,
+        )
+        for year in (2026, 2027)
+    ]
+    later = _booked(
+        world,
+        private.line(date(2027, 4, 20), "-900.00", name="Elektromarkt Beispiel"),
+        "-900.00",
+        C.HH_ELECTRONICS,
+    )
+    (yearly,) = [
+        s for s in world.query(recurring.recurring_payments, TODAY).series if s.last_amount == 600
+    ]
+    assert yearly.interval is RecurringInterval.YEARLY
+    got = world.query(recurring.one_off_candidates, TODAY)
+    assert [c.payment.allocation_id for c in got.candidates] == [ids["workshop"]]
+    refused = {
+        "under the limits": ids["groceries"],
+        "a cash withdrawal": cash,
+        "in a recurring series": insurance[1],
+        "dated after today": later,
+    }
+    for why, allocation in refused.items():
+        with pytest.raises(NotFoundError):
+            world.cmd(
+                spending_marks.record_one_off,
+                OneOffMarkRequest(allocation_id=allocation, answer=A.ONE_OFF),
+                TODAY,
+            )
+        assert allocation not in world.query(spending_marks.one_off_marked), why
+    with workspace_transaction(world.engine, world.ws) as conn:
+        assert conn.execute(select(mark_table.c.id)).all() == []

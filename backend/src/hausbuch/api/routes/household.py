@@ -32,8 +32,9 @@
 - GET /household/one-off-candidates (§7.9 (c), D297): the payments over the closed months'
   window that may be one-off, and those a person answered.
 - POST /household/one-off-marks {allocation_id, answer}: „Ja, einmalig“ (`one_off`) or
-  „Nein, normal“ (`regular`) on one confirmed private spending payment; 201 with the stored
-  answer; 404 for any other allocation. The newest answer counts.
+  „Nein, normal“ (`regular`) on a payment GET /household/one-off-candidates lists today (a
+  candidate or an answered one); 201 with the stored answer; 404 for any other allocation.
+  The newest answer counts.
 - POST /household/recurring-marks {key, interval, answer}: „kein Abo“ (`hidden`) or „Wieder
   anzeigen“ (`shown`) on a series; 201 with the stored answer.
 """
@@ -143,7 +144,7 @@ def household_one_off_candidates(cmd: Cmd) -> OneOffCandidates:
 
 @router.post("/household/one-off-marks", status_code=201)
 def household_one_off_mark(body: OneOffMarkRequest, cmd: Cmd) -> SpendingMarkRecorded:
-    return cmd.run(spending_marks.record_one_off, body)
+    return cmd.run(spending_marks.record_one_off, body, datetime.now(LOCAL_TIME_ZONE).date())
 
 
 @router.post("/household/recurring-marks", status_code=201)
