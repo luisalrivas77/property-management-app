@@ -122,7 +122,7 @@ function hasSpending(value: string | null | undefined): boolean {
 
 /** The months of a stretch in words: „ab Juni 2027“ when it runs to the horizon, else „Juli bis
  * September 2027“ or one month. */
-function stretch(segment: RateSegment, last: string | undefined, f: PlanFormat): string {
+export function stretch(segment: RateSegment, last: string | undefined, f: PlanFormat): string {
   if (segment.to_month === last) return translate(spendingPlayText).from(f.month(segment.from_month));
   return f.monthRange([segment.from_month, segment.to_month]);
 }

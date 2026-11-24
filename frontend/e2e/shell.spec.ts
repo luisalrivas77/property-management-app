@@ -2,7 +2,8 @@
 // and the language (D284).
 import { apiCall, expect, mainNav, navigateTo, openMore, test } from "./support";
 
-const MORE = ["Konten", "Immobilien", "Steuern", "Planung", "Dokumente", "Einstellungen"];
+// Planung left „Mehr“ in phase 10 wave 3 (a) (D288): its parts are Haushalt's tabs and on Anlagen.
+const MORE = ["Konten", "Immobilien", "Steuern", "Dokumente", "Einstellungen"];
 
 async function createProperty(page: import("@playwright/test").Page): Promise<string> {
   const property = await apiCall<{ id: string }>(page, "POST", "/api/properties", {
@@ -21,13 +22,14 @@ test("the computer's menu: four tabs and „Mehr“, Mieter and Eigentümer reac
   void signedIn;
   const nav = mainNav(page);
   for (const name of ["Übersicht", "Zu prüfen", "Haushalt", "Anlagen"]) await expect(nav.getByRole("link", { name })).toBeVisible();
-  // The other six only behind „Mehr“, and no entry for Mieter or Eigentümer.
+  // The other five only behind „Mehr“, and no entry for Mieter, Eigentümer or Planung.
   await expect(nav.getByRole("link")).toHaveCount(4);
   const more = nav.getByRole("button", { name: "Mehr" });
   await more.click();
   for (const name of MORE) await expect(nav.getByRole("link", { name, exact: true })).toBeVisible();
   await expect(nav.getByRole("link", { name: "Mieter", exact: true })).toHaveCount(0);
   await expect(nav.getByRole("link", { name: "Eigentümer", exact: true })).toHaveCount(0);
+  await expect(nav.getByRole("link", { name: "Planung", exact: true })).toHaveCount(0);
   // Escape closes it and gives the focus back to its button.
   await page.keyboard.press("Escape");
   await expect(more).toHaveAttribute("aria-expanded", "false");

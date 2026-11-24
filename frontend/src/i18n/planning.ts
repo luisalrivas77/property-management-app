@@ -24,6 +24,8 @@ const de = {
   restPlans: "schon in Sparplänen",
   restLeft: "Noch frei",
   restInvestable: (amount: string) => `Anlegbar pro Monat (vor den Sparplänen): ${amount}`,
+  restWithChanges: "Mit euren geplanten Ausgaben",
+  restSegment: (investable: string, rate: string) => `Anlegbar ${investable} · Sparquote ${rate}`,
   restReserveGap: (amount: string) => `Reserve: noch ${amount} bis zum Ziel.`,
   restReserveReached: "Reserve: Ziel erreicht.",
   toReserve: "Reserve",
@@ -318,7 +320,7 @@ const de = {
   changeLoan: "Darlehen getilgt",
   loading: "Lädt …",
   close: "Schließen",
-  back: "Planung",
+  back: "Haushalt",
 };
 
 export const planning = defineMessages({
@@ -341,6 +343,8 @@ export const planning = defineMessages({
     restPlans: "already in savings plans",
     restLeft: "Still free",
     restInvestable: (amount: string) => `Investable per month (before the savings plans): ${amount}`,
+    restWithChanges: "With your planned spending",
+    restSegment: (investable: string, rate: string) => `Investable ${investable} · savings rate ${rate}`,
     restReserveGap: (amount: string) => `Reserve: ${amount} still to go to the target.`,
     restReserveReached: "Reserve: target reached.",
     toReserve: "Reserve",
@@ -631,7 +635,7 @@ export const planning = defineMessages({
     changeLoan: "Loan repaid",
     loading: "Loading …",
     close: "Close",
-    back: "Planning",
+    back: "Household",
   },
 });
 

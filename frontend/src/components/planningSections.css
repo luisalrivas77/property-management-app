@@ -236,6 +236,21 @@
   font-weight: 800;
 }
 
+/* A stretch's two figures may wrap on the phone rather than push the row wider. */
+.planning-rest-segments li > span:last-child {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* „Erklärung“ and „So entsteht die Zahl“ open inside the rest card: no second frame. */
+.planning-rest-card .card {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
 /* --- the panel „Annahmen“ (mockup 19c) --- */
 
 .annahmen-group + .annahmen-group,

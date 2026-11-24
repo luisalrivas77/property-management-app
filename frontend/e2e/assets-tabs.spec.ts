@@ -258,7 +258,7 @@ test("Krypto keeps its cards, opens the tax-free lots and has the holdings state
   await expect(page.getByRole("complementary", { name: "Börse Beispiel" })).toBeVisible();
 });
 
-test("Planung's old Immobilie links land on Anlagen › Immobilie with their levers", async ({ page, signedIn }) => {
+test("Planung's old links land where their part is now, Immobilie with its levers", async ({ page, signedIn }) => {
   void signedIn;
   await page.goto("/planning?section=immobilie&wertsteigerung=0.02&verkauf=2036");
   await expect(page).toHaveURL("/assets?tab=immobilie&wertsteigerung=0.02&verkauf=2036");
@@ -266,4 +266,16 @@ test("Planung's old Immobilie links land on Anlagen › Immobilie with their lev
 
   await page.goto(`/planning?immobilie=${FLAT}`);
   await expect(page).toHaveURL(`/assets?tab=immobilie&immobilie=${FLAT}`);
+
+  // Wave 3 (a) (D288): the rest of Planung lives on Haushalt's tabs and Anlagen › Übersicht.
+  await page.goto("/planning?section=vermoegen");
+  await expect(page).toHaveURL("/assets#annahme");
+  await page.goto("/planning?section=reserve");
+  await expect(page).toHaveURL("/household?tab=reserve");
+  await page.goto("/planning?section=anlegen");
+  await expect(page).toHaveURL("/household?tab=budget#was-mit-dem-rest");
+  await page.goto("/planning?section=budget");
+  await expect(page).toHaveURL("/household?tab=budget");
+  await page.goto("/planning?tab=haushalt#ausgaben-durchspielen");
+  await expect(page).toHaveURL("/household?tab=budget#d-annahmen-ausgaben");
 });

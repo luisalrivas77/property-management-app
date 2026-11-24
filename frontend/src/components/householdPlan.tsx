@@ -60,7 +60,7 @@ import { ALLOCATION_CATEGORY } from "./labels";
 import { PlanExplanationPanel } from "./planExplanation";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
 import { BudgetClassPanel, BudgetSection, type BudgetView, GoalsPanel, PlanError } from "./planningBudget";
-import { type PlanPreview, SpendingPlaySection, usePlanPreview } from "./spendingPlay";
+import { type PlanPreview, SpendingPlaySection, stretch, usePlanPreview } from "./spendingPlay";
 import { Loading } from "./ui";
 import { type Loaded, useLoad } from "./useLoad";
 
@@ -593,8 +593,12 @@ function RestCard({ ready }: { ready: PlanReady }) {
   const gap = reserve?.gap ?? null;
   const reached = gap !== null && Number(gap) <= 0;
   const todos = (plan.todos ?? []).filter((todo) => todo.code !== "rate_missing");
+  // A planned spending change counts from its month on, not in the closed months the rows
+  // above average, so its effect is the server's stretches of the coming months.
+  const segments = (ready.draft.spending_changes ?? []).length > 0 ? (plan.spending_play?.rates ?? []) : [];
+  const lastMonth = plan.months?.[plan.months.length - 1]?.month;
   return (
-    <section className="card stack" id={REST_ANCHOR} aria-labelledby="rest-title">
+    <section className="card stack planning-rest-card" id={REST_ANCHOR} aria-labelledby="rest-title">
       <h2 id="rest-title">{t.restTitle}</h2>
       <ul className="household-rows planning-rest">
         <li>
@@ -630,6 +634,19 @@ function RestCard({ ready }: { ready: PlanReady }) {
       <p className="muted" data-testid="rest-investable">
         {t.restInvestable(f.euro(investable?.amount))}
       </p>
+      {segments.length > 0 ? (
+        <div className="stack" data-testid="rest-with-changes">
+          <h3>{t.restWithChanges}</h3>
+          <ul className="household-rows planning-rest planning-rest-segments">
+            {segments.map((segment) => (
+              <li key={segment.from_month}>
+                <span>{stretch(segment, lastMonth, f)}</span>
+                <span>{t.restSegment(f.money(segment.investable), f.ratio(segment.rate))}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {reserve ? (
         <p>
           {reached ? t.restReserveReached : t.restReserveGap(f.euro(gap))}{" "}
