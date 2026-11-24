@@ -137,8 +137,8 @@ function recurringSeries(): RecurringSeries[] {
 }
 
 /** GET /household/recurring from the state the marks change, and the marks' writes. */
-async function recurringApi(page: Page, initial: RecurringSeries[] = recurringSeries()) {
-  const state = { shown: [...initial], hidden: [] as RecurringSeries[] };
+async function recurringApi(page: Page, initial: RecurringSeries[] = recurringSeries(), hiddenAtStart: RecurringSeries[] = []) {
+  const state = { shown: initial.filter((s) => !hiddenAtStart.includes(s)), hidden: [...hiddenAtStart] };
   const posted: { key: string; interval: string; answer: string }[] = [];
   const view = (): RecurringPayments => ({
     as_of: "2026-11-24",
@@ -178,14 +178,19 @@ async function recurringApi(page: Page, initial: RecurringSeries[] = recurringSe
 
 async function phoneScreens(page: Page, name: string, open: () => Promise<void>) {
   await page.setViewportSize({ width: 390, height: 844 });
+  const backgrounds: string[] = [];
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     // A fresh load each time, so the panel opens from its link as a person would land on it.
     await page.goto("about:blank");
     await open();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    // No theme is stored, so the page follows the emulated scheme: the page's own background.
+    backgrounds.push(await page.evaluate(() => getComputedStyle(document.body).backgroundColor));
     await page.screenshot({ path: test.info().outputPath(`${name}-${scheme}.png`) });
   }
+  // The dark screenshot is dark, not a second light one.
+  expect(backgrounds[0]).not.toEqual(backgrounds[1]);
 }
 
 test("the recurring card lists the price changes first, opens a payment's payments, hides it and brings it back", async ({
@@ -254,7 +259,8 @@ test("no recurring card while nothing is listed", async ({ page, signedIn }) => 
 test("the recurring panels at phone width, light and dark", async ({ page, signedIn }) => {
   void signedIn;
   const all = recurringSeries();
-  await recurringApi(page, all);
+  const hidden = all.find((s) => s.label === "Fitnessstudio Muster");
+  await recurringApi(page, all, hidden ? [hidden] : []);
   const first = all[0]?.sources?.[0] ?? "";
   await phoneScreens(page, "recurring-list", async () => {
     await page.goto("/household#d-abos-alle");
@@ -265,6 +271,11 @@ test("the recurring panels at phone width, light and dark", async ({ page, signe
     const sheet = page.getByRole("dialog", { name: "Streamingdienst Beispiel" });
     await expect(sheet).toBeVisible();
     await expect(sheet).toContainText("2,00 € mehr seit März 2026.");
+  });
+  await phoneScreens(page, "recurring-hidden", async () => {
+    await page.goto("/household#d-abos-ausgeblendet");
+    const sheet = page.getByRole("dialog", { name: "Ausgeblendete Zahlungen" });
+    await expect(sheet.getByRole("button", { name: "Wieder anzeigen: Fitnessstudio Muster" })).toBeVisible();
   });
 });
 
