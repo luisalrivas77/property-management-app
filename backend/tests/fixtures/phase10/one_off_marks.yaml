@@ -21,6 +21,9 @@
 #   phase 10 fixture holds unchanged.
 # - A payment outside its payee's series amount band (the 480 doctor's bill among 40s) is not
 #   part of the series and can be a candidate. `candidates` are compared as a set.
+# - The yearly payment of a switch from monthly to yearly (recurring.yaml, D296 amended 24 Nov
+#   2026) is a payment of its series, so never a candidate (case yearly_switch_not_a_candidate).
+#   A line's `account` defaults to `giro`.
 # - mean_regular_spending: Σ regular_spending ÷ the window's months, to the cent.
 #
 # Worked by hand: regular spending per month without marks is Jan 900, Feb 600, Mar 600 (the
@@ -349,3 +352,21 @@ cases:
   marks: []
   expect:
     candidates: []
+- id: yearly_switch_not_a_candidate
+  description: "D296 amended (2): the 299.99 paid on 5 Oct after a monthly 29.99 is the switch's yearly payment, so no candidate (without the switch it would be: 299.99 >= 250 and >= 3 x the code's median month 29.99); the 600 electronics purchase is one (median 0)"
+  today: '2026-11-24'
+  lines:
+  - {id: 'SPK_01', date: '2026-01-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_02', date: '2026-02-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_03', date: '2026-03-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_04', date: '2026-04-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_05', date: '2026-05-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_06', date: '2026-06-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_07', date: '2026-07-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_08', date: '2026-08-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: 'SPK_09', date: '2026-09-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
+  - {id: SPK_Y1, date: '2026-10-05', payee: 'Sprachkurs Online GmbH', category: hh_subscriptions, amount: '-299.99', account: karte}
+  - {id: ELE_06, date: '2026-06-10', payee: 'Elektromarkt Muster', category: hh_electronics, amount: '-600.00'}
+  marks: []
+  expect:
+    candidates: [ELE_06]
