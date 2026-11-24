@@ -15,6 +15,7 @@ import type { components } from "@/api/types";
 import { translate, useFormat, useT } from "@/i18n";
 import { netWorthText } from "@/i18n/netWorth";
 import { ErrorNotice } from "@/lib/ErrorNotice";
+import { propertyPlanningHref } from "@/lib/planningRoutes";
 
 import { fromCents, signedMoney, toCents } from "./cashflow";
 import { CryptoRefresh } from "./cryptoRefresh";
@@ -280,7 +281,7 @@ function EstimateNote({ lines }: { lines: NetWorthLine[] }) {
             {line.kind === "property" && line.property_id ? (
               <>
                 {" · "}
-                <Link href={`/planning?immobilie=${line.property_id}`}>{t.adjustValue}</Link>
+                <Link href={propertyPlanningHref(new URLSearchParams({ immobilie: line.property_id }))}>{t.adjustValue}</Link>
               </>
             ) : null}
           </li>
@@ -337,7 +338,7 @@ export function slices(figure: NetWorth): Slice[] {
       label: t.sliceProperty,
       value: figure.property_net,
       detail: propertyDetail(figure.lines),
-      href: properties.length === 1 ? `/properties/${properties[0]}` : "/planning",
+      href: properties.length === 1 ? `/properties/${properties[0]}` : propertyPlanningHref(),
     },
     { key: "depot", label: t.sliceDepot, value: cls("depot"), detail: accountNames(figure.lines, "depot"), href: "/assets" },
     { key: "bank", label: t.sliceBank, value: cls("bank"), detail: accountNames(figure.lines, "bank"), href: "/accounts" },

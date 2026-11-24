@@ -32,6 +32,7 @@ import { overview as catalogue } from "@/i18n/overview";
 import { verdictText } from "@/i18n/verdict";
 import { Icon } from "@/lib/icons";
 import { recentInbox } from "@/lib/inboxCount";
+import { propertyPlanningHref } from "@/lib/planningRoutes";
 
 import "./overviewTiles.css";
 
@@ -386,8 +387,9 @@ function PaidInRows({ state, t, f }: { state: Loaded<PropertiesPaidIn>; t: T; f:
   );
 }
 
-/** Planung › Immobilie of one property, where its default scenario is changed. */
-const planningHref = (propertyId: string) => `/planning?section=immobilie&immobilie=${propertyId}`;
+/** Anlagen › Immobilie of one property, where its default scenario is changed (Planung › Immobilie
+ * until phase 10 §7.6). */
+const planningHref = (propertyId: string) => propertyPlanningHref(new URLSearchParams({ immobilie: propertyId }));
 
 /** A gap and the link that resolves it (principle 7): an inline line under the figure. */
 function Gap({ text, href, action }: { text: ReactNode; href?: string | null; action?: string }) {
@@ -647,7 +649,7 @@ export function TilePanel({
                 ]}
               />
               {single ? <Go href={`/properties/${single.id}`}>{t.toProperty}</Go> : <Go href="/properties">{t.toProperties}</Go>}
-              <Go href={single ? `/planning?section=immobilie&immobilie=${single.id}` : "/planning?section=immobilie"}>{t.toPlanning}</Go>
+              <Go href={single ? planningHref(single.id) : propertyPlanningHref()}>{t.toPlanning}</Go>
             </>
           )}
         </Loading>

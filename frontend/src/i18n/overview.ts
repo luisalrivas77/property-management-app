@@ -102,7 +102,7 @@ export const overview = defineMessages({
           not_computable: "nicht berechenbar, nicht mitgezählt",
         } as Record<string, string>
       )[reason] ?? "nicht mitgezählt",
-    toPlanning: "Zur Planung",
+    toPlanning: "Zu Anlagen › Immobilie",
     depot: "ETF-Depot",
     crypto: "Krypto",
     bank: "Bank",
@@ -240,7 +240,7 @@ export const overview = defineMessages({
           not_computable: "cannot be computed, not counted",
         } as Record<string, string>
       )[reason] ?? "not counted",
-    toPlanning: "To Planning",
+    toPlanning: "To Assets › Property",
     depot: "ETF account",
     crypto: "Crypto",
     bank: "Bank",

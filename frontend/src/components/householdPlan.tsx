@@ -1,23 +1,41 @@
 "use client";
 
-// Planung in five sections (phase 10 D270, mockup 17-C2; before it phase 9 §14, mockups 12, 12b,
-// 12c): chips choose Budget, Reserve, Anlegen, Vermögen or Immobilie, the section in the URL
-// (`/planning?section=…`). Budget is components/planningBudget.tsx; Reserve, Anlegen and
-// Vermögen regroup phase 9's cards (the reserve and its paths; „Anlegbar pro Monat“, the savings
-// plans and the explanation; the net worth on typed rates); Immobilie is the property's Planung
-// (components/planning.tsx). One scenario row on top says whether the levers are saved and
-// opens the scenario sheet in the detail panel: the unsaved changes, „Was eure Änderungen
-// bewirken“ (D271), „Ausgaben durchspielen“ and „Weitere Annahmen“. Every figure is the
-// server's (GET /household-plan, /household-budget) with the saved default scenario; a lever
-// changed here is a draft until „Szenario speichern“ stores it as a new version of the default
-// (D248, append-only). The draft lives in this screen, so it survives a change of section.
+// The household plan in its places since phase 10 wave 3 (a) (§7.9 (a), D288; mockups 19b,
+// 19c): Planung left the menu, and what its five sections showed now sits where it is used.
+// Haushalt › Budget is components/planningBudget.tsx with „Was mit dem Rest passiert“ at its foot
+// (what Planung › Anlegen was: free cash, the buffer, „Anlegbar pro Monat“, the savings plans,
+// „So entsteht die Zahl“, and the AI explanation behind „Erklärung“); Haushalt › Reserve is the
+// reserve, its target, its accounts and the paths to it; the net worth on typed rates (what
+// Planung › Vermögen was) is a card on Anlagen › Übersicht; the property's Planung is Anlagen ›
+// Immobilie (app/(app)/assets/Property.tsx).
+//
+// Every lever of the household scenario is in one detail panel „Annahmen“ (`#d-annahmen-<group>`,
+// lib/planningRoutes.ts), opened from each place at its own group, which it shows first, with
+// the unsaved changes and the save bar. Every figure is the server's (GET /household-plan,
+// /household-budget); a lever changed in „Annahmen“ is a draft until „Szenario speichern“ stores
+// it as a new version of the default (D248, append-only). While a draft differs, each place shows
+// its figures from POST /household-plan/preview with the draft, marked as not saved; „Was eure
+// Änderungen bewirken“ is gone (D288). The draft lives in `PlanProvider`, so it survives a switch
+// between Budget and Reserve, not a move to another page.
 import Link from "next/link";
-import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
+import { createContext, type FormEvent, type ReactNode, useContext, useEffect, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { useT } from "@/i18n";
-import { lineLabel, planning, type PlanningText, sectionLabel } from "@/i18n/planning";
+import { lineLabel, planning, type PlanningText } from "@/i18n/planning";
+import { ErrorNotice } from "@/lib/ErrorNotice";
+import {
+  ASSUMPTION_GROUPS,
+  ASSUMPTIONS,
+  type AssumptionGroup,
+  HOUSEHOLD_RESERVE,
+  isAssumptionGroup,
+  planTodoTarget,
+  PROJECTION_ANCHOR,
+  propertyPlanningHref,
+  REST_ANCHOR,
+} from "@/lib/planningRoutes";
 
 import { DetailLayout, DetailPanel, useDetail } from "./DetailPanel";
 import { Field } from "./form";
@@ -42,15 +60,14 @@ import { ALLOCATION_CATEGORY } from "./labels";
 import { PlanExplanationPanel } from "./planExplanation";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
 import { BudgetClassPanel, BudgetSection, type BudgetView, GoalsPanel, PlanError } from "./planningBudget";
-
-type BudgetClass = components["schemas"]["BudgetClass"];
-import { Effects, type PlanPreview, SpendingPlaySection, usePlanPreview } from "./spendingPlay";
+import { type PlanPreview, SpendingPlaySection, usePlanPreview } from "./spendingPlay";
 import { Loading } from "./ui";
-import { useLoad } from "./useLoad";
+import { type Loaded, useLoad } from "./useLoad";
 
 import "./health.css";
 import "./planningSections.css";
 
+type BudgetClass = components["schemas"]["BudgetClass"];
 type Account = components["schemas"]["Account"];
 type SavingsPlan = components["schemas"]["SavingsPlan"];
 type SurplusKey = components["schemas"]["SurplusKey"];
@@ -58,13 +75,6 @@ type IncomeChangeNote = components["schemas"]["IncomeChangeNote"];
 type ProjectionPoint = components["schemas"]["ProjectionPoint"];
 type AdviceMode = components["schemas"]["AdviceMode"];
 type AllocationCategory = components["schemas"]["AllocationCategory"];
-type BudgetTargets = components["schemas"]["BudgetTargets"];
-
-export const PLAN_SECTIONS = ["budget", "reserve", "anlegen", "vermoegen", "immobilie"] as const;
-export type PlanSection = (typeof PLAN_SECTIONS)[number];
-
-/** The scenario sheet, the goals sheet and a Budget class in the detail panel (D267). */
-const SHEET = "entwurf";
 
 interface PlanData {
   plan: HouseholdPlan;
@@ -113,7 +123,7 @@ function resolveDraft(state: DraftState | null, plan: HouseholdPlan | undefined)
 
 type T = PlanningText;
 
-/** One line per changed lever area, for the scenario row's count and the sheet's list. */
+/** One line per changed lever area, for the scenario row's count and the panel's list. */
 function draftChanges(
   saved: HouseholdLevers,
   draft: HouseholdLevers,
@@ -168,117 +178,476 @@ function categoryName(code: string): string {
   return ALLOCATION_CATEGORY[code as AllocationCategory] ?? code;
 }
 
-/** Planung: the chips, the scenario row and the chosen section; `property` is the Immobilie
- * section (the property's Planung), loaded by the page. */
-export function HouseholdPlanScreen({ section, property }: { section: PlanSection; property: ReactNode }) {
+export type SetDraft = (update: (previous: HouseholdLevers) => HouseholdLevers) => void;
+
+// --- the plan's state, shared by the places that show it ------------------------------------
+
+/** The plan once at least three months are closed (12c otherwise). */
+interface PlanReady {
+  /** The saved plan and what was read with it. */
+  data: PlanData;
+  /** The same with the draft's plan from the preview: what a place shows. */
+  shown: PlanData;
+  draft: HouseholdLevers;
+  setDraft: SetDraft;
+  changes: string[];
+  dirty: boolean;
+  preview: PlanPreview;
+  saveBar: ReactNode;
+  /** Moves on a save or a discard, so every field reads the stored value back. */
+  epoch: number;
+  current: HouseholdScenario | null;
+  onChanged: () => void;
+}
+
+interface PlanState {
+  state: Loaded<PlanData>;
+  ready: PlanReady | null;
+  /** The page this provider sits on (`/household?tab=budget`, `/assets`): a to-do of
+   * „Annahmen“ opens the panel here instead of leaving it. */
+  page: string;
+}
+
+const PlanContext = createContext<PlanState | null>(null);
+
+function usePlan(): PlanState {
+  const value = useContext(PlanContext);
+  if (!value) throw new Error("PlanProvider missing");
+  return value;
+}
+
+/** Stands in for the saved plan until it is read; the preview stays idle then (no draft, no
+ * spending change), so it is never sent or shown. */
+const NO_PLAN = {} as HouseholdPlan;
+/** The levers with nothing changed, for the idle preview before the read. */
+const EMPTY_LEVERS = fillLevers(undefined);
+
+/** Reads the plan once for a page and holds the draft, the save and the „Annahmen“ panel (and
+ * Budget's own panels); `backLabel` is the page's name on the panel's „‹“ on the phone. The tree
+ * around `children` is the same before and after the read, so nothing under it mounts twice. */
+export function PlanProvider({ page, backLabel, children }: { page: string; backLabel: string; children: ReactNode }) {
   const t = useT(planning);
   const f = usePlanFormat();
   const state = useLoad(loadPlan);
   const [draftState, setDraftState] = useState<DraftState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  // A field holding an entry it cannot take keeps the draft's old value, so a save would store
+  // a value the field does not show (PR #434 review C): no save until it is fixed.
+  const [projectionInvalid, setInvalid] = useState(false);
+  const [spendingInvalid, setSpendingInvalid] = useState(false);
+  // A discard or a save remounts the fields, so none keeps a text the draft no longer holds.
+  const [epoch, setEpoch] = useState(0);
+  const annahmen = useDetail(ASSUMPTIONS);
+  const goals = useDetail("goals");
+  const budgetClass = useDetail("budget");
+
   const data = state.data;
+  const enough = data !== undefined && data.health.window.enough && data.plan.surplus != null;
   const draft = resolveDraft(draftState, data?.plan);
-  const savedLevers = fillLevers(data?.plan.levers);
-  const changes = data ? draftChanges(savedLevers, draft, t, f.short, f.percentValue, defaultClasses(data.budget)) : [];
-  const sheet = useDetail("scenario");
+  const changes =
+    data && enough ? draftChanges(fillLevers(data.plan.levers), draft, t, f.short, f.percentValue, defaultClasses(data.budget)) : [];
+  const dirty = changes.length > 0;
+  // D263: every draft goes through the preview while a member types; each place shows its
+  // figures from it (D288), the Budget's „Mit eurem Plan“ too.
+  const preview = usePlanPreview(enough ? data.plan : NO_PLAN, enough ? draft : EMPTY_LEVERS, dirty);
+  const setDraft: SetDraft = (update) => setDraftState((previous) => ({ levers: update(resolveDraft(previous, data?.plan)) }));
+  const invalid = projectionInvalid || spendingInvalid;
   const current = data ? currentDefault(data.scenarios) : null;
 
-  const setDraft: SetDraft = (update) =>
-    setDraftState((previous) => ({ levers: update(resolveDraft(previous, data?.plan)) }));
+  let ready: PlanReady | null = null;
+  let panel: ReactNode = null;
+  if (data && enough) {
+    const { plan } = data;
+    const closedMonths = data.health.window.months ?? [];
 
-  const household = section !== "immobilie";
-  return (
-    <>
-      <div className="page-head planning-head">
-        <div>
-          <p className="eyebrow">{data && household ? t.asOf(f.date(data.plan.as_of)) : " "}</p>
-          <h1>{t.title}</h1>
+    const save = async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        // The limits of the key figures stay as the default holds them (they are set on Haushalt since phase 10 §7.6).
+        const posted = { ...draft, bands: current?.levers?.bands ?? draft.bands ?? [] };
+        const row = await saveDefaultScenario(posted, current);
+        setDraftState({ levers: posted, resetOn: row.id });
+        state.reload();
+        setInvalid(false);
+        setSpendingInvalid(false);
+        setEpoch((value) => value + 1);
+      } catch (caught) {
+        setError(caught);
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    const saveBar = (
+      <div className="stack">
+        {error != null ? <PlanError error={error} /> : null}
+        <div className="row">
+          <button type="button" disabled={busy || !dirty || invalid} onClick={() => void save()}>
+            {t.saveScenario}
+          </button>
+          {dirty ? (
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() => {
+                setDraftState(null);
+                setInvalid(false);
+                setSpendingInvalid(false);
+                setEpoch((value) => value + 1);
+              }}
+            >
+              {t.discard}
+            </button>
+          ) : null}
+          <span className="muted">{projectionInvalid ? t.fixProjection : spendingInvalid ? t.fixSpending : t.saveHint}</span>
         </div>
-        <span className="spacer" />
-        {household && data ? (
-          <a className="planning-scenario-row" {...sheet.linkProps(SHEET)} data-dirty={changes.length > 0 ? "" : undefined}>
-            <span>
-              <strong>{current ? t.scenario(current.name) : t.defaults}</strong>
-              {" · "}
-              <span className="planning-scenario-state">{changes.length > 0 ? t.unsaved(changes.length) : t.saved}</span>
-            </span>
-            <span className="planning-scenario-open">
-              {t.assumptions} <span aria-hidden="true">›</span>
-            </span>
-          </a>
-        ) : null}
       </div>
-      <nav aria-label={t.sections} className="planning-chips">
-        {PLAN_SECTIONS.map((key) => (
-          <Link key={key} href={`/planning?section=${key}`} scroll={false} aria-current={key === section ? "page" : undefined}>
-            {sectionLabel(t, key)}
-          </Link>
-        ))}
-      </nav>
-      {household ? (
-        <Loading state={state}>
-          {(loaded) =>
-            loaded.health.window.enough && loaded.plan.surplus ? (
-              <PlanBody
-                data={loaded}
-                section={section}
-                draft={draft}
-                setDraft={setDraft}
-                changes={changes}
-                onDiscard={() => setDraftState(null)}
-                onSaved={(posted, row) => {
-                  setDraftState({ levers: posted, resetOn: row.id });
-                  state.reload();
-                }}
-                onGoalsSaved={(targets, row) => {
-                  // Other unsaved changes stay a draft; with none the page follows the new row.
-                  setDraftState((previous) =>
-                    changes.length === 0 || (changes.length === 1 && changes[0] === t.changeTargets)
-                      ? { levers: { ...resolveDraft(previous, loaded.plan), budget_targets: targets }, resetOn: row.id }
-                      : { levers: { ...resolveDraft(previous, loaded.plan), budget_targets: targets } },
-                  );
-                  state.reload();
-                }}
-                onChanged={state.reload}
-              />
-            ) : (
-              <TooFewMonths data={loaded} onChanged={state.reload} />
-            )
-          }
-        </Loading>
-      ) : (
-        property
-      )}
-    </>
+    );
+
+    ready = {
+      data,
+      shown: dirty ? { ...data, plan: preview.withChanges } : data,
+      draft,
+      setDraft,
+      changes,
+      dirty,
+      preview,
+      saveBar,
+      epoch,
+      current,
+      onChanged: state.reload,
+    };
+
+    if (annahmen.id !== null) {
+      const group: AssumptionGroup = isAssumptionGroup(annahmen.id) ? annahmen.id : "reserve";
+      panel = (
+        <DetailPanel title={t.annahmenTitle} backLabel={backLabel} onClose={annahmen.close}>
+          <AssumptionsPanel
+            key={`${group}-${epoch}`}
+            group={group}
+            ready={ready}
+            onProjectionValidity={setInvalid}
+            onSpendingValidity={setSpendingInvalid}
+          />
+        </DetailPanel>
+      );
+    } else if (goals.id !== null) {
+      panel = (
+        <GoalsPanel
+          budget={data.budget}
+          saved={fillLevers(plan.levers)}
+          current={current}
+          onClose={goals.close}
+          onSaved={(targets, row) => {
+            // Other unsaved changes stay a draft; with none the page follows the new row.
+            const onlyTargets = changes.length === 0 || (changes.length === 1 && changes[0] === t.changeTargets);
+            setDraftState((previous) => ({
+              levers: { ...resolveDraft(previous, data.plan), budget_targets: targets },
+              ...(onlyTargets ? { resetOn: row.id } : {}),
+            }));
+            state.reload();
+            goals.close();
+          }}
+        />
+      );
+    } else if (budgetClass.id !== null) {
+      panel = (
+        <BudgetClassPanel
+          key={`${budgetClass.id}-${epoch}`}
+          lineKey={budgetClass.id}
+          budget={data.budget}
+          plan={plan}
+          windowMonths={closedMonths}
+          preview={preview}
+          draft={draft}
+          setDraft={setDraft}
+          onValidity={setSpendingInvalid}
+          onClose={budgetClass.close}
+          footer={dirty ? saveBar : null}
+        />
+      );
+    }
+  }
+
+  return (
+    <PlanContext.Provider value={{ state, ready, page }}>
+      <DetailLayout panel={panel}>{children}</DetailLayout>
+    </PlanContext.Provider>
   );
 }
 
-/** The page's own to-dos point at a section or the scenario sheet of this page; every other
- * one is a link. The server's links name phase 9's `/planning?tab=haushalt` (rules/plan/, not
- * changed: D271). */
+
+// --- „Annahmen“ -------------------------------------------------------------------------------
+
+/** Every lever of the household scenario in one panel (§7.9 (a) 5, mockup 19c): the group it was
+ * opened at first, then the others in their order; the unsaved changes and the save at its foot. */
+function AssumptionsPanel({
+  group,
+  ready,
+  onProjectionValidity,
+  onSpendingValidity,
+}: {
+  group: AssumptionGroup;
+  ready: PlanReady;
+  onProjectionValidity: (invalid: boolean) => void;
+  onSpendingValidity: (invalid: boolean) => void;
+}) {
+  const t = useT(planning);
+  const { data, draft, setDraft, changes, preview } = ready;
+  const order = [group, ...ASSUMPTION_GROUPS.filter((key) => key !== group)];
+  const body: Record<AssumptionGroup, ReactNode> = {
+    reserve: (
+      <>
+        <h3>{t.leverReserve}</h3>
+        <ReserveLever data={data} draft={draft} setDraft={setDraft} />
+        <ReserveAccountsBlock data={data} draft={draft} setDraft={setDraft} />
+      </>
+    ),
+    puffer: (
+      <>
+        <h3>{t.leverBuffer}</h3>
+        <BufferLever draft={draft} setDraft={setDraft} />
+      </>
+    ),
+    einkommen: <IncomeChanges draft={draft} setDraft={setDraft} />,
+    zahlungen: <OneOffs data={data} draft={draft} setDraft={setDraft} />,
+    sparplaene: <SavingsPlans data={data} draft={draft} setDraft={setDraft} />,
+    rendite: <RateFields data={data} draft={draft} setDraft={setDraft} onValidity={onProjectionValidity} />,
+    ausgaben: (
+      <SpendingPlaySection
+        saved={data.plan}
+        windowMonths={data.health.window.months ?? []}
+        preview={preview}
+        draft={draft}
+        setDraft={setDraft}
+        onValidity={onSpendingValidity}
+      />
+    ),
+  };
+  return (
+    <div className="stack annahmen">
+      <p className="muted">{t.annahmenIntro}</p>
+      {order.map((key) => (
+        <section key={key} id={`annahmen-${key}`} className="annahmen-group stack" data-group={key}>
+          {body[key]}
+        </section>
+      ))}
+      <section className="annahmen-save stack" aria-labelledby="sheet-changes">
+        <h3 id="sheet-changes">{t.changesTitle}</h3>
+        {changes.length === 0 ? (
+          <p className="muted">{t.noChanges}</p>
+        ) : (
+          <ul className="planning-change-list">
+            {changes.map((line, index) => (
+              <li key={index}>{line}</li>
+            ))}
+          </ul>
+        )}
+        {ready.preview.error != null ? <ErrorNotice error={ready.preview.error} /> : null}
+        {ready.saveBar}
+      </section>
+    </div>
+  );
+}
+
+/** The dashed row on top of a place: the scenario, whether the draft is saved, „Annahmen ›“. */
+function ScenarioRow({ group }: { group: AssumptionGroup }) {
+  const t = useT(planning);
+  const { ready } = usePlan();
+  const annahmen = useDetail(ASSUMPTIONS);
+  if (!ready) return null;
+  const { current, changes } = ready;
+  return (
+    <a className="planning-scenario-row" {...annahmen.linkProps(group)} data-dirty={changes.length > 0 ? "" : undefined}>
+      <span>
+        <strong>{current ? t.scenario(current.name) : t.defaults}</strong>
+        {" · "}
+        <span className="planning-scenario-state">{changes.length > 0 ? t.unsaved(changes.length) : t.saved}</span>
+      </span>
+      <span className="planning-scenario-open">
+        {t.assumptions} <span aria-hidden="true">›</span>
+      </span>
+    </a>
+  );
+}
+
+/** While a draft differs: what the figures of this place count, whether the preview is still
+ * calculating or was refused (the figures then stay at its last good answer), and the save. */
+function DirtyNotice({ text }: { text: string }) {
+  const t = useT(planning);
+  const { ready } = usePlan();
+  if (!ready?.dirty) return null;
+  return (
+    <div className="stack" aria-live="polite">
+      <p className="notice notice-warn" role="status">
+        {text}
+        {ready.preview.pending ? t.previewPending : ""}
+      </p>
+      {ready.preview.error != null ? <ErrorNotice error={ready.preview.error} /> : null}
+      {ready.saveBar}
+    </div>
+  );
+}
+
+/** A to-do of the plan: one whose server href (rules/plan/, D271) means „Annahmen“ opens the panel
+ * on this page; every other one is HealthTodoItem's link, which maps an old Planung href. */
 function PlanTodos({ todos, onChanged }: { todos: HealthTodo[]; onChanged: () => void }) {
-  const sheet = useDetail("scenario");
+  const { page } = usePlan();
+  const annahmen = useDetail(ASSUMPTIONS);
   if (todos.length === 0) return null;
+  const prefix = `${page}#d-${ASSUMPTIONS}-`;
   return (
     <ul className="health-todos">
       {todos.map((todo, index) => {
         const key = `${todo.code}-${index}`;
-        if (!todo.href.startsWith("/planning?tab=haushalt")) return <HealthTodoItem key={key} todo={todo} onChanged={onChanged} />;
+        const target = planTodoTarget(todo.href, todo.code, page);
+        if (!target.startsWith(prefix)) return <HealthTodoItem key={key} todo={todo} onChanged={onChanged} />;
         return (
           <li key={key} className="health-todo">
             <span>{todo.text}</span>
-            {todo.code === "rate_missing" ? (
-              <Link href="/planning?section=vermoegen#annahme" className="button-link secondary">
-                {todo.action}
-              </Link>
-            ) : (
-              <a {...sheet.linkProps(SHEET)} className="button-link secondary">
-                {todo.action}
-              </a>
-            )}
+            <a {...annahmen.linkProps(target.slice(prefix.length))} className="button-link secondary">
+              {todo.action}
+            </a>
           </li>
         );
       })}
     </ul>
+  );
+}
+
+// --- the Haushalt tabs Budget and Reserve ----------------------------------------------------
+
+/** Haushalt › Budget or Haushalt › Reserve (D288), inside a `PlanProvider`. */
+export function HouseholdPlanTab({ tab }: { tab: "budget" | "reserve" }) {
+  const { state, ready } = usePlan();
+  return (
+    <Loading state={state}>
+      {(loaded) =>
+        ready ? (
+          <div className="stack planning" key={ready.epoch}>
+            {tab === "budget" ? <BudgetTab ready={ready} /> : <ReserveTab ready={ready} />}
+          </div>
+        ) : (
+          <TooFewMonths data={loaded} onChanged={state.reload} />
+        )
+      }
+    </Loading>
+  );
+}
+
+function BudgetTab({ ready }: { ready: PlanReady }) {
+  const t = useT(planning);
+  return (
+    <>
+      <ScenarioRow group="ausgaben" />
+      <DirtyNotice text={t.dirtyNoticeBudget} />
+      <BudgetSection budget={ready.data.budget} onChanged={ready.onChanged} />
+      <RestCard ready={ready} />
+    </>
+  );
+}
+
+function ReserveTab({ ready }: { ready: PlanReady }) {
+  const t = useT(planning);
+  const f = usePlanFormat();
+  const { shown, onChanged } = ready;
+  const closedMonths = shown.health.window.months ?? [];
+  const newest = shown.plan.newest_closed ?? closedMonths[closedMonths.length - 1] ?? "";
+  const todos = (shown.plan.todos ?? []).filter((todo) => todo.code !== "rate_missing");
+  return (
+    <>
+      <ScenarioRow group="reserve" />
+      <p className="muted">
+        {t.baseLine(closedMonths.length, f.monthRange(closedMonths))}
+        {t.basePaths(f.longDate(newest ? monthEnd(newest) : null))}{" "}
+        <Link href={`/household?monat=${newest}`}>{t.baseMonths}</Link>
+      </p>
+      <PlanTodos todos={todos} onChanged={onChanged} />
+      <DirtyNotice text={t.dirtyNotice} />
+      <ReserveKpis data={shown} />
+      <Paths data={shown} />
+      <ReserveAccountsCard data={shown} />
+    </>
+  );
+}
+
+/** What was Planung › Anlegen, at the foot of Haushalt › Budget (§7.9 (a) 3): from the money left
+ * each month down to what is still free, each figure the server's; the explanation and the
+ * figures' sources behind their buttons. */
+function RestCard({ ready }: { ready: PlanReady }) {
+  const t = useT(planning);
+  const f = usePlanFormat();
+  const annahmen = useDetail(ASSUMPTIONS);
+  const [explain, setExplain] = useState(false);
+  const [made, setMade] = useState(false);
+  const { shown, onChanged } = ready;
+  const { plan } = shown;
+  const plans = plan.plans ?? [];
+  const free = surplusRow(plan, "free_cash");
+  const buffer = surplusRow(plan, "buffer");
+  const investable = surplusRow(plan, "investable");
+  const reserve = plan.reserve;
+  const gap = reserve?.gap ?? null;
+  const reached = gap !== null && Number(gap) <= 0;
+  const todos = (plan.todos ?? []).filter((todo) => todo.code !== "rate_missing");
+  return (
+    <section className="card stack" id={REST_ANCHOR} aria-labelledby="rest-title">
+      <h2 id="rest-title">{t.restTitle}</h2>
+      <ul className="household-rows planning-rest">
+        <li>
+          <span>{t.restFree}</span>
+          <span>{f.signedEuro(free?.amount ?? "0")}</span>
+        </li>
+        <li>
+          <span>
+            {t.restPlans}
+            <span className="muted planning-rest-sub">
+              {plans.length === 0
+                ? t.kpiNoPlan
+                : shown.mode === "generic"
+                  ? t.kpiPlansTogether(plans.length)
+                  : plans.map((p) => `${planName(p, shown.accounts, t)} ${f.euro(p.monthly)}`).join(" · ")}
+            </span>
+          </span>
+          <span>{f.signedEuro(negated(plan.already_invested ?? "0"))}</span>
+        </li>
+        <li>
+          <span>
+            {t.madeBuffer(f.percentValue(plan.levers.buffer_percent))}{" "}
+            <a {...annahmen.linkProps("puffer")}>{t.change}</a>
+          </span>
+          <span>{f.signedEuro(negated(unsigned(buffer?.amount ?? "0")))}</span>
+        </li>
+        <li className="planning-rest-sum">
+          <span>{t.restLeft}</span>
+          {/* The server's: free cash less the buffer less the savings plans. */}
+          <span>{f.euro(plan.investable_left ?? investable?.amount)}</span>
+        </li>
+      </ul>
+      <p className="muted" data-testid="rest-investable">
+        {t.restInvestable(f.euro(investable?.amount))}
+      </p>
+      {reserve ? (
+        <p>
+          {reached ? t.restReserveReached : t.restReserveGap(f.euro(gap))}{" "}
+          <Link href={HOUSEHOLD_RESERVE}>{t.toReserve} ›</Link> <Link href="/assets">{t.toAssets} ›</Link>
+        </p>
+      ) : null}
+      <PlanTodos todos={todos} onChanged={onChanged} />
+      <div className="row">
+        <button type="button" className="secondary" aria-expanded={explain} onClick={() => setExplain((value) => !value)}>
+          {t.explain}
+        </button>
+        <button type="button" className="secondary" aria-expanded={made} onClick={() => setMade((value) => !value)}>
+          {t.madeTitle}
+        </button>
+      </div>
+      {explain ? <PlanExplanationPanel scenarioId={plan.scenario_id ?? null} asOf={plan.as_of} /> : null}
+      {made ? <HowItIsMade data={shown} /> : null}
+    </section>
   );
 }
 
@@ -320,7 +689,7 @@ function nextMonth(month: string): string {
   return mon === 12 ? `${year + 1}-01` : `${year}-${String(mon + 1).padStart(2, "0")}`;
 }
 
-// --- the sections with their figures ------------------------------------------------------------
+// --- the figures --------------------------------------------------------------------------------
 
 function surplusRow(plan: HouseholdPlan, key: SurplusKey) {
   return plan.surplus?.rows.find((row) => row.key === key) ?? null;
@@ -332,239 +701,8 @@ function planName(plan: SavingsPlan | undefined, accounts: Account[], t: Plannin
   return account?.label ?? plan.destination_payee ?? (plan.asset_class === "crypto" ? t.classCrypto : t.classDepot);
 }
 
-function PlanBody({
-  data,
-  section,
-  draft,
-  setDraft,
-  changes,
-  onDiscard,
-  onSaved,
-  onGoalsSaved,
-  onChanged,
-}: {
-  data: PlanData;
-  section: Exclude<PlanSection, "immobilie">;
-  draft: HouseholdLevers;
-  setDraft: SetDraft;
-  changes: string[];
-  onDiscard: () => void;
-  onSaved: (posted: HouseholdLevers, row: HouseholdScenario) => void;
-  onGoalsSaved: (targets: BudgetTargets, row: HouseholdScenario) => void;
-  onChanged: () => void;
-}) {
-  const t = useT(planning);
-  const f = usePlanFormat();
-  const { plan } = data;
-  const closedMonths = data.health.window.months ?? [];
-  const newest = plan.newest_closed ?? closedMonths[closedMonths.length - 1] ?? "";
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>(null);
-  // A field holding an entry it cannot take keeps the draft's old value, so a save would store
-  // a value the field does not show (PR #434 review C): no save until it is fixed.
-  const [projectionInvalid, setInvalid] = useState(false);
-  const [spendingInvalid, setSpendingInvalid] = useState(false);
-  // A discard or a save remounts the fields, so none keeps a text the draft no longer holds: after
-  // a save each field reads the stored value back, from whichever section it was saved.
-  const [epoch, setEpoch] = useState(0);
-  const invalid = projectionInvalid || spendingInvalid;
-  const dirty = changes.length > 0;
-  const current = currentDefault(data.scenarios);
-  const todos = (plan.todos ?? []).filter((todo) => todo.code !== "rate_missing");
-  // D263: every draft goes through the preview while a member types; the cards keep the saved
-  // values, only „Was eure Änderungen bewirken“ and the Budget's „Mit eurem Plan“ move.
-  const preview = usePlanPreview(plan, draft, dirty);
-  const sheet = useDetail("scenario");
-  const goals = useDetail("goals");
-  const budgetClass = useDetail("budget");
-
-  // Phase 9's links into the old page land here: „Ausgaben durchspielen“ and „Weitere Annahmen“
-  // are in the scenario sheet now.
-  useEffect(() => {
-    if (window.location.hash === "#ausgaben-durchspielen" || window.location.hash === "#weitere-annahmen") sheet.open(SHEET);
-    // once, on arrival
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function save() {
-    setBusy(true);
-    setError(null);
-    try {
-      // The limits of the key figures stay as the default holds them (they are set on Haushalt since phase 10 §7.6).
-      const posted = { ...draft, bands: current?.levers?.bands ?? draft.bands ?? [] };
-      const row = await saveDefaultScenario(posted, current);
-      onSaved(posted, row);
-      setInvalid(false);
-      setSpendingInvalid(false);
-      setEpoch((value) => value + 1);
-    } catch (caught) {
-      setError(caught);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const saveBar = (
-    <div className="stack">
-      {error != null ? <PlanError error={error} /> : null}
-      <div className="row">
-        <button type="button" disabled={busy || !dirty || invalid} onClick={() => void save()}>
-          {t.saveScenario}
-        </button>
-        {dirty ? (
-          <button
-            type="button"
-            className="secondary"
-            disabled={busy}
-            onClick={() => {
-              onDiscard();
-              setInvalid(false);
-              setSpendingInvalid(false);
-              setEpoch((value) => value + 1);
-            }}
-          >
-            {t.discard}
-          </button>
-        ) : null}
-        <span className="muted">{projectionInvalid ? t.fixProjection : spendingInvalid ? t.fixSpending : t.saveHint}</span>
-      </div>
-    </div>
-  );
-
-  const dirtyNotice = dirty ? (
-    <p className="notice notice-warn" role="status">
-      {t.dirtyNotice}
-    </p>
-  ) : null;
-
-  let panel: ReactNode = null;
-  if (sheet.id !== null) {
-    panel = (
-      <DetailPanel title={t.sheetTitle} backLabel={t.back} onClose={sheet.close}>
-        <ScenarioSheet
-          key={epoch}
-          data={data}
-          draft={draft}
-          setDraft={setDraft}
-          changes={changes}
-          preview={preview}
-          saveBar={saveBar}
-          onSpendingValidity={setSpendingInvalid}
-        />
-      </DetailPanel>
-    );
-  } else if (goals.id !== null) {
-    panel = (
-      <GoalsPanel
-        budget={data.budget}
-        saved={fillLevers(plan.levers)}
-        current={current}
-        onClose={goals.close}
-        onSaved={(targets, row) => {
-          onGoalsSaved(targets, row);
-          goals.close();
-        }}
-      />
-    );
-  } else if (budgetClass.id !== null) {
-    panel = (
-      <BudgetClassPanel
-        key={`${budgetClass.id}-${epoch}`}
-        lineKey={budgetClass.id}
-        budget={data.budget}
-        plan={plan}
-        windowMonths={closedMonths}
-        preview={preview}
-        draft={draft}
-        setDraft={setDraft}
-        onValidity={setSpendingInvalid}
-        onClose={budgetClass.close}
-        footer={dirty ? saveBar : null}
-      />
-    );
-  }
-
-  return (
-    <DetailLayout panel={panel}>
-      <div className="stack planning" key={epoch}>
-        {section === "budget" ? (
-          <BudgetSection budget={data.budget} onChanged={onChanged} />
-        ) : (
-          <>
-            {section !== "vermoegen" ? (
-              <p className="muted">
-                {t.baseLine(closedMonths.length, f.monthRange(closedMonths))}
-                {section === "reserve" ? t.basePaths(f.longDate(newest ? monthEnd(newest) : null)) : ""}{" "}
-                <Link href={`/household?monat=${newest}`}>{t.baseMonths}</Link>
-              </p>
-            ) : null}
-            <PlanTodos todos={todos} onChanged={onChanged} />
-            {dirtyNotice}
-          </>
-        )}
-        {section === "reserve" ? (
-          <>
-            <ReserveKpis data={data} />
-            <Levers data={data} draft={draft} setDraft={setDraft} only="reserve" />
-            {dirty ? saveBar : null}
-            <Paths data={data} />
-          </>
-        ) : null}
-        {section === "anlegen" ? (
-          <div className="planning-columns">
-            <div className="planning-main stack">
-              <InvestKpis data={data} />
-              <Levers data={data} draft={draft} setDraft={setDraft} only="buffer" />
-              {dirty ? saveBar : null}
-              <HowItIsMade data={data} />
-            </div>
-            <PlanExplanationPanel scenarioId={plan.scenario_id ?? null} asOf={plan.as_of} />
-          </div>
-        ) : null}
-        {section === "vermoegen" ? (
-          <ProjectionCard
-            data={data}
-            draft={draft}
-            setDraft={setDraft}
-            dirty={dirty}
-            saveBar={saveBar}
-            onChanged={onChanged}
-            onValidity={setInvalid}
-          />
-        ) : null}
-      </div>
-    </DetailLayout>
-  );
-}
-
-function InvestKpis({ data }: { data: PlanData }) {
-  const { plan } = data;
-  const plans = plan.plans ?? [];
-  const investable = surplusRow(plan, "investable");
-  const free = surplusRow(plan, "free_cash");
-  const t = useT(planning);
-  const f = usePlanFormat();
-  return (
-    <div className="planning-kpis">
-      <div className="planning-kpi planning-kpi-main">
-        <p className="planning-kpi-label">{t.kpiInvestable}</p>
-        <p className="planning-kpi-value">{f.euro(investable?.amount)}</p>
-        <p className="planning-kpi-sub">{t.kpiInvestableSub(f.euro(free?.amount), f.percentValue(plan.levers.buffer_percent))}</p>
-      </div>
-      <div className="planning-kpi">
-        <p className="planning-kpi-label">{t.kpiInvested}</p>
-        <p className="planning-kpi-value">{f.euro(plan.already_invested ?? "0")}</p>
-        <p className="planning-kpi-sub">
-          {plans.length === 0
-            ? t.kpiNoPlan
-            : data.mode === "generic"
-              ? t.kpiPlansTogether(plans.length)
-              : plans.map((p) => `${planName(p, data.accounts, t)} ${f.euro(p.monthly)}`).join(" · ")}
-        </p>
-        {plan.investable_left != null ? <p className="planning-kpi-sub">{t.kpiLeft(f.euro(plan.investable_left))}</p> : null}
-      </div>
-    </div>
-  );
+function unsigned(value: string): string {
+  return value.startsWith("-") ? value.slice(1) : value;
 }
 
 function ReserveKpis({ data }: { data: PlanData }) {
@@ -572,6 +710,7 @@ function ReserveKpis({ data }: { data: PlanData }) {
   const reserve = plan.reserve;
   const t = useT(planning);
   const f = usePlanFormat();
+  const annahmen = useDetail(ASSUMPTIONS);
   return (
     <div className="planning-kpis">
       <div className="planning-kpi planning-kpi-main">
@@ -582,63 +721,50 @@ function ReserveKpis({ data }: { data: PlanData }) {
       <div className="planning-kpi">
         <p className="planning-kpi-label">{t.kpiGap}</p>
         <p className="planning-kpi-value">{f.euro(reserve?.gap)}</p>
-        <p className="planning-kpi-sub">{t.kpiTarget(f.euro(reserve?.target), f.short(plan.levers.reserve_target_months))}</p>
+        <p className="planning-kpi-sub">
+          {t.kpiTarget(f.euro(reserve?.target), f.short(plan.levers.reserve_target_months))}{" "}
+          <a {...annahmen.linkProps("reserve")}>{t.change}</a>
+        </p>
+      </div>
+      <div className="planning-kpi">
+        <p className="planning-kpi-label">{t.kpiNeed}</p>
+        <p className="planning-kpi-value">{f.euro(reserve?.need)}</p>
+        <p className="planning-kpi-sub">{t.kpiNeedSub}</p>
       </div>
     </div>
   );
 }
 
-/** The scenario sheet (D270): the unsaved changes, what they do (D271), the save, then the
- * places to change spending and the other assumptions. */
-function ScenarioSheet({
-  data,
-  draft,
-  setDraft,
-  changes,
-  preview,
-  saveBar,
-  onSpendingValidity,
-}: {
-  data: PlanData;
-  draft: HouseholdLevers;
-  setDraft: SetDraft;
-  changes: string[];
-  preview: PlanPreview;
-  saveBar: ReactNode;
-  onSpendingValidity: (invalid: boolean) => void;
-}) {
+/** The accounts the reserve counts today, each with the balance the server counted. */
+function ReserveAccountsCard({ data }: { data: PlanData }) {
   const t = useT(planning);
+  const f = usePlanFormat();
+  const annahmen = useDetail(ASSUMPTIONS);
+  const accounts = data.plan.reserve?.accounts ?? [];
+  const label = (id: string) => data.accounts.find((account) => account.id === id)?.label ?? id;
   return (
-    <div className="stack">
-      <p className="muted">{t.sheetIntro}</p>
-      <section className="stack" aria-labelledby="sheet-changes">
-        <h3 id="sheet-changes">{t.changesTitle}</h3>
-        {changes.length === 0 ? (
-          <p className="muted">{t.noChanges}</p>
-        ) : (
-          <ul className="planning-change-list">
-            {changes.map((line, index) => (
-              <li key={index}>{line}</li>
-            ))}
-          </ul>
-        )}
-      </section>
-      <Effects saved={data.plan} preview={preview} />
-      {saveBar}
-      <SpendingPlaySection
-        saved={data.plan}
-        windowMonths={data.health.window.months ?? []}
-        preview={preview}
-        draft={draft}
-        setDraft={setDraft}
-        onValidity={onSpendingValidity}
-      />
-      <MoreAssumptions data={data} draft={draft} setDraft={setDraft} />
-    </div>
+    <section className="card stack" aria-labelledby="reserve-accounts-title">
+      <div className="planning-card-head">
+        <h2 id="reserve-accounts-title">{t.reserveAccountsTitle}</h2>
+        <span className="spacer" />
+        <a {...annahmen.linkProps("reserve")}>
+          {t.change} <span aria-hidden="true">›</span>
+        </a>
+      </div>
+      {accounts.length > 0 ? (
+        <ul className="household-rows">
+          {accounts.map((account) => (
+            <li key={account.account_id}>
+              <span>{label(account.account_id)}</span>
+              <span>{f.signedEuro(account.balance)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <p className="muted">{t.reserveWhat}</p>
+    </section>
   );
 }
-
-export type SetDraft = (update: (previous: HouseholdLevers) => HouseholdLevers) => void;
 
 // --- Stellschrauben -------------------------------------------------------------------------
 
@@ -647,101 +773,64 @@ function halves(value: string): number {
   return Math.round(Number(value) * 2);
 }
 
-function Levers({
-  data,
-  draft,
-  setDraft,
-  only,
-}: {
-  data: PlanData;
-  draft: HouseholdLevers;
-  setDraft: SetDraft;
-  only: "reserve" | "buffer";
-}) {
+function ReserveLever({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLevers; setDraft: SetDraft }) {
   const reserve = data.plan.reserve;
   const regular = surplusRow(data.plan, "mean_regular_spending");
   const rental = surplusRow(data.plan, "mean_rental_cash");
   const target = halves(draft.reserve_target_months);
-  const buffer = Number(draft.buffer_percent);
   const setTarget = (next: number) =>
     setDraft((previous) => ({ ...previous, reserve_target_months: String(Math.max(0, Math.min(48, next)) / 2) }));
-  const setBuffer = (next: number) =>
-    setDraft((previous) => ({ ...previous, buffer_percent: String(Math.max(0, Math.min(50, next))) }));
   const flatShortfall = rental && rental.amount.startsWith("-") ? rental.amount.slice(1) : null;
   const t = useT(planning);
   const f = usePlanFormat();
   return (
-    <section className="card stack" aria-labelledby="levers-title">
-      <h2 id="levers-title">{t.leversTitle}</h2>
-      <div className="planning-levers">
-        {only === "reserve" ? (
-          <div className="planning-lever">
-            <p className="planning-kpi-label">{t.leverReserve}</p>
-            <div className="planning-lever-control">
-              <button type="button" className="secondary" aria-label={t.leverReserveDown} disabled={target <= 0} onClick={() => setTarget(target - 1)}>
-                −
-              </button>
-              <span className="planning-lever-value" aria-live="polite">
-                {t.leverMonths(f.short(String(target / 2)))}
-              </span>
-              <button type="button" className="secondary" aria-label={t.leverReserveUp} disabled={target >= 48} onClick={() => setTarget(target + 1)}>
-                +
-              </button>
-            </div>
-            <p className="planning-lever-sub">
-              {t.leverReserveSub(f.euro(reserve?.need), f.euro(regular?.amount))}
-              {flatShortfall ? t.leverFlat(f.euro(flatShortfall)) : ""}
-            </p>
-          </div>
-        ) : (
-          <div className="planning-lever">
-            <p className="planning-kpi-label">{t.leverBuffer}</p>
-            <div className="planning-lever-control">
-              <button type="button" className="secondary" aria-label={t.leverBufferDown} disabled={buffer <= 0} onClick={() => setBuffer(buffer - 5)}>
-                −
-              </button>
-              <span className="planning-lever-value" aria-live="polite">
-                {f.percentValue(draft.buffer_percent)}
-              </span>
-              <button type="button" className="secondary" aria-label={t.leverBufferUp} disabled={buffer >= 50} onClick={() => setBuffer(buffer + 5)}>
-                +
-              </button>
-            </div>
-            <p className="planning-lever-sub">{t.leverBufferSub}</p>
-          </div>
-        )}
+    <div className="planning-lever">
+      <div className="planning-lever-control">
+        <button type="button" className="secondary" aria-label={t.leverReserveDown} disabled={target <= 0} onClick={() => setTarget(target - 1)}>
+          −
+        </button>
+        <span className="planning-lever-value" aria-live="polite">
+          {t.leverMonths(f.short(String(target / 2)))}
+        </span>
+        <button type="button" className="secondary" aria-label={t.leverReserveUp} disabled={target >= 48} onClick={() => setTarget(target + 1)}>
+          +
+        </button>
       </div>
-    </section>
+      <p className="planning-lever-sub">
+        {t.leverReserveSub(f.euro(reserve?.need), f.euro(regular?.amount))}
+        {flatShortfall ? t.leverFlat(f.euro(flatShortfall)) : ""}
+      </p>
+    </div>
+  );
+}
+
+function BufferLever({ draft, setDraft }: { draft: HouseholdLevers; setDraft: SetDraft }) {
+  const buffer = Number(draft.buffer_percent);
+  const setBuffer = (next: number) =>
+    setDraft((previous) => ({ ...previous, buffer_percent: String(Math.max(0, Math.min(50, next))) }));
+  const t = useT(planning);
+  const f = usePlanFormat();
+  return (
+    <div className="planning-lever">
+      <div className="planning-lever-control">
+        <button type="button" className="secondary" aria-label={t.leverBufferDown} disabled={buffer <= 0} onClick={() => setBuffer(buffer - 5)}>
+          −
+        </button>
+        <span className="planning-lever-value" aria-live="polite">
+          {f.percentValue(draft.buffer_percent)}
+        </span>
+        <button type="button" className="secondary" aria-label={t.leverBufferUp} disabled={buffer >= 50} onClick={() => setBuffer(buffer + 5)}>
+          +
+        </button>
+      </div>
+      <p className="planning-lever-sub">{t.leverBufferSub}</p>
+    </div>
   );
 }
 
 // --- Weitere Annahmen -----------------------------------------------------------------------
 
 const INCOME_NOTES: IncomeChangeNote[] = ["parental_leave", "job_change", "part_time", "other"];
-
-function MoreAssumptions({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLevers; setDraft: SetDraft }) {
-  const t = useT(planning);
-  const [open, setOpen] = useState(true);
-  return (
-    <section className="card stack" id="weitere-annahmen" aria-labelledby="more-title">
-      <div className="planning-card-head">
-        <h2 id="more-title">{t.moreTitle}</h2>
-        <span className="spacer" />
-        <button type="button" className="link" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-          {open ? t.collapse : t.expand}
-        </button>
-      </div>
-      {open ? (
-        <>
-          <IncomeChanges draft={draft} setDraft={setDraft} />
-          <OneOffs data={data} draft={draft} setDraft={setDraft} />
-          <ReserveAccountsBlock data={data} draft={draft} setDraft={setDraft} />
-          <SavingsPlans data={data} draft={draft} setDraft={setDraft} />
-        </>
-      ) : null}
-    </section>
-  );
-}
 
 function IncomeChanges({ draft, setDraft }: { draft: HouseholdLevers; setDraft: SetDraft }) {
   const t = useT(planning);
@@ -1372,43 +1461,34 @@ function rentalHref(accountId: string, month: string): string {
   return `/accounts/${accountId}?tab=umsaetze&von=${month}-01&bis=${monthEnd(month)}`;
 }
 
-// --- Vermögen in einigen Jahren -------------------------------------------------------------
+// --- Vermögen in einigen Jahren (Anlagen › Übersicht) ----------------------------------------
 
-function ProjectionCard({
+/** „Rendite pro Jahr“ in „Annahmen“: the yearly value change of funds and of crypto the
+ * household types (D247, the app proposes none), and the projection's years. */
+function RateFields({
   data,
   draft,
   setDraft,
-  dirty,
-  saveBar,
-  onChanged,
   onValidity,
 }: {
   data: PlanData;
   draft: HouseholdLevers;
   setDraft: SetDraft;
-  dirty: boolean;
-  saveBar: ReactNode;
-  onChanged: () => void;
   /** true while a field holds an entry the draft cannot take */
   onValidity: (invalid: boolean) => void;
 }) {
   const t = useT(planning);
   const f = usePlanFormat();
   const ids = useId();
-  const projection = data.plan.projection;
-  const points = projection?.points ?? [];
-  const assumptions = projection?.assumptions ?? [];
-  const flat = assumptions.find((a) => a.kind === "flat_growth");
-  const rateTodos = (data.plan.todos ?? []).filter((todo) => todo.code === "rate_missing");
-  const projectionTodos = projection?.todos ?? [];
+  const flat = (data.plan.projection?.assumptions ?? []).find((a) => a.kind === "flat_growth");
   const [texts, setTexts] = useState({
     depot: percentText(draft.value_change?.depot),
     crypto: percentText(draft.value_change?.crypto),
     years: String(draft.net_worth_years),
   });
   const [errors, setErrors] = useState<Partial<Record<"depot" | "crypto" | "years", string>>>({});
-  // A field left invalid when the section changes keeps the draft's old value, which is valid,
-  // so it must not keep blocking „Szenario speichern“ where no red field shows.
+  // A field left invalid when the panel closes keeps the draft's old value, which is valid, so it
+  // must not keep blocking „Szenario speichern“ where no red field shows.
   useEffect(() => () => onValidity(false), [onValidity]);
 
   function setError(key: "depot" | "crypto" | "years", message: string | undefined) {
@@ -1445,58 +1525,90 @@ function ProjectionCard({
     if (!tooLarge) setDraft((previous) => ({ ...previous, value_change: { ...previous.value_change, [key]: value } }));
   }
 
+  return (
+    <fieldset className="health-limit">
+      <legend>{t.projLegend}</legend>
+      <div className="health-limit-fields">
+        {(["depot", "crypto"] as const).map((key) => (
+          <Field
+            key={key}
+            id={`${ids}-${key}`}
+            label={t.rateField(key === "depot" ? t.classDepot : t.classCrypto)}
+            errors={errors[key] ? [errors[key] as string] : []}
+          >
+            <input
+              type="text"
+              inputMode="decimal"
+              className="health-limit-input"
+              value={texts[key]}
+              onChange={(event) => apply(key, event.target.value)}
+            />
+          </Field>
+        ))}
+        <Field id={`${ids}-years`} label={t.years} errors={errors.years ? [errors.years] : []}>
+          <input
+            type="text"
+            inputMode="numeric"
+            className="health-limit-input"
+            value={texts.years}
+            onChange={(event) => apply("years", event.target.value)}
+          />
+        </Field>
+      </div>
+      <p className="muted">
+        {t.projFlat(flat ? f.ratio(flat.value) : null)}{" "}
+        <Link href={propertyPlanningHref(flat?.property_id ? new URLSearchParams({ immobilie: flat.property_id }) : undefined)}>
+          {t.projFlatChange}
+        </Link>
+      </p>
+    </fieldset>
+  );
+}
+
+/** What was Planung › Vermögen, on Anlagen › Übersicht under „Vermögen im Verlauf“ (§7.9 (a) 4):
+ * the net worth in some years on the rates the household typed, inside a `PlanProvider`. Nothing
+ * while the plan cannot be read or has fewer than three closed months: Haushalt says why. */
+export function HouseholdProjection() {
+  const { ready } = usePlan();
+  if (!ready) return null;
+  return <ProjectionCard key={ready.epoch} ready={ready} />;
+}
+
+function ProjectionCard({ ready }: { ready: PlanReady }) {
+  const t = useT(planning);
+  const f = usePlanFormat();
+  const annahmen = useDetail(ASSUMPTIONS);
+  const { shown, onChanged } = ready;
+  const projection = shown.plan.projection;
+  const points = projection?.points ?? [];
+  const assumptions = projection?.assumptions ?? [];
+  const flat = assumptions.find((a) => a.kind === "flat_growth");
+  const rateTodos = (shown.plan.todos ?? []).filter((todo) => todo.code === "rate_missing");
+  const projectionTodos = projection?.todos ?? [];
   const last = points[points.length - 1];
   const rateLine = (kind: "depot_rate" | "crypto_rate", label: string) => {
     const assumption = assumptions.find((a) => a.kind === kind);
     if (!assumption) return null;
-    const by = assumption.created_by ? data.names.get(assumption.created_by) : undefined;
-    return (
-      <li key={kind}>
-        {t.rateLine(label, f.ratio(assumption.value), by ?? null, f.longDate(assumption.created_at))}
-      </li>
-    );
+    const by = assumption.created_by ? shown.names.get(assumption.created_by) : undefined;
+    return <li key={kind}>{t.rateLine(label, f.ratio(assumption.value), by ?? null, f.longDate(assumption.created_at))}</li>;
   };
+  const propertyLink = propertyPlanningHref(flat?.property_id ? new URLSearchParams({ immobilie: flat.property_id }) : undefined);
 
   return (
-    <section className="card stack" id="annahme" aria-labelledby="projection-title">
-      <h2 id="projection-title">{t.projTitle}</h2>
-      <p className="muted">
-        {t.projIntro}
-      </p>
-      <fieldset className="health-limit">
-        <legend>{t.projLegend}</legend>
-        <div className="health-limit-fields">
-          {(["depot", "crypto"] as const).map((key) => (
-            <Field key={key} id={`${ids}-${key}`} label={t.rateField(key === "depot" ? t.classDepot : t.classCrypto)} errors={errors[key] ? [errors[key] as string] : []}>
-              <input
-                type="text"
-                inputMode="decimal"
-                className="health-limit-input"
-                value={texts[key]}
-                onChange={(event) => apply(key, event.target.value)}
-              />
-            </Field>
-          ))}
-          <Field id={`${ids}-years`} label={t.years} errors={errors.years ? [errors.years] : []}>
-            <input
-              type="text"
-              inputMode="numeric"
-              className="health-limit-input"
-              value={texts.years}
-              onChange={(event) => apply("years", event.target.value)}
-            />
-          </Field>
-        </div>
-        <p className="muted">
-          {t.projFlat(flat ? f.ratio(flat.value) : null)}{" "}
-          <Link href={flat?.property_id ? `/planning?immobilie=${flat.property_id}` : "/planning?section=immobilie"}>{t.projFlatChange}</Link>
-        </p>
-      </fieldset>
-      {dirty ? saveBar : null}
+    <section className="card stack" id={PROJECTION_ANCHOR} aria-labelledby="projection-title">
+      <div className="planning-card-head">
+        <h2 id="projection-title">{t.projTitle}</h2>
+        <span className="spacer" />
+        <a {...annahmen.linkProps("rendite")}>
+          {t.assumptions} <span aria-hidden="true">›</span>
+        </a>
+      </div>
+      <p className="muted">{t.projIntro}</p>
+      <DirtyNotice text={t.dirtyNoticeProjection} />
       {points.length === 0 ? (
         <>
           {rateTodos.length > 0 ? <p className="health-reference-title">{t.rateMissing}</p> : null}
-          <PlanTodos todos={[...rateTodos, ...projectionTodos.filter((t) => t.code !== "rate_missing")]} onChanged={onChanged} />
+          <PlanTodos todos={[...rateTodos, ...projectionTodos.filter((todo) => todo.code !== "rate_missing")]} onChanged={onChanged} />
         </>
       ) : (
         <>
@@ -1504,33 +1616,22 @@ function ProjectionCard({
             {rateLine("depot_rate", t.classDepot)}
             {rateLine("crypto_rate", t.classCrypto)}
             <li>
-              {t.projFlatLine(flat ? f.ratio(flat.value) : null)}
+              {t.projFlatLine(flat ? f.ratio(flat.value) : null)} <Link href={propertyLink}>{t.projFlatChange}</Link>
             </li>
-            <li>
-              {t.projSameMean(f.monthRange(data.health.window.months ?? []))}
-            </li>
+            <li>{t.projSameMean(f.monthRange(shown.health.window.months ?? []))}</li>
             <li>{t.projNominal}</li>
           </ul>
-          {last ? (
-            <p className="cashflow-value">
-              {t.projAt(f.longDate(last.on), f.euro(last.total))}
-            </p>
-          ) : null}
+          {last ? <p className="cashflow-value">{t.projAt(f.longDate(last.on), f.euro(last.total))}</p> : null}
           {projection?.start ? (
-            <p className="muted">
-              {t.projStart(f.longDate(projection.start.on), f.euro(projection.start.total))}
-            </p>
+            <p className="muted">{t.projStart(f.longDate(projection.start.on), f.euro(projection.start.total))}</p>
           ) : null}
           <ProjectionTable start={projection?.start ?? null} points={points} />
           {projection?.ends_before_sale_year != null ? (
             <p className="muted">
-              {t.projEnds(projection.ends_before_sale_year - 1)}{" "}
-              <Link href="/planning?section=immobilie">{t.projEndsLink}</Link>
+              {t.projEnds(projection.ends_before_sale_year - 1)} <Link href={propertyLink}>{t.projEndsLink}</Link>
             </p>
           ) : null}
-          {projection?.used_up ? (
-            <p className="muted">{t.projUsedUp(f.month(projection.used_up))}</p>
-          ) : null}
+          {projection?.used_up ? <p className="muted">{t.projUsedUp(f.month(projection.used_up))}</p> : null}
           {last?.change ? <ChangeRows point={last} /> : null}
           <PlanTodos todos={projectionTodos} onChanged={onChanged} />
         </>

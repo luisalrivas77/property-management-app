@@ -6,6 +6,14 @@ import { defineMessages } from "./core";
 const de = {
   title: "Haushalt",
   subtitle: "Wohin das Geld geht",
+  // the four tabs (phase 10 §7.9 (a), D288)
+  tabs: "Bereiche",
+  tabMonth: "Monat",
+  tabBudget: "Budget",
+  tabGoal: "Ziel",
+  tabReserve: "Reserve",
+  goalSoon:
+    "Hier steht bald euer Ziel: ein Betrag bis zu einem Tag, und was es im Monat braucht. Bis dahin rechnen Budget und Reserve wie bisher.",
   month: "Monat",
   running: " (läuft noch)",
   changed: "seit dem Abschluss geändert",
@@ -56,7 +64,7 @@ const de = {
   plannedOnly: (saved: string) => `„Geplant“ steht nur bei den Kategorien, für die ihr in eurem Szenario etwas geplant habt${saved}`,
   savedOn: (day: string) => `: gespeichert am ${day}`,
   under: " unter ",
-  planningBudget: "Planung › Budget",
+  planningBudget: "Haushalt › Budget",
   noSpending: "In diesem Monat ist keine Ausgabe bestätigt.",
   category: "Kategorie",
   share: "Anteil",
@@ -97,6 +105,13 @@ type Messages = typeof de;
 const en: Messages = {
   title: "Household",
   subtitle: "Where the money goes",
+  tabs: "Sections",
+  tabMonth: "Month",
+  tabBudget: "Budget",
+  tabGoal: "Goal",
+  tabReserve: "Reserve",
+  goalSoon:
+    "Your goal will be here soon: an amount by a date, and what it takes each month. Until then the budget and the reserve work as before.",
   month: "Month",
   running: " (still running)",
   changed: "changed since closing",
@@ -145,7 +160,7 @@ const en: Messages = {
   plannedOnly: (saved) => `„Planned“ appears only for the categories you planned something for in your scenario${saved}`,
   savedOn: (day) => `: saved on ${day}`,
   under: " under ",
-  planningBudget: "Planning › Budget",
+  planningBudget: "Household › Budget",
   noSpending: "No spending is confirmed in this month.",
   category: "Category",
   share: "Share",

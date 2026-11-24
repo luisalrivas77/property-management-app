@@ -39,6 +39,7 @@ const PRIMARY: readonly Entry[] = [
   // The capture page (phase-2.md §9) is reached from the review page.
   { href: "/inbox", label: "inbox", icon: "inbox", also: ["/capture"] },
   { href: "/household", label: "household", icon: "household" },
+  // Planung left „Mehr“: it folded into Haushalt and Anlagen (phase 10 §7.9 (a), D288); /planning redirects.
   { href: "/assets", label: "assets", icon: "assets" },
 ];
 
@@ -53,7 +54,6 @@ const MORE: readonly MoreEntry[] = [
     also: ["/units", "/tenancies", "/tenants", "/owners", "/loans"],
   },
   { href: "/tax", label: "tax", hint: "taxHint", icon: "tax" },
-  { href: "/planning", label: "planning", hint: "planningHint", icon: "planning" },
   { href: "/documents", label: "documents", hint: "documentsHint", icon: "documents" },
   { href: "/settings", label: "settings", icon: "settings" },
 ];

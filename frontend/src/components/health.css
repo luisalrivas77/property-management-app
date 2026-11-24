@@ -219,17 +219,6 @@
   gap: 2px;
 }
 
-.spending-play-sub {
-  display: block;
-  font-weight: 400;
-  font-size: 0.85em;
-}
-
-.spending-play-effects {
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-}
 
 /* Planung › Haushalt, step 5 (mockup 12): the sections and, beside them, the KI panel with the
    plan's explanation; on a narrow screen the panel follows the sections. */
