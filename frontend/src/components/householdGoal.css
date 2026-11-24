@@ -1,0 +1,213 @@
+/* Euer Ziel (phase 10 §7.9 (d); mockups 19b, 19c): the bar, the figures and the scenarios on
+   Haushalt › Ziel, and the bar inside Übersicht's tile. Tokens from globals.css only, so light and
+   dark follow the theme; every row wraps on the phone, nothing scrolls sideways. */
+
+.goal-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.goal-card-head h2 {
+  margin: 0;
+}
+
+.goal-progress-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 0 0 6px;
+}
+
+.goal-bar {
+  display: block;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--tag-bg);
+  overflow: hidden;
+}
+
+.goal-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.goal-bar-tile {
+  height: 6px;
+  margin: 6px 0 4px;
+}
+
+.goal-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.goal-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.goal-figure-label {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.goal-figure-value {
+  font-size: 1.375rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.goal-figure-sub {
+  font-size: 0.8125rem;
+}
+
+.goal-summary p,
+.goal-issue p,
+.goal-unreachable p {
+  margin: 0;
+}
+
+.goal-unreachable p + p {
+  margin-top: 6px;
+}
+
+.goal-scenario-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.goal-scenario-rows > li {
+  border-top: 1px solid var(--border);
+}
+
+.goal-scenario-row,
+.goal-scenario-own {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.goal-scenario-row {
+  color: inherit;
+  text-decoration: none;
+}
+
+.goal-scenario-row:hover .goal-scenario-title {
+  color: var(--accent-strong);
+}
+
+.goal-scenario-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.goal-scenario-text p {
+  margin: 4px 0 0;
+}
+
+.goal-scenario-title {
+  font-weight: 700;
+}
+
+.goal-scenario-title .badge {
+  vertical-align: middle;
+}
+
+.goal-scenario-row > .badge {
+  flex: none;
+}
+
+.goal-budget-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.goal-budget-table th,
+.goal-budget-table td {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--divider);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.goal-budget-table .num {
+  padding-left: 12px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.goal-class {
+  font-size: 0.8125rem;
+}
+
+.goal-confirm .row {
+  margin-top: 8px;
+}
+
+.goal-adopt p {
+  margin: 0;
+}
+
+.goal-choice-group {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.goal-choice-group legend {
+  margin-bottom: 4px;
+  padding: 0;
+  font-weight: 700;
+}
+
+.goal-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 0;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.goal-choice input[type="radio"] {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.goal-choice-hint {
+  display: block;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.goal-delete {
+  padding-top: 12px;
+  border-top: 1px solid var(--divider);
+}

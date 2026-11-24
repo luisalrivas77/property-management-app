@@ -23,6 +23,7 @@ import { createContext, type FormEvent, type ReactNode, useContext, useEffect, u
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { useT } from "@/i18n";
+import { goalText } from "@/i18n/goal";
 import { lineLabel, planning, type PlanningText } from "@/i18n/planning";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import {
@@ -39,6 +40,7 @@ import {
 
 import { DetailLayout, DetailPanel, useDetail } from "./DetailPanel";
 import { Field } from "./form";
+import { todayIso } from "./format";
 import { HealthTodoItem } from "./healthFigures";
 import {
   currentDefault,
@@ -57,6 +59,7 @@ import {
 } from "./healthShared";
 import { percentInput, toSignedMoneyString } from "./input";
 import { ALLOCATION_CATEGORY } from "./labels";
+import { type GoalView, useGoalView } from "./householdGoal";
 import { useOneOffCheck } from "./householdRecurring";
 import { PlanExplanationPanel } from "./planExplanation";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
@@ -210,6 +213,8 @@ interface PlanState {
   /** The page this provider sits on (`/household?tab=budget`, `/assets`): a to-do of
    * „Annahmen“ opens the panel here instead of leaving it. */
   page: string;
+  /** Haushalt › Ziel's goal (§7.9 (d)), or null on a page without it. */
+  goal: GoalView | null;
 }
 
 const PlanContext = createContext<PlanState | null>(null);
@@ -233,12 +238,15 @@ export function PlanProvider({
   page,
   backLabel,
   oneOff = false,
+  goal = false,
   children,
 }: {
   page: string;
   backLabel: string;
   /** Read the one-off check for Haushalt › Budget (§7.9 (c)); Anlagen leaves it out. */
   oneOff?: boolean;
+  /** Read the household goal for Haushalt › Ziel (§7.9 (d)). */
+  goal?: boolean;
   children: ReactNode;
 }) {
   const t = useT(planning);
@@ -271,6 +279,21 @@ export function PlanProvider({
   const setDraft: SetDraft = (update) => setDraftState((previous) => ({ levers: update(resolveDraft(previous, data?.plan)) }));
   const invalid = projectionInvalid || spendingInvalid;
   const current = data ? currentDefault(data.scenarios) : null;
+  // The goal writes the default scenario itself (its own read of the history): the plan is read
+  // again, and a draft with no change follows the new row instead of reading as changed.
+  const goalView = useGoalView({
+    enabled: goal,
+    backLabel,
+    enough,
+    dirty,
+    onWritten: () => {
+      state.reload();
+      if (!dirty) {
+        setDraftState(null);
+        setEpoch((value) => value + 1);
+      }
+    },
+  });
 
   let ready: PlanReady | null = null;
   let panel: ReactNode = null;
@@ -282,8 +305,21 @@ export function PlanProvider({
       setBusy(true);
       setError(null);
       try {
-        // The limits of the key figures stay as the default holds them (they are set on Haushalt since phase 10 §7.6).
-        const posted = { ...draft, bands: current?.levers?.bands ?? draft.bands ?? [] };
+        // The limits of the key figures stay as the default holds them (they are set on Haushalt
+        // since phase 10 §7.6), and so do the goal and its choice (set on Haushalt › Ziel, §7.9
+        // (d)). Spending changes saved over an adopted scenario's are the household's own choice.
+        const savedLevers = current?.levers;
+        const choice = savedLevers?.goal_choice ?? null;
+        const spendingMoved = JSON.stringify(draft.spending_changes ?? []) !== JSON.stringify(savedLevers?.spending_changes ?? []);
+        const posted = {
+          ...draft,
+          bands: savedLevers?.bands ?? draft.bands ?? [],
+          goal: savedLevers?.goal ?? null,
+          goal_choice:
+            choice?.spending && choice.spending !== "own" && spendingMoved
+              ? { ...choice, spending: "own" as const, spending_chosen_on: todayIso() }
+              : choice,
+        };
         const row = await saveDefaultScenario(posted, current);
         setDraftState({ levers: posted, resetOn: row.id });
         state.reload();
@@ -391,9 +427,10 @@ export function PlanProvider({
       panel = oneOffCheck.panel;
     }
   }
+  if (panel === null && goalView.panel) panel = goalView.panel;
 
   return (
-    <PlanContext.Provider value={{ state, ready, page }}>
+    <PlanContext.Provider value={{ state, ready, page, goal: goal ? goalView : null }}>
       <DetailLayout panel={panel}>{children}</DetailLayout>
     </PlanContext.Provider>
   );
@@ -555,6 +592,20 @@ export function HouseholdPlanTab({ tab }: { tab: "budget" | "reserve" }) {
         )
       }
     </Loading>
+  );
+}
+
+/** Haushalt › Ziel (§7.9 (d)): the goal reads its own answer, so it shows before three closed
+ * months too (it then says what the projection still needs); an unsaved draft of „Annahmen“
+ * (Eigene Wahl) gets the save bar, since the goal counts the saved levers only. */
+export function HouseholdGoalTab() {
+  const g = useT(goalText);
+  const { goal } = usePlan();
+  return (
+    <div className="stack planning">
+      <DirtyNotice text={g.dirtyGoal} />
+      {goal?.tab}
+    </div>
   );
 }
 

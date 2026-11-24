@@ -51,8 +51,8 @@
 // tabs, ?tab=budget|ziel|reserve, and Monat (everything above) by default. Budget and Reserve are
 // what Planung's sections were, with „Was mit dem Rest passiert“ (Planung › Anlegen) at Budget's
 // foot; every lever is in one detail panel „Annahmen“ (`#d-annahmen-<group>`), and each tab shows
-// its own figures with an unsaved change (components/householdPlan.tsx). Ziel is a placeholder
-// until §7.9 (d).
+// its own figures with an unsaved change (components/householdPlan.tsx). Ziel (§7.9 (d), D289) is
+// the household's goal with its spending scenarios (components/householdGoal.tsx).
 import "./household.css";
 import "@/components/planningSections.css";
 
@@ -77,7 +77,7 @@ import {
 import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { todayIso } from "@/components/format";
 import { HealthTodoList, HouseholdHealthSection } from "@/components/healthFigures";
-import { HouseholdPlanTab, PlanProvider } from "@/components/householdPlan";
+import { HouseholdGoalTab, HouseholdPlanTab, PlanProvider } from "@/components/householdPlan";
 import { useRecurringPayments } from "@/components/householdRecurring";
 import { ALLOCATION_CATEGORY, HOUSEHOLD_GROUP, HOUSEHOLD_SPENDING_GROUPS } from "@/components/labels";
 import { usePlanFormat } from "@/components/planFormat";
@@ -232,7 +232,7 @@ function Household() {
   // Monat keeps the chosen month; the other tabs run over the closed months, so a link back to
   // Monat lands on the month that was shown.
   const tabHref = (key: HouseholdTab) => (key === "monat" ? `${pathname}?monat=${month}` : `${pathname}?tab=${key}`);
-  const planTab = tab === "budget" || tab === "reserve" ? tab : null;
+  const planTab = tab === "budget" || tab === "ziel" || tab === "reserve" ? tab : null;
 
   return (
     <section>
@@ -273,12 +273,11 @@ function Household() {
           </div>
         </>
       ) : null}
-      {tab === "ziel" ? <p className="card muted">{t.goalSoon}</p> : null}
-      {/* Budget and Reserve share one plan and one draft (one element in one place), so an unsaved
-          change survives a switch between them (§7.9 (a)). */}
+      {/* Budget, Ziel and Reserve share one plan and one draft (one element in one place), so an
+          unsaved change survives a switch between them (§7.9 (a)); Ziel reads the goal too. */}
       {planTab ? (
-        <PlanProvider page={`${pathname}?tab=${planTab}`} backLabel={t.title} oneOff>
-          <HouseholdPlanTab tab={planTab} />
+        <PlanProvider page={`${pathname}?tab=${planTab}`} backLabel={t.title} oneOff goal={planTab === "ziel"}>
+          {planTab === "ziel" ? <HouseholdGoalTab /> : <HouseholdPlanTab tab={planTab} />}
         </PlanProvider>
       ) : null}
     </section>

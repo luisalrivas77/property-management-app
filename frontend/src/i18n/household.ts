@@ -12,8 +12,6 @@ const de = {
   tabBudget: "Budget",
   tabGoal: "Ziel",
   tabReserve: "Reserve",
-  goalSoon:
-    "Hier steht bald euer Ziel: ein Betrag bis zu einem Tag, und was es im Monat braucht. Bis dahin rechnen Budget und Reserve wie bisher.",
   month: "Monat",
   running: " (läuft noch)",
   changed: "seit dem Abschluss geändert",
@@ -110,8 +108,6 @@ const en: Messages = {
   tabBudget: "Budget",
   tabGoal: "Goal",
   tabReserve: "Reserve",
-  goalSoon:
-    "Your goal will be here soon: an amount by a date, and what it takes each month. Until then the budget and the reserve work as before.",
   month: "Month",
   running: " (still running)",
   changed: "changed since closing",
