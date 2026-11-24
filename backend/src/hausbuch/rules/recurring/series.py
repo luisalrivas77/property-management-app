@@ -30,11 +30,12 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from functools import lru_cache
 from statistics import median
 from uuid import UUID
 
 from hausbuch.rules.budget.budget import is_spending
-from hausbuch.rules.matching import payee, payee_key, same_payee
+from hausbuch.rules.matching import Payee, payee, same_words
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.health import GroupPayment
 from hausbuch.schemas.recurring import (
@@ -140,17 +141,23 @@ def counted(line: SpendingLine) -> bool:
     )
 
 
+@lru_cache(maxsize=4096)
+def _payee(name: str | None, purpose: str | None) -> Payee:
+    """rules.matching.payee, read once per spelling: payee_groups compares every pair of
+    spellings, and _key and _label read the payee again (pure, so a cache changes no answer)."""
+    return payee(name, purpose)
+
+
 def payee_groups(lines: Iterable[SpendingLine]) -> list[list[SpendingLine]]:
     """The lines grouped by one payee (same_payee, closed transitively), each group oldest
-    first. A line without a payee key is in no group."""
+    first. A line without a payee key is in no group. Two spellings are compared on their
+    words (same_words), which is same_payee on the lines that carry them."""
     by_words: dict[tuple[str, ...], list[SpendingLine]] = {}
-    first: dict[tuple[str, ...], SpendingLine] = {}
     for line in lines:
-        words = payee(line.payee, line.purpose).words
+        words = _payee(line.payee, line.purpose).words
         if not words:
             continue
         by_words.setdefault(words, []).append(line)
-        first.setdefault(words, line)
     keys = list(by_words)
     parent = list(range(len(keys)))
 
@@ -161,10 +168,8 @@ def payee_groups(lines: Iterable[SpendingLine]) -> list[list[SpendingLine]]:
         return i
 
     for i, a in enumerate(keys):
-        la = first[a]
         for j in range(i + 1, len(keys)):
-            lb = first[keys[j]]
-            if root(i) != root(j) and same_payee(la.payee, lb.payee, la.purpose, lb.purpose):
+            if root(i) != root(j) and same_words(a, keys[j]):
                 parent[root(j)] = root(i)
     groups: dict[int, list[SpendingLine]] = {}
     for i, words in enumerate(keys):
@@ -175,13 +180,13 @@ def payee_groups(lines: Iterable[SpendingLine]) -> list[list[SpendingLine]]:
 
 
 def _key(lines: Sequence[SpendingLine]) -> str:
-    keys = {payee_key(li.payee, li.purpose) for li in lines}
+    keys = {" ".join(_payee(li.payee, li.purpose).words) for li in lines}
     return min((k for k in keys if k), key=lambda k: (len(k), k))
 
 
 def _label(line: SpendingLine) -> str:
     """The name the card shows: a payment service's merchant, else the payee as printed."""
-    found = payee(line.payee, line.purpose)
+    found = _payee(line.payee, line.purpose)
     return found.merchant or (line.payee or "").strip() or " ".join(found.words)
 
 

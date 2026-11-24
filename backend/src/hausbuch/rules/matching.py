@@ -1764,6 +1764,12 @@ def same_payee(
     return _same_words(payee(name, purpose).words, payee(other, other_purpose).words)
 
 
+def same_words(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
+    """same_payee on two payees' words already read by `payee(...).words`: for a caller that
+    compares many lines pairwise (rules.recurring), so each line's payee is read once."""
+    return _same_words(a, b)
+
+
 def _learned_text(pattern: str) -> str | None:
     """The text a learned name pattern was built from (merchant_pattern: "^" and the escaped
     normalised name), or None for any other pattern (a person's own regular expression, which
