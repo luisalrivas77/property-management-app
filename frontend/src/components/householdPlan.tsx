@@ -127,6 +127,18 @@ function resolveDraft(state: DraftState | null, plan: HouseholdPlan | undefined)
 
 type T = PlanningText;
 
+/** The spending changes as the household set them (code, amount or percent, months), in one
+ * order and one number format, so a save that leaves them as they are (the server's
+ * mean_at_save, another order, "180" against "180.00") never reads as a change of an adopted
+ * budget (§7.9 (d)). */
+function spendingKey(changes: components["schemas"]["SpendingChange"][] | null | undefined): string {
+  const num = (v: string | null | undefined) => (v == null || v === "" ? "" : String(Number(v)));
+  return (changes ?? [])
+    .map((c) => [c.code, num(c.monthly), num(c.percent), c.from_month, c.to_month ?? ""].join("|"))
+    .sort()
+    .join(";");
+}
+
 /** One line per changed lever area, for the scenario row's count and the panel's list. */
 function draftChanges(
   saved: HouseholdLevers,
@@ -310,7 +322,7 @@ export function PlanProvider({
         // (d)). Spending changes saved over an adopted scenario's are the household's own choice.
         const savedLevers = current?.levers;
         const choice = savedLevers?.goal_choice ?? null;
-        const spendingMoved = JSON.stringify(draft.spending_changes ?? []) !== JSON.stringify(savedLevers?.spending_changes ?? []);
+        const spendingMoved = spendingKey(draft.spending_changes) !== spendingKey(savedLevers?.spending_changes);
         const posted = {
           ...draft,
           bands: savedLevers?.bands ?? draft.bands ?? [],

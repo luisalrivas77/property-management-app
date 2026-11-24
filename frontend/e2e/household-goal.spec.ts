@@ -26,14 +26,19 @@ type HouseholdLevers = components["schemas"]["HouseholdLevers"];
 
 const WORKSPACE = "00000000-0000-4000-8000-00000000a001";
 
+// Local dates, as the page's own todayIso() reads them (the browser runs in the test's time
+// zone), so the spec agrees with the page at midnight and at a month's end.
+const pad = (n: number) => String(n).padStart(2, "0");
+
 /** YYYY-MM, `ahead` months after the current one. */
 function monthsAhead(ahead: number): string {
   const now = new Date();
-  const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + ahead, 1));
-  return day.toISOString().slice(0, 7);
+  const day = new Date(now.getFullYear(), now.getMonth() + ahead, 1);
+  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}`;
 }
 
-const TODAY = new Date().toISOString().slice(0, 10);
+const NOW = new Date();
+const TODAY = `${NOW.getFullYear()}-${pad(NOW.getMonth() + 1)}-${pad(NOW.getDate())}`;
 
 function emptyGoal(): HouseholdGoal {
   return { word: "none", goal: null, choice: null, issue: null, scenarios: [], unreachable: null, todos: [] };
@@ -195,7 +200,8 @@ test("no goal: Übersicht leads to the form, saving the goal shows its word ther
   await expect(form.getByRole("radio", { name: /^Vermögen/ })).toBeChecked();
 
   // A month that is not after the current one is refused in the page, nothing posted.
-  await form.getByLabel("Betrag", { exact: true }).fill("500000");
+  // The hint's own example, German thousands separator included.
+  await form.getByLabel("Betrag", { exact: true }).fill("500.000");
   await form.getByLabel("Bis", { exact: true }).fill(monthsAhead(0));
   await form.getByRole("button", { name: "Ziel speichern" }).click();
   await expect(form).toContainText("Bitte einen Monat nach dem laufenden wählen.");
@@ -208,7 +214,7 @@ test("no goal: Übersicht leads to the form, saving the goal shows its word ther
   expect(body.is_default).toBe(true);
   expect(body.supersedes_id).toBeNull();
   expect(body.levers.goal?.kind).toBe("net_worth");
-  expect(body.levers.goal?.target).toMatch(/^500000(\.00)?$/);
+  expect(body.levers.goal?.target).toBe("500000.00");
   expect(body.levers.goal?.due_month).toBe(due);
   expect(body.levers.goal?.set_on).toBe(TODAY);
   expect(body.levers.goal_choice ?? null).toBeNull();
@@ -340,4 +346,24 @@ test("the goal at phone width, light and dark", async ({ page, signedIn }) => {
     await page.goto("/");
     await expect(page.getByRole("region", { name: "Auf einen Blick" }).getByRole("link", { name: /Euer Ziel/ })).toContainText("Dahinter");
   });
+});
+
+test("on the computer the goal sits under Finanzielle Gesundheit, without a sideways scroll", async ({ page, signedIn }) => {
+  void signedIn;
+  const goal: Goal = { kind: "net_worth", target: "500000.00", due_month: monthsAhead(24), set_on: TODAY };
+  await goalApi(page, { goal: onTrack(goal) }, () => onTrack(goal));
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  const tiles = page.getByRole("region", { name: "Auf einen Blick" });
+  const goalTile = tiles.getByRole("link", { name: /Euer Ziel/ });
+  await expect(goalTile).toContainText("Auf Kurs");
+  const health = await tiles.getByRole("link", { name: /Finanzielle Gesundheit/ }).boundingBox();
+  const own = await goalTile.boundingBox();
+  expect(health).not.toBeNull();
+  expect(own).not.toBeNull();
+  // The same column and width as the health word, below it.
+  expect(Math.abs(own!.x - health!.x)).toBeLessThan(2);
+  expect(Math.abs(own!.width - health!.width)).toBeLessThan(2);
+  expect(own!.y).toBeGreaterThan(health!.y + health!.height - 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1280);
 });
