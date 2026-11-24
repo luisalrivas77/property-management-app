@@ -590,3 +590,46 @@ test("a rate left invalid on Anlagen does not block a save from Haushalt › Res
   expect(posted[0]?.levers?.reserve_target_months).toBe("6.5");
   expect(posted[0]?.levers?.value_change?.depot).toBe("0.05");
 });
+
+// --- Phone width, light and dark (phase 10 §7.9 (a)) -------------------------------------------
+
+test("on the phone, Haushalt › Budget with a planned change, Reserve, „Annahmen“ and Anlagen scroll no page sideways, light and dark", async ({
+  page,
+  signedIn,
+}) => {
+  void signedIn;
+  const change = { code: "hh_restaurant" as const, monthly: "100.00", percent: null, from_month: FIRST, to_month: null, mean_at_save: "200.00" };
+  await planWithScenarios(page, [savedDefault({ spending_changes: [change] })]);
+  await serve(page, "/api/household-budget", () => budget({}));
+  await page.setViewportSize({ width: 390, height: 844 });
+  const pageWidth = () => page.evaluate(() => document.documentElement.scrollWidth);
+
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.goto("/household?tab=budget");
+    const rest = page.getByRole("region", { name: "Was mit dem Rest passiert" });
+    // The saved plan's change shows its stretch of the coming months in the rest card.
+    await expect(rest.getByTestId("rest-with-changes")).toContainText("1.260,00 €");
+    await rest.getByRole("button", { name: "So entsteht die Zahl" }).click();
+    await expect(rest.getByRole("region", { name: "So entsteht die Zahl" })).toBeVisible();
+    expect(await pageWidth()).toBeLessThanOrEqual(390);
+
+    // „Annahmen“ slides in as a dialog at „Ausgaben durchspielen“; it does not scroll sideways
+    // either (a wide table scrolls inside its own frame only).
+    await page.getByRole("link", { name: /Annahmen$/ }).click();
+    const sheet = page.getByRole("dialog", { name: "Eure Annahmen" });
+    await expect(sheet.locator(".annahmen-group").first()).toHaveAttribute("data-group", "ausgaben");
+    await sheet.getByRole("region", { name: "Ausgaben durchspielen" }).getByRole("button", { name: "Essen gehen & bestellen" }).click();
+    expect(await sheet.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+    expect(await pageWidth()).toBeLessThanOrEqual(390);
+    await page.screenshot({ path: test.info().outputPath(`annahmen-${scheme}.png`) });
+
+    await page.goto("/household?tab=reserve");
+    await expect(page.getByRole("region", { name: "Wege zum Reserveziel" })).toBeVisible();
+    expect(await pageWidth()).toBeLessThanOrEqual(390);
+
+    await page.goto("/assets");
+    await expect(page.getByRole("region", { name: "Vermögen in einigen Jahren: eure Annahme" })).toBeVisible();
+    expect(await pageWidth()).toBeLessThanOrEqual(390);
+  }
+});
