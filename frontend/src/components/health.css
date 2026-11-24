@@ -219,17 +219,90 @@
   gap: 2px;
 }
 
-.spending-play-sub {
-  display: block;
-  font-weight: 400;
-  font-size: 0.85em;
+/* On the phone (below the shell's 800 px) each category is a stacked row, so the planned amount is
+   typed without a sideways scroll (Luis, 18 Nov 2026): the name and its Ø on the first line, the
+   field with its unit and „ab“ month full width under them; the total row the same. The column
+   heads are read out, not shown; „Ø“ marks the mean instead. */
+@media (max-width: 799px) {
+  .table-wrap:has(> .spending-play-table) {
+    overflow-x: visible;
+  }
+
+  .table-wrap > .spending-play-table {
+    min-width: 0;
+  }
+
+  .spending-play-table,
+  .spending-play-table tbody,
+  .spending-play-table tfoot {
+    display: block;
+    width: 100%;
+  }
+
+  .spending-play-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .spending-play-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+    align-items: baseline;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--divider);
+  }
+
+  .spending-play-table tbody tr:last-child {
+    border-bottom: none;
+  }
+
+  .spending-play-table tfoot tr {
+    border-top: 1px solid var(--border);
+    border-bottom: none;
+  }
+
+  .spending-play-table th,
+  .spending-play-table td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .spending-play-table td.num::before {
+    content: "Ø ";
+    color: var(--muted);
+  }
+
+  .spending-play-table tr > :nth-child(3) {
+    grid-column: 1 / -1;
+  }
+
+  .spending-play-table td:empty {
+    display: none;
+  }
+
+  .spending-play-table .household-subrow th {
+    padding-left: 12px;
+  }
+
+  .spending-play-input {
+    display: flex;
+    flex: 1 1 100%;
+  }
+
+  .spending-play-input input {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
 }
 
-.spending-play-effects {
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-}
 
 /* Planung › Haushalt, step 5 (mockup 12): the sections and, beside them, the KI panel with the
    plan's explanation; on a narrow screen the panel follows the sections. */

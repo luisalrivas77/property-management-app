@@ -44,8 +44,15 @@
 //
 // Phase 10 §7.6 Haushalt (4): the Budget in one line under it, from GET /household-budget: each of
 // Notwendiges, Wünsche and Sparen that has a target saved, its monthly mean against the target's
-// euros (both the server's), with the dot of Planung › Budget (green met, amber missed, never red)
+// euros (both the server's), with the dot of Haushalt › Budget (green met, amber missed, never red)
 // and a link there. No line before a target is saved; a failed read shows no line either.
+//
+// Phase 10 wave 3 (a) (§7.9 (a), D288; mockups 19b, 19c): Planung folded in. Haushalt has four
+// tabs, ?tab=budget|ziel|reserve, and Monat (everything above) by default. Budget and Reserve are
+// what Planung's sections were, with „Was mit dem Rest passiert“ (Planung › Anlegen) at Budget's
+// foot; every lever is in one detail panel „Annahmen“ (`#d-annahmen-<group>`), and each tab shows
+// its own figures with an unsaved change (components/householdPlan.tsx). Ziel is a placeholder
+// until §7.9 (d).
 import "./household.css";
 import "@/components/planningSections.css";
 
@@ -70,6 +77,8 @@ import {
 import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { todayIso } from "@/components/format";
 import { HealthTodoList, HouseholdHealthSection } from "@/components/healthFigures";
+import { HouseholdPlanTab, PlanProvider } from "@/components/householdPlan";
+import { useRecurringPayments } from "@/components/householdRecurring";
 import { ALLOCATION_CATEGORY, HOUSEHOLD_GROUP, HOUSEHOLD_SPENDING_GROUPS } from "@/components/labels";
 import { usePlanFormat } from "@/components/planFormat";
 import { Loading } from "@/components/ui";
@@ -78,6 +87,7 @@ import { useFormat, useT, type Formatter } from "@/i18n";
 import { common } from "@/i18n/common";
 import { household } from "@/i18n/household";
 import { lineLabel, planning } from "@/i18n/planning";
+import { HOUSEHOLD_BUDGET, HOUSEHOLD_TABS, type HouseholdTab } from "@/lib/planningRoutes";
 
 type HouseholdGroup = components["schemas"]["HouseholdGroup"];
 type AllocationCategory = components["schemas"]["AllocationCategory"];
@@ -95,7 +105,6 @@ type BudgetLine = components["schemas"]["BudgetLine"];
 
 const MONTHS_SHOWN = 12;
 const MONTHS_OFFERED = 24;
-const PLANNING_BUDGET = "/planning?section=budget";
 
 interface Year {
   /** The twelve months ending at the chosen one, oldest first; the chosen one is last. */
@@ -208,11 +217,22 @@ function Household() {
   const pathname = usePathname();
   const current = todayIso().slice(0, 7);
   const month = chosenMonth(search.get("monat"), current);
+  const tab = householdTab(search.get("tab"));
   const setMonth = (next: string) => router.replace(`${pathname}?monat=${next}`, { scroll: false });
   // A month-end captured in „Noch keine Durchschnitte“ reads the reserve and the Kennzahlen below
   // again (phase 10 §7.6 (f)).
   const [healthRefresh, setHealthRefresh] = useState(0);
   const healthChanged = useCallback(() => setHealthRefresh((n) => n + 1), []);
+  const tabs: { key: HouseholdTab; label: string }[] = [
+    { key: "monat", label: t.tabMonth },
+    { key: "budget", label: t.tabBudget },
+    { key: "ziel", label: t.tabGoal },
+    { key: "reserve", label: t.tabReserve },
+  ];
+  // Monat keeps the chosen month; the other tabs run over the closed months, so a link back to
+  // Monat lands on the month that was shown.
+  const tabHref = (key: HouseholdTab) => (key === "monat" ? `${pathname}?monat=${month}` : `${pathname}?tab=${key}`);
+  const planTab = tab === "budget" || tab === "reserve" ? tab : null;
 
   return (
     <section>
@@ -222,26 +242,52 @@ function Household() {
           <p className="household-sub">{t.subtitle}</p>
         </div>
         <span className="spacer" />
-        <label htmlFor={`${ids}-month`} className="inline">
-          {t.month}
-          <select id={`${ids}-month`} value={month} onChange={(event) => setMonth(event.target.value)}>
-            {monthsUpTo(current, MONTHS_OFFERED)
-              .reverse()
-              .map((m) => (
-                <option key={m} value={m}>
-                  {f.month(m)}
-                  {m === current ? t.running : ""}
-                </option>
-              ))}
-          </select>
-        </label>
+        {tab === "monat" ? (
+          <label htmlFor={`${ids}-month`} className="inline">
+            {t.month}
+            <select id={`${ids}-month`} value={month} onChange={(event) => setMonth(event.target.value)}>
+              {monthsUpTo(current, MONTHS_OFFERED)
+                .reverse()
+                .map((m) => (
+                  <option key={m} value={m}>
+                    {f.month(m)}
+                    {m === current ? t.running : ""}
+                  </option>
+                ))}
+            </select>
+          </label>
+        ) : null}
       </div>
-      <HouseholdYear month={month} onHealthChanged={healthChanged} />
-      <div className="stack household-health">
-        <HouseholdHealthSection refresh={healthRefresh} />
-      </div>
+      <nav className="planning-chips" aria-label={t.tabs}>
+        {tabs.map((item) => (
+          <Link key={item.key} href={tabHref(item.key)} aria-current={item.key === tab ? "page" : undefined} scroll={false}>
+            {item.label}
+          </Link>
+        ))}
+      </nav>
+      {tab === "monat" ? (
+        <>
+          <HouseholdYear month={month} onHealthChanged={healthChanged} />
+          <div className="stack household-health">
+            <HouseholdHealthSection refresh={healthRefresh} />
+          </div>
+        </>
+      ) : null}
+      {tab === "ziel" ? <p className="card muted">{t.goalSoon}</p> : null}
+      {/* Budget and Reserve share one plan and one draft (one element in one place), so an unsaved
+          change survives a switch between them (§7.9 (a)). */}
+      {planTab ? (
+        <PlanProvider page={`${pathname}?tab=${planTab}`} backLabel={t.title} oneOff>
+          <HouseholdPlanTab tab={planTab} />
+        </PlanProvider>
+      ) : null}
     </section>
   );
+}
+
+/** ?tab=budget|ziel|reserve, else Monat (D288). */
+function householdTab(raw: string | null): HouseholdTab {
+  return raw !== null && (HOUSEHOLD_TABS as readonly string[]).includes(raw) ? (raw as HouseholdTab) : "monat";
 }
 
 function HouseholdYear({ month, onHealthChanged }: { month: string; onHealthChanged: () => void }) {
@@ -262,6 +308,8 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
   const closingDetail = useDetail("abschluss");
   const savedDetail = useDetail("angelegt");
   const differenceDetail = useDetail("anders");
+  // The recurring payments (§7.9 (b)): their own read, so a failure leaves the card out only.
+  const recurring = useRecurringPayments(t.title);
   const { months, transfers, health, overall, windowMonths, comparison, budget } = year;
   const month = months[months.length - 1];
   if (!month) return null;
@@ -315,6 +363,8 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
         <GroupPanel group={groupDetail.id} month={month} windowMonths={means} comparison={comparison} />
       </DetailPanel>
     );
+  } else if (recurring.panel) {
+    panel = recurring.panel;
   }
 
   return (
@@ -328,6 +378,7 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
           </p>
         ) : null}
         {differences ? <Differences differences={differences} link={differenceDetail.linkProps} /> : null}
+        {recurring.card}
         {budget ? <BudgetOneLine budget={budget} /> : null}
         <div className="planning-kpis">
           <div className="planning-kpi" role="group" aria-label={t.income}>
@@ -475,7 +526,7 @@ function BudgetOneLine({ budget }: { budget: BudgetView }) {
             {(key === "saving" ? t.budgetOfMinimum : t.budgetOf)(lineLabel(tp, key), p.euro(monthly), p.euro(mark.at_target))}
           </span>
         ))}
-        <Link href={PLANNING_BUDGET}>{t.planningBudget} ›</Link>
+        <Link href={HOUSEHOLD_BUDGET}>{t.planningBudget} ›</Link>
       </p>
     </section>
   );
@@ -627,7 +678,7 @@ function SpendingTable({
         <p className="muted">
           {t.plannedOnly(comparison.scenario_created_at ? t.savedOn(longDay(f, comparison.scenario_created_at)) : "")}
           {t.under}
-          <Link href={PLANNING_BUDGET}>{t.planningBudget}</Link>.
+          <Link href={HOUSEHOLD_BUDGET}>{t.planningBudget}</Link>.
         </p>
       ) : null}
       {groups.length === 0 ? (
@@ -886,7 +937,7 @@ function GroupPanel({
       ) : null}
       <p className="muted hint">
         {anyPlan && comparison.scenario_created_at ? t.planFooter(longDay(f, comparison.scenario_created_at)) : t.planFooterNone}
-        <Link href={PLANNING_BUDGET}>{t.planningBudget}</Link>.
+        <Link href={HOUSEHOLD_BUDGET}>{t.planningBudget}</Link>.
       </p>
     </div>
   );

@@ -4,15 +4,16 @@
 // closed months needs a full ledger; every other read is the real API of a fresh workspace.
 // Synthetic figures only.
 //
-// - A typed amount moves „Was eure Änderungen bewirken“ through the preview, while the cards at
-//   the top keep the saved figures and nothing is stored (no POST to /household-scenarios).
+// - A typed amount moves „Was mit dem Rest passiert“ on Haushalt › Budget through the preview
+//   (phase 10 §7.9 (a), D288: the effects box „Was eure Änderungen bewirken“ is gone), the page
+//   says it counts an unsaved change, and nothing is stored (no POST to /household-scenarios).
 // - „Szenario speichern“ stores the change, as an amount or a percent, beside the other levers.
 // - Haushalt shows „Geplant“ and „Unterschied“ only for a code the saved plan names, „bisher“
 //   while the month is open, and the lines that still wait in Zu prüfen.
 import type { Page, Route } from "@playwright/test";
 
 import type { components } from "../src/api/types";
-import { expect, test } from "./support";
+import { expect, navigateTo, test } from "./support";
 
 type Health = components["schemas"]["Health"];
 type HealthMonthView = components["schemas"]["HealthMonthView"];
@@ -261,14 +262,16 @@ test("a typed amount moves the savings rate and „Anlegbar“ through the previ
   void signedIn;
   const { posted, previews, previewIds } = await planWithScenarios(page);
 
-  // „Anlegbar“ is a tile of the Anlegen section (D270); the hash opens the scenario sheet beside it.
+  // Planung's old link lands on Haushalt › Budget with „Annahmen“ open at „Ausgaben durchspielen“
+  // (phase 10 §7.9 (a)); „Anlegbar“ is in „Was mit dem Rest passiert“ at the foot of Budget.
   await page.goto("/planning?section=anlegen#ausgaben-durchspielen");
+  await expect(page).toHaveURL("/household?tab=budget#d-annahmen-ausgaben");
   const section = page.getByRole("region", { name: "Ausgaben durchspielen" });
-  // „Was eure Änderungen bewirken“ (D271) heads the scenario sheet, above the save and the play.
-  const rate = page.getByTestId("effect-rate");
-  const investable = page.getByTestId("effect-investable");
-  await expect(rate).toContainText("25,0 %");
-  await expect(investable).toContainText("1.170,00 €");
+  const rest = page.getByRole("region", { name: "Was mit dem Rest passiert" });
+  await expect(rest.getByTestId("rest-investable")).toContainText("1.170 €");
+  // With no planned change the rest card shows no stretch of the coming months.
+  const withChanges = rest.getByTestId("rest-with-changes");
+  await expect(withChanges).toHaveCount(0);
   // The fields start empty: the mean is shown beside them, never filled in.
   await section.getByRole("button", { name: "Essen gehen & bestellen" }).click();
   const restaurant = section.getByLabel("Geplant pro Monat: Restaurant");
@@ -276,13 +279,15 @@ test("a typed amount moves the savings rate and „Anlegbar“ through the previ
   await expect(section.getByText("zählt mit der ganzen Gruppe")).toBeVisible();
 
   await restaurant.fill("100");
-  await expect(investable).toContainText("1.260,00 €");
-  await expect(rate).toContainText("26,9 %");
+  await expect(withChanges).toContainText("1.260,00 €");
+  await expect(withChanges).toContainText("26,9 %");
   await expect(section.getByText("100,00 € weniger als der Durchschnitt")).toBeVisible();
   // A subcategory planned: the group's own field is closed, so the two never overlap.
   await expect(section.getByLabel("Geplant pro Monat: Essen gehen & bestellen")).toBeDisabled();
-  // The cards at the top keep the saved plan, and nothing was stored.
-  await expect(page.locator(".planning-kpi-main")).toContainText("1.170 €");
+  // The page says its figures count the unsaved change, the measured months keep theirs, and
+  // nothing was stored.
+  await expect(page.getByText(/Geändert, noch nicht gespeichert/).first()).toBeVisible();
+  await expect(rest.getByTestId("rest-investable")).toContainText("1.170 €");
   expect(previews.length).toBeGreaterThan(0);
   // No default is saved yet, so the preview names no scenario.
   expect(new Set(previewIds)).toEqual(new Set([null]));
@@ -308,12 +313,15 @@ test("a change as a percent of the mean, for some months, is saved as a percent"
   const { posted } = await planWithScenarios(page);
 
   await page.goto("/planning?tab=haushalt#ausgaben-durchspielen");
+  await expect(page).toHaveURL("/household?tab=budget#d-annahmen-ausgaben");
   const section = page.getByRole("region", { name: "Ausgaben durchspielen" });
   await section.getByRole("button", { name: "Essen gehen & bestellen" }).click();
   await section.getByLabel("Geplant pro Monat: Restaurant").fill("-10");
   await section.getByRole("group", { name: "Betrag oder Prozent: Restaurant" }).getByRole("button", { name: "%" }).click();
   await section.getByLabel("bis: Restaurant").selectOption(HORIZON[2] ?? "");
-  await expect(page.getByTestId("effect-investable")).toContainText("1.188,00 €");
+  await expect(page.getByRole("region", { name: "Was mit dem Rest passiert" }).getByTestId("rest-with-changes")).toContainText(
+    "1.188,00 €",
+  );
   // An entry the field cannot take keeps the draft's old change, so no save until it is fixed.
   const save = page.getByRole("button", { name: "Szenario speichern" }).first();
   const restaurant = section.getByLabel("Geplant pro Monat: Restaurant");
@@ -367,7 +375,7 @@ test("Haushalt shows „Geplant“ and „Unterschied“ only for the codes the 
   await expect(row).toContainText("100,00 €");
   await expect(row).toContainText("60,00 € weniger als geplant");
   await expect(table.getByText("gespeichert am 18. November 2026")).toBeVisible();
-  await expect(table.getByRole("link", { name: "Planung › Budget" })).toHaveAttribute("href", "/planning?section=budget");
+  await expect(table.getByRole("link", { name: "Haushalt › Budget" })).toHaveAttribute("href", "/household?tab=budget");
   await expect(table.getByRole("link", { name: "2 Umsätze warten in Zu prüfen" })).toHaveAttribute("href", "/inbox");
   // A tapped group opens the panel (mockup 19): its subcategories, each with its plan.
   await table.getByRole("link", { name: "Essen gehen & bestellen" }).click();
@@ -450,8 +458,8 @@ test("a budget target saved under Budget survives a later „Szenario speichern�
   const { posted } = await planWithScenarios(page);
   await serve(page, "/api/household-budget", () => budget(posted[posted.length - 1]?.levers?.budget_targets ?? {}));
 
-  // An unsaved spending change in the scenario sheet first.
-  await page.goto("/planning?tab=haushalt#ausgaben-durchspielen");
+  // An unsaved spending change in „Annahmen“ first.
+  await page.goto("/household?tab=budget#d-annahmen-ausgaben");
   const section = page.getByRole("region", { name: "Ausgaben durchspielen" });
   await section.getByRole("button", { name: "Essen gehen & bestellen" }).click();
   await section.getByLabel("Geplant pro Monat: Restaurant").fill("150");
@@ -469,8 +477,11 @@ test("a budget target saved under Budget survives a later „Szenario speichern�
   // The spending change is still a draft.
   await expect(page.getByText("1 Änderung, nicht gespeichert")).toBeVisible();
 
-  // A lever changed under Reserve and saved there keeps the target and the spending change.
-  await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Reserve" }).click();
+  // A lever changed from Haushalt › Reserve and saved there keeps the target and the spending
+  // change: Budget and Reserve share one draft.
+  await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Reserve", exact: true }).click();
+  await expect(page).toHaveURL("/household?tab=reserve");
+  await page.getByRole("link", { name: /Annahmen$/ }).click();
   await page.getByRole("button", { name: "Reserveziel erhöhen" }).click();
   await expect(page.getByText("2 Änderungen, nicht gespeichert")).toBeVisible();
   await page.getByRole("button", { name: "Szenario speichern" }).first().click();
@@ -510,6 +521,7 @@ test("a saved class move set back to its default shows the default pressed, and 
   await serve(page, "/api/household-budget", () => budget({}, rows[rows.length - 1]?.levers?.budget_class_overrides ?? {}));
 
   await page.goto("/planning?section=budget");
+  await expect(page).toHaveURL("/household?tab=budget");
   await page.getByRole("link", { name: "Wünsche öffnen" }).click();
   const switcher = page.getByRole("group", { name: "Klasse von Sonstige Lebensmittel" });
   await expect(switcher.getByRole("button", { name: "Wünsche" })).toHaveAttribute("aria-pressed", "true");
@@ -524,7 +536,7 @@ test("a saved class move set back to its default shows the default pressed, and 
   await expect.poll(() => previewIds.length).toBeGreaterThan(0);
   expect(new Set(previewIds)).toEqual(new Set([SAVED_ID]));
 
-  // The sheet names the move back to the default class, never „gehört zu –“.
+  // „Annahmen“ names the move back to the default class, never „gehört zu –“.
   await page.getByRole("link", { name: /Annahmen$/ }).click();
   await expect(page.getByText("Sonstige Lebensmittel gehört zu Notwendiges")).toBeVisible();
   await page.getByRole("button", { name: "Szenario speichern" }).first().click();
@@ -539,6 +551,7 @@ test("a new class move is saved as an override", async ({ page, signedIn }) => {
   await serve(page, "/api/household-budget", () => budget({}, rows[rows.length - 1]?.levers?.budget_class_overrides ?? {}));
 
   await page.goto("/planning?section=budget");
+  await expect(page).toHaveURL("/household?tab=budget");
   await page.getByRole("link", { name: "Notwendiges öffnen" }).click();
   const switcher = page.getByRole("group", { name: "Klasse von Sonstige Lebensmittel" });
   await expect(switcher.getByRole("button", { name: "Notwendiges" })).toHaveAttribute("aria-pressed", "true");
@@ -551,7 +564,7 @@ test("a new class move is saved as an override", async ({ page, signedIn }) => {
   expect(posted[0]?.levers?.budget_class_overrides).toEqual({ hh_groceries: "want" });
 });
 
-test("a rate left invalid on Vermögen does not block a save from Reserve, which keeps the old rate", async ({
+test("a rate left invalid on Anlagen does not block a save from Haushalt › Reserve, which keeps the old rate", async ({
   page,
   signedIn,
 }) => {
@@ -559,11 +572,16 @@ test("a rate left invalid on Vermögen does not block a save from Reserve, which
   const { posted } = await planWithScenarios(page);
   await serve(page, "/api/household-budget", () => budget({}));
 
-  await page.goto("/planning?section=vermoegen");
+  // Planung › Vermögen's „Annahme“ link opens „Annahmen“ at the rates on Anlagen (§7.9 (a)).
+  await page.goto("/planning?section=vermoegen#annahme");
+  await expect(page).toHaveURL("/assets#d-annahmen-rendite");
   await page.getByLabel("Fonds und Wertpapiere (% pro Jahr)").fill("80");
   await expect(page.getByText("Zwischen −50 % und 50 % pro Jahr.")).toBeVisible();
 
-  await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Reserve" }).click();
+  // Haushalt's draft is its own: the invalid rate left on Anlagen does not reach it.
+  await navigateTo(page, "Haushalt");
+  await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Reserve", exact: true }).click();
+  await page.getByRole("link", { name: /Annahmen$/ }).click();
   await page.getByRole("button", { name: "Reserveziel erhöhen" }).click();
   const save = page.getByRole("button", { name: "Szenario speichern" }).first();
   await expect(save).toBeEnabled();
@@ -571,4 +589,70 @@ test("a rate left invalid on Vermögen does not block a save from Reserve, which
   await expect.poll(() => posted.length).toBe(1);
   expect(posted[0]?.levers?.reserve_target_months).toBe("6.5");
   expect(posted[0]?.levers?.value_change?.depot).toBe("0.05");
+});
+
+// --- Phone width, light and dark (phase 10 §7.9 (a)) -------------------------------------------
+
+test("on the phone, Haushalt › Budget with a planned change, Reserve, „Annahmen“ and Anlagen scroll no page sideways, light and dark", async ({
+  page,
+  signedIn,
+}) => {
+  void signedIn;
+  const change = { code: "hh_restaurant" as const, monthly: "100.00", percent: null, from_month: FIRST, to_month: null, mean_at_save: "200.00" };
+  await planWithScenarios(page, [savedDefault({ spending_changes: [change] })]);
+  await serve(page, "/api/household-budget", () => budget({}));
+  await page.setViewportSize({ width: 390, height: 844 });
+  const pageWidth = () => page.evaluate(() => document.documentElement.scrollWidth);
+
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.goto("/household?tab=budget");
+    const rest = page.getByRole("region", { name: "Was mit dem Rest passiert" });
+    // The saved plan's change shows its stretch of the coming months in the rest card.
+    await expect(rest.getByTestId("rest-with-changes")).toContainText("1.260,00 €");
+    await rest.getByRole("button", { name: "So entsteht die Zahl" }).click();
+    await expect(rest.getByRole("region", { name: "So entsteht die Zahl" })).toBeVisible();
+    expect(await pageWidth()).toBeLessThanOrEqual(390);
+
+    // „Annahmen“ slides in as a dialog at „Ausgaben durchspielen“; it does not scroll sideways
+    // either (a wide table scrolls inside its own frame only).
+    await page.getByRole("link", { name: /Annahmen$/ }).click();
+    const sheet = page.getByRole("dialog", { name: "Eure Annahmen" });
+    await expect(sheet.locator(".annahmen-group").first()).toHaveAttribute("data-group", "ausgaben");
+    const play = sheet.getByRole("region", { name: "Ausgaben durchspielen" });
+    // The group of a planned code may already be open; open it if not.
+    const dining = play.getByRole("button", { name: "Essen gehen & bestellen" });
+    if ((await dining.getAttribute("aria-expanded")) !== "true") await dining.click();
+    await expect(dining).toHaveAttribute("aria-expanded", "true");
+    expect(await sheet.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+    // Each category is a stacked row on the phone: the table scrolls nowhere, and the first
+    // category's „Geplant“ field, the planned Restaurant's field, its unit and its month are
+    // inside the screen without a sideways scroll (Luis, 18 Nov 2026).
+    const wrap = play.locator(".table-wrap").first();
+    expect(await wrap.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+    for (const field of [
+      play.locator(".spending-play-table input").first(),
+      play.getByLabel("Geplant pro Monat: Restaurant"),
+      play.getByRole("group", { name: "Betrag oder Prozent: Restaurant" }),
+      play.getByLabel("von: Restaurant"),
+    ]) {
+      await field.scrollIntoViewIfNeeded();
+      const box = await field.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+      expect((box?.x ?? 0) + (box?.width ?? 999)).toBeLessThanOrEqual(390);
+    }
+    expect(await wrap.evaluate((element) => element.scrollLeft)).toBe(0);
+    expect(await page.evaluate(() => window.scrollX)).toBe(0);
+    expect(await pageWidth()).toBeLessThanOrEqual(390);
+    await page.screenshot({ path: test.info().outputPath(`annahmen-${scheme}.png`) });
+
+    await page.goto("/household?tab=reserve");
+    await expect(page.getByRole("region", { name: "Wege zum Reserveziel" })).toBeVisible();
+    expect(await pageWidth()).toBeLessThanOrEqual(390);
+
+    await page.goto("/assets");
+    await expect(page.getByRole("region", { name: "Vermögen in einigen Jahren: eure Annahme" })).toBeVisible();
+    expect(await pageWidth()).toBeLessThanOrEqual(390);
+  }
 });

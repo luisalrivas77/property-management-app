@@ -36,7 +36,7 @@ export const healthFigures = defineMessages({
     bandsForm: "Ampel-Grenzen",
     reserveGreenBefore: (months: string, target: string | null) =>
       `Grün ab eurem eigenen Reserveziel von ${months} Monaten${target ? ` (${target})` : ""}, das ihr unter `,
-    planning: "Planung",
+    planning: "Haushalt › Reserve",
     reserveGreenAfter: " einstellt.",
     introSavingsRate: "Welcher Teil eures Einkommens übrig bleibt: angespannt unter der Grenze für Rot, gut ab der für Grün.",
     introDebtService: "Welcher Teil eures Einkommens für Zins und Tilgung an die Bank geht.",
@@ -51,7 +51,7 @@ export const healthFigures = defineMessages({
     reference: "Bezugspunkt",
     scenarioRefusedBefore:
       "Die Grenzen werden im Standard-Szenario gespeichert, und dessen Annahmen lassen sich so gerade nicht speichern. Bitte das Szenario unter ",
-    planningHousehold: "Planung › Haushalt",
+    planningHousehold: "Haushalt › Annahmen",
     scenarioRefusedAfter: " prüfen und dort speichern; danach lassen sich die Grenzen hier übernehmen.",
     savedIn: "Gespeichert in eurem Szenario; ändern könnt ihr sie jederzeit mit „Grenzen ändern“.",
 
@@ -76,7 +76,7 @@ export const healthFigures = defineMessages({
     interestIn: (range: string) => `Zinsen in ${range}`,
     principalIn: (range: string) => `Tilgung in ${range}`,
     fromRentalBefore: "Aus den Buchungen des Mietkontos; ",
-    planningProperty: "Planung › Immobilie",
+    planningProperty: "Anlagen › Immobilie",
     fromRentalAfter: " zeigt die Raten je Jahr.",
     splitTitle: "Aufteilung des Vermögens",
     splitExplained: (total: string | null, date: string | null) =>
@@ -123,7 +123,7 @@ export const healthFigures = defineMessages({
     bandsForm: "Traffic-light limits",
     reserveGreenBefore: (months: string, target: string | null) =>
       `Green from your own reserve target of ${months} months${target ? ` (${target})` : ""}, which you set under `,
-    planning: "Planning",
+    planning: "Household › Reserve",
     reserveGreenAfter: ".",
     introSavingsRate: "Which part of your income is left: strained below the red limit, good from the green one.",
     introDebtService: "Which part of your income goes to the bank for interest and repayment.",
@@ -138,7 +138,7 @@ export const healthFigures = defineMessages({
     reference: "Reference point",
     scenarioRefusedBefore:
       "The limits are stored in the default scenario, and its assumptions cannot be saved as they stand. Please check the scenario under ",
-    planningHousehold: "Planning › Household",
+    planningHousehold: "Household › Assumptions",
     scenarioRefusedAfter: " and save it there; then the limits can be applied here.",
     savedIn: "Stored in your scenario; you can change them at any time with “Change limits”.",
 
@@ -162,7 +162,7 @@ export const healthFigures = defineMessages({
     interestIn: (range: string) => `Interest in ${range}`,
     principalIn: (range: string) => `Repayment in ${range}`,
     fromRentalBefore: "From the rental account's transactions; ",
-    planningProperty: "Planning › Property",
+    planningProperty: "Assets › Property",
     fromRentalAfter: " shows the instalments per year.",
     splitTitle: "Split of the assets",
     splitExplained: (total: string | null, date: string | null) =>

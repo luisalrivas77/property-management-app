@@ -65,7 +65,7 @@ export const netWorthText = defineMessages({
     inTransit: "Überwiesen, aber noch auf keinem Kontoauszug des Empfängerkontos:",
     loan: "Darlehen ",
     estimates: "Enthält Schätzwerte:",
-    adjustValue: "Wert in der Planung anpassen",
+    adjustValue: "Wert unter Anlagen › Immobilie anpassen",
     todos: (count: number) => `${count === 1 ? "1 offener Punkt" : `${count} offene Punkte`} im Nettovermögen`,
 
     // The bar „Vermögensaufteilung“.
@@ -119,7 +119,7 @@ export const netWorthText = defineMessages({
     inTransit: "Sent, but on no statement of the receiving account yet:",
     loan: "Loan ",
     estimates: "Includes estimates:",
-    adjustValue: "Adjust the value in Planning",
+    adjustValue: "Adjust the value under Assets › Property",
     todos: (count: number) => `${count === 1 ? "1 open item" : `${count} open items`} in the net worth`,
 
     allocation: "Asset allocation",

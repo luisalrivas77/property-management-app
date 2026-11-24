@@ -7,21 +7,36 @@ import { defineMessages, type Translation } from "./core";
 const de = {
   title: "Planung",
   sections: "Bereiche",
-  sectionBudget: "Budget",
-  sectionReserve: "Reserve",
-  sectionAnlegen: "Anlegen",
-  sectionVermoegen: "Vermögen",
-  sectionImmobilie: "Immobilie",
   asOf: (day: string) => `Stand ${day}`,
   scenario: (name: string) => `Szenario „${name}“`,
   defaults: "Ohne gespeichertes Szenario",
   saved: "gespeichert",
   unsaved: (n: number) => (n === 1 ? "1 Änderung, nicht gespeichert" : `${n} Änderungen, nicht gespeichert`),
   assumptions: "Annahmen",
-  // the scenario sheet
-  sheetTitle: "Szenario und Annahmen",
-  sheetIntro:
-    "Was ihr auf dieser Seite ändert, ist ein Entwurf. „Szenario speichern“ legt es als neue Fassung eures Szenarios ab; die alte bleibt im Verlauf.",
+  // „Annahmen“, the one panel of every lever (phase 10 §7.9 (a), mockup 19c)
+  annahmenTitle: "Eure Annahmen",
+  annahmenIntro:
+    "Alles, womit Budget, Reserve, Ziel und Vermögensverlauf rechnen. Was ihr hier ändert, ist ein Entwurf, bis ihr das Szenario speichert; die alte Fassung bleibt im Verlauf.",
+  change: "Ändern",
+  // Haushalt › Budget: „Was mit dem Rest passiert“ (what Planung › Anlegen was)
+  restTitle: "Was mit dem Rest passiert",
+  restFree: "Übrig im Monat",
+  restPlans: "schon in Sparplänen",
+  restLeft: "Noch frei",
+  restInvestable: (amount: string) => `Anlegbar pro Monat (vor den Sparplänen): ${amount}`,
+  restWithChanges: "Mit euren geplanten Ausgaben",
+  restSegment: (investable: string, rate: string) => `Anlegbar ${investable} · Sparquote ${rate}`,
+  restReserveGap: (amount: string) => `Reserve: noch ${amount} bis zum Ziel.`,
+  restReserveReached: "Reserve: Ziel erreicht.",
+  toReserve: "Reserve",
+  toAssets: "Anlagen",
+  explain: "Erklärung",
+  // Haushalt › Reserve
+  kpiNeed: "Bedarf",
+  kpiNeedSub: "im Monat, aus den abgeschlossenen Monaten",
+  reserveWhat:
+    "Was als Reserve zählt: Giro- und Tagesgeldkonten abzüglich der offenen Kreditkarten. Das Mietkonto zählt nur, wenn ihr es dazunehmt; sein Geld ist für die nächsten Zahlungen der Wohnung.",
+  // the scenario: unsaved changes and the save bar
   changesTitle: "Nicht gespeicherte Änderungen",
   noChanges: "Keine Änderung: die Zahlen rechnen mit der gespeicherten Fassung.",
   discard: "Verwerfen",
@@ -29,8 +44,11 @@ const de = {
   saveHint: "Gespeichert als neue Fassung eures Szenarios; die alte bleibt im Verlauf.",
   fixProjection: "Erst die Eingabe bei der Annahme korrigieren, die rot markiert ist; dann lässt sich das Szenario speichern.",
   fixSpending: "Erst die Eingabe bei „geplant“ korrigieren; dann lässt sich das Szenario speichern.",
-  dirtyNotice:
-    "Geändert, noch nicht gespeichert; die Zahlen auf dieser Seite rechnen mit der gespeicherten Fassung, nur „Was eure Änderungen bewirken“ rechnet schon mit euren Änderungen.",
+  dirtyNotice: "Geändert, noch nicht gespeichert: die Zahlen hier rechnen schon mit euren Änderungen.",
+  dirtyNoticeBudget:
+    "Geändert, noch nicht gespeichert: „Was mit dem Rest passiert“ rechnet schon mit euren Änderungen; die Zeilen des Budgets zeigen die gemessenen Monate.",
+  dirtyNoticeProjection: "Geändert, noch nicht gespeichert: dieser Verlauf rechnet schon mit euren Änderungen.",
+  previewPending: " Rechnet …",
   changeReserveTarget: (months: string) => `Reserveziel: ${months} Monate`,
   changeBuffer: (percent: string) => `Puffer: ${percent}`,
   changeHorizon: (months: number) => `Zeitraum der Wege: ${months} Monate`,
@@ -122,10 +140,7 @@ const de = {
   notOurs: "anders als hier",
   band: (above: string | null, upTo: string | null, label: string) =>
     `${above != null ? `über ${above}` : ""}${above != null && upTo != null ? " bis " : ""}${upTo != null ? `${above == null ? "bis " : ""}${upTo}` : ""}: ${label}`,
-  // Was eure Änderungen bewirken (D271)
-  asBefore: "wie bisher",
   running: "läuft",
-  over: "vorbei",
   from: (month: string) => `ab ${month}`,
   until: (range: string) => range,
   // errors the server sends as codes
@@ -145,17 +160,13 @@ const de = {
   tooFewThen:
     "Sobald 3 Monate abgeschlossen sind, stehen hier anlegbarer Betrag, Reserve, die Wege zum Reserveziel und die Rechnung zu eurem Vermögen.",
   kpiInvestable: "Anlegbar pro Monat",
-  kpiInvestableSub: (free: string, buffer: string) => `frei verfügbar ${free} minus ${buffer} Puffer`,
-  kpiInvested: "Schon angelegt pro Monat",
   kpiNoPlan: "kein Sparplan erkannt",
   kpiPlansTogether: (count: number) => (count === 1 ? "aus einem Sparplan" : `aus ${count} Sparplänen zusammen`),
-  kpiLeft: (amount: string) => `danach bleiben ${amount} im Monat`,
   kpiReserve: "Reserve heute",
   kpiReserveMonths: (months: string) => `reicht für ${months} Monate`,
   kpiReserveNoNeed: "ohne Bedarf keine Monate",
   kpiGap: "Bis zum Reserveziel fehlen",
   kpiTarget: (amount: string, months: string) => `Ziel ${amount} = ${months} Monate Bedarf`,
-  leversTitle: "Stellschrauben",
   leverReserve: "Reserveziel",
   leverReserveDown: "Reserveziel verringern",
   leverReserveUp: "Reserveziel erhöhen",
@@ -166,22 +177,6 @@ const de = {
   leverBufferDown: "Puffer verringern",
   leverBufferUp: "Puffer erhöhen",
   leverBufferSub: "so viel vom frei verfügbaren Geld bleibt unverplant",
-  effectsTitle: "Was eure Änderungen bewirken",
-  effectsIntro:
-    "Die App rechnet bei jeder Eingabe neu. Beide Spalten aus denselben gemessenen Monaten; welche Änderung passt, entscheidet ihr.",
-  effectsPending: " Rechnet …",
-  effectsFigure: "Kennzahl",
-  effectsToday: "heute (ohne Einmalausgaben)",
-  effectsWith: "mit euren Änderungen",
-  effectsRate: "Sparquote",
-  effectsReached: "Reserveziel erreicht",
-  effectsReachedSub: "auf dem Weg „Alles weiter wie bisher“",
-  effectsNotIn: (months: number) => `nicht in ${months} Monaten`,
-  effectsWorthOn: (day: string) => `Vermögen am ${day}`,
-  effectsWorthEnd: "Vermögen am Ende",
-  effectsWorthSub: "nach eurer Annahme für Fonds und Krypto, siehe „Vermögen in einigen Jahren“",
-  effectsNote:
-    "Sparquote heute: ohne Einmalausgaben. Die Sparquote mit euren Änderungen zeigt jeden Monat, in dem sie sich ändert, nie einen Durchschnitt der Monate.",
   baseLine: (count: number, range: string) =>
     `Basis: ${count} Monate, ${range}. Die Durchschnitte und der Bedarf kommen aus diesen ${count} abgeschlossenen Monaten.`,
   basePaths: (on: string) => ` Die Wege zum Reserveziel beginnen beim Monatsabschluss am ${on}.`,
@@ -309,7 +304,7 @@ const de = {
   projAt: (on: string, amount: string) => `Vermögen am ${on} nach eurer Annahme: ${amount}`,
   projStart: (on: string, amount: string) => `Start (${on}): ${amount}`,
   projEnds: (year: number) => `Die Rechnung endet ${year}, weil das Szenario der Wohnung danach den Verkauf vorsieht.`,
-  projEndsLink: "Planung › Immobilie",
+  projEndsLink: "Anlagen › Immobilie",
   projUsedUp: (month: string) => `Das Geld auf den Konten ist im ${month} aufgebraucht; danach bleibt die Rechnung bei 0 €.`,
   colDate: "Stichtag",
   colBank: "Bankguthaben",
@@ -325,7 +320,7 @@ const de = {
   changeLoan: "Darlehen getilgt",
   loading: "Lädt …",
   close: "Schließen",
-  back: "Planung",
+  back: "Haushalt",
 };
 
 export const planning = defineMessages({
@@ -333,20 +328,32 @@ export const planning = defineMessages({
   en: {
     title: "Planning",
     sections: "Sections",
-    sectionBudget: "Budget",
-    sectionReserve: "Reserve",
-    sectionAnlegen: "Investing",
-    sectionVermoegen: "Net worth",
-    sectionImmobilie: "Property",
     asOf: (day: string) => `As of ${day}`,
     scenario: (name: string) => `Scenario “${name}”`,
     defaults: "No saved scenario",
     saved: "saved",
     unsaved: (n: number) => (n === 1 ? "1 change, not saved" : `${n} changes, not saved`),
     assumptions: "Assumptions",
-    sheetTitle: "Scenario and assumptions",
-    sheetIntro:
-      "What you change on this page is a draft. “Save scenario” stores it as a new version of your scenario; the old one stays in the history.",
+    annahmenTitle: "Your assumptions",
+    annahmenIntro:
+      "Everything the budget, the reserve, the goal and the net worth over time are calculated with. What you change here is a draft until you save the scenario; the old version stays in the history.",
+    change: "Change",
+    restTitle: "What happens to the rest",
+    restFree: "Left each month",
+    restPlans: "already in savings plans",
+    restLeft: "Still free",
+    restInvestable: (amount: string) => `Investable per month (before the savings plans): ${amount}`,
+    restWithChanges: "With your planned spending",
+    restSegment: (investable: string, rate: string) => `Investable ${investable} · savings rate ${rate}`,
+    restReserveGap: (amount: string) => `Reserve: ${amount} still to go to the target.`,
+    restReserveReached: "Reserve: target reached.",
+    toReserve: "Reserve",
+    toAssets: "Assets",
+    explain: "Explanation",
+    kpiNeed: "Need",
+    kpiNeedSub: "per month, from the closed months",
+    reserveWhat:
+      "What counts as the reserve: current and savings accounts less the open credit cards. The rental account counts only if you add it; its money is for the flat's next payments.",
     changesTitle: "Unsaved changes",
     noChanges: "No change: the figures use the saved version.",
     discard: "Discard",
@@ -354,8 +361,11 @@ export const planning = defineMessages({
     saveHint: "Saved as a new version of your scenario; the old one stays in the history.",
     fixProjection: "First correct the assumption marked in red; then the scenario can be saved.",
     fixSpending: "First correct the “planned” entry; then the scenario can be saved.",
-    dirtyNotice:
-      "Changed, not saved yet; the figures on this page use the saved version, only “What your changes do” already uses your changes.",
+    dirtyNotice: "Changed, not saved yet: the figures here already use your changes.",
+    dirtyNoticeBudget:
+      "Changed, not saved yet: “What happens to the rest” already uses your changes; the budget lines show the measured months.",
+    dirtyNoticeProjection: "Changed, not saved yet: this projection already uses your changes.",
+    previewPending: " Calculating …",
     changeReserveTarget: (months: string) => `Reserve target: ${months} months`,
     changeBuffer: (percent: string) => `Buffer: ${percent}`,
     changeHorizon: (months: number) => `Span of the paths: ${months} months`,
@@ -443,9 +453,7 @@ export const planning = defineMessages({
     notOurs: "unlike here",
     band: (above: string | null, upTo: string | null, label: string) =>
       `${above != null ? `above ${above}` : ""}${above != null && upTo != null ? " to " : ""}${upTo != null ? `${above == null ? "up to " : ""}${upTo}` : ""}: ${label}`,
-    asBefore: "as before",
     running: "running",
-    over: "over",
     from: (month: string) => `from ${month}`,
     until: (range: string) => range,
     errorText: (code: string) =>
@@ -467,17 +475,13 @@ export const planning = defineMessages({
     tooFewThen:
       "Once 3 months are closed, this page shows what you can invest, the reserve, the paths to the reserve target and the calculation of your net worth.",
     kpiInvestable: "Investable per month",
-    kpiInvestableSub: (free: string, buffer: string) => `${free} free cash minus a ${buffer} buffer`,
-    kpiInvested: "Already invested per month",
     kpiNoPlan: "no savings plan found",
     kpiPlansTogether: (count: number) => (count === 1 ? "from one savings plan" : `from ${count} savings plans together`),
-    kpiLeft: (amount: string) => `${amount} a month left after that`,
     kpiReserve: "Reserve today",
     kpiReserveMonths: (months: string) => `lasts ${months} months`,
     kpiReserveNoNeed: "no months without a need",
     kpiGap: "Still missing to the reserve target",
     kpiTarget: (amount: string, months: string) => `Target ${amount} = ${months} months of need`,
-    leversTitle: "Levers",
     leverReserve: "Reserve target",
     leverReserveDown: "Lower the reserve target",
     leverReserveUp: "Raise the reserve target",
@@ -488,22 +492,6 @@ export const planning = defineMessages({
     leverBufferDown: "Lower the buffer",
     leverBufferUp: "Raise the buffer",
     leverBufferSub: "this much of the free cash stays unplanned",
-    effectsTitle: "What your changes do",
-    effectsIntro:
-      "The app recalculates with every entry. Both columns come from the same measured months; which change fits is your decision.",
-    effectsPending: " Calculating …",
-    effectsFigure: "Figure",
-    effectsToday: "today (without one-off spending)",
-    effectsWith: "with your changes",
-    effectsRate: "Savings rate",
-    effectsReached: "Reserve target reached",
-    effectsReachedSub: "on the path „Alles weiter wie bisher“ (everything as before)",
-    effectsNotIn: (months: number) => `not within ${months} months`,
-    effectsWorthOn: (day: string) => `Net worth on ${day}`,
-    effectsWorthEnd: "Net worth at the end",
-    effectsWorthSub: "on your assumption for funds and crypto, see „Net worth in a few years“",
-    effectsNote:
-      "Savings rate today: without one-off spending. The savings rate with your changes shows every month in which it changes, never an average of the months.",
     baseLine: (count: number, range: string) =>
       `Based on ${count} months, ${range}. The averages and the need come from these ${count} closed months.`,
     basePaths: (on: string) => ` The paths to the reserve target start at the month-end of ${on}.`,
@@ -631,7 +619,7 @@ export const planning = defineMessages({
     projAt: (on: string, amount: string) => `Net worth on ${on} by your assumption: ${amount}`,
     projStart: (on: string, amount: string) => `Start (${on}): ${amount}`,
     projEnds: (year: number) => `The calculation ends in ${year} because the flat's scenario plans its sale after that.`,
-    projEndsLink: "Planning › Property",
+    projEndsLink: "Assets › Property",
     projUsedUp: (month: string) => `The money on the accounts is used up in ${month}; after that the calculation stays at €0.`,
     colDate: "Date",
     colBank: "Bank balances",
@@ -647,7 +635,7 @@ export const planning = defineMessages({
     changeLoan: "Loan repaid",
     loading: "Loading …",
     close: "Close",
-    back: "Planning",
+    back: "Household",
   },
 });
 
@@ -656,17 +644,5 @@ export type PlanningText = Translation<typeof de>;
 /** A Budget line's name: Notwendiges, Wünsche, Einmalige Ausgaben, Ohne Einordnung, Sparen. */
 export function lineLabel(t: PlanningText, key: "need" | "want" | "one_off" | "uncategorized" | "saving"): string {
   const labels = { need: t.lineNeed, want: t.lineWant, one_off: t.lineOneOff, uncategorized: t.lineUncategorized, saving: t.lineSaving };
-  return labels[key];
-}
-
-/** A chip's name. */
-export function sectionLabel(t: PlanningText, key: "budget" | "reserve" | "anlegen" | "vermoegen" | "immobilie"): string {
-  const labels = {
-    budget: t.sectionBudget,
-    reserve: t.sectionReserve,
-    anlegen: t.sectionAnlegen,
-    vermoegen: t.sectionVermoegen,
-    immobilie: t.sectionImmobilie,
-  };
   return labels[key];
 }

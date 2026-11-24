@@ -1,4 +1,4 @@
-// Planung (phase-4.md §9, §11 step 3): the screen shows the projection the API computes, a
+// The property's Planung, on Anlagen › Immobilie since phase 10 §7.6 (phase-4.md §9, §11 step 3): it shows the projection the API computes, a
 // lever (Wertsteigerung) changes only the URL and the screen recalculates through the API,
 // and "Szenario speichern" writes a scenario row with the levers in force. A property whose
 // purchase year has no rule set gets a plain notice instead of figures. Synthetic data only.
@@ -41,10 +41,13 @@ test("the projection renders, a lever recalculates and a scenario is saved", asy
   const before = await apiCall<Projection>(page, "GET", projectionPath);
   const saleYear = before.scenario.sale_year;
 
-  await navigateTo(page, "Planung");
-  // Phase 10 D270: Planung opens on Budget; the property's Planung is the section Immobilie.
-  await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Immobilie" }).click();
-  await expect(page).toHaveURL("/assets?tab=immobilie"); // §7.6: the property's Planung lives on Anlagen
+  // Planung left the menu in phase 10 wave 3 (a) (D288): an old link lands on Haushalt › Budget,
+  // and the property's Planung is Anlagen › Immobilie (§7.6).
+  await page.goto("/planning");
+  await expect(page).toHaveURL("/household?tab=budget");
+  await navigateTo(page, "Anlagen");
+  await page.getByRole("link", { name: "Immobilie", exact: true }).click();
+  await expect(page).toHaveURL("/assets?tab=immobilie");
   await expect(page.getByRole("heading", { name: "Rechnet sich die Immobilie?" })).toBeVisible();
   await expect(page.getByRole("group", { name: `Verkaufspreis ${saleYear}` })).toContainText(euro(before.sale.value));
   await expect(page.getByRole("group", { name: "Wertsteigerung pro Jahr" })).toContainText("2,0 %");

@@ -1,5 +1,7 @@
-/* Planung in five sections (phase 10 D270, mockup 17-C2): the chips, the scenario row and the
-   Budget (D272–D277). Every colour is a token of globals.css, so dark mode follows. */
+/* Planung's parts (phase 10 D270, mockup 17-C2; since wave 3 (a), §7.9 (a), Haushalt's tabs and
+   Anlagen, mockups 19b, 19c): the chips, the scenario row, the Budget (D272–D277), „Was mit dem
+   Rest passiert“ and the panel „Annahmen“. Every colour is a token of globals.css, so dark mode
+   follows. */
 
 .planning-chips {
   display: flex;
@@ -210,4 +212,66 @@
 .budget-with-plan {
   padding-top: 8px;
   border-top: 1px solid var(--divider);
+}
+
+/* --- „Was mit dem Rest passiert“ (Haushalt › Budget's foot, mockup 19b) --- */
+
+.planning-rest li > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.planning-rest li > span:last-child {
+  flex: none;
+  text-align: right;
+}
+
+.planning-rest-sub {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+.planning-rest-sum {
+  font-weight: 800;
+}
+
+/* A stretch's two figures may wrap on the phone rather than push the row wider. */
+.planning-rest-segments li > span:last-child {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* „Erklärung“ and „So entsteht die Zahl“ open inside the rest card: no second frame. */
+.planning-rest-card .card {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+/* --- the panel „Annahmen“ (mockup 19c) --- */
+
+.annahmen-group + .annahmen-group,
+.annahmen-save {
+  padding-top: 12px;
+  border-top: 1px solid var(--divider);
+}
+
+.annahmen-group h3,
+.annahmen-save h3 {
+  margin: 0;
+}
+
+/* Inside the panel the levers' own cards lose their frame, so the groups read as one list. */
+.annahmen .card {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: none;
+}
+
+.annahmen .table-wrap {
+  max-width: 100%;
 }
