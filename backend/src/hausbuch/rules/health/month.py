@@ -17,7 +17,7 @@ A line counts in the calendar month of its booking date (D230); the caller selec
 Amounts are exact sums; only the savings rate is rounded (four places, half-up).
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from decimal import Decimal
 from uuid import UUID
 
@@ -100,6 +100,14 @@ def _role(category: AllocationCategory) -> str | None:
     return None
 
 
+def _marked(line: MonthLine, one_off_ids: Collection[UUID]) -> bool:
+    """A spending line a person marked one-off (D297) that a one-off code does not already
+    count: a payment (money out) in a code that is not one-off."""
+    return (
+        line.allocation_id in one_off_ids and line.amount < 0 and _counted_as(line) not in ONE_OFF
+    )
+
+
 def _ids(*groups: Iterable[UUID]) -> list[UUID]:
     return list(dict.fromkeys(i for group in groups for i in group))
 
@@ -110,6 +118,7 @@ def household_month(
     *,
     lines: Sequence[MonthLine] = (),
     link_sources: Sequence[UUID] = (),
+    one_off_ids: Collection[UUID] = frozenset(),
 ) -> HouseholdMonth:
     """§4.2: the private accounts' cashflow plus the rental accounts' cash, counted once, in
     the calendar month of each line's booking date (D230, D232, D233).
@@ -119,7 +128,11 @@ def household_month(
     property (blocks summed; empty for a household without one). `lines`: the private lines
     behind `private`; they give D234's purchase costs and every field's `sources`, and must
     reproduce `private`'s income and spending (ValueError otherwise). `link_sources`: the
-    allocation ids of the transfer links inside `private.saved`."""
+    allocation ids of the transfer links inside `private.saved`. `one_off_ids`: the
+    allocations a person marked one-off (phase 10 §7.9 (c) 2, D297; empty by default): such a
+    line moves from regular to one-off spending as a one-off code's does; a marked line that
+    is no payment of spending (money in, a purchase cost, a one-off code already) moves
+    nothing."""
     for block in rental:
         if block.month != private.month:
             raise ValueError(f"a rental block of {block.month} in {private.month}")
@@ -150,6 +163,8 @@ def household_month(
         ),
         ZERO,
     )
+    marked = [li for li in roles.get("spending", []) if _marked(li, one_off_ids)]
+    one_off += -sum((li.amount for li in marked), ZERO)
     result = sum((block.result for block in rental), ZERO)
     principal = total("principal")
     rental_property = total("invested") - total("loan_disbursement")
@@ -160,10 +175,12 @@ def household_month(
     cash = result - principal
 
     spending_ids = [li.allocation_id for li in roles.get("spending", [])]
-    one_off_ids = [
-        li.allocation_id for li in roles.get("spending", []) if _counted_as(li) in ONE_OFF
+    one_off_sources = [
+        li.allocation_id
+        for li in roles.get("spending", [])
+        if _counted_as(li) in ONE_OFF or _marked(li, one_off_ids)
     ]
-    regular_ids = [i for i in spending_ids if i not in set(one_off_ids)]
+    regular_ids = [i for i in spending_ids if i not in set(one_off_sources)]
     income_ids = [li.allocation_id for li in roles.get("income", [])]
     result_ids = block_ids(*_RESULT_BLOCKS)
     principal_ids = block_ids("principal")
@@ -171,7 +188,7 @@ def household_month(
     sources = {
         "private_income": income_ids,
         "private_spending": spending_ids,
-        "one_off_spending": one_off_ids,
+        "one_off_spending": one_off_sources,
         "regular_spending": regular_ids,
         "rental_result": result_ids,
         "rental_cash": _ids(result_ids, principal_ids),

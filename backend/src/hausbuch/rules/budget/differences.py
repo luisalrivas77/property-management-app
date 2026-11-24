@@ -19,12 +19,14 @@ month_cashflow sums it under, None for income, the Geldanlage group and a transf
 service can list the payments behind a named group.
 """
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from decimal import ROUND_HALF_UP, Decimal
+from uuid import UUID
 
+from hausbuch.rules.health.month import cashflow_rows
 from hausbuch.rules.household.taxonomy import ONE_OFF, TAXONOMY
 from hausbuch.schemas.allocation import AllocationCategory
-from hausbuch.schemas.health import DifferenceWords, GroupDifference
+from hausbuch.schemas.health import DifferenceWords, GroupDifference, MonthLine
 from hausbuch.schemas.household import HouseholdGroup, Relevance
 
 MIN_BASELINE = 3
@@ -72,6 +74,20 @@ def compared_by_group(
         if group is not None:
             out[group] = out.get(group, _ZERO) - amount
     return out
+
+
+def compared_rows(
+    lines: Iterable[MonthLine], one_off_ids: Collection[UUID] = frozenset()
+) -> list[tuple[AllocationCategory, Decimal]]:
+    """month_cashflow's rows of one month's private lines (D234 applied), less the payments a
+    person marked one-off (phase 10 §7.9 (c) 2, D297): like a one-off code's, they are no
+    regular spending to compare."""
+    return [
+        row
+        for line in lines
+        if not (line.allocation_id in one_off_ids and line.amount < 0)
+        for row in cashflow_rows([line])
+    ]
 
 
 def differences(

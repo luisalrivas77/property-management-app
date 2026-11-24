@@ -98,6 +98,7 @@ from .household import (
 from .performance import INCOME_INPUT_VALUES, IncomeInputValue, Levers, income_value_by_kind
 from .property import OwnerShare
 from .proposal import FieldDecision, RecordEntity
+from .recurring import RecurringInterval, SpendingMarkAnswer
 from .reminders import (
     NotificationChannel,
     ReminderAckAction,
@@ -1413,6 +1414,23 @@ class HouseholdScenarioRecorded(Schema):
     supersedes_id: UUID | None = None
 
 
+class SpendingMarkRecordedEvent(Schema):
+    """household.mark_recorded (phase 10 §7.9 (f), D295 (2); entity_id = spending_mark.id): a
+    person's answer on one payment (its allocation) or on a recurring series (its interval
+    only). Never the series' payee key, a payee's name, a purpose or an amount: the key is
+    the payee's words, kept on the row only."""
+
+    allocation_id: UUID | None = None
+    interval: RecurringInterval | None = None
+    answer: SpendingMarkAnswer
+
+    @model_validator(mode="after")
+    def _target(self) -> Self:
+        if (self.allocation_id is None) == (self.interval is None):
+            raise ValueError("a mark targets a payment or a series, not both")
+        return self
+
+
 class AdviceModeChanged(Schema):
     """workspace.advice_mode_changed (phase 9 D251, §11.6): what the plan and its explanation
     may name, from one mode to the other."""
@@ -1630,6 +1648,7 @@ class EventType(StrEnum):
     HOUSEHOLD_SCENARIO_CREATED = "household_scenario.created"  # phase 9 D248, §11.6
     HOUSEHOLD_SCENARIO_WITHDRAWN = "household_scenario.withdrawn"  # phase 9 D248, §11.6
     PLAN_EXPLANATION_STORED = "plan.explanation_stored"  # phase 9 D257, §11.6
+    HOUSEHOLD_MARK_RECORDED = "household.mark_recorded"  # phase 10 §7.9 (f), D295 (2)
 
 
 E = EventType
@@ -1928,6 +1947,10 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.WORKSPACE_ADVICE_MODE_CHANGED: EventSpec(
         AdviceModeChanged, "forbidden", "What the plan may name changed (D251)"
+    ),
+    # Phase 10 wave 3
+    E.HOUSEHOLD_MARK_RECORDED: EventSpec(
+        SpendingMarkRecordedEvent, "forbidden", "A payment or recurring series answered (D295)"
     ),
 }
 del E

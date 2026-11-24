@@ -522,8 +522,11 @@ def window_spending(
     reads: dict[str, MonthRead], months: Sequence[str]
 ) -> list[dict[AllocationCategory, Decimal]]:
     """§7.6 (2): each window month's regular spending per code, from the private accounts'
-    cashflow (D234 and the one-off codes left out)."""
-    return [SP.month_spending(reads[m].private.cashflow) for m in months]
+    cashflow (D234, the one-off codes and the payments marked one-off left out)."""
+    return [
+        SP.month_spending(reads[m].private.cashflow, reads[m].private.lines, reads[m].one_off_ids)
+        for m in months
+    ]
 
 
 def _plan(
@@ -682,6 +685,7 @@ def spending_comparison(conn: Connection, today: date, month: str) -> SpendingCo
         scenario=scenario,
         changes=[] if scenario is None else scenario.levers.spending_changes,
         lines=read.private.lines,
+        one_off_ids=read.one_off_ids,
     )
 
 

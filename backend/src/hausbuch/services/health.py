@@ -51,7 +51,12 @@ from hausbuch.db.tables import household_scenario as household_scenario_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
-from hausbuch.rules.budget.differences import compared_by_group, compared_group, differences
+from hausbuch.rules.budget.differences import (
+    compared_by_group,
+    compared_group,
+    compared_rows,
+    differences,
+)
 from hausbuch.rules.errors import (
     HEALTH_MONTH_END_INCOMPLETE,
     HEALTH_MONTH_END_MISSING,
@@ -149,6 +154,7 @@ from .net_worth import (
 )
 from .reminders import idle_cards
 from .scenarios import estimate_on_day
+from .spending_marks import one_off_marked
 from .transfers import _first_days as history_starts
 from .transfers import open_transfers
 
@@ -485,16 +491,21 @@ class MonthRead:
     rental: list[RentalMonth]
     closed: ClosedMonth
     private: PrivateMonth
+    # The allocations a person marked one-off (phase 10 §7.9 (c) 2): the household month
+    # counts them as one-off spending, and every reader of the private lines passes them on.
+    one_off_ids: frozenset[UUID] = field(default_factory=frozenset)
 
 
 def read_months(conn: Connection, months: Sequence[str], today: date) -> dict[str, MonthRead]:
     """`months` (consecutive, oldest first) on read: rules.health.month.household_month over
     the private accounts' month (services.household.private_months, the Haushalt screen's
     own read) and the rental blocks (rental_months), and rules.health.window.closed over
-    the month's facts."""
+    the month's facts. The payments a person marked one-off (services.spending_marks, phase 10
+    §7.9 (c) 2) are read once here and carried on every MonthRead."""
     if not months:
         return {}
     first, last = months[0], months[-1]
+    marked = one_off_marked(conn)
     private = private_months(conn, first, last)
     rental = rental_months(conn, first, last)
     facts = closed_month_facts(conn, months, today)
@@ -504,11 +515,12 @@ def read_months(conn: Connection, months: Sequence[str], today: date) -> dict[st
         blocks = rental.months.get(month, [])
         out[month] = MonthRead(
             household=household_month(
-                p.cashflow, blocks, lines=p.lines, link_sources=p.link_sources
+                p.cashflow, blocks, lines=p.lines, link_sources=p.link_sources, one_off_ids=marked
             ),
             rental=blocks,
             closed=closed(facts[month]),
             private=p,
+            one_off_ids=marked,
         )
     return out
 
@@ -768,12 +780,15 @@ def month_differences(
         return None
     baseline = _window(reads, up_to=_previous(newest)).months
     spending = {
-        m: compared_by_group(cashflow_rows(reads[m].private.lines)) for m in [*baseline, newest]
+        m: compared_by_group(compared_rows(reads[m].private.lines, reads[m].one_off_ids))
+        for m in [*baseline, newest]
     }
     named = differences(spending[newest], [spending[m] for m in baseline])
     if named is None:
         return None
-    payments = _group_payments(conn, reads[newest].private.lines, {d.group for d in named})
+    payments = _group_payments(
+        conn, reads[newest].private.lines, {d.group for d in named}, reads[newest].one_off_ids
+    )
     return MonthDifferences(
         month=newest,
         baseline=baseline,
@@ -782,12 +797,18 @@ def month_differences(
 
 
 def _group_payments(
-    conn: Connection, lines: Sequence[MonthLine], groups: set[HouseholdGroup]
+    conn: Connection,
+    lines: Sequence[MonthLine],
+    groups: set[HouseholdGroup],
+    one_off_ids: frozenset[UUID] = frozenset(),
 ) -> dict[HouseholdGroup, list[GroupPayment]]:
     """The month's private allocations counted under `groups` (D234's recode applied, as
-    month_cashflow counts them), oldest booking first, each signed as the group's spending."""
+    month_cashflow counts them), oldest booking first, each signed as the group's spending;
+    a payment marked one-off left out, as compared_rows leaves it out of the group's sum."""
     wanted: dict[UUID, tuple[HouseholdGroup, AllocationCategory, Decimal]] = {}
     for line, (category, amount) in zip(lines, cashflow_rows(lines), strict=True):
+        if line.allocation_id in one_off_ids and line.amount < 0:
+            continue
         group = compared_group(category)
         if group is not None and group in groups:
             wanted[line.allocation_id] = (group, category, -amount)
