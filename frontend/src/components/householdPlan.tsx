@@ -57,6 +57,7 @@ import {
 } from "./healthShared";
 import { percentInput, toSignedMoneyString } from "./input";
 import { ALLOCATION_CATEGORY } from "./labels";
+import { useOneOffCheck } from "./householdRecurring";
 import { PlanExplanationPanel } from "./planExplanation";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
 import { BudgetClassPanel, BudgetSection, type BudgetView, GoalsPanel, PlanError } from "./planningBudget";
@@ -198,6 +199,9 @@ interface PlanReady {
   epoch: number;
   current: HouseholdScenario | null;
   onChanged: () => void;
+  /** Haushalt › Budget's line „<N> Zahlungen vielleicht einmalig · Prüfen“ (§7.9 (c)), or null
+   * on a page without the check or while nothing is to check. */
+  oneOffLine: ReactNode;
 }
 
 interface PlanState {
@@ -225,7 +229,18 @@ const EMPTY_LEVERS = fillLevers(undefined);
 /** Reads the plan once for a page and holds the draft, the save and the „Annahmen“ panel (and
  * Budget's own panels); `backLabel` is the page's name on the panel's „‹“ on the phone. The tree
  * around `children` is the same before and after the read, so nothing under it mounts twice. */
-export function PlanProvider({ page, backLabel, children }: { page: string; backLabel: string; children: ReactNode }) {
+export function PlanProvider({
+  page,
+  backLabel,
+  oneOff = false,
+  children,
+}: {
+  page: string;
+  backLabel: string;
+  /** Read the one-off check for Haushalt › Budget (§7.9 (c)); Anlagen leaves it out. */
+  oneOff?: boolean;
+  children: ReactNode;
+}) {
   const t = useT(planning);
   const f = usePlanFormat();
   const state = useLoad(loadPlan);
@@ -241,6 +256,8 @@ export function PlanProvider({ page, backLabel, children }: { page: string; back
   const annahmen = useDetail(ASSUMPTIONS);
   const goals = useDetail("goals");
   const budgetClass = useDetail("budget");
+  // An answer moves the window's means: the plan, the Budget and the key figures are read again.
+  const oneOffCheck = useOneOffCheck(oneOff, backLabel, state.reload);
 
   const data = state.data;
   const enough = data !== undefined && data.health.window.enough && data.plan.surplus != null;
@@ -319,6 +336,7 @@ export function PlanProvider({ page, backLabel, children }: { page: string; back
       epoch,
       current,
       onChanged: state.reload,
+      oneOffLine: oneOffCheck.line,
     };
 
     if (annahmen.id !== null) {
@@ -369,6 +387,8 @@ export function PlanProvider({ page, backLabel, children }: { page: string; back
           footer={dirty ? saveBar : null}
         />
       );
+    } else if (oneOffCheck.panel) {
+      panel = oneOffCheck.panel;
     }
   }
 
@@ -545,6 +565,7 @@ function BudgetTab({ ready }: { ready: PlanReady }) {
       <ScenarioRow group="ausgaben" />
       <DirtyNotice text={t.dirtyNoticeBudget} />
       <BudgetSection budget={ready.data.budget} onChanged={ready.onChanged} />
+      {ready.oneOffLine}
       <RestCard ready={ready} />
     </>
   );
