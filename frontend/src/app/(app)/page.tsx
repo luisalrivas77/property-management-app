@@ -21,6 +21,7 @@ import { api, ok } from "@/api/client";
 import { useAuth } from "@/auth/AuthGate";
 import { DetailLayout, useDetail } from "@/components/DetailPanel";
 import { todayIso } from "@/components/format";
+import { loadGoal } from "@/components/householdGoal";
 import {
   OverviewTiles,
   TilePanel,
@@ -80,6 +81,7 @@ export default function OverviewPage() {
   const f = useFormat();
   const netWorth = useLoad(loadNetWorthToday);
   const health = useLoad(loadHealthOnly);
+  const goal = useLoad(loadGoal);
   const cashflow = useLoad(loadMonthCashflow);
   const inbox = useLoad(loadInbox);
   const paidIn = useLoad(loadPaidIn);
@@ -91,7 +93,7 @@ export default function OverviewPage() {
   // waits forever. The property list and the to-do list then read /properties together, so it
   // is sent once (fetchShared).
   const [gate] = useState(createGate);
-  const tilesSettled = [netWorth, health, cashflow, inbox, paidIn, payback].every((state) => !state.loading);
+  const tilesSettled = [netWorth, health, goal, cashflow, inbox, paidIn, payback].every((state) => !state.loading);
   useEffect(() => {
     if (tilesSettled) gate.open();
   }, [tilesSettled, gate]);
@@ -105,7 +107,7 @@ export default function OverviewPage() {
   const propertyList = useLoad(loadList);
   const detail = useDetail("kachel");
   const today = todayIso();
-  const tiles = { netWorth, health, cashflow, inbox, paidIn, payback };
+  const tiles = { netWorth, health, goal, cashflow, inbox, paidIn, payback };
   const properties = (propertyList.data ?? []).map((property) => ({ id: property.id, label: property.label }));
 
   const panel = isTileId(detail.id) ? <TilePanel id={detail.id} data={tiles} detail={detail} properties={properties} /> : null;

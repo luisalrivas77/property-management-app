@@ -4,14 +4,16 @@
 // it, one tile per kind of asset (property, ETF depot, crypto, bank) with its colour as an edge
 // stripe, „Finanzielle Gesundheit“ beside the net worth (phase 10 §7.6, Luis 23 Nov 2026: one
 // word, Sehr gut, Gut or Angespannt, with a dot in its colour and the weakest point; its three
-// questions in the panel; it replaced the tiles Sparquote, Reserve and Verschuldungsgrad), and Zu
-// prüfen. Each tile is a name, one number and at
+// questions in the panel; it replaced the tiles Sparquote, Reserve and Verschuldungsgrad), „Euer
+// Ziel“ under it with the same weight (§7.9 (d), D289; Luis: „highlighted similarly as the
+// financial health part“: the goal's word, its target and its progress, or „Ziel festlegen“
+// without one), and Zu prüfen. Each tile is a name, one number and at
 // most one line (phase 10 §7.6 rule (1)): the Immobilie tile's break-even year, profit at a sale
 // today, value less loans and the properties left out, the net worth's split and its to-dos and
 // the credit card's balance are in their panels only. A tapped tile opens its summary in the
 // detail panel with one button into its section. Every euro figure and every share is the
-// server's (/net-worth/overview, /health, /household/cashflow, /inbox, /properties/equity,
-// /properties/payback; /health/months only when /health's last ended month is not the tile's);
+// server's (/net-worth/overview, /health, /household/cashflow, /household-goal, /inbox,
+// /properties/equity, /properties/payback; /health/months only when /health's last ended month is not the tile's);
 // the browser only counts rows and formats.
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -21,6 +23,7 @@ import type { components } from "@/api/types";
 import { CashflowCard, lastFullMonth, loadCashflow, type HouseholdCashflow } from "@/components/cashflow";
 import { DetailPanel, type Detail } from "@/components/DetailPanel";
 import { HealthTodoList } from "@/components/healthFigures";
+import { GOAL_FORM_HREF, GOAL_PAGE, GoalSummary, GoalTileBody, type HouseholdGoal } from "@/components/householdGoal";
 import type { Health } from "@/components/healthShared";
 import { NetWorthSection } from "@/components/netWorth";
 import { payInputsHref } from "@/components/taxYear";
@@ -28,6 +31,7 @@ import { Loading } from "@/components/ui";
 import { VerdictCards, VerdictWordLine, WORD_MARK, wordText } from "@/components/verdict";
 import type { Loaded } from "@/components/useLoad";
 import { useFormat, useT, type Formatter } from "@/i18n";
+import { goalText } from "@/i18n/goal";
 import { overview as catalogue } from "@/i18n/overview";
 import { verdictText } from "@/i18n/verdict";
 import { Icon } from "@/lib/icons";
@@ -45,7 +49,7 @@ type PropertiesPayback = components["schemas"]["PropertiesPayback"];
 type PropertyPayback = components["schemas"]["PropertyPayback"];
 type T = (typeof catalogue)["de"];
 
-export type TileId = "nettovermoegen" | "gesundheit" | "cashflow" | "immobilie" | "depot" | "krypto" | "bank" | "pruefen";
+export type TileId = "nettovermoegen" | "gesundheit" | "ziel" | "cashflow" | "immobilie" | "depot" | "krypto" | "bank" | "pruefen";
 
 export interface MonthCashflow {
   month: string;
@@ -87,6 +91,7 @@ export const loadPayback = (): Promise<PropertiesPayback> => ok(api.GET("/api/pr
 export interface TileData {
   netWorth: Loaded<NetWorth>;
   health: Loaded<Health>;
+  goal: Loaded<HouseholdGoal>;
   cashflow: Loaded<MonthCashflow>;
   inbox: Loaded<InboxItem[]>;
   paidIn: Loaded<PropertiesPaidIn>;
@@ -209,10 +214,12 @@ function Wait<D>({ state, children }: { state: Loaded<D>; children: (data: D) =>
 export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail }) {
   const t = useT(catalogue);
   const f = useFormat();
-  const { netWorth, health, cashflow, inbox, payback } = data;
+  const { netWorth, health, goal, cashflow, inbox, payback } = data;
   const lines = netWorth.data?.lines ?? [];
   const cards = cardLines(lines);
   const tv = useT(verdictText);
+  const tg = useT(goalText);
+  const noGoal = goal.data !== undefined && (goal.data.word === "none" || !goal.data.goal);
   const items = inbox.data ?? [];
 
   return (
@@ -245,7 +252,19 @@ export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail
             }
           </Wait>
         </Tile>
-        <Tile id="cashflow" detail={detail} className="tile-wide" name={t.cashflow(f.month(cashflow.data?.month ?? lastFullMonth()))}>
+        {noGoal ? (
+          // No goal yet: the tile leads straight to the form on Haushalt › Ziel; nothing proposed.
+          <Link href={GOAL_FORM_HREF} className="tile tile-wide tile-goal tile-goal-empty">
+            <span className="tile-name">{tg.title}</span>
+            <span className="tile-value">{tg.setGoal}</span>
+            <span className="tile-sub">{tg.noGoal}</span>
+          </Link>
+        ) : (
+          <Tile id="ziel" detail={detail} className="tile-wide tile-goal" name={tg.title}>
+            <Wait state={goal}>{(value) => <GoalTileBody goal={value} />}</Wait>
+          </Tile>
+        )}
+        <Tile id="cashflow" detail={detail} className="tile-wide tile-cashflow" name={t.cashflow(f.month(cashflow.data?.month ?? lastFullMonth()))}>
           <Wait state={cashflow}>
             {({ cashflow: month, householdRate }) =>
               month.income === "0.00" && Object.keys(month.spending_by_group).length === 0 ? (
@@ -559,6 +578,7 @@ function Go({ href, children }: { href: string; children: ReactNode }) {
 const TITLES: Record<TileId, (t: T) => string> = {
   nettovermoegen: (t) => t.netWorth,
   gesundheit: (t) => t.health,
+  ziel: (t) => t.goal,
   cashflow: (t) => t.cashflow(""),
   immobilie: (t) => t.property,
   depot: (t) => t.depot,
@@ -584,8 +604,9 @@ export function TilePanel({
 }) {
   const t = useT(catalogue);
   const f = useFormat();
-  const { netWorth, health, cashflow, inbox, paidIn, payback } = data;
+  const { netWorth, health, goal, cashflow, inbox, paidIn, payback } = data;
   const tv = useT(verdictText);
+  const tg = useT(goalText);
   const title = id === "cashflow" ? t.cashflow(f.month(cashflow.data?.month ?? lastFullMonth())) : TITLES[id](t);
   const single = properties.length === 1 ? properties[0] : undefined;
 
@@ -620,6 +641,22 @@ export function TilePanel({
               <p className="muted">–</p>
             )
           }
+        </Loading>
+      );
+      break;
+    case "ziel":
+      body = (
+        <Loading state={goal}>
+          {(value) => (
+            <>
+              {value.goal ? (
+                <GoalSummary goal={value} formHref={GOAL_FORM_HREF} onChanged={goal.reload} />
+              ) : (
+                <p className="muted">{tg.noGoalText}</p>
+              )}
+              <Go href={GOAL_PAGE}>{tg.toGoal}</Go>
+            </>
+          )}
         </Loading>
       );
       break;

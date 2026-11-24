@@ -209,9 +209,39 @@
   width: 100%;
 }
 
+/* „Euer Ziel“ (§7.9 (d)): under Finanzielle Gesundheit with the same weight; without a goal a
+   dashed tile that leads to the form. */
+.tile-goal-empty {
+  border-style: dashed;
+}
+
+.tile-goal-empty .tile-value {
+  color: var(--accent-strong);
+}
+
 @media (min-width: 800px) {
+  /* The net worth with the cash flow under it, the health word with the goal under it. */
   .tiles-money {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) minmax(0, 2fr);
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    grid-template-areas:
+      "nw health"
+      "cf goal";
+  }
+
+  .tiles-money > .tile-hero {
+    grid-area: nw;
+  }
+
+  .tiles-money > .tile-health {
+    grid-area: health;
+  }
+
+  .tiles-money > .tile-goal {
+    grid-area: goal;
+  }
+
+  .tiles-money > .tile-cashflow {
+    grid-area: cf;
   }
 }
 
