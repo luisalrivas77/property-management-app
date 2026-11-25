@@ -89,6 +89,7 @@ const overview: AssetsOverview = {
       account_id: DEPOT,
       label: "Depot Beispiel",
       kind: "depot",
+      counts_to_reserve: false,
       positions: [
         {
           asset_id: FUND,

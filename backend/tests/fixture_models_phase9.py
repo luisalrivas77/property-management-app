@@ -88,7 +88,7 @@ from hausbuch.schemas.health import (
     TargetMonths,
     YearMonth,
 )
-from hausbuch.schemas.household import HouseholdGroup, NetWorthClass, Relevance
+from hausbuch.schemas.household import BudgetClass, HouseholdGroup, NetWorthClass, Relevance
 from hausbuch.schemas.household import SavingsRate as Ratio
 from hausbuch.schemas.plan import (
     BufferPercent,
@@ -507,6 +507,7 @@ class RsExpect(Schema):
     removed: list[str] = Field(default_factory=list)
     amount: Money
     need: Money
+    need_codes: dict[AllocationCategory, Money]
     months: ReserveMonths | None
     target: Money
     gap: Money
@@ -516,22 +517,48 @@ class RsExpect(Schema):
 
 
 RESERVE_KINDS = (AccountKind.BANK_CURRENT, AccountKind.BANK_SAVINGS, AccountKind.CREDIT_CARD)
+# Phase 10 D304: a depot counts only when the lever adds it; no other kind may be added.
+ADDABLE_KINDS = (*RESERVE_KINDS, AccountKind.DEPOT)
+
+
+def need_class(
+    need_months: list[dict[AllocationCategory, Decimal]], mean_rental_cash: Decimal
+) -> tuple[Decimal, dict[AllocationCategory, Decimal]]:
+    """Phase 10 D305: the need = mean need-class spending (to the cent, half-up) + max(0,
+    −mean C); each code's exact monthly mean apportioned to the need-class mean by largest
+    remainder, ties by the code's value, a code netting to 0 left out."""
+    n = len(need_months)
+    mean = mean_cent([sum(m.values(), ZERO) for m in need_months])
+    totals: dict[AllocationCategory, Decimal] = {}
+    for month in need_months:
+        for code, amount in month.items():
+            totals[code] = totals.get(code, ZERO) + amount
+    exact = {c: Fraction(t) * 100 / n for c, t in totals.items() if t}
+    floors = {c: v.numerator // v.denominator for c, v in exact.items()}
+    left = int(mean * 100) - sum(floors.values())
+    order = sorted(exact, key=lambda c: (-(exact[c] - floors[c]), c.value))
+    for c in order[:left]:
+        floors[c] += 1
+    codes = {c: (Decimal(v) / 100).quantize(CENT) for c, v in floors.items()}
+    return mean + max(ZERO, -mean_rental_cash), codes
 
 
 def reserve(
     balances: list[RsBalance],
     today: date,
-    mean_regular: Decimal,
+    need_months: list[dict[AllocationCategory, Decimal]],
     mean_rental_cash: Decimal,
     levers: RsLevers,
 ) -> RsExpect:
-    """D237, D238; checked once more by the production schema."""
+    """D237, D238, phase 10 D304, D305; checked once more by the production schema."""
     accounts, counted, by_owner = [], [], {}
     for b in balances:
         default = b.kind in RESERVE_KINDS and b.purpose != "rental"
         if b.key in levers.reserve_accounts.removed:
             origin = ReserveOrigin.REMOVED
         elif b.key in levers.reserve_accounts.added:
+            if b.kind not in ADDABLE_KINDS:
+                raise ValueError(f"{b.key}: a {b.kind} account cannot be added to the reserve")
             origin = ReserveOrigin.ADDED
         elif default:
             origin = ReserveOrigin.DEFAULT
@@ -550,7 +577,7 @@ def reserve(
         for owner, part in split(b.balance, shares).items():
             by_owner[owner] = by_owner.get(owner, ZERO) + part
     amount = sum((b.balance for b in counted), ZERO)
-    need = mean_regular + max(ZERO, -mean_rental_cash)
+    need, need_codes = need_class(need_months, mean_rental_cash)
     target = cent(levers.reserve_target_months * need)
     months = None if need == 0 else (amount / need).quantize(Decimal("0.1"), ROUND_HALF_UP)
     stale = any(b.as_of < today - timedelta(days=7) for b in counted)
@@ -571,6 +598,7 @@ def reserve(
         removed=[b.key for b in balances if b.key in levers.reserve_accounts.removed],
         amount=figure.amount,
         need=figure.need,
+        need_codes=need_codes,
         months=figure.months,
         target=figure.target,
         gap=figure.gap,
@@ -584,7 +612,8 @@ class RsCase(Lenient):
     pending: Pending | None = None  # None once its step has landed
     today: date
     balances: list[RsBalance]
-    mean_regular_spending: Money
+    # Phase 10 D305: per closed month of the window, the need-class spending per code.
+    need_months: list[dict[AllocationCategory, Money]] = Field(min_length=1)
     mean_rental_cash: Money
     levers: RsLevers
     expect: RsExpect
@@ -592,15 +621,14 @@ class RsCase(Lenient):
     @model_validator(mode="after")
     def _recompute(self) -> Self:
         got = reserve(
-            self.balances, self.today, self.mean_regular_spending, self.mean_rental_cash,
-            self.levers,
+            self.balances, self.today, self.need_months, self.mean_rental_cash, self.levers,
         )  # fmt: skip
         check(got, self.expect, self.id)
         return self
 
 
 class ReserveFixture(Schema):
-    bases: dict[str, list[RsBalance]]
+    bases: dict[str, Any]
     cases: list[RsCase]
 
 
@@ -1692,6 +1720,7 @@ class HwReserve(Schema):
     counted: list[str]
     amount: Money
     need: Money
+    need_codes: dict[AllocationCategory, Money]
     months: ReserveMonths | None
     target: Money
     gap: Money
@@ -1823,10 +1852,26 @@ def worked_case(case: HwCase, figures: HwExpect) -> None:
         )
         for b in hh.balances
     ]
-    mean_regular = mean_cent([m.regular_spending for m in months])
+    # Phase 10 D305: the need from the need-class spending of the private lines only (the
+    # Budget's Notwendiges: a taxonomy code of class `need`, never a one-off code).
+    need_months: list[dict[AllocationCategory, Decimal]] = []
+    for month in window_months:
+        spent: dict[AllocationCategory, Decimal] = {}
+        for line in hh.lines:
+            entry = TAXONOMY.get(line.category)
+            if (
+                line.booked.strftime("%Y-%m") != month
+                or accounts[line.account].purpose == "rental"
+                or entry is None
+                or entry.one_off
+                or entry.budget_class is not BudgetClass.NEED
+            ):
+                continue
+            spent[line.category] = spent.get(line.category, ZERO) - line.amount
+        need_months.append(spent)
     mean_c = mean_cent([m.rental_cash for m in months])
     res = reserve(
-        balances, hh.today, mean_regular, mean_c,
+        balances, hh.today, need_months, mean_c,
         RsLevers(reserve_target_months=hh.levers.reserve_target_months),
     )  # fmt: skip
     if e.reserve is not None:

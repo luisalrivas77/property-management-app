@@ -7,6 +7,7 @@ import fixture_models_phase10 as phase10
 import pytest
 
 from hausbuch.rules import investment_split as X
+from hausbuch.rules.health.figures import reserve_set
 from hausbuch.rules.plan.savings_plans import PlanLine
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.plan import InvestmentSplit, ReserveAccounts, SavingsPlan, ValueChange
@@ -119,7 +120,8 @@ def test_the_reserve_set_mirrors_the_default_kinds_added_and_removed():
         boerse: AccountKind.EXCHANGE,
     }
     lever = ReserveAccounts(added=[depot], removed=[tagesgeld])
-    assert X.reserve_account_ids(kinds, frozenset({miete}), lever) == {giro, depot, karte}
+    accounts = ((a, k, a == miete) for a, k in kinds.items())
+    assert reserve_set(accounts, lever) == {giro, depot, karte}
 
 
 def test_shares_round_half_up_and_add_up_to_a_hundred():

@@ -261,7 +261,34 @@ def assets_overview(conn: Connection, on: date, today: date | None = None) -> As
     screen adds them: the net worth reads `assets_overview_with` for the positions alone
     and its account lines separately, so they are never counted twice. `today` (D291): the
     live read's Berlin day, so a coin's price read on demand values today; None (every other
-    caller) reads the daily closes only."""
+    caller) reads the daily closes only. A depot the default scenario counts in the reserve
+    carries `counts_to_reserve` (phase 10 D304)."""
+    return _reserve_marked(conn, _assets_with_cash(conn, on, today))
+
+
+def _reserve_marked(conn: Connection, seen: AssetsOverview) -> AssetsOverview:
+    """`counts_to_reserve` on each account the default scenario's reserve set holds
+    (rules.health.figures.reserve_set: only a depot the lever adds can be one here)."""
+    from hausbuch.rules.health.figures import reserve_set
+    from hausbuch.services.health import household_levers  # health reads this module
+
+    lever = household_levers(conn).reserve_accounts
+    if not lever.added:
+        return seen
+    counted = reserve_set(
+        ((a.account_id, AccountKind(a.kind), False) for a in seen.accounts), lever
+    )
+    return seen.model_copy(
+        update={
+            "accounts": [
+                a.model_copy(update={"counts_to_reserve": a.account_id in counted})
+                for a in seen.accounts
+            ]
+        }
+    )
+
+
+def _assets_with_cash(conn: Connection, on: date, today: date | None) -> AssetsOverview:
     from hausbuch.services.net_worth import depot_cash  # net_worth reads this module
 
     seen = assets_overview_with(conn, on, MovementReads(conn), today=today)

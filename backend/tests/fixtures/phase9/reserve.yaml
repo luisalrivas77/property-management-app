@@ -1,18 +1,26 @@
 # Phase 9 (docs/phases/phase-9.md §5.2, D237, D238, §15.1): `rules/health/figures.reserve`.
 # The reserve = the private current and savings accounts less the credit cards' debt (D237),
-# changed by the lever `reserve_accounts`; the need = mean regular spending + max(0, −mean C),
-# both means to the cent; months to one place, half-up, None when the need is 0; the target =
-# target months × need; gap = max(0, target − amount); `state` compared in euros.
+# changed by the lever `reserve_accounts`; the need = mean need-class spending + max(0, −mean C),
+# both means to the cent (phase 10 D305, 25 Nov 2026: the Budget's Notwendiges, D272, with the
+# household's per-code overrides, D274; wants, one-off codes and payments marked one-off left
+# out; it was the mean regular spending, wants included, until then); months to one place,
+# half-up, None when the need is 0; the target = target months × need; gap = max(0, target −
+# amount); `state` compared in euros. `need_codes`: each need-class code's monthly mean, the
+# exact means apportioned to the need-class mean by largest remainder (ties by the code's
+# value), so they add up to it; a code that nets to 0 over the window is left out.
 # `by_owner` splits each counted account by its owner shares with phase 6's cent rule
 # (rules/net_worth.split: cents rounded down, the cents left over to the largest remainders,
 # ties by the owner's sort key, here A before B).
 #
 # `balances` per account: kind, balance (a card's debt negative), as_of, owners. The rental
-# account and an exchange's euros are not reserve accounts by default. Owners A and B,
+# account, an exchange's euros and a depot are not reserve accounts by default; a depot counts
+# only when the lever adds it („Zählt zur Reserve“, phase 10 D304), at its value on the day
+# (its positions at the newest price plus its cash, the net worth's value). `need_months`: per
+# closed month of the window, the need-class spending per code (positive). Owners A and B,
 # amounts invented except `default_accounts`, which is §15.2's. `today` decides staleness
 # (a counted balance older than 7 days adds the net worth's to-do).
 #
-# Step 0 recomputes amount, need, months, target, gap, state and by_owner on load.
+# Step 0 recomputes amount, need, need_codes, months, target, gap, state and by_owner on load.
 bases:
   worked: &worked
     - {key: a_current, kind: bank_current, balance: "3400.00", as_of: "2027-06-02", owners: {A: "1"}}
@@ -21,80 +29,110 @@ bases:
     - {key: card, kind: credit_card, balance: "-820.00", as_of: "2027-06-01", owners: {A: "1"}}
     - {key: rental, kind: bank_current, purpose: rental, balance: "2300.00", as_of: "2027-06-02", owners: {A: "0.5", B: "0.5"}}
     - {key: exchange_eur, kind: exchange, balance: "150.00", as_of: "2027-06-02", owners: {B: "1"}}
+  # §15.2's need-class spending (health_worked.yaml's lines; the card's restaurant 900.00 and
+  # 950.00 are wants, May's car purchase 12,000.00 a one-off code): March 1450.00 + 900.00 +
+  # 650.00 = 3000.00, April 1450.00 + 1100.00 + 650.00 = 3200.00, May 1450.00 + 2850.00 =
+  # 4300.00; mean 10500.00 ÷ 3 = 3500.00. Codes: hh_rent 4350.00 ÷ 3 = 1450.00, hh_supermarket
+  # 4850.00 ÷ 3 = 1616.666…, hh_energy 1300.00 ÷ 3 = 433.333…; floors 1450.00 + 1616.66 +
+  # 433.33 = 3499.99, the one cent left to the larger remainder (hh_supermarket): 1616.67.
+  # With mean C −353.33: need 3500.00 + 353.33 = 3853.33; target 6 × 3853.33 = 23119.98.
+  worked_needs: &worked_needs
+    - {hh_rent: "1450.00", hh_supermarket: "900.00", hh_energy: "650.00"}
+    - {hh_rent: "1450.00", hh_supermarket: "1100.00", hh_energy: "650.00"}
+    - {hh_rent: "1450.00", hh_supermarket: "2850.00"}
+  worked_need_codes: &worked_need_codes {hh_rent: "1450.00", hh_supermarket: "1616.67", hh_energy: "433.33"}
 
 cases:
   - id: default_accounts
-    description: §15.2
+    description: >-
+      §15.2. Amount 3400.00 + 1250.00 + 13000.00 − 820.00 = 16830.00; need 3853.33 (the base);
+      months 16830.00 ÷ 3853.33 = 4.367… → 4.4; gap 23119.98 − 16830.00 = 6289.98
     today: "2027-06-03"
     balances: *worked
-    mean_regular_spending: "4116.67"
+    need_months: *worked_needs
     mean_rental_cash: "-353.33"
     levers: {reserve_target_months: "6"}
     expect: {counted: [a_current, b_current, savings, card], amount: "16830.00",
-      need: "4470.00", months: "3.8", target: "26820.00", gap: "9990.00", state: below,
-      by_owner: {A: "9080.00", B: "7750.00"}, todos: []}
+      need: "3853.33", need_codes: *worked_need_codes, months: "4.4", target: "23119.98",
+      gap: "6289.98", state: below, by_owner: {A: "9080.00", B: "7750.00"}, todos: []}
 
   - id: card_debt_lowers
+    description: need (1500.00 × 3) ÷ 3 = 1500.00, C 0; months 1500.00 ÷ 1500.00 = 1.0
     today: "2027-06-03"
     balances:
       - {key: a_current, kind: bank_current, balance: "2000.00", as_of: "2027-06-02", owners: {A: "1"}}
       - {key: card, kind: credit_card, balance: "-500.00", as_of: "2027-06-02", owners: {A: "1"}}
-    mean_regular_spending: "1500.00"
+    need_months:
+      - {hh_rent: "1000.00", hh_supermarket: "500.00"}
+      - {hh_rent: "1000.00", hh_supermarket: "500.00"}
+      - {hh_rent: "1000.00", hh_supermarket: "500.00"}
     mean_rental_cash: "0.00"
     levers: {reserve_target_months: "6"}
-    expect: {counted: [a_current, card], amount: "1500.00", need: "1500.00", months: "1.0",
+    expect: {counted: [a_current, card], amount: "1500.00", need: "1500.00",
+      need_codes: {hh_rent: "1000.00", hh_supermarket: "500.00"}, months: "1.0",
       target: "9000.00", gap: "7500.00", state: below, by_owner: {A: "1500.00"}, todos: []}
 
   - id: rental_account_added_by_lever
+    description: >-
+      amount 16830.00 + 2300.00 = 19130.00; months 19130.00 ÷ 3853.33 = 4.964… → 5.0; gap
+      23119.98 − 19130.00 = 3989.98
     today: "2027-06-03"
     balances: *worked
-    mean_regular_spending: "4116.67"
+    need_months: *worked_needs
     mean_rental_cash: "-353.33"
     levers: {reserve_target_months: "6", reserve_accounts: {added: [rental]}}
     expect: {counted: [a_current, b_current, savings, card, rental], added: [rental],
-      amount: "19130.00", need: "4470.00", months: "4.3", target: "26820.00",
-      gap: "7690.00", state: below, by_owner: {A: "10230.00", B: "8900.00"}, todos: []}
+      amount: "19130.00", need: "3853.33", need_codes: *worked_need_codes, months: "5.0",
+      target: "23119.98", gap: "3989.98", state: below, by_owner: {A: "10230.00", B: "8900.00"},
+      todos: []}
 
   - id: savings_account_removed_by_lever
-    description: the removed account is shown with origin `removed` and not counted
+    description: >-
+      the removed account is shown with origin `removed` and not counted: amount 3400.00 +
+      1250.00 − 820.00 = 3830.00; months 3830.00 ÷ 3853.33 = 0.993… → 1.0; gap 23119.98 −
+      3830.00 = 19289.98
     today: "2027-06-03"
     balances: *worked
-    mean_regular_spending: "4116.67"
+    need_months: *worked_needs
     mean_rental_cash: "-353.33"
     levers: {reserve_target_months: "6", reserve_accounts: {removed: [savings]}}
     expect: {counted: [a_current, b_current, card], removed: [savings], amount: "3830.00",
-      need: "4470.00", months: "0.9", target: "26820.00", gap: "22990.00", state: below,
-      by_owner: {A: "2580.00", B: "1250.00"}, todos: []}
+      need: "3853.33", need_codes: *worked_need_codes, months: "1.0", target: "23119.98",
+      gap: "19289.98", state: below, by_owner: {A: "2580.00", B: "1250.00"}, todos: []}
 
   - id: flat_carries_itself
-    description: a positive mean C adds no shortfall to the need
+    description: >-
+      a positive mean C adds no shortfall to the need: need 3500.00; months 16830.00 ÷ 3500.00
+      = 4.808… → 4.8; target 6 × 3500.00 = 21000.00; gap 4170.00
     today: "2027-06-03"
     balances: *worked
-    mean_regular_spending: "4116.67"
+    need_months: *worked_needs
     mean_rental_cash: "200.00"
     levers: {reserve_target_months: "6"}
     expect: {counted: [a_current, b_current, savings, card], amount: "16830.00",
-      need: "4116.67", months: "4.1", target: "24700.02", gap: "7870.02", state: below,
-      by_owner: {A: "9080.00", B: "7750.00"}, todos: []}
+      need: "3500.00", need_codes: *worked_need_codes, months: "4.8", target: "21000.00",
+      gap: "4170.00", state: below, by_owner: {A: "9080.00", B: "7750.00"}, todos: []}
 
   - id: target_three_reached
+    description: target 3 × 3853.33 = 11559.99 ≤ 16830.00
     today: "2027-06-03"
     balances: *worked
-    mean_regular_spending: "4116.67"
+    need_months: *worked_needs
     mean_rental_cash: "-353.33"
     levers: {reserve_target_months: "3"}
     expect: {counted: [a_current, b_current, savings, card], amount: "16830.00",
-      need: "4470.00", months: "3.8", target: "13410.00", gap: "0.00", state: reached,
-      by_owner: {A: "9080.00", B: "7750.00"}, todos: []}
+      need: "3853.33", need_codes: *worked_need_codes, months: "4.4", target: "11559.99",
+      gap: "0.00", state: reached, by_owner: {A: "9080.00", B: "7750.00"}, todos: []}
 
   - id: need_zero
+    description: no need-class spending in the window and C 0
     today: "2027-06-03"
     balances:
       - {key: a_current, kind: bank_current, balance: "500.00", as_of: "2027-06-02", owners: {A: "1"}}
-    mean_regular_spending: "0.00"
+    need_months: [{}, {}, {}]
     mean_rental_cash: "0.00"
     levers: {reserve_target_months: "6"}
-    expect: {counted: [a_current], amount: "500.00", need: "0.00", months: null,
+    expect: {counted: [a_current], amount: "500.00", need: "0.00", need_codes: {}, months: null,
       target: "0.00", gap: "0.00", state: reached, by_owner: {A: "500.00"}, todos: []}
 
   - id: by_owner_shares
@@ -103,22 +141,86 @@ cases:
     balances:
       - {key: a_current, kind: bank_current, balance: "100.00", as_of: "2027-06-02", owners: {A: "1"}}
       - {key: savings, kind: bank_savings, balance: "1000.01", as_of: "2027-06-02", owners: {A: "0.5", B: "0.5"}}
-    mean_regular_spending: "1000.00"
+    need_months: [{hh_rent: "1000.00"}, {hh_rent: "1000.00"}, {hh_rent: "1000.00"}]
     mean_rental_cash: "0.00"
     levers: {reserve_target_months: "6"}
     expect: {counted: [a_current, savings], amount: "1100.01", need: "1000.00",
-      months: "1.1", target: "6000.00", gap: "4899.99", state: below,
-      by_owner: {A: "600.01", B: "500.00"}, todos: []}
+      need_codes: {hh_rent: "1000.00"}, months: "1.1", target: "6000.00", gap: "4899.99",
+      state: below, by_owner: {A: "600.01", B: "500.00"}, todos: []}
 
   - id: stale_balance_todo
-    description: the savings balance is 9 days old; it still counts
+    description: >-
+      the savings balance is 9 days old; it still counts: amount 16400.00; months 16400.00 ÷
+      3853.33 = 4.256… → 4.3; gap 23119.98 − 16400.00 = 6719.98
     today: "2027-06-03"
     balances:
       - {key: a_current, kind: bank_current, balance: "3400.00", as_of: "2027-06-02", owners: {A: "1"}}
       - {key: savings, kind: bank_savings, balance: "13000.00", as_of: "2027-05-25", owners: {A: "0.5", B: "0.5"}}
-    mean_regular_spending: "4116.67"
+    need_months: *worked_needs
     mean_rental_cash: "-353.33"
     levers: {reserve_target_months: "6"}
-    expect: {counted: [a_current, savings], amount: "16400.00", need: "4470.00",
-      months: "3.7", target: "26820.00", gap: "10420.00", state: below,
-      by_owner: {A: "9900.00", B: "6500.00"}, todos: [balance_stale]}
+    expect: {counted: [a_current, savings], amount: "16400.00", need: "3853.33",
+      need_codes: *worked_need_codes, months: "4.3", target: "23119.98", gap: "6719.98",
+      state: below, by_owner: {A: "9900.00", B: "6500.00"}, todos: [balance_stale]}
+
+  - id: need_codes_apportioned
+    description: >-
+      three codes whose means leave parts of a cent: need-class per month 100.00 + 50.00 +
+      0.01 = 150.01, again 150.01, then 100.01 + 50.00 = 150.01 (no hh_energy in May); mean
+      450.03 ÷ 3 = 150.01. Exact means: hh_rent 300.01 ÷ 3 = 100.0033…, hh_supermarket
+      150.00 ÷ 3 = 50.00, hh_energy 0.02 ÷ 3 = 0.0066…; floors 100.00 + 50.00 + 0.00 =
+      150.00, the one cent left to the largest remainder (hh_energy's 0.67 of a cent before
+      hh_rent's 0.33): hh_energy 0.01. Months 1500.00 ÷ 150.01 = 9.999… → 10.0; target 6 ×
+      150.01 = 900.06, reached
+    today: "2027-06-03"
+    balances:
+      - {key: a_current, kind: bank_current, balance: "1500.00", as_of: "2027-06-02", owners: {A: "1"}}
+    need_months:
+      - {hh_rent: "100.00", hh_supermarket: "50.00", hh_energy: "0.01"}
+      - {hh_rent: "100.00", hh_supermarket: "50.00", hh_energy: "0.01"}
+      - {hh_rent: "100.01", hh_supermarket: "50.00"}
+    mean_rental_cash: "0.00"
+    levers: {reserve_target_months: "6"}
+    expect: {counted: [a_current], amount: "1500.00", need: "150.01",
+      need_codes: {hh_rent: "100.00", hh_supermarket: "50.00", hh_energy: "0.01"},
+      months: "10.0", target: "900.06", gap: "0.00", state: reached, by_owner: {A: "1500.00"},
+      todos: []}
+
+  - id: depot_not_reserve_by_default
+    description: >-
+      a depot is not a reserve account unless the lever adds it (phase 9 D237, phase 10 D304):
+      not listed, the figures default_accounts'
+    today: "2027-06-03"
+    balances:
+      - {key: a_current, kind: bank_current, balance: "3400.00", as_of: "2027-06-02", owners: {A: "1"}}
+      - {key: b_current, kind: bank_current, balance: "1250.00", as_of: "2027-06-02", owners: {B: "1"}}
+      - {key: savings, kind: bank_savings, balance: "13000.00", as_of: "2027-06-02", owners: {A: "0.5", B: "0.5"}}
+      - {key: card, kind: credit_card, balance: "-820.00", as_of: "2027-06-01", owners: {A: "1"}}
+      - {key: cash_depot, kind: depot, balance: "5000.00", as_of: "2027-06-02", owners: {A: "0.5", B: "0.5"}}
+    need_months: *worked_needs
+    mean_rental_cash: "-353.33"
+    levers: {reserve_target_months: "6"}
+    expect: {counted: [a_current, b_current, savings, card], amount: "16830.00",
+      need: "3853.33", need_codes: *worked_need_codes, months: "4.4", target: "23119.98",
+      gap: "6289.98", state: below, by_owner: {A: "9080.00", B: "7750.00"}, todos: []}
+
+  - id: depot_ticked_by_lever
+    description: >-
+      „Zählt zur Reserve“ on a cash portfolio (phase 10 D304): the depot's value on the day,
+      its positions at the newest price plus its cash, 5000.00, counts with origin `added`.
+      Amount 16830.00 + 5000.00 = 21830.00; months 21830.00 ÷ 3853.33 = 5.665… → 5.7; gap
+      23119.98 − 21830.00 = 1289.98; owners A 9080.00 + 2500.00, B 7750.00 + 2500.00
+    today: "2027-06-03"
+    balances:
+      - {key: a_current, kind: bank_current, balance: "3400.00", as_of: "2027-06-02", owners: {A: "1"}}
+      - {key: b_current, kind: bank_current, balance: "1250.00", as_of: "2027-06-02", owners: {B: "1"}}
+      - {key: savings, kind: bank_savings, balance: "13000.00", as_of: "2027-06-02", owners: {A: "0.5", B: "0.5"}}
+      - {key: card, kind: credit_card, balance: "-820.00", as_of: "2027-06-01", owners: {A: "1"}}
+      - {key: cash_depot, kind: depot, balance: "5000.00", as_of: "2027-06-02", owners: {A: "0.5", B: "0.5"}}
+    need_months: *worked_needs
+    mean_rental_cash: "-353.33"
+    levers: {reserve_target_months: "6", reserve_accounts: {added: [cash_depot]}}
+    expect: {counted: [a_current, b_current, savings, card, cash_depot], added: [cash_depot],
+      amount: "21830.00", need: "3853.33", need_codes: *worked_need_codes, months: "5.7",
+      target: "23119.98", gap: "1289.98", state: below,
+      by_owner: {A: "11580.00", B: "10250.00"}, todos: []}

@@ -7,7 +7,9 @@
 # a one-off phase 4b proposes (source return_estimate) counts only once accepted.
 #
 # Every case is §15.2's household: newest closed May 2027, reserve 16,830.00, target
-# 26,820.00, plans depot 400.00 and exchange 150.00, horizon 60. `flat_years`: the default
+# 23,119.98 (6 × the need 3,853.33 from need-class spending since phase 10 D305, 25 Nov 2026;
+# 26,820.00 until then, so only `reached` and `months_needed` moved), plans depot 400.00 and
+# exchange 150.00, horizon 60. `flat_years`: the default
 # scenario's YearFigures per year, or null without a scenario. `months`: a sample of the month
 # function. Step 0 recomputes `months` and `rows` on load; `lever_bounds` goes through
 # hausbuch.schemas.plan.HouseholdLevers.
@@ -16,7 +18,7 @@ bases:
     newest_closed: "2027-05"
     month: {mean_income: "5583.33", mean_regular_spending: "4116.67", mean_rental_cash: "-353.33", buffer_percent: "10"}
     reserve: "16830.00"
-    target: "26820.00"
+    target: "23119.98"
     plans: [{key: depot, monthly: "400.00"}, {key: exchange, monthly: "150.00"}]
     horizon_months: 60
   flat_years: &flat_years
@@ -38,10 +40,10 @@ cases:
         - {month: "2027-12", flat: "-353.33", free: "1113.33", investable: "1002.00"}
         - {month: "2028-01", flat: "-201.00", free: "1265.66", investable: "1139.09"}
       rows:
-        - {key: reserve_first, reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "84215.77"}
-        - {key: "pause:depot", reached: "2028-05", months_needed: 12, used_up: null, reserve_at_horizon: "75215.77"}
-        - {key: "pause:exchange", reached: "2028-08", months_needed: 15, used_up: null, reserve_at_horizon: "60215.77"}
-        - {key: as_is, reached: "2028-12", months_needed: 19, used_up: null, reserve_at_horizon: "51215.77"}
+        - {key: reserve_first, reached: "2027-12", months_needed: 7, used_up: null, reserve_at_horizon: "84215.77"}
+        - {key: "pause:depot", reached: "2028-01", months_needed: 8, used_up: null, reserve_at_horizon: "75215.77"}
+        - {key: "pause:exchange", reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "60215.77"}
+        - {key: as_is, reached: "2028-06", months_needed: 13, used_up: null, reserve_at_horizon: "51215.77"}
       todos: []
 
   - id: income_change_window
@@ -55,10 +57,10 @@ cases:
         - {month: "2028-01", flat: "-201.00", free: "665.66", investable: "599.09"}
         - {month: "2028-09", flat: "-201.00", free: "1265.66", investable: "1139.09"}
       rows:
-        - {key: reserve_first, reached: "2028-09", months_needed: 16, used_up: null, reserve_at_horizon: "77735.77"}
-        - {key: "pause:depot", reached: "2028-11", months_needed: 18, used_up: null, reserve_at_horizon: "68735.77"}
-        - {key: "pause:exchange", reached: "2029-05", months_needed: 24, used_up: null, reserve_at_horizon: "53735.77"}
-        - {key: as_is, reached: "2029-11", months_needed: 30, used_up: null, reserve_at_horizon: "44735.77"}
+        - {key: reserve_first, reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "77735.77"}
+        - {key: "pause:depot", reached: "2028-06", months_needed: 13, used_up: null, reserve_at_horizon: "68735.77"}
+        - {key: "pause:exchange", reached: "2028-12", months_needed: 19, used_up: null, reserve_at_horizon: "53735.77"}
+        - {key: as_is, reached: "2029-05", months_needed: 24, used_up: null, reserve_at_horizon: "44735.77"}
       todos: []
 
   - id: reserve_used_up
@@ -83,10 +85,10 @@ cases:
       months:
         - {month: "2027-08", flat: "-353.33", free: "-886.67", investable: "-886.67"}
       rows:
-        - {key: reserve_first, reached: "2028-05", months_needed: 12, used_up: null, reserve_at_horizon: "82327.10"}
-        - {key: "pause:depot", reached: "2028-06", months_needed: 13, used_up: null, reserve_at_horizon: "73327.10"}
-        - {key: "pause:exchange", reached: "2028-11", months_needed: 18, used_up: null, reserve_at_horizon: "58327.10"}
-        - {key: as_is, reached: "2029-03", months_needed: 22, used_up: null, reserve_at_horizon: "49327.10"}
+        - {key: reserve_first, reached: "2028-02", months_needed: 9, used_up: null, reserve_at_horizon: "82327.10"}
+        - {key: "pause:depot", reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "73327.10"}
+        - {key: "pause:exchange", reached: "2028-06", months_needed: 13, used_up: null, reserve_at_horizon: "58327.10"}
+        - {key: as_is, reached: "2028-09", months_needed: 16, used_up: null, reserve_at_horizon: "49327.10"}
       todos: []
 
   - id: proposed_refund_not_counted_until_accepted
@@ -96,10 +98,10 @@ cases:
     proposed_one_offs: [{month: "2027-09", amount: "850.00", source: return_estimate}]
     expect:
       rows:
-        - {key: reserve_first, reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "84215.77"}
-        - {key: "pause:depot", reached: "2028-05", months_needed: 12, used_up: null, reserve_at_horizon: "75215.77"}
-        - {key: "pause:exchange", reached: "2028-08", months_needed: 15, used_up: null, reserve_at_horizon: "60215.77"}
-        - {key: as_is, reached: "2028-12", months_needed: 19, used_up: null, reserve_at_horizon: "51215.77"}
+        - {key: reserve_first, reached: "2027-12", months_needed: 7, used_up: null, reserve_at_horizon: "84215.77"}
+        - {key: "pause:depot", reached: "2028-01", months_needed: 8, used_up: null, reserve_at_horizon: "75215.77"}
+        - {key: "pause:exchange", reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "60215.77"}
+        - {key: as_is, reached: "2028-06", months_needed: 13, used_up: null, reserve_at_horizon: "51215.77"}
       todos: []
 
   - id: no_default_scenario_todo
@@ -108,10 +110,10 @@ cases:
     flat_years: null
     expect:
       rows:
-        - {key: reserve_first, reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "76950.00"}
-        - {key: "pause:depot", reached: "2028-05", months_needed: 12, used_up: null, reserve_at_horizon: "67950.00"}
-        - {key: "pause:exchange", reached: "2028-10", months_needed: 17, used_up: null, reserve_at_horizon: "52950.00"}
-        - {key: as_is, reached: "2029-04", months_needed: 23, used_up: null, reserve_at_horizon: "43950.00"}
+        - {key: reserve_first, reached: "2027-12", months_needed: 7, used_up: null, reserve_at_horizon: "76950.00"}
+        - {key: "pause:depot", reached: "2028-01", months_needed: 8, used_up: null, reserve_at_horizon: "67950.00"}
+        - {key: "pause:exchange", reached: "2028-04", months_needed: 11, used_up: null, reserve_at_horizon: "52950.00"}
+        - {key: as_is, reached: "2028-07", months_needed: 14, used_up: null, reserve_at_horizon: "43950.00"}
       todos: [no_default_scenario]
 
   - id: lever_bounds

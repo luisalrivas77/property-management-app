@@ -64,6 +64,7 @@ from hausbuch.rules import investment_split as X
 from hausbuch.rules.categories import CATEGORY_LABEL
 from hausbuch.rules.errors import RuleError
 from hausbuch.rules.goal.walk import Projection as GoalProjection
+from hausbuch.rules.health.figures import reserve_set
 from hausbuch.rules.health.window import window_todos
 from hausbuch.rules.plan import levers as L
 from hausbuch.rules.plan import projection as N
@@ -115,7 +116,7 @@ from .health import (
 )
 from .household import month_bounds
 from .household_scenarios import (
-    RESERVE_KINDS,
+    ADDABLE_KINDS,
     default_scenario,
     get_scenario,
     list_scenarios,
@@ -292,7 +293,7 @@ def scenario_todos(
                 for r in conn.execute(select(acc.id, acc.kind).where(acc.id.in_(named)))
             }
         gone = [i for i in named if i not in kinds]
-        wrong = [i for i in levers.reserve_accounts.added if kinds.get(i) not in RESERVE_KINDS]
+        wrong = [i for i in levers.reserve_accounts.added if kinds.get(i) not in ADDABLE_KINDS]
         wrong = [i for i in wrong if i not in gone]
         if gone:
             todos.append(
@@ -304,8 +305,8 @@ def scenario_todos(
         if wrong:
             todos.append(
                 _scenario_check(
-                    "Das Szenario zählt ein Konto zur Reserve, das kein Giro-, Spar- oder "
-                    "Kreditkartenkonto ist; es zählt nicht mit."
+                    "Das Szenario zählt ein Konto zur Reserve, das kein Giro-, Spar-, "
+                    "Kreditkarten- oder Depotkonto ist; es zählt nicht mit."
                 )
             )
     keys = {p.key for p in detected}
@@ -858,10 +859,9 @@ def _investment_split(
     closed months, at most twelve). The reads are lever-free kept parts (the purchases are
     phase 9's plan lines over the window, the accounts' kinds, the rental ids, today's net
     worth); the reserve's set and every figure are computed from the levers on each call."""
-    reserve = X.reserve_account_ids(
-        _kinds(inputs),
-        inputs.part(("rental_ids",), rental_account_ids),
-        levers.reserve_accounts,
+    rental = inputs.part(("rental_ids",), rental_account_ids)
+    reserve = reserve_set(
+        ((a, k, a in rental) for a, k in _kinds(inputs).items()), levers.reserve_accounts
     )
     months = tuple(window)
     bought = inputs.part(("plan_lines", months), lambda c: plan_lines(c, months))

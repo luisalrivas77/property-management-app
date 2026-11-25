@@ -43,7 +43,6 @@ from hausbuch.schemas.plan import (
     NotInvested,
     NotInvestedLine,
     PlanClass,
-    ReserveAccounts,
     SavingsPlan,
     SplitPrefill,
     SplitSource,
@@ -66,14 +65,6 @@ PURCHASE_KINDS = {
     AccountKind.WALLET: PlanClass.CRYPTO,
 }
 
-# TEMPORARY (§7.11 D304): the reserve's default kinds as rules.health.figures.RESERVE_KINDS
-# names them today. A parallel change moves the reserve's account set into one function of its
-# own (a depot ticked „Zählt zur Reserve“ allowed in `added`); `reserve_account_ids` below is
-# to be replaced by that function when both are merged.
-_RESERVE_DEFAULT_KINDS = frozenset(
-    {AccountKind.BANK_CURRENT, AccountKind.BANK_SAVINGS, AccountKind.CREDIT_CARD}
-)
-
 
 @dataclass(frozen=True)
 class Held:
@@ -82,18 +73,6 @@ class Held:
     account_id: UUID | None
     asset_class: PlanClass
     value: Decimal
-
-
-def reserve_account_ids(
-    kinds: Mapping[UUID, AccountKind],
-    rental: AbstractSet[UUID],
-    accounts: ReserveAccounts,
-) -> frozenset[UUID]:
-    """TEMPORARY: the reserve's account set (D237, D304): the default kinds that are no rental
-    account, plus `added`, less `removed` (rules.health.figures._origin's order). To be
-    swapped for the reserve's own function at merge (see _RESERVE_DEFAULT_KINDS)."""
-    default = {a for a, k in kinds.items() if k in _RESERVE_DEFAULT_KINDS and a not in rental}
-    return frozenset((default | set(accounts.added)) - set(accounts.removed))
 
 
 def shares(amounts: Mapping[PlanClass, Decimal]) -> InvestmentSplit | None:

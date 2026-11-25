@@ -51,6 +51,7 @@ from hausbuch.db.tables import household_scenario as household_scenario_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
+from hausbuch.rules.budget.budget import need_spending
 from hausbuch.rules.budget.differences import (
     compared_by_group,
     compared_group,
@@ -621,36 +622,60 @@ def household_levers(conn: Connection, scenario_id: UUID | None = None) -> House
 # --- The figures of a window (§5) -----------------------------------------------------------
 
 
+@dataclass
+class _Held:
+    """One account's balance for the reserve while _reserve_balances adds it up."""
+
+    label: str
+    kind: AccountKind
+    value: Decimal
+    as_of: date
+
+
 def _reserve_balances(conn: Connection, figure: NetWorth) -> list[ReserveBalance]:
-    """Every valued account balance of a net worth (a position is no balance), with its
-    purpose and its owner shares on the figure's day."""
-    lines = [
-        line
-        for line in merge_transit(figure.lines)  # phase 6 D292 (3): one balance per account
-        if line.kind is NetWorthLineKind.ACCOUNT
-        and line.account_id is not None
-        and line.account_kind is not None
-        and line.value_eur is not None
-    ]
-    ids = [line.account_id for line in lines]
+    """Every valued account balance of a net worth, with its purpose and its owner shares
+    on the figure's day. A depot's balance is its value on the day as the net worth reads
+    it (phase 10 D304): its cash plus its valued positions at their price, dated by the
+    oldest of its balance's day and its prices' days; a position the net worth does not
+    value counts nowhere here either (the net worth's to-do names it). Any other position
+    is no balance (an exchange's or a wallet's coins are never reserve)."""
+    held: dict[UUID, _Held] = {}
+    for line in merge_transit(figure.lines):  # phase 6 D292 (3): one balance per account
+        if line.account_id is None or line.account_kind is None or line.value_eur is None:
+            continue
+        if line.kind is NetWorthLineKind.ACCOUNT:
+            day = line.as_of or figure.on
+        elif line.kind is NetWorthLineKind.POSITION and line.account_kind is AccountKind.DEPOT:
+            day = line.price_on or figure.on
+        else:
+            continue
+        seen = held.get(line.account_id)
+        if seen is None:
+            held[line.account_id] = _Held(
+                line.account_label or line.label, line.account_kind, line.value_eur, day
+            )
+        else:
+            seen.value += line.value_eur
+            seen.as_of = min(seen.as_of, day)
+    ids = list(held)
     acc = account_table.c
     query = select(acc.id, acc.purpose).where(acc.id.in_(ids))
     purposes = {r.id: r.purpose for r in conn.execute(query)}
     shares = shares_on(conn, ids, figure.on)
     return [
         ReserveBalance(
-            account_id=line.account_id,
-            label=line.account_label or line.label,
-            kind=line.account_kind,
-            rental=purposes.get(line.account_id) == AccountPurpose.RENTAL.value,
-            balance=line.value_eur,
-            as_of=line.as_of or figure.on,
+            account_id=account_id,
+            label=h.label,
+            kind=h.kind,
+            rental=purposes.get(account_id) == AccountPurpose.RENTAL.value,
+            balance=h.value,
+            as_of=h.as_of,
             owners={
                 owner: ExactShare(numerator=share.numerator, denominator=share.denominator)
-                for owner, share in shares.get(line.account_id, {}).items()
+                for owner, share in shares.get(account_id, {}).items()
             },
         )
-        for line in lines
+        for account_id, h in held.items()
     ]
 
 
@@ -710,10 +735,22 @@ def key_figures(
     the savings rate (D235), the reserve from `balances` (D237), the debt figures from
     `debt_figure` with the window's rental interest (D239) and the free cash (D244).
     `balance_rows`: `balances`' account balances as _reserve_balances reads them, when
-    the caller has them (services.plan_inputs keeps them, phase 10 §7.10 (b))."""
+    the caller has them (services.plan_inputs keeps them, phase 10 §7.10 (b)). The
+    reserve's need reads each month's Notwendiges as the Budget places it (phase 10 D305:
+    `levers.budget_class_overrides`, the month's one-off codes and marked payments)."""
     if not win.enough:
         return KeyFigures(None, None, None, None)
     months = [reads[m].household for m in win.months]
+    need_months = [
+        need_spending(
+            reads[m].household,
+            reads[m].private.lines,
+            levers.budget_class_overrides,
+            one_off_ids=reads[m].one_off_ids,
+            one_off_codes=reads[m].one_off_codes,
+        )
+        for m in win.months
+    ]
     interest = sum(
         (block.interest for m in win.months for block in reads[m].rental), Decimal("0.00")
     )
@@ -730,6 +767,7 @@ def key_figures(
         reserve=reserve(
             list(balance_rows) if balance_rows is not None else _reserve_balances(conn, balances),
             months,
+            need_months,
             levers,
             today=today,
         ),
@@ -1423,14 +1461,16 @@ def _one_offs_left_out_since(conn: Connection) -> str | None:
     return since
 
 
-def _stored_levers(figures: HealthSnapshotFigures) -> HouseholdLevers:
+def _stored_levers(figures: HealthSnapshotFigures, in_force: HouseholdLevers) -> HouseholdLevers:
     """The reserve levers a snapshot was computed with, read back from its stored reserve
     (the target in months and the accounts the lever added or removed), so a lever changed
-    since does not move the recomputation."""
+    since does not move the recomputation; the needs-and-wants overrides (phase 10 D305: the
+    reserve's need) from `in_force`, the default scenario in force when it was stored."""
     if figures.reserve is None:
-        return HouseholdLevers()
+        return HouseholdLevers(budget_class_overrides=in_force.budget_class_overrides)
     accounts = figures.reserve.accounts
     return HouseholdLevers(
+        budget_class_overrides=in_force.budget_class_overrides,
         reserve_target_months=figures.reserve.target_months,
         reserve_accounts=ReserveAccounts(
             added=[a.account_id for a in accounts if a.origin is ReserveOrigin.ADDED],
@@ -1572,12 +1612,15 @@ def health_check(conn: Connection, first: str, last: str, today: date) -> Health
         if run is None:  # unreachable: runs are append-only
             raise RuleViolationError([HEALTH_MONTH_END_MISSING], f"{month}: its run is gone")
         # Phase 10 D307: the switches of the default scenario in force when it was stored
-        codes = levers_one_off_codes(levers_in_force_at(conn, snapshot.created_at))
+        in_force = levers_in_force_at(conn, snapshot.created_at)
+        codes = levers_one_off_codes(in_force)
         if codes not in by_codes:
             by_codes[codes] = read_months(conn, span, today, codes)
         reads = by_codes[codes]
         again = net_worth(conn, run.on)
-        recomputed = snapshot_figures(conn, reads, month, run, _stored_levers(snapshot.figures))
+        recomputed = snapshot_figures(
+            conn, reads, month, run, _stored_levers(snapshot.figures, in_force)
+        )
         held = _compared(snapshot.figures, run.total)
         fresh = _compared(recomputed, again.total)
         for figure in sorted(held.keys() | fresh.keys()):

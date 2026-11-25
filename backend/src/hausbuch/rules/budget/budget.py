@@ -310,6 +310,47 @@ def marked_one_off(
     return moved
 
 
+def placed(
+    codes: Mapping[C, Decimal],
+    rows: Sequence[MonthLine],
+    overrides: Mapping[C, BudgetClass],
+    one_off_ids: Collection[UUID] = frozenset(),
+    one_off_codes: Collection[C] = ONE_OFF,
+) -> dict[tuple[BudgetLineKey, C], Decimal]:
+    """One month's spending per code (`month_codes`) placed on the Budget's lines (D272):
+    each code on its line, a payment marked one-off (D297) moved from its code's line to
+    „Einmalig im Zeitraum“. The one placement the Budget and the reserve's need (D305) read."""
+    out = {
+        (line_of(code, overrides, one_off_codes), code): amount for code, amount in codes.items()
+    }
+    for code, amount in marked_one_off(rows, one_off_ids, one_off_codes).items():
+        regular = (line_of(code, overrides, one_off_codes), code)
+        out[regular] = out[regular] - amount
+        out[(L.ONE_OFF, code)] = out.get((L.ONE_OFF, code), ZERO) + amount
+    return out
+
+
+def need_spending(
+    month: HouseholdMonth,
+    rows: Sequence[MonthLine],
+    overrides: Mapping[C, BudgetClass],
+    *,
+    one_off_ids: Collection[UUID] = frozenset(),
+    one_off_codes: Collection[C] = ONE_OFF,
+) -> dict[C, Decimal]:
+    """The month's Notwendiges per code (phase 10 D305: the reserve's need): the codes on
+    the need line, the household's overrides applied, one-off codes in force and payments
+    marked one-off left out, a refund in a need code netted; a code netting to 0 kept."""
+    codes = month_codes(month, rows)
+    return {
+        code: amount
+        for (key, code), amount in placed(
+            codes, rows, overrides, one_off_ids, one_off_codes
+        ).items()
+        if key is L.NEED
+    }
+
+
 def _joined(seen: BudgetCode | None, row: BudgetCode) -> BudgetCode:
     """A code shown on two lines (its marked payments on „Einmalig im Zeitraum“) counts once
     in the housing share: its two rows summed, the class of the line it belongs to."""
@@ -364,15 +405,9 @@ def budget(
     totals: dict[tuple[BudgetLineKey, C], Decimal] = {}
     for m, codes, rows in zip(months, per_month, lines, strict=True):
         sums = dict.fromkeys(L, ZERO)
-        placed = {
-            (line_of(code, overrides, one_off_codes), code): amount
-            for code, amount in codes.items()
-        }
-        for code, amount in marked_one_off(rows, one_off_ids, one_off_codes).items():
-            regular = (line_of(code, overrides, one_off_codes), code)
-            placed[regular] = placed[regular] - amount
-            placed[(L.ONE_OFF, code)] = placed.get((L.ONE_OFF, code), ZERO) + amount
-        for (key, code), amount in placed.items():
+        for (key, code), amount in placed(
+            codes, rows, overrides, one_off_ids, one_off_codes
+        ).items():
             sums[key] += amount
             totals[(key, code)] = totals.get((key, code), ZERO) + amount
         if sums[L.ONE_OFF] != m.one_off_spending:

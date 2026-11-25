@@ -224,10 +224,10 @@ PATTERNS = i18n.Patterns(
             " count.",
         ),
         (
-            "Das Szenario zählt ein Konto zur Reserve, das kein Giro-, Spar- oder"
-            " Kreditkartenkonto ist; es zählt nicht mit.",
-            "The scenario counts an account toward the reserve that is not a current, savings"
-            " or credit card account; it does not count.",
+            "Das Szenario zählt ein Konto zur Reserve, das kein Giro-, Spar-,"
+            " Kreditkarten- oder Depotkonto ist; es zählt nicht mit.",
+            "The scenario counts an account toward the reserve that is not a current, savings,"
+            " credit card or depot account; it does not count.",
         ),
         (
             "Das Szenario ändert einen Sparplan, den Hausbuch in den letzten drei"

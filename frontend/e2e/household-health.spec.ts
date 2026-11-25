@@ -184,6 +184,7 @@ function health(window: string[], options: { coloured?: boolean } = {}): Health 
           accounts: [{ account_id: SAVINGS, kind: "bank_savings", balance: "12000.00", as_of: "2026-10-31", origin: "default" }],
           amount: "12000.00",
           need: "3900.00",
+          need_basis: "needs",
           months: "3.08",
           target_months: "6",
           target: "23400.00",

@@ -146,8 +146,14 @@ bases:
     savings_rate: {saved: "4273.00", income: "16623.00", one_off_spending: "12000.00",
       principal: "933.00", rate: "0.2571", rate_regular: null, rate_without_principal: "0.2009",
       one_offs_left_out: true}
-    reserve: {counted: [a_current, b_current, savings, card], amount: "16830.00", need: "4470.00",
-      months: "3.8", target: "26820.00", gap: "9990.00", state: below}
+    # phase 10 D305 (25 Nov 2026): the need from the need-class lines only (reserve.yaml's
+    # base: hh_rent, hh_supermarket, hh_energy; the restaurant is a want, the car a one-off
+    # code): mean 3500.00 + the flat's shortfall 353.33 = 3853.33; months 16830.00 ÷ 3853.33
+    # = 4.367… → 4.4; target 6 × 3853.33 = 23119.98; gap 6289.98 (need 4470.00, months 3.8,
+    # target 26820.00 and gap 9990.00 until then, from all regular spending)
+    reserve: {counted: [a_current, b_current, savings, card], amount: "16830.00", need: "3853.33",
+      need_codes: {hh_rent: "1450.00", hh_supermarket: "1616.67", hh_energy: "433.33"},
+      months: "4.4", target: "23119.98", gap: "6289.98", state: below}
     net_worth: {gross: "365600.00", liabilities: "237220.00", total: "128380.00"}
     debt: {ltv: {p1: "0.7388"}, debt_ratio: "0.6489", debt_service_year: "11400.00",
       income_year: "74160.00", debt_service_ratio: "0.1537", debt_to_income: "3.20",
@@ -199,11 +205,13 @@ cases:
         - {key: exchange, asset_class: crypto, monthly: "150.00"}
       already_invested: "550.00"
       investable_left: "452.00"
+      # the target 23119.98 since phase 10 D305 (26820.00 until then: 2028-03, -05, -08, -12);
+      # the balance at the horizon does not depend on the target
       paths:
-        - {key: reserve_first, reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "84215.77"}
-        - {key: "pause:depot", reached: "2028-05", months_needed: 12, used_up: null, reserve_at_horizon: "75215.77"}
-        - {key: "pause:exchange", reached: "2028-08", months_needed: 15, used_up: null, reserve_at_horizon: "60215.77"}
-        - {key: as_is, reached: "2028-12", months_needed: 19, used_up: null, reserve_at_horizon: "51215.77"}
+        - {key: reserve_first, reached: "2027-12", months_needed: 7, used_up: null, reserve_at_horizon: "84215.77"}
+        - {key: "pause:depot", reached: "2028-01", months_needed: 8, used_up: null, reserve_at_horizon: "75215.77"}
+        - {key: "pause:exchange", reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "60215.77"}
+        - {key: as_is, reached: "2028-06", months_needed: 13, used_up: null, reserve_at_horizon: "51215.77"}
       projection:
         points:
           - {"on": "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161271.63"}

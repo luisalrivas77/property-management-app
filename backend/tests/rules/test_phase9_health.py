@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 import fixture_models_phase9 as phase9
 import pytest
 
+from hausbuch.rules.budget import budget as BU
 from hausbuch.rules.health import bands as B
 from hausbuch.rules.health import figures as F
 from hausbuch.rules.health import month as M
@@ -45,6 +46,7 @@ from hausbuch.schemas.health import (
     PropertyLtv,
     Reserve,
     ReserveBalance,
+    ReserveNeedBasis,
     ReserveOrigin,
     ReserveState,
     RunTotals,
@@ -53,7 +55,7 @@ from hausbuch.schemas.health import (
     Window,
     ratio,
 )
-from hausbuch.schemas.household import NetWorthClass
+from hausbuch.schemas.household import BudgetClass, NetWorthClass
 from hausbuch.schemas.net_worth import NetWorth, NetWorthLine, NetWorthLineKind
 from hausbuch.schemas.plan import HouseholdLevers, ReserveAccounts, SurplusKey
 
@@ -412,15 +414,30 @@ def balance_of(b) -> ReserveBalance:
     )
 
 
+def private_lines(lines) -> list[MonthLine]:
+    """The private lines of `household` (fresh ids; the need's placement reads none)."""
+    return [
+        MonthLine(
+            allocation_id=uuid4(),
+            category=li.category,
+            amount=li.amount,
+            purchase_cost=(li.private_cost_for or "").startswith("nebenkosten_"),
+        )
+        for li in lines
+        if li.account != "rental"
+    ]
+
+
 @pytest.mark.parametrize("case", RESERVE.cases, ids=lambda c: c.id)
 def test_reserve(case):
     _live(case)
+    # each month's C is the case's mean C, so the window's mean is it
     window = [
         hm(
-            "2027-05",
-            private_spending=case.mean_regular_spending,
+            phase9.add_months("2027-05", k - len(case.need_months) + 1),
             rental_result=case.mean_rental_cash,
         )
+        for k in range(len(case.need_months))
     ]
     levers = HouseholdLevers(
         reserve_target_months=case.levers.reserve_target_months,
@@ -429,7 +446,9 @@ def test_reserve(case):
             removed=[uid(k) for k in case.levers.reserve_accounts.removed],
         ),
     )
-    got = F.reserve([balance_of(b) for b in case.balances], window, levers, today=case.today)
+    got = F.reserve(
+        [balance_of(b) for b in case.balances], window, case.need_months, levers, today=case.today
+    )
     want = case.expect
     by_key = {uid(b.key): b.key for b in case.balances}
     origin = {by_key[a.account_id]: a.origin for a in got.accounts}
@@ -444,6 +463,8 @@ def test_reserve(case):
         want.gap,
         want.state,
     )
+    assert got.need_codes == want.need_codes
+    assert (got.need_basis, got.need_basis_from) == (ReserveNeedBasis.NEEDS, F.NEED_BASIS_FROM)
     assert got.by_owner == {OWNERS[o]: v for o, v in want.by_owner.items()}
     assert [t.code for t in got.todos] == want.todos
 
@@ -464,6 +485,7 @@ def test_two_stale_accounts_each_get_their_todo():
     got = F.reserve(
         balances,
         [hm("2027-05", private_spending=Decimal("100.00"))],
+        [{C.HH_RENT: Decimal("100.00")}],
         SIX,
         today=date(2027, 6, 3),
     )
@@ -472,7 +494,7 @@ def test_two_stale_accounts_each_get_their_todo():
     assert got.todos[1].action == "Kreditkartenabrechnung hochladen"
     assert got.todos[1].href == f"/accounts/{uid('karte')}?tab=kontoauszuege"
     # seven days old is not stale yet (rules/valuation.STALE_AFTER_DAYS)
-    fresh = F.reserve(balances, [hm("2027-05")], SIX, today=date(2027, 5, 27))
+    fresh = F.reserve(balances, [hm("2027-05")], [{}], SIX, today=date(2027, 5, 27))
     assert fresh.todos == [] and fresh.months is None
 
 
@@ -484,7 +506,7 @@ def test_an_account_without_shares_leaves_by_owner_empty():
         balance=Decimal("10.00"),
         as_of=date(2027, 6, 2),
     )
-    got = F.reserve([plain], [hm("2027-05")], SIX, today=date(2027, 6, 3))
+    got = F.reserve([plain], [hm("2027-05")], [{}], SIX, today=date(2027, 6, 3))
     assert got.amount == Decimal("10.00") and got.by_owner == {}
 
 
@@ -499,22 +521,71 @@ def test_a_reserve_below_zero_is_below_zero_months():
         as_of=date(2027, 6, 2),
     )
     window = [hm("2027-05", private_spending=Decimal("100.00"))]
-    got = F.reserve([overdrawn], window, SIX, today=date(2027, 6, 3))
+    got = F.reserve(
+        [overdrawn], window, [{C.HH_RENT: Decimal("100.00")}], SIX, today=date(2027, 6, 3)
+    )
     assert got.amount == Decimal("-300.00")
     assert got.months is not None and got.months < 0
     assert got.state is ReserveState.BELOW
 
 
 def test_the_need_is_taken_from_the_window_means():
+    """Phase 10 D305: need-class spending only; the window's regular spending (wants too)
+    does not reach it."""
     window = [
-        hm("2027-03", private_spending=Decimal("100.00"), rental_result=Decimal("-10.00")),
-        hm("2027-04", private_spending=Decimal("100.00"), rental_result=Decimal("-10.00")),
-        hm("2027-05", private_spending=Decimal("101.00"), rental_result=Decimal("20.00")),
+        hm("2027-03", private_spending=Decimal("900.00"), rental_result=Decimal("-10.00")),
+        hm("2027-04", private_spending=Decimal("900.00"), rental_result=Decimal("-10.00")),
+        hm("2027-05", private_spending=Decimal("901.00"), rental_result=Decimal("20.00")),
     ]
-    # mean regular 100.33, mean C 0.00: no shortfall
-    assert F.need(window) == Decimal("100.33")
+    needs = [
+        {C.HH_RENT: Decimal("100.00")},
+        {C.HH_RENT: Decimal("100.00")},
+        {C.HH_RENT: Decimal("101.00")},
+    ]
+    # mean need-class 100.33, mean C 0.00: no shortfall
+    assert F.need(window, needs) == (Decimal("100.33"), {C.HH_RENT: Decimal("100.33")})
     with pytest.raises(ValueError):
-        F.need([])
+        F.need([], [])
+    with pytest.raises(ValueError, match="one need-class month"):
+        F.need(window, needs[:2])
+
+
+def test_the_need_is_the_budgets_notwendiges():
+    """Phase 10 D305: the need's months are the Budget's Notwendiges, read through the one
+    placement (rules.budget.need_spending): an override moves a code into or out of it, a
+    want code and a one-off code stay out, a refund in a need code nets, and a payment
+    marked one-off leaves its code's line."""
+    lines = [
+        MonthLine(allocation_id=uid("rent"), category=C.HH_RENT, amount=Decimal("-1000.00")),
+        MonthLine(
+            allocation_id=uid("market"), category=C.HH_SUPERMARKET, amount=Decimal("-300.00")
+        ),
+        MonthLine(allocation_id=uid("refund"), category=C.HH_SUPERMARKET, amount=Decimal("20.00")),
+        MonthLine(allocation_id=uid("meal"), category=C.HH_RESTAURANT, amount=Decimal("-80.00")),
+        MonthLine(allocation_id=uid("car"), category=C.HH_CAR_PURCHASE, amount=Decimal("-9000.00")),
+        MonthLine(allocation_id=uid("tv"), category=C.HH_ENERGY, amount=Decimal("-500.00")),
+    ]
+    month = M.household_month(
+        month_cashflow("2027-05", M.cashflow_rows(lines), saved=ZERO), [], lines=lines
+    )
+    plain = BU.need_spending(month, lines, {})
+    assert plain == {
+        C.HH_RENT: Decimal("1000.00"),
+        C.HH_SUPERMARKET: Decimal("280.00"),
+        C.HH_ENERGY: Decimal("500.00"),
+    }
+    moved = BU.need_spending(
+        month, lines, {C.HH_RESTAURANT: BudgetClass.NEED, C.HH_ENERGY: BudgetClass.WANT}
+    )
+    assert moved == {
+        C.HH_RENT: Decimal("1000.00"),
+        C.HH_SUPERMARKET: Decimal("280.00"),
+        C.HH_RESTAURANT: Decimal("80.00"),
+    }
+    marked = BU.need_spending(month, lines, {}, one_off_ids=frozenset({uid("tv")}))
+    assert marked[C.HH_ENERGY] == ZERO
+    # the same codes the Budget's Notwendiges shows for one month
+    assert sum(plain.values(), ZERO) == Decimal("1780.00")
 
 
 # --- debt.yaml -----------------------------------------------------------------------
@@ -893,8 +964,9 @@ _INTROS = {
 }
 WORKED_TEXTS = {
     "figures_and_marks": {
+        # Phase 10 D305: the need from need-class spending only (3853.33, 4470.00 before)
         MarkedFigure.RESERVE: [
-            "Eure Reserve reicht für 3,8 Monate. Bis zu eurem eigenen Ziel fehlen 9.990 €."
+            "Eure Reserve reicht für 4,4 Monate. Bis zu eurem eigenen Ziel fehlen 6.290 €."
         ],
         # Phase 10 D308: the Sparquote leaves the one-offs out (0.2571), no colour
         MarkedFigure.SAVINGS_RATE: [],
@@ -1017,9 +1089,12 @@ def test_health_worked(case):
     closed = [phase9.add_months(hh.newest_closed, -k) for k in (2, 1, 0)]
     win = W.window(dict.fromkeys(closed, True))
     months, interest = [], ZERO
+    need_months = []
     for month in win.months:
-        got, blocks, _ = household(month, [li for li in hh.lines if str(li.booked)[:7] == month])
+        in_month = [li for li in hh.lines if str(li.booked)[:7] == month]
+        got, blocks, _ = household(month, in_month)
         months.append(got)
+        need_months.append(BU.need_spending(got, private_lines(in_month), {}))
         interest += sum((b.interest for b in blocks), ZERO)
         if want.months is not None:
             expect = next(m for m in want.months if m.month == month)
@@ -1046,12 +1121,13 @@ def test_health_worked(case):
         for b in hh.balances
     ]
     levers = HouseholdLevers(reserve_target_months=hh.levers.reserve_target_months)
-    reserve = F.reserve(balances, months, levers, today=hh.today)
+    reserve = F.reserve(balances, months, need_months, levers, today=hh.today)
     if want.reserve is not None:
         r = want.reserve
         names = {uid(b.account): b.account for b in hh.balances}
         assert [names[a.account_id] for a in reserve.accounts] == r.counted
         assert (reserve.amount, reserve.need, reserve.months) == (r.amount, r.need, r.months)
+        assert reserve.need_codes == r.need_codes
         assert (reserve.target, reserve.gap, reserve.state) == (r.target, r.gap, r.state)
         assert reserve.todos == []
     run = max(hh.runs, key=lambda r: (r.month_end, r.created))
