@@ -22319,6 +22319,98 @@
         "title": "Goal",
         "description": "The household's own goal (D289 (1)): a target and a due month the household typed; the\napp proposes neither. `target` is euros, or months for `reserve_months`. Only the shape is\nchecked here; that the due month lies after the current month is refused when a scenario\nis saved (services.household_scenarios.check_levers), so a stored goal whose month has\npassed still reads."
       },
+      "GoalAssumption": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "href": {
+            "type": "string",
+            "title": "Href"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text",
+          "action",
+          "href"
+        ],
+        "title": "GoalAssumption",
+        "description": "An assumption the walk makes that the household can replace (D301 (a) 5): a property\nwithout a default scenario is kept at today's value."
+      },
+      "GoalBalanced": {
+        "properties": {
+          "budgets": {
+            "items": {
+              "$ref": "#/components/schemas/GoalBudget"
+            },
+            "type": "array",
+            "title": "Budgets"
+          },
+          "cut": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Cut"
+          },
+          "saving_extra": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saving Extra"
+          },
+          "moved_to_saving": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Moved To Saving"
+          },
+          "saving": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saving"
+          },
+          "closes": {
+            "type": "boolean",
+            "title": "Closes"
+          },
+          "spending_changes": {
+            "items": {
+              "$ref": "#/components/schemas/SpendingChange"
+            },
+            "type": "array",
+            "title": "Spending Changes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "cut",
+          "saving_extra",
+          "moved_to_saving",
+          "saving",
+          "closes"
+        ],
+        "title": "GoalBalanced",
+        "description": "„Ausgewogener Weg“ (D302), shown first whenever the walk without change misses: half\nof the extra cut from the wants by their means, each want at most to half its mean or, with\nthe household's wants target, to that share of the income; `saving_extra` the smallest\nwhole euro a month that with these cuts reaches the target (None above the mean income);\n`moved_to_saving` what the limit left open and the saving takes on."
+      },
       "GoalBudget": {
         "properties": {
           "code": {
@@ -22426,6 +22518,62 @@
         "title": "GoalKind",
         "description": "What a household goal measures (phase 10 §7.9 (d), D289 (1))."
       },
+      "GoalMoreReturn": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available",
+            "default": false
+          },
+          "reason": {
+            "$ref": "#/components/schemas/GoalRouteReason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "GoalMoreReturn",
+        "description": "Route 3 „Mehr Rendite“: not available yet; `reason` says why."
+      },
+      "GoalMoreSaving": {
+        "properties": {
+          "extra": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Extra"
+          },
+          "noetig": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Noetig"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "extra",
+          "noetig"
+        ],
+        "title": "GoalMoreSaving",
+        "description": "Route 2 „Mehr anlegen“ (D302): the smallest whole-euro `extra` a month from next month\nto the due month that reaches the target on the walk; `noetig` = Heute + extra, None when\nthe extra is above the mean income. It never decides the word."
+      },
+      "GoalRouteReason": {
+        "type": "string",
+        "enum": [
+          "not_built",
+          "generic_mode"
+        ],
+        "title": "GoalRouteReason"
+      },
       "GoalScenario": {
         "properties": {
           "kind": {
@@ -22521,11 +22669,12 @@
         "enum": [
           "none",
           "on_track",
-          "behind",
-          "unreachable"
+          "feasible",
+          "ambitious",
+          "hardly"
         ],
         "title": "GoalWord",
-        "description": "The one word Übersicht shows beside the financial-health verdict (§7.9 (d) 5)."
+        "description": "The one word Übersicht shows beside the financial-health verdict (§7.9 (d) 5; D303\nsince 25 Nov 2026, „Dahinter“ and „So nicht erreichbar“ until then). Computed on read,\nnever stored."
       },
       "GroupDifference": {
         "properties": {
@@ -24282,6 +24431,36 @@
             "type": "array",
             "title": "Scenarios"
           },
+          "more_saving": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalMoreSaving"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "more_return": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalMoreReturn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "balanced": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalBalanced"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "unreachable": {
             "anyOf": [
               {
@@ -24291,6 +24470,13 @@
                 "type": "null"
               }
             ]
+          },
+          "assumptions": {
+            "items": {
+              "$ref": "#/components/schemas/GoalAssumption"
+            },
+            "type": "array",
+            "title": "Assumptions"
           },
           "todos": {
             "items": {
@@ -24773,6 +24959,18 @@
                 "type": "null"
               }
             ]
+          },
+          "above_target": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Target"
           },
           "todos": {
             "items": {

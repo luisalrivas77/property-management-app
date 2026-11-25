@@ -43,12 +43,15 @@ def world(app_engine, fresh_workspaces) -> World:
     return World(app_engine, fresh_workspaces[0], now=NOW)
 
 
-def _projected_world(world: World, *, groceries: bool = False):
+def _projected_world(world: World, *, groceries: bool = False, salary: str | None = None):
     """_savings_history (twelve closed months to March 2027, a private account and a depot),
     300 € a month at restaurants in January to March 2027 (a want, D272), the flat bought in
     2026 with its default scenario and the stored month-end of 31 March 2027: phase 9's
     projection has points and no to-do. `groceries` adds 120 € a month at a market in the
-    same months (a need, so the reserve's need is not 0, phase 10 D305)."""
+    same months (a need, so the reserve's need is not 0, phase 10 D305); `salary` a monthly
+    pay in the same months. Since phase 10 D301 (a) 1 the walk invests what lies above the
+    reserve target and never sells, so a world without pay, whose flat costs 50 € a month
+    from 2028, uses its reserve up in January 2028 (`issue` used_up) and has no word."""
     private, _ = _savings_history(world)
     for month in (1, 2, 3):
         line = private.line(date(2027, month, 18), "-300.00", name="Trattoria Muster")
@@ -56,6 +59,9 @@ def _projected_world(world: World, *, groceries: bool = False):
         if groceries:
             line = private.line(date(2027, month, 8), "-120.00", name="Markt Muster")
             _book(world, line, "-120.00", C.HH_GROCERIES)
+        if salary is not None:
+            line = private.line(date(2027, month, 27), salary, name="Arbeitgeber Muster")
+            _book(world, line, salary, C.HH_SALARY)
     _bought_in_2026(world)
     _flat_scenario(world, None, NOW)
     world.cmd(net_worth.capture_month_end, date(2027, 3, 31))
@@ -99,22 +105,21 @@ def test_below_three_closed_months_the_goal_has_the_plans_to_dos(world):
 
 
 def test_each_word_on_the_plans_own_projection(world):
-    """A goal far above the projection is „So nicht erreichbar“, its value at the due month
-    the plan's point of 31 December 2028; the same value as the target is „Auf Kurs“; 100 €
-    more is „Dahinter“, a wants scenario closing it."""
-    _projected_world(world)
+    """A goal far above the projection is „Kaum erreichbar“ (D303), its value at the due month
+    the plan's point of 31 December 2028, and has no „Nötig“: no extra up to the month's mean
+    income reaches it (D302); the same value as the target is „Auf Kurs“; 100 € more is
+    „Machbar“, a wants scenario closing it."""
+    _projected_world(world, salary="1000.00")
     row = _save(world, _goal("10000000.00"))
     points = {p.on: p.total for p in _plan(world).projection.points}
     far = _read(world)
-    assert far.word is GoalWord.UNREACHABLE
+    assert far.word is GoalWord.HARDLY
     projected = points[date(2028, 12, 31)]
     assert far.projected == projected
     assert far.unreachable is not None and far.unreachable.reaches_by_due == projected
     assert far.months_left == 20  # April 2027 to December 2028
     assert far.value_today is not None and far.heute is not None
-    assert far.noetig == (far.heute + (Decimal("10000000.00") - projected) / 20).quantize(
-        Decimal("0.01")
-    )
+    assert far.noetig is None
 
     row = _save(world, _goal(str(projected)), supersedes=row.id)
     exact = _read(world)
@@ -123,7 +128,9 @@ def test_each_word_on_the_plans_own_projection(world):
 
     row = _save(world, _goal(str(projected + 100)), supersedes=row.id)
     behind = _read(world)
-    assert behind.word is GoalWord.BEHIND
+    assert behind.word is GoalWord.FEASIBLE
+    assert behind.noetig is not None and behind.heute is not None
+    assert behind.heute < behind.noetig <= behind.heute + 100  # the walk invests the extra
     wants = next(s for s in behind.scenarios if s.kind is GoalSpending.WANTS_ONLY)
     assert wants.closes
     assert [b.code for b in wants.budgets] == [C.HH_RESTAURANT]
@@ -151,7 +158,7 @@ def test_a_reserve_goal_reads_the_reserve(world):
     """A sum saved is measured on the reserve accounts: its value today is the plan's
     reserve; a reserve in months is the months × the plan's monthly need (phase 10 D305:
     need-class spending only, so groceries give the world's restaurants-only month a need)."""
-    _projected_world(world, groceries=True)
+    _projected_world(world, groceries=True, salary="1000.00")
     row = _save(world, _goal("1.00", kind=GoalKind.SAVED_SUM))
     reserve = _plan(world).reserve
     got = _read(world)
@@ -160,7 +167,7 @@ def test_a_reserve_goal_reads_the_reserve(world):
     got = _read(world)
     assert reserve.need == Decimal("120.00")  # the groceries alone, not the restaurants
     assert got.target == (6 * reserve.need).quantize(Decimal("0.01"))
-    assert got.word in {GoalWord.ON_TRACK, GoalWord.BEHIND, GoalWord.UNREACHABLE}
+    assert got.word in {GoalWord.ON_TRACK, GoalWord.FEASIBLE, GoalWord.HARDLY}
 
 
 def test_a_goal_not_due_after_the_current_month_is_refused_unless_carried(world):
@@ -197,7 +204,7 @@ def test_spending_changes_without_a_choice_are_not_the_goals_projection(world):
     """goal.yaml defines `projected` as the value without any change, and counts the saved
     spending changes (D263) only once a budget is adopted (`goal_choice.spending`). Changes
     played on Haushalt without a choice move the plan's own point, not the goal's."""
-    _projected_world(world)
+    _projected_world(world, salary="1000.00")
     row = _save(world, _goal("10000000.00"))
     without = _read(world).projected
     assert without == {p.on: p.total for p in _plan(world).projection.points}[date(2028, 12, 31)]

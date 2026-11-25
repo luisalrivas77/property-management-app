@@ -48,7 +48,7 @@ rules/plan/. Nothing here writes, and no figure is computed outside those rules.
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID
@@ -63,9 +63,10 @@ from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.rules import investment_split as X
 from hausbuch.rules.categories import CATEGORY_LABEL
 from hausbuch.rules.errors import RuleError
-from hausbuch.rules.goal.walk import Projection as GoalProjection
 from hausbuch.rules.health.figures import reserve_set
 from hausbuch.rules.health.window import window_todos
+from hausbuch.rules.loan_schedule import build_schedule
+from hausbuch.rules.net_worth import loan_balance
 from hausbuch.rules.plan import levers as L
 from hausbuch.rules.plan import projection as N
 from hausbuch.rules.plan import savings_plans as S
@@ -84,7 +85,7 @@ from hausbuch.schemas.enums import (
 )
 from hausbuch.schemas.health import HealthTodo, HealthTodoCode, HouseholdMonth, Reserve
 from hausbuch.schemas.household import NetWorthClass
-from hausbuch.schemas.net_worth import NetWorth
+from hausbuch.schemas.net_worth import NetWorth, NetWorthLineKind
 from hausbuch.schemas.performance import YearKind
 from hausbuch.schemas.plan import (
     AssumptionKind,
@@ -122,10 +123,12 @@ from .household_scenarios import (
     list_scenarios,
 )
 from .income_inputs import list_income_inputs
+from .loans import list_loans
 from .net_worth import net_worth
 from .performance import performance_projection
 from .plan_inputs import PlanInputs
 from .scenarios import default_scenario as property_default_scenario
+from .scenarios import estimate_on_day
 from .transfers import saving_links
 
 ZERO = Decimal("0.00")
@@ -424,19 +427,27 @@ def _flat_unprojectable() -> HealthTodo:
 def flat_scenarios(
     conn: Connection, today: date
 ) -> tuple[dict[UUID, N.FlatScenario | None], list[HealthTodo], list[ProjectionAssumption]]:
-    """Per property its default phase 4 scenario's projected years (None without a default),
-    the to-do „Szenario für die Wohnung anlegen“ for a property without a default (D247),
-    the to-do when phase 4 refuses to project it, and the flat's growth as an assumption."""
+    """Per property its default phase 4 scenario: its sale year, projected years and the
+    sale's net proceeds; a property without a default is kept (phase 10 D301 (a) 5: its value
+    today, its loans along their schedules), with the plan's to-do „Szenario für die Wohnung
+    anlegen“ (the property page's, no longer the projection's or the goal's); None and
+    „Szenario prüfen“ when phase 4 refuses to project it. Lever-free: kept per data version
+    (services.plan_inputs)."""
     flats: dict[UUID, N.FlatScenario | None] = {}
     todos: list[HealthTodo] = []
     assumptions: list[ProjectionAssumption] = []
-    ids = conn.execute(select(property_table.c.id).order_by(property_table.c.id)).scalars()
-    for property_id in ids:
+    p = property_table.c
+    rows = conn.execute(select(p.id, p.purchase_price, p.ownership_ended_on).order_by(p.id)).all()
+    for prop in rows:
+        if prop.ownership_ended_on is not None and prop.ownership_ended_on <= today:
+            continue  # no longer the household's (the net worth counts it nowhere)
+        property_id = prop.id
         scenario = property_default_scenario(conn, property_id)
-        if scenario is None:  # D247: the measured mean, with „Szenario für die Wohnung anlegen“
-            flats[property_id] = None
-            if not any(t.code is HealthTodoCode.NO_DEFAULT_SCENARIO for t in todos):
-                todos.append(N.scenario_todo())
+        if scenario is None:  # D301 (a) 5: kept, with „Szenario für die Wohnung anlegen“
+            kept = _kept_flat(conn, property_id, prop.purchase_price, today)
+            if kept is None:
+                todos.append(_flat_unprojectable())
+            flats[property_id] = kept
             continue
         try:
             projection = performance_projection(
@@ -458,6 +469,7 @@ def flat_scenarios(
                 for y in projection.years
                 if y.kind is YearKind.PROJECTED
             },
+            net_proceeds=projection.sale.net_proceeds,
         )
         assumptions.append(
             ProjectionAssumption(
@@ -469,12 +481,63 @@ def flat_scenarios(
                 created_by=scenario.recorded_by,
             )
         )
+    todos = N.flat_todos(flats) + todos
     return flats, todos, assumptions
 
 
-def projection_start(month_end: date, figure: NetWorth | None) -> N.ProjectionStart | None:
+def _kept_flat(
+    conn: Connection, property_id: UUID, purchase_price: Decimal, today: date
+) -> N.FlatScenario | None:
+    """D301 (a) 5: a property without a default scenario, kept: its estimate today for ever
+    and each loan's balance on every 31 December of the walk by its schedule (as the net worth
+    values a loan, services.net_worth); None when a schedule cannot be built."""
+    value = estimate_on_day(conn, property_id, purchase_price, today)[0].value
+    years = range(today.year, today.year + N.WALK_YEARS + 2)
+    loans = dict.fromkeys(years, ZERO)
+    for loan in list_loans(conn, property_id):
+        terms = loan.terms
+        try:
+            entries = build_schedule(terms).entries
+        except RuleError:
+            return None
+        for year in years:
+            on = date(year, 12, 31)
+            if on >= terms.disbursed_on:
+                loans[year] += loan_balance(entries, terms.principal, terms.disbursed_on, on)
+    return N.FlatScenario(sale_year=None, kept_value=value, kept_loans=loans)
+
+
+def _with_start(
+    flats: Mapping[UUID, N.FlatScenario | None], run: NetWorth | None
+) -> dict[UUID, N.FlatScenario]:
+    """Each walked property's value and loans in the stored run, its straight line's first
+    point (rules/plan/projection)."""
+    out: dict[UUID, N.FlatScenario] = {}
+    for key, flat in flats.items():
+        if flat is None:
+            continue
+        if run is not None:
+            mine = [x for x in run.lines if x.property_id == key and x.value_eur is not None]
+            value = sum((x.value_eur for x in mine if x.kind is NetWorthLineKind.PROPERTY), ZERO)
+            loans = -sum((x.value_eur for x in mine if x.kind is NetWorthLineKind.LOAN), ZERO)
+            flat = replace(flat, start_value=value, start_loans=loans)
+        out[key] = flat
+    return out
+
+
+def _reserve_depot(reserve: Reserve) -> Decimal:
+    """Phase 10 D304: the depots ticked „Zählt zur Reserve“, counted in the reserve."""
+    return sum(
+        (a.balance for a in reserve.accounts if a.counted and a.kind is AccountKind.DEPOT), ZERO
+    )
+
+
+def projection_start(
+    month_end: date, figure: NetWorth | None, reserve_depot: Decimal = ZERO
+) -> N.ProjectionStart | None:
     """§7.5 (2): the classes and liabilities of the stored run. The class `liabilities`
-    (negative) holds the loans and a card's debt; `loan_balances` is the loans' part."""
+    (negative) holds the loans and a card's debt; `loan_balances` is the loans' part.
+    `reserve_depot`: the part of the depot class in the reserve (D304)."""
     if figure is None:
         return None
     c = figure.by_class
@@ -487,6 +550,7 @@ def projection_start(month_end: date, figure: NetWorth | None) -> N.ProjectionSt
         property=c.get(NetWorthClass.PROPERTY, ZERO),
         loans=figure.loan_balances,
         other_liabilities=liabilities - figure.loan_balances,
+        reserve_depot=reserve_depot,
     )
 
 
@@ -648,7 +712,7 @@ class PlanParts:
     months: tuple[HouseholdMonth, ...]
     means: Mapping[AllocationCategory, Decimal]
     reserve: Reserve
-    projection: GoalProjection | None
+    projection: N.Projection | None
 
 
 def _plan(
@@ -727,9 +791,12 @@ def plan_parts(
     )
     todos += flat_todos
     with_scenario = {k: f for k, f in flats.items() if f is not None}
+    # A property kept without a scenario (D301 (a) 5) keeps the measured mean, as one refused.
     flat_years = (
         L.flat_by_year({k: f.years for k, f in with_scenario.items()})
-        if flats and len(with_scenario) == len(flats)
+        if flats
+        and len(with_scenario) == len(flats)
+        and not any(f.kept for f in with_scenario.values())
         else None
     )
     basis = L.MonthBasis(
@@ -757,7 +824,7 @@ def plan_parts(
     split, prefill, not_invested = _investment_split(inputs, win.months, levers, plans, mode)
     rental_counted = any(a.counted and a.account_id in rental_ids for a in reserve.accounts)
 
-    walked: GoalProjection | None = None
+    walked: N.Projection | None = None
     if row is None:
         projection = NetWorthProjection(todos=[_no_scenario_todo()])
     elif refused := [t for t in flat_todos if t.code is HealthTodoCode.SCENARIO_CHECK]:
@@ -765,24 +832,29 @@ def plan_parts(
     elif run is not None and _incomplete(again := _net_worth(inputs, month_end)):
         projection = NetWorthProjection(todos=[_incomplete_run_todo(month_end, again)])
     else:
-        start = projection_start(month_end, run)
+        start = projection_start(month_end, run, _reserve_depot(reserve))
+        walked_flats = _with_start(flats, run)
         projection = N.project_net_worth(
             basis,
             start,
             month_end,
             reserve.amount,
             plans,
-            flats,
+            walked_flats,
             levers,
+            target=reserve.target,
+            split=split.shares,
         ).projection
         if not projection.todos and start is not None:
-            walked = GoalProjection(
+            walked = N.Projection(
                 basis=basis,
                 start=start,
                 reserve_start=reserve.amount,
                 plans=tuple(plans),
-                flats=with_scenario,
+                flats=walked_flats,
                 levers=levers,
+                target=reserve.target,
+                split=split.shares,
             )
         if projection.points:
             projection = projection.model_copy(
@@ -818,6 +890,7 @@ def plan_parts(
             "investment_split": split,
             "investment_split_prefill": prefill,
             "not_invested": not_invested,
+            "above_target": N.above_target(reserve.amount, reserve.target),
             "projection": projection,
             "todos": todos,
         }

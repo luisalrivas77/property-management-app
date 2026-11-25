@@ -96,11 +96,15 @@ def _uncached(world: World, read, *args, today: date = TODAY) -> str:
 def _projected(world: World):
     """tests/db/test_household_goal._projected_world (twelve closed months to March 2027, the
     flat with its default scenario, the month-end of 31 March 2027) with a default household
-    scenario holding a goal; the scenario's levers and the private account."""
+    scenario holding a goal; the scenario's levers and the private account. A pay of 500 € a
+    month keeps the flat's costs from 2028 above 0 (phase 10 D301 (a) 1: the walk never sells
+    to refill the reserve), so the goal has a word; 500 € less income does not."""
     private, _ = _savings_history(world)
     for month in (1, 2, 3):
         line = private.line(date(2027, month, 18), "-300.00", name="Trattoria Muster")
         _book(world, line, "-300.00", C.HH_RESTAURANT)
+        line = private.line(date(2027, month, 27), "500.00", name="Arbeitgeber Muster")
+        _book(world, line, "500.00", C.HH_SALARY)
     _bought_in_2026(world)
     _flat_scenario(world, None, NOW)
     world.cmd(net_worth.capture_month_end, date(2027, 3, 31))

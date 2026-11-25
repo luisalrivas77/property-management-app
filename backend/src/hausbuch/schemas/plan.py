@@ -650,7 +650,9 @@ class NetWorthProjection(Schema):
     start: ProjectionPoint | None = None
     points: list[ProjectionPoint] = Field(default_factory=list)
     assumptions: list[ProjectionAssumption] = Field(default_factory=list)
-    ends_before_sale_year: int | None = None  # the earliest sale year, when it cuts the points
+    # Always None since phase 10 §7.11 (a) 4 (D301): the walk runs past each property's sale
+    # year, so no sale cuts the points any more; kept so older clients still read the answer.
+    ends_before_sale_year: int | None = None
     used_up: YearMonth | None = None  # the as_is path's reserve falls below 0 (§7.5 (8))
     todos: list[HealthTodo] = Field(default_factory=list)
 
@@ -820,4 +822,8 @@ class HouseholdPlan(Schema):
     investment_split: EffectiveSplit | None = None
     investment_split_prefill: SplitPrefill | None = None
     not_invested: NotInvested | None = None
+    # Phase 10 §7.11 (d), „Anlegbar jetzt“: the reserve above its target today, which the walk
+    # invests in its first month (D301 (a) 3); None below three closed months. Read on GET,
+    # never part of the stored Reserve or a snapshot.
+    above_target: NonNegativeMoney | None = None
     todos: list[HealthTodo] = Field(default_factory=list)
