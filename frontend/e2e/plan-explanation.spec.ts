@@ -202,10 +202,10 @@ async function explanationRoute(
 
 const panelOf = (page: Page) => page.getByRole("complementary", { name: "Erklärung zu euren Zahlen" });
 
-/** The explanation sits behind „Erklärung“ in „Was mit dem Rest passiert“ at the foot of
+/** The explanation sits behind „Erklärung“ in „Was übrig bleibt“ at the foot of
  * Haushalt › Budget since phase 10 §7.9 (a) (Planung › Anlegen until then); opened after each load. */
 async function openExplanation(page: Page) {
-  await page.getByRole("region", { name: "Was mit dem Rest passiert" }).getByRole("button", { name: "Erklärung", exact: true }).click();
+  await page.getByRole("region", { name: "Was übrig bleibt · im Monat" }).getByRole("button", { name: "Erklärung", exact: true }).click();
   return panelOf(page);
 }
 
@@ -358,7 +358,7 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
       : explanation({ paragraphs: [{ topic: "basis", text: "In Fondsdepot A fließen 300 € im Monat." }] }),
   );
 
-  // Phase 10 §7.9 (a): the explanation and the savings plans in „Was mit dem Rest passiert“ on
+  // Phase 10 §7.9 (a): the explanation and the savings plans in „Was übrig bleibt“ on
   // Haushalt › Budget, the paths on Haushalt › Reserve; the plans' levers open beside the buffer
   // on Budget (`#puffer`, §7.10 (a) 7, D299).
   await page.goto("/household?tab=budget");
@@ -376,7 +376,7 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   await expect(paths.getByText("Weitere Sparpläne ohne eigene Zeile: Fondsdepot C.")).toBeVisible();
   // Back on Budget, the buffer's „Ändern“ opens the buffer and the savings plans in place.
   await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Budget" }).click();
-  await page.getByRole("region", { name: "Was mit dem Rest passiert" }).locator('a[href="#puffer"]').click();
+  await page.getByRole("region", { name: "Was übrig bleibt · im Monat" }).locator('a[href="#puffer"]').click();
   const more = page.getByRole("form", { name: "Puffer ändern" });
   await expect(more.getByText("Kryptobörse B", { exact: true })).toBeVisible();
 

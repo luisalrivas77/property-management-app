@@ -1,14 +1,14 @@
-// The recurring payments on Haushalt › Monat (phase 10 §7.9 (b); D296; mockup 19c panels 4 and 5)
-// and „Einmalig im Zeitraum“ beside the Budget's split (§7.12 (c), D308). GET /household/recurring
-// and its write are mocked, since a series needs months of bookings; Budget's reads of phases 9
-// and 10 (GET /health, /health/months, /household-plan, /household-budget) are mocked since they
-// need a window of three closed months.
+// The recurring payments as the Budget's fixed payments inside Notwendiges and Wünsche (phase 10
+// §7.10 (c), D300; mockup 19d frame 6, 19h frame 2), and „Einmalig im Zeitraum“ beside the Budget's
+// split (§7.12 (c), D308). GET /household/recurring and its write are mocked, since a series needs
+// months of bookings; Budget's reads of phases 9 and 10 (GET /health, /health/months,
+// /household-plan, /household-budget) are mocked since they need a window of three closed months.
 // Every other read is the real API of a fresh workspace. Invented payees and figures only.
 //
-// - The card shows the server's count and yearly total, the price changes first, how many may
-//   have ended and from when yearly payments can be found; a tapped payment opens its payments in
-//   the detail panel; „Kein Abo, ausblenden“ hides it, „Wieder anzeigen“ brings it back, and
-//   neither changes a figure.
+// - A class panel lists its fixed payments with the server's monthly amount and price change,
+//   „Schwankend“ and the sum line; a payment that may have ended asks, „Ja, beendet“ hides it and
+//   „Wieder anzeigen“ brings it back, neither changing a figure. Haushalt › Monat has no card
+//   „Regelmäßige Zahlungen“ any more (D300).
 // - The Budget shows the window's one-offs beside its split, not in it, and opens their panel.
 // - Nothing is shown when nothing is listed, never an error card.
 // - Phone width, light and dark: no sideways scroll; a screenshot of each new panel.
@@ -26,6 +26,8 @@ type HealthMonthView = components["schemas"]["HealthMonthView"];
 type HouseholdMonth = components["schemas"]["HouseholdMonth"];
 type HouseholdPlan = components["schemas"]["HouseholdPlan"];
 type BudgetView = components["schemas"]["BudgetView"];
+type BudgetFixedPayment = components["schemas"]["BudgetFixedPayment"];
+type BudgetCode = components["schemas"]["BudgetCode"];
 
 // The KI panel beside the plan reads its explanation: served as the app's template with no text,
 // so these tests never read a real explanation of a mocked plan.
@@ -189,92 +191,6 @@ async function phoneScreens(page: Page, name: string, open: () => Promise<void>)
   expect(backgrounds[0]).not.toEqual(backgrounds[1]);
 }
 
-test("the recurring card lists the price changes first, opens a payment's payments, hides it and brings it back", async ({
-  page,
-  signedIn,
-}) => {
-  void signedIn;
-  const { posted } = await recurringApi(page);
-  await page.goto("/household");
-
-  const card = page.getByRole("region", { name: "Regelmäßige Zahlungen" });
-  await expect(card).toContainText("4 Zahlungen");
-  await expect(card).toContainText("862,68 € im Jahr");
-  await expect(card).toContainText("+2,00 € seit März 2026");
-  await expect(card).toContainText("1 vielleicht beendet");
-  await expect(card).toContainText("ab Januar 2027");
-  // Only the price change is on the card itself.
-  await expect(card).not.toContainText("Fitnessstudio Muster");
-
-  await card.getByRole("link", { name: "Alle regelmäßigen Zahlungen" }).click();
-  const list = detail(page, "Regelmäßige Zahlungen");
-  await expect(list).toBeVisible();
-  const headings = await list.getByRole("heading", { level: 3 }).allTextContents();
-  expect(headings).toEqual(["Preis geändert", "Monatlich", "Vierteljährlich", "Vielleicht beendet"]);
-  await expect(list).toContainText("monatlich · jetzt 15,99 €");
-  await expect(list).toContainText("Jährliche Zahlungen erkennt Hausbuch erst, wenn sie zweimal da waren: ab Januar 2027.");
-
-  await list.getByRole("link", { name: /Fitnessstudio Muster/ }).click();
-  const one = detail(page, "Fitnessstudio Muster");
-  await expect(one).toBeVisible();
-  await expect(one).toContainText("monatlich · seit Januar 2026 · jetzt 39,90 €");
-  await expect(one).toContainText("03.10.2026");
-  await expect(one).toContainText("Kategorie:");
-  await expect(page).toHaveURL(/#d-abo-/);
-  // The payee's words never reach the URL; the series is named by an opaque id.
-  expect(page.url()).not.toContain("Fitness");
-
-  await one.getByRole("button", { name: "Kein Abo, ausblenden" }).click();
-  await expect.poll(() => posted.length).toBe(1);
-  expect(posted[0]).toEqual({ key: "fitnessstudio-muster", interval: "monthly", answer: "hidden" });
-  // Back on the list, without it; the card says three.
-  await expect(list).toBeVisible();
-  await expect(list).not.toContainText("Fitnessstudio Muster");
-  await expect(card).toContainText("3 Zahlungen");
-
-  await list.getByRole("link", { name: "1 ausgeblendete anzeigen" }).click();
-  const hidden = detail(page, "Ausgeblendete Zahlungen");
-  await expect(hidden).toContainText("Fitnessstudio Muster");
-  await hidden.getByRole("button", { name: "Wieder anzeigen: Fitnessstudio Muster" }).click();
-  await expect.poll(() => posted.length).toBe(2);
-  expect(posted[1]).toEqual({ key: "fitnessstudio-muster", interval: "monthly", answer: "shown" });
-  await expect(hidden).toContainText("Keine Zahlung ist ausgeblendet.");
-  await expect(card).toContainText("4 Zahlungen");
-});
-
-test("no recurring card while nothing is listed", async ({ page, signedIn }) => {
-  void signedIn;
-  await recurringApi(page, []);
-  const read = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/household/recurring");
-  await page.goto("/household");
-  await read;
-  await expect(page.getByRole("group", { name: "Einnahmen" }).first()).toBeVisible();
-  await expect(page.getByRole("region", { name: "Regelmäßige Zahlungen" })).toHaveCount(0);
-});
-
-test("the recurring panels at phone width, light and dark", async ({ page, signedIn }) => {
-  void signedIn;
-  const all = recurringSeries();
-  const hidden = all.find((s) => s.label === "Fitnessstudio Muster");
-  await recurringApi(page, all, hidden ? [hidden] : []);
-  const first = all[0]?.sources?.[0] ?? "";
-  await phoneScreens(page, "recurring-list", async () => {
-    await page.goto("/household#d-abos-alle");
-    await expect(page.getByRole("dialog", { name: "Regelmäßige Zahlungen" })).toBeVisible();
-  });
-  await phoneScreens(page, "recurring-series", async () => {
-    await page.goto(`/household#d-abo-${first}`);
-    const sheet = page.getByRole("dialog", { name: "Streamingdienst Beispiel" });
-    await expect(sheet).toBeVisible();
-    await expect(sheet).toContainText("2,00 € mehr seit März 2026.");
-  });
-  await phoneScreens(page, "recurring-hidden", async () => {
-    await page.goto("/household#d-abos-ausgeblendet");
-    const sheet = page.getByRole("dialog", { name: "Ausgeblendete Zahlungen" });
-    await expect(sheet.getByRole("button", { name: "Wieder anzeigen: Fitnessstudio Muster" })).toBeVisible();
-  });
-});
-
 // --- „Einmalig im Zeitraum“ beside the Budget's split (§7.12 (c), D308) ---------------------------
 // The one-off check of §7.9 (c) is gone (D307): a category is one-off by default or by its switch.
 // The Budget shows the window's one-offs beside need + want + saving = income, never in it.
@@ -364,7 +280,43 @@ function plan(): HouseholdPlan {
   };
 }
 
-function budget(withOneOff: boolean): BudgetView {
+/** Wünsche's fixed payments as the server derives them from `recurringSeries()` (key = the
+ * series' oldest payment); Notwendiges has its insurance only. */
+function fixedOf(all: RecurringSeries[]) {
+  const row = (label: string, monthly: string, extra: Partial<BudgetFixedPayment> = {}): BudgetFixedPayment => {
+    const one = all.find((x) => x.label === label);
+    if (!one) throw new Error(label);
+    return {
+      key: one.sources?.[0] ?? "",
+      label,
+      category: one.lines?.[0]?.category ?? "hh_streaming",
+      interval: one.interval,
+      state: one.state,
+      monthly,
+      mean: monthly,
+      ...extra,
+    };
+  };
+  return {
+    need: [row("Versicherung Muster", "16.00")],
+    want: [
+      row("Streamingdienst Beispiel", "15.99", { change: "2.00", since: "2026-03" }),
+      row("Fitnessstudio Muster", "39.90"),
+      row("Zeitschrift Muster", "9.99"),
+    ],
+  };
+}
+
+function budget(withOneOff: boolean, fixed: ReturnType<typeof fixedOf> | null = null): BudgetView {
+  const code = (category: AllocationCategory, budgetClass: "need" | "want", monthly: string): BudgetCode => ({
+    category,
+    group: "subscriptions",
+    budget_class: budgetClass,
+    default_class: budgetClass,
+    overridden: false,
+    monthly,
+    total: (Number(monthly) * 3).toFixed(2),
+  });
   return {
     as_of: "2026-11-24",
     scenario_id: null,
@@ -373,8 +325,30 @@ function budget(withOneOff: boolean): BudgetView {
     income: { monthly: "5200.00", total: "15600.00", rental_monthly: "0.00", private_monthly: "5200.00" },
     // need + want + uncategorized + saving = income; the one-offs beside them (D308).
     lines: [
-      { key: "need", monthly: "2440.00", total: "7320.00", share: "0.4692", codes: [] },
-      { key: "want", monthly: "1300.00", total: "3900.00", share: "0.2500", codes: [] },
+      fixed
+        ? {
+            key: "need",
+            monthly: "2440.00",
+            total: "7320.00",
+            share: "0.4692",
+            codes: [code("hh_ins_liability_contents", "need", "16.00")],
+            fixed: fixed.need,
+            fixed_monthly: "16.00",
+            variable: "2424.00",
+          }
+        : { key: "need", monthly: "2440.00", total: "7320.00", share: "0.4692", codes: [] },
+      fixed
+        ? {
+            key: "want",
+            monthly: "1300.00",
+            total: "3900.00",
+            share: "0.2500",
+            codes: [code("hh_streaming", "want", "15.99"), code("hh_sport", "want", "39.90"), code("hh_news", "want", "9.99")],
+            fixed: fixed.want,
+            fixed_monthly: "65.88",
+            variable: "1234.12",
+          }
+        : { key: "want", monthly: "1300.00", total: "3900.00", share: "0.2500", codes: [] },
       { key: "uncategorized", monthly: "0.00", total: "0.00", share: "0.0000", codes: [] },
       { key: "saving", monthly: "1460.00", total: "4380.00", share: "0.2808" },
     ],
@@ -387,7 +361,7 @@ function budget(withOneOff: boolean): BudgetView {
 }
 
 /** Budget's mocked reads of phases 9 and 10. */
-async function budgetApi(page: Page, withOneOff: boolean) {
+async function budgetApi(page: Page, withOneOff: boolean, fixed: ReturnType<typeof fixedOf> | null = null) {
   await serve(page, "/api/health", () => health());
   await serve(page, "/api/health/net-worth-series", () => []);
   await serve(page, "/api/health/months", (url) => {
@@ -398,7 +372,7 @@ async function budgetApi(page: Page, withOneOff: boolean) {
       .map((month) => monthView(month, WINDOW.includes(month)));
   });
   await serve(page, "/api/household-plan", () => plan());
-  await serve(page, "/api/household-budget", () => budget(withOneOff));
+  await serve(page, "/api/household-budget", () => budget(withOneOff, fixed));
 }
 
 test("the one-offs stand beside the Budget's split as „Einmalig im Zeitraum“ and open their panel", async ({ page, signedIn }) => {
@@ -433,5 +407,89 @@ test("the one-off panel at phone width, light and dark", async ({ page, signedIn
     const sheet = page.getByRole("dialog", { name: "Einmalig im Zeitraum" });
     await expect(sheet).toBeVisible();
     await expect(sheet).toContainText("stehen neben der Aufteilung");
+  });
+});
+
+// --- the fixed payments inside Notwendiges and Wünsche (§7.10 (c), D300) ---------------------------
+
+test("Wünsche lists its fixed payments; one that may have ended is hidden and brought back", async ({ page, signedIn }) => {
+  void signedIn;
+  const all = recurringSeries();
+  const { posted } = await recurringApi(page, all);
+  await budgetApi(page, false, fixedOf(all));
+  await page.goto("/household?tab=budget");
+  await page.locator('a.budget-line[data-key="want"]').click();
+  const panel = detail(page, "Wünsche");
+
+  const fixed = panel.getByRole("region", { name: "Feste Zahlungen (erwartet)" });
+  const rows = fixed.locator("li.recurring-fixed");
+  await expect(rows).toHaveCount(3);
+  const streaming = rows.filter({ hasText: "Streamingdienst Beispiel" });
+  await expect(streaming).toContainText("monatlich");
+  await expect(streaming).toContainText("+2,00 € seit März 2026");
+  await expect(streaming).toContainText("15,99 €");
+  // The server's sums, formatted only.
+  await expect(panel.getByRole("region", { name: "Schwankend" })).toContainText("1.234,12 €");
+  await expect(panel.getByTestId("fixed-sum")).toHaveText("65,88 € fest + 1.234,12 € schwankend = 1.300,00 €");
+
+  // The magazine may have ended: it asks, „Läuft weiter“ only closes the question.
+  const magazine = rows.filter({ hasText: "Zeitschrift Muster" });
+  await expect(magazine).toContainText("zuletzt am 03.08.2026 abgebucht");
+  await expect(magazine).toContainText("Vielleicht beendet?");
+  await magazine.getByRole("button", { name: "Läuft weiter" }).click();
+  await expect(magazine).not.toContainText("Vielleicht beendet?");
+  expect(posted).toHaveLength(0);
+
+  // On a fresh load it asks again; „Ja, beendet“ hides it at once and posts `hidden`.
+  await page.reload();
+  await expect(magazine).toContainText("Vielleicht beendet?");
+  await magazine.getByRole("button", { name: "Ja, beendet" }).click();
+  await expect(rows).toHaveCount(2);
+  await expect(fixed).toContainText("Ausgeblendet: sie zählt ab jetzt zum schwankenden Teil.");
+  await expect.poll(() => posted.length).toBe(1);
+  expect(posted[0]).toEqual({ key: "zeitschrift-muster", interval: "monthly", answer: "hidden" });
+
+  // „1 ausgeblendete anzeigen“ lists it with „Wieder anzeigen“, which posts `shown`.
+  await panel.getByRole("button", { name: "1 ausgeblendete anzeigen" }).click();
+  await panel.getByRole("button", { name: "Wieder anzeigen: Zeitschrift Muster" }).click();
+  await expect.poll(() => posted.length).toBe(2);
+  expect(posted[1]).toEqual({ key: "zeitschrift-muster", interval: "monthly", answer: "shown" });
+
+  // Notwendiges holds its own fixed payment only.
+  await page.goto("/household?tab=budget");
+  await page.locator('a.budget-line[data-key="need"]').click();
+  const need = detail(page, "Notwendiges").getByRole("region", { name: "Feste Zahlungen (erwartet)" });
+  await expect(need.locator("li.recurring-fixed")).toHaveCount(1);
+  await expect(need).toContainText("Versicherung Muster");
+  await expect(need).toContainText("vierteljährlich");
+});
+
+test("no fixed payments without the server's split, and no recurring card on Haushalt › Monat", async ({ page, signedIn }) => {
+  void signedIn;
+  await recurringApi(page);
+  await budgetApi(page, false);
+  await page.goto("/household?tab=budget");
+  await page.locator('a.budget-line[data-key="want"]').click();
+  const panel = detail(page, "Wünsche");
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole("region", { name: "Feste Zahlungen (erwartet)" })).toHaveCount(0);
+  await expect(panel.getByTestId("fixed-sum")).toHaveCount(0);
+
+  await page.goto("/household");
+  await expect(page.getByRole("region", { name: "Finanzielle Gesundheit" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Regelmäßige Zahlungen" })).toHaveCount(0);
+});
+
+test("the fixed payments at phone width, light and dark", async ({ page, signedIn }) => {
+  void signedIn;
+  const all = recurringSeries();
+  await recurringApi(page, all);
+  await budgetApi(page, false, fixedOf(all));
+  await phoneScreens(page, "fixed-payments", async () => {
+    await page.goto("/household?tab=budget#d-budget-want");
+    const sheet = page.getByRole("dialog", { name: "Wünsche" });
+    const fixed = sheet.getByRole("region", { name: "Feste Zahlungen (erwartet)" });
+    await expect(fixed.locator("li.recurring-fixed")).toHaveCount(3);
+    await fixed.scrollIntoViewIfNeeded();
   });
 });
