@@ -48,8 +48,10 @@
 //
 // The Budget tile reads GET /household-budget: each of Notwendiges, Wünsche and Sparen with a
 // target saved, with the dot of Haushalt › Budget (green met, amber missed, never red) and, when
-// missed, the server's gap in euros; „noch keine Ziele“ before a target is saved or when the read
-// failed.
+// missed, the server's gap in euros; „noch keine Ziele“ before a target is saved. It is its own
+// read, so Monat never waits for it (the Budget's read is the slowest of Haushalt's): the tile says
+// „wird gelesen …“ until it answers and „nicht lesbar“ when it failed, and the rest of the month
+// is already shown. It is read once, not per chosen month: the Budget is the closed months' mean.
 //
 // Phase 10 wave 3 (a) (§7.9 (a), D288; mockups 19b, 19c): Planung folded in. Haushalt has four
 // tabs, ?tab=budget|ziel|reserve, and Monat (everything above) by default. Budget and Reserve are
@@ -130,24 +132,26 @@ interface Year {
   windowMonths: HouseholdCashflow[];
   /** The chosen month beside the saved plan (D263 (d)); no rows when no scenario names a code. */
   comparison: SpendingComparison;
-  /** GET /household-budget for Haushalt's Budget line (§7.6); null when the read failed. */
-  budget: BudgetView | null;
+}
+
+/** GET /household-budget for the Budget tile; module-level so the read does not refire on a month
+ * change (the Budget is the closed months' mean, whichever month is chosen). */
+function loadBudget(): Promise<BudgetView> {
+  return ok(api.GET("/api/household-budget"));
 }
 
 async function loadYear(month: string): Promise<Year> {
   const shown = monthsUpTo(month, MONTHS_SHOWN);
-  const [months, transfers, health, overall, comparison, budget] = await Promise.all([
+  const [months, transfers, health, overall, comparison] = await Promise.all([
     Promise.all(shown.map(loadCashflow)),
     ok(api.GET("/api/transfers", { params: { query: { month } } })),
     ok(api.GET("/api/health/months", { params: { query: { from: shown[0] ?? month, to: month } } })),
     ok(api.GET("/api/health")),
     ok(api.GET("/api/household-plan/comparison", { params: { query: { month } } })),
-    // The Budget's line is an extra: a read that fails leaves it out, never the month.
-    ok(api.GET("/api/household-budget")).catch(() => null),
   ]);
   const loaded = new Map(months.map((m) => [m.month, m]));
   const windowMonths = await Promise.all((overall.window.months ?? []).map((m) => loaded.get(m) ?? loadCashflow(m)));
-  return { months, transfers, health, overall, windowMonths, comparison, budget };
+  return { months, transfers, health, overall, windowMonths, comparison };
 }
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -318,15 +322,31 @@ function HouseholdYear({
   const load = useCallback(() => loadYear(month), [month]);
   const year = useLoad(load);
   const health = useHouseholdHealth(healthRefresh);
+  // The Budget tile's own read: a slow or failed one never holds the month back.
+  const budget = useLoad(loadBudget);
   const { reload } = year;
+  const { reload: reloadBudget } = budget;
   const changed = useCallback(() => {
     reload();
+    reloadBudget();
     onHealthChanged();
-  }, [reload, onHealthChanged]);
-  return <Loading state={year}>{(data) => <HouseholdMonth year={data} health={health} onChanged={changed} />}</Loading>;
+  }, [reload, reloadBudget, onHealthChanged]);
+  return (
+    <Loading state={year}>{(data) => <HouseholdMonth year={data} health={health} budget={budget} onChanged={changed} />}</Loading>
+  );
 }
 
-function HouseholdMonth({ year, health: figures, onChanged }: { year: Year; health: Loaded<HouseholdHealthData>; onChanged: () => void }) {
+function HouseholdMonth({
+  year,
+  health: figures,
+  budget,
+  onChanged,
+}: {
+  year: Year;
+  health: Loaded<HouseholdHealthData>;
+  budget: Loaded<BudgetView>;
+  onChanged: () => void;
+}) {
   const t = useT(household);
   const f = useFormat();
   const groupDetail = useDetail("gruppe");
@@ -334,7 +354,7 @@ function HouseholdMonth({ year, health: figures, onChanged }: { year: Year; heal
   const savedDetail = useDetail("angelegt");
   const differenceDetail = useDetail("anders");
   const figureDetail = useDetail(FIGURE_DETAIL);
-  const { months, transfers, health, overall, windowMonths, comparison, budget } = year;
+  const { months, transfers, health, overall, windowMonths, comparison } = year;
   const month = months[months.length - 1];
   if (!month) return null;
   const view = health.find((h) => h.month === month.month);
@@ -529,12 +549,32 @@ function DifferenceText({ difference: d }: { difference: GroupDifference }) {
 
 /** The Budget tile (mockup 19g): how many of the classes with a saved target meet it, „2 von 3“,
  * and a dot per class, a missed one with the server's gap in euros (`gap_monthly`: over the target
- * for Notwendiges and Wünsche, under it for Sparen). Opens Haushalt › Budget. */
-function BudgetTile({ budget }: { budget: BudgetView | null }) {
+ * for Notwendiges and Wünsche, under it for Sparen). Opens Haushalt › Budget. While its own read
+ * runs it keeps its place in the row and says so; a failed read says so too, never „no targets“. */
+function BudgetTile({ budget: state }: { budget: Loaded<BudgetView> }) {
   const t = useT(household);
   const tp = useT(planning);
   const p = usePlanFormat();
-  const marked = (budget?.lines ?? []).flatMap((l: BudgetLine) =>
+  const budget = state.data;
+  if (budget === undefined) {
+    const failed = state.error != null && !state.loading;
+    return (
+      <Link
+        href={HOUSEHOLD_BUDGET}
+        className="planning-kpi household-budget-tile"
+        aria-label={failed ? t.budgetFailedAria : t.budgetReadingAria}
+        aria-busy={failed ? undefined : true}
+        data-testid="budget-tile"
+      >
+        <p className="planning-kpi-label">
+          {t.budgetTile} <span aria-hidden="true">›</span>
+        </p>
+        <p className="planning-kpi-value">–</p>
+        <p className="planning-kpi-sub">{failed ? t.budgetFailed : t.budgetReading}</p>
+      </Link>
+    );
+  }
+  const marked = (budget.lines ?? []).flatMap((l: BudgetLine) =>
     l.mark && (l.key === "need" || l.key === "want" || l.key === "saving") ? [{ key: l.key, mark: l.mark }] : [],
   );
   const met = marked.filter(({ mark }) => mark.colour === "green").length;
@@ -543,6 +583,7 @@ function BudgetTile({ budget }: { budget: BudgetView | null }) {
       href={HOUSEHOLD_BUDGET}
       className="planning-kpi household-budget-tile"
       aria-label={marked.length > 0 ? t.budgetMetAria(met, marked.length) : t.budgetNoTargetsAria}
+      data-testid="budget-tile"
     >
       <p className="planning-kpi-label">
         {t.budgetTile} <span aria-hidden="true">›</span>

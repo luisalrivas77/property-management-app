@@ -158,14 +158,6 @@ test("below three closed months the month-end to-do shows once, and its button r
         }),
       );
   });
-  // Monat waits for GET /household-budget too, whose real read computes the household plan and
-  // ran past the 10 s wait with five workers on one box; a failed read only leaves the Budget tile
-  // out, which this test does not look at.
-  await page.route(
-    (url) => url.pathname === "/api/household-budget",
-    (route: Route) => route.fulfill({ status: 404, json: { detail: "not mocked" } }),
-  );
-
   await page.goto(`/household?monat=${open}`);
   const averages = page.getByRole("region", { name: "Noch keine Durchschnitte" });
   await expect(averages.getByRole("button", { name: "Monatsabschluss festhalten" })).toBeVisible();

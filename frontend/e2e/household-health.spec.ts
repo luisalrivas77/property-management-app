@@ -352,14 +352,6 @@ test("the three figures carry their dots on the standard limits, and „Grenzen 
   await serve(page, "/api/health/net-worth-series", () => []);
   // The card sits inside Haushalt › Monat, which waits for the month's own reads.
   await monthsOf(page, (from, to) => window.filter((month) => month >= from && month <= to).map((month) => monthView(month, true)));
-  // Monat waits for GET /household-budget too, whose real read computes the household plan and
-  // ran past the 10 s wait with four workers on one box; a failed read only leaves the Budget tile
-  // out, which this test does not look at.
-  await page.route(
-    (url) => url.pathname === "/api/household-budget",
-    (route: Route) => route.fulfill({ status: 404, json: { detail: "not mocked" } }),
-  );
-
   await page.goto("/household");
   // „Finanzielle Gesundheit“ on Haushalt › Monat (mockup 19g): the word, the period and whose
   // limits, and the three figures as small cards with their green limit.
@@ -658,12 +650,6 @@ test("on the phone, Haushalt › Monat's tiles and a figure's side panel fit, li
   await serve(page, "/api/health", () => health(window));
   await serve(page, "/api/health/net-worth-series", () => []);
   await monthsOf(page, (from, to) => window.filter((month) => month >= from && month <= to).map((month) => monthView(month, true)));
-  // The Budget tile's real read computes the plan; a failed read leaves the tile out.
-  await page.route(
-    (url) => url.pathname === "/api/household-budget",
-    (route: Route) => route.fulfill({ status: 404, json: { detail: "not mocked" } }),
-  );
-
   await page.setViewportSize({ width: 390, height: 844 });
   const backgrounds: string[] = [];
   for (const scheme of ["light", "dark"] as const) {
@@ -869,4 +855,63 @@ test("the Budget tile on Haushalt › Monat: „N von 3“ with a dot per class,
   const empty = page.getByRole("link", { name: /^Budget: noch keine Ziele/ });
   await expect(empty).toContainText("noch keine Ziele");
   await expect(empty.locator(".budget-dot")).toHaveCount(0);
+});
+
+test("Monat does not wait for the Budget's read: its tiles and cards are there while the Budget tile reads, and a failed read says so", async ({
+  page,
+  signedIn,
+}) => {
+  void signedIn;
+  const window = [monthsBack(4), monthsBack(3), monthsBack(2)];
+  await scenarios(page);
+  await serve(page, "/api/health", () => health(window));
+  await serve(page, "/api/health/net-worth-series", () => []);
+  await monthsOf(page, (from, to) => window.filter((month) => month >= from && month <= to).map((month) => monthView(month, true)));
+  type BudgetView = components["schemas"]["BudgetView"];
+  const noTargets: BudgetView = {
+    as_of: "2026-11-18",
+    scenario_id: null,
+    window: { months: window, enough: true },
+    months: [],
+    income: { monthly: "5200.00", total: "15600.00", rental_monthly: "0.00", private_monthly: "5200.00" },
+    lines: [],
+    housing: null,
+    targets: {},
+    references: [],
+    todos: [],
+  };
+  // GET /household-budget is held open until the test releases it (the real read computes the
+  // household plan and is the slowest of Haushalt's reads); in the second part it fails.
+  let fail = false;
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(
+    (url) => url.pathname === "/api/household-budget",
+    async (route: Route) => {
+      if (fail) return route.fulfill({ status: 500, json: { detail: "kaputt" } });
+      await released;
+      return route.fulfill({ json: noTargets });
+    },
+  );
+
+  await page.goto(`/household?monat=${monthsBack(2)}`);
+  // The month is shown while the Budget's read is still open.
+  await expect(page.getByRole("group", { name: "Einnahmen" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Finanzielle Gesundheit" }).locator("a.health-mini")).toHaveCount(3);
+  const reading = page.getByRole("link", { name: /^Budget: wird gelesen/ });
+  await expect(reading).toContainText("wird gelesen …");
+  await expect(reading).toHaveAttribute("href", "/household?tab=budget");
+  await expect(page.getByTestId("budget-tile")).toHaveCount(1);
+  release();
+  await expect(page.getByRole("link", { name: /^Budget: noch keine Ziele/ })).toContainText("noch keine Ziele");
+
+  // A failed read is named on the tile, never shown as „noch keine Ziele“; the month stays.
+  fail = true;
+  await page.goto("about:blank");
+  await page.goto(`/household?monat=${monthsBack(2)}`);
+  await expect(page.getByRole("group", { name: "Einnahmen" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Budget: konnte nicht gelesen werden/ })).toContainText("nicht lesbar");
+  await expect(page.getByRole("link", { name: /^Budget: noch keine Ziele/ })).toHaveCount(0);
 });
