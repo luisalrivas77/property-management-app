@@ -101,9 +101,9 @@ from .errors import NotFoundError
 from .health import (
     MonthRead,
     _incomplete,
+    _reserve_balances,
     _run_figure,
     _window,
-    ended_months,
     key_figures,
     read_months,
 )
@@ -117,6 +117,7 @@ from .household_scenarios import (
 from .income_inputs import list_income_inputs
 from .net_worth import net_worth
 from .performance import performance_projection
+from .plan_inputs import PlanInputs
 from .scenarios import default_scenario as property_default_scenario
 from .transfers import saving_links
 
@@ -132,15 +133,55 @@ def advice_mode(conn: Connection) -> AdviceMode:
     return AdviceMode(value or AdviceMode.OWN_USE.value)
 
 
-def _scenario(conn: Connection, scenario_id: UUID | None) -> HouseholdScenario | None:
+def _scenario(
+    conn: Connection, scenario_id: UUID | None, inputs: PlanInputs | None = None
+) -> HouseholdScenario | None:
     """The row named (any row, a withdrawn one too, as health.household_levers reads it), else
-    the default in force; None: the defaults."""
-    if scenario_id is None:
-        return default_scenario(conn)
-    row = get_scenario(conn, scenario_id)
-    if row is None:
+    the default in force; None: the defaults. `inputs`: the call's kept reads (phase 10
+    §7.10 (b)), when the caller has them."""
+    if inputs is None:
+        row = default_scenario(conn) if scenario_id is None else get_scenario(conn, scenario_id)
+    elif scenario_id is None:
+        row = inputs.part(("default_scenario",), default_scenario)
+    else:
+        row = inputs.part(("scenario", scenario_id), lambda c: get_scenario(c, scenario_id))
+    if row is None and scenario_id is not None:
         raise NotFoundError(EntityType.HOUSEHOLD_SCENARIO, scenario_id)
     return row
+
+
+# --- The plan's reads, kept for a data version (phase 10 §7.10 (b)) ---------------------------
+
+
+def account_kinds(conn: Connection) -> dict[UUID, AccountKind]:
+    """Every account's kind, by id."""
+    acc = account_table.c
+    return {r.id: AccountKind(r.kind) for r in conn.execute(select(acc.id, acc.kind))}
+
+
+def rental_account_ids(conn: Connection) -> frozenset[UUID]:
+    acc = account_table.c
+    return frozenset(
+        conn.execute(select(acc.id).where(acc.purpose == AccountPurpose.RENTAL.value)).scalars()
+    )
+
+
+def _kinds(inputs: PlanInputs) -> dict[UUID, AccountKind]:
+    return inputs.part(("account_kinds",), account_kinds)
+
+
+def _net_worth(inputs: PlanInputs, on: date) -> NetWorth:
+    return inputs.part(("net_worth", on), lambda c: net_worth(c, on))
+
+
+def _balances(inputs: PlanInputs, month_end: date) -> tuple[NetWorth | None, NetWorth, list]:
+    """The stored run at `month_end` (D241), the balances the reserve starts from (that run,
+    else today's net worth) and their accounts' rows as services.health reads them."""
+    run = inputs.part(("run", month_end), lambda c: _run_figure(c, month_end))
+    source = ("run", month_end) if run is not None else ("net_worth", inputs.today)
+    balances = run if run is not None else _net_worth(inputs, inputs.today)
+    rows = inputs.part(("reserve_balances", source), lambda c: _reserve_balances(c, balances))
+    return run, balances, rows
 
 
 # --- Savings plans (D245) -------------------------------------------------------------------
@@ -219,6 +260,7 @@ def scenario_todos(
     detected: Sequence[SavingsPlan],
     newest: str,
     means: dict[AllocationCategory, Decimal],
+    kinds: Mapping[UUID, AccountKind] | None = None,
 ) -> list[HealthTodo]:
     """§7.3: a reserve account that no longer exists or is no reserve account, an override
     of a plan that is not detected now, and a one-off after the horizon's end (the newest
@@ -226,15 +268,16 @@ def scenario_todos(
     rules.plan.levers.months leaves its amount out), each named once. A one-off at or before
     `newest` raises nothing: its month is measured and the plan ignores it (§7.3 amended,
     PR #434 review D). Last, a percent change of a code with no mean in `means`
-    (`spending_todos`)."""
+    (`spending_todos`). `kinds`: every account's kind, when the caller has them."""
     todos = []
     named = [*levers.reserve_accounts.added, *levers.reserve_accounts.removed]
     if named:
         acc = account_table.c
-        kinds = {
-            r.id: AccountKind(r.kind)
-            for r in conn.execute(select(acc.id, acc.kind).where(acc.id.in_(named)))
-        }
+        if kinds is None:
+            kinds = {
+                r.id: AccountKind(r.kind)
+                for r in conn.execute(select(acc.id, acc.kind).where(acc.id.in_(named)))
+            }
         gone = [i for i in named if i not in kinds]
         wrong = [i for i in levers.reserve_accounts.added if kinds.get(i) not in RESERVE_KINDS]
         wrong = [i for i in wrong if i not in gone]
@@ -455,27 +498,53 @@ def _rate_assumptions(row: HouseholdScenario) -> list[ProjectionAssumption]:
 # --- GET /household-plan ---------------------------------------------------------------------
 
 
-def proposed_refund(conn: Connection, today: date, levers: HouseholdLevers) -> list[ProposedOneOff]:
-    """Q-O168: the expected refund or back-payment to propose (see the module doc)."""
-    from hausbuch.rules.tax import registry
+def _assessed_years(conn: Connection) -> frozenset[int]:
+    """The tax years with a confirmed household Einkommensteuerbescheid (`bescheid_zve`)."""
+    return frozenset(
+        row.tax_year
+        for row in list_income_inputs(conn)
+        if row.kind is IncomeInputKind.BESCHEID_ZVE and row.owner_id is None
+    )
 
+
+def _return_estimate(conn: Connection, year: int, today: date):
+    """Phase 4b's whole-return estimate of `year`, None when it refuses (RuleError)."""
     from .return_inputs import household_return_estimate
+
+    try:
+        return household_return_estimate(conn, tax_year=year, today=today)
+    except RuleError:
+        return None
+
+
+def proposed_refund(
+    conn: Connection,
+    today: date,
+    levers: HouseholdLevers,
+    inputs: PlanInputs | None = None,
+) -> list[ProposedOneOff]:
+    """Q-O168: the expected refund or back-payment to propose (see the module doc).
+    `inputs`: the call's kept reads (phase 10 §7.10 (b)), when the caller has them."""
+    from hausbuch.rules.tax import registry
 
     accepted = [o for o in levers.one_offs if o.from_return_estimate]
     if any(o.tax_year is None for o in accepted):
         return []  # a bare return_estimate names no year
     named = {o.tax_year for o in accepted}
-    assessed = {
-        row.tax_year
-        for row in list_income_inputs(conn)
-        if row.kind is IncomeInputKind.BESCHEID_ZVE and row.owner_id is None
-    }
+    assessed = (
+        _assessed_years(conn) if inputs is None else inputs.part(("assessed",), _assessed_years)
+    )
     for year in sorted((y for y in registry.anlage_n_years() if y < today.year), reverse=True):
         if year in assessed or year in named:
             continue
-        try:
-            estimate = household_return_estimate(conn, tax_year=year, today=today)
-        except RuleError:
+        estimate = (
+            _return_estimate(conn, year, today)
+            if inputs is None
+            else inputs.part(
+                ("return_estimate", year), lambda c, y=year: _return_estimate(c, y, today)
+            )
+        )
+        if estimate is None:
             continue
         if estimate.result == 0 or any(
             m.key == ReturnInputKind.WAGE_CERTIFICATE for m in estimate.missing
@@ -488,8 +557,9 @@ def proposed_refund(conn: Connection, today: date, levers: HouseholdLevers) -> l
 def household_plan(conn: Connection, today: date, scenario_id: UUID | None = None) -> HouseholdPlan:
     """GET /household-plan?scenario= on `today` (Berlin). NotFoundError for an unknown
     scenario. See the module doc."""
-    row = _scenario(conn, scenario_id)
-    return _plan(conn, today, row, HouseholdLevers() if row is None else row.levers)
+    inputs = PlanInputs(conn, today)
+    row = _scenario(conn, scenario_id, inputs)
+    return _plan(conn, today, row, HouseholdLevers() if row is None else row.levers, None, inputs)
 
 
 def preview_plan(
@@ -504,8 +574,9 @@ def preview_plan(
     D272 (2)). NotFoundError for an unknown `scenario_id`. Reads only: no row, no event."""
     from .household_scenarios import carried_overrides, check_levers
 
-    reads = read_months(conn, ended_months(today), today)
-    row = _scenario(conn, scenario_id)
+    inputs = PlanInputs(conn, today)
+    reads = inputs.ended_reads()
+    row = _scenario(conn, scenario_id, inputs)
     previous = [] if row is None else row.levers.spending_changes
     check_levers(
         conn,
@@ -515,10 +586,11 @@ def preview_plan(
         previous=previous,
         previous_overrides=carried_overrides(levers, row),
         previous_goal=None if row is None else row.levers.goal,
+        account_kinds=_kinds(inputs),
     )
     if row is not None:
         row = row.model_copy(update={"levers": levers})
-    return _plan(conn, today, row, levers, reads)
+    return _plan(conn, today, row, levers, reads, inputs)
 
 
 def window_spending(
@@ -551,8 +623,9 @@ def _plan(
     row: HouseholdScenario | None,
     levers: HouseholdLevers,
     reads: dict[str, MonthRead] | None = None,
+    inputs: PlanInputs | None = None,
 ) -> HouseholdPlan:
-    return plan_parts(conn, today, row, levers, reads)[0]
+    return plan_parts(conn, today, row, levers, reads, inputs)[0]
 
 
 def plan_parts(
@@ -561,10 +634,16 @@ def plan_parts(
     row: HouseholdScenario | None,
     levers: HouseholdLevers,
     reads: dict[str, MonthRead] | None = None,
+    inputs: PlanInputs | None = None,
 ) -> tuple[HouseholdPlan, PlanParts | None]:
-    """The plan and, from three closed months on, the parts the goal reads (PlanParts)."""
+    """The plan and, from three closed months on, the parts the goal reads (PlanParts).
+    `inputs`: the call's reads, kept for a data version (services.plan_inputs); a new
+    PlanInputs on `today` when the caller has none. `reads`: today's months, read through
+    `inputs` when not given."""
+    if inputs is None:
+        inputs = PlanInputs(conn, today)
     if reads is None:
-        reads = read_months(conn, ended_months(today), today)
+        reads = inputs.ended_reads()
     win = _window(reads)
     newest = win.months[-1] if win.months else None
     todos = list(window_todos(win))
@@ -584,16 +663,17 @@ def plan_parts(
     sur = surplus(months, levers.buffer_percent)
     spending = window_spending(reads, win.months)
     means = SP.code_means(spending)
-    detected = S.detect(plan_lines(conn, win.months[-3:]), win.months[-3:])
+    last_three = tuple(win.months[-3:])
+    lines = inputs.part(("plan_lines", last_three), lambda c: plan_lines(c, last_three))
+    detected = S.detect(lines, list(last_three))
     plans = S.apply_overrides(detected, levers.plan_overrides)
     invested = S.already_invested(plans)
-    todos += scenario_todos(conn, levers, detected, newest, means)
+    todos += scenario_todos(conn, levers, detected, newest, means, _kinds(inputs))
     if levers.income_changes:
         todos.append(_income_change_todo())
 
     month_end = month_bounds(newest)[1]
-    run = _run_figure(conn, month_end)
-    balances = run if run is not None else net_worth(conn, today)
+    run, balances, balance_rows = _balances(inputs, month_end)
     reserve = key_figures(
         conn,
         reads,
@@ -602,10 +682,13 @@ def plan_parts(
         balances=balances,
         debt_figure=None,
         today=balances.on,
+        balance_rows=balance_rows,
     ).reserve
     assert reserve is not None  # the window has three months
 
-    flats, flat_todos, flat_assumptions = flat_scenarios(conn, today)
+    flats, flat_todos, flat_assumptions = inputs.part(
+        ("flat_scenarios",), lambda c: flat_scenarios(c, today)
+    )
     todos += flat_todos
     with_scenario = {k: f for k, f in flats.items() if f is not None}
     flat_years = (
@@ -625,7 +708,7 @@ def plan_parts(
     plan_months = L.months(
         basis, levers.horizon_months, flat_years, levers.income_changes, levers.one_offs
     )
-    mode = advice_mode(conn)
+    mode = inputs.part(("advice_mode",), advice_mode)
     steady = L.months(basis, levers.horizon_months, flat_years, levers.income_changes, ())
     rows = paths(reserve.amount, reserve.target, plans, plan_months, newest, mode, steady)
     rental = sur.amount(SurplusKey.MEAN_RENTAL_CASH)
@@ -634,11 +717,7 @@ def plan_parts(
         later = None  # one month's figure that does not hold from then on is not shown
     # „… auf dem Mietkonto, das nicht zur Reserve zählt“ is said only while no rental account
     # is counted: the lever `reserve_accounts.added` may count it (PR #434 review E).
-    rental_ids = set(
-        conn.execute(
-            select(account_table.c.id).where(account_table.c.purpose == AccountPurpose.RENTAL.value)
-        ).scalars()
-    )
+    rental_ids = inputs.part(("rental_ids",), rental_account_ids)
     rental_counted = any(a.counted and a.account_id in rental_ids for a in reserve.accounts)
 
     walked: GoalProjection | None = None
@@ -646,7 +725,7 @@ def plan_parts(
         projection = NetWorthProjection(todos=[_no_scenario_todo()])
     elif refused := [t for t in flat_todos if t.code is HealthTodoCode.SCENARIO_CHECK]:
         projection = NetWorthProjection(todos=refused)
-    elif run is not None and _incomplete(again := net_worth(conn, month_end)):
+    elif run is not None and _incomplete(again := _net_worth(inputs, month_end)):
         projection = NetWorthProjection(todos=[_incomplete_run_todo(month_end, again)])
     else:
         start = projection_start(month_end, run)
@@ -697,7 +776,7 @@ def plan_parts(
                     ).investable
                 ),
             ),
-            "proposed_one_offs": proposed_refund(conn, today, levers),
+            "proposed_one_offs": proposed_refund(conn, today, levers, inputs),
             "projection": projection,
             "todos": todos,
         }

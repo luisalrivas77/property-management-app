@@ -674,10 +674,13 @@ def key_figures(
     balances: NetWorth,
     debt_figure: NetWorth | None,
     today: date,
+    balance_rows: Sequence[ReserveBalance] | None = None,
 ) -> KeyFigures:
     """The flow figures over the window's months, None below three closed months (D231):
     the savings rate (D235), the reserve from `balances` (D237), the debt figures from
-    `debt_figure` with the window's rental interest (D239) and the free cash (D244)."""
+    `debt_figure` with the window's rental interest (D239) and the free cash (D244).
+    `balance_rows`: `balances`' account balances as _reserve_balances reads them, when
+    the caller has them (services.plan_inputs keeps them, phase 10 §7.10 (b))."""
     if not win.enough:
         return KeyFigures(None, None, None, None)
     months = [reads[m].household for m in win.months]
@@ -694,7 +697,12 @@ def key_figures(
         )
     return KeyFigures(
         savings_rate=savings_rate(months),
-        reserve=reserve(_reserve_balances(conn, balances), months, levers, today=today),
+        reserve=reserve(
+            list(balance_rows) if balance_rows is not None else _reserve_balances(conn, balances),
+            months,
+            levers,
+            today=today,
+        ),
         debt=debt_figures,
         free_cash=_free_cash(months),
     )

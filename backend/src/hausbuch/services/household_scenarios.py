@@ -205,6 +205,7 @@ def check_levers(
     previous: Sequence[SpendingChange] = (),
     previous_overrides: Mapping[AllocationCategory, BudgetClass] | None = None,
     previous_goal: Goal | None = None,
+    account_kinds: Mapping[UUID, AccountKind] | None = None,
 ) -> dict[AllocationCategory, Decimal]:
     """The checks of a scenario's levers beyond HouseholdLevers' own (the module doc), for a
     new row and for the preview; returns the codes' means over today's window (§7.6 (2)).
@@ -215,8 +216,9 @@ def check_levers(
     nothing (§7.6 (1) amended). `previous_overrides`: the overrides counted as carried
     (`carried_overrides`); one carried unaltered is not refused (phase 10 D272 (2), as a
     carried spending change). `previous_goal`: the goal of that row; only a goal new or
-    altered against it is checked (phase 10 §7.9 (d))."""
-    _check_accounts(conn, levers)
+    altered against it is checked (phase 10 §7.9 (d)). `account_kinds`: every account's
+    kind, when the caller has them (the preview's kept reads, phase 10 §7.10 (b))."""
+    _check_accounts(conn, levers, account_kinds)
     _check_goal(levers, today, previous_goal)
     _check_budget_classes(levers, previous_overrides or {})
     if not levers.one_offs and not levers.spending_changes:
@@ -370,15 +372,23 @@ def _check_supersedes(conn: Connection, data: HouseholdScenarioCreate) -> Househ
     return old
 
 
-def _check_accounts(conn: Connection, levers: HouseholdLevers) -> None:
+def _check_accounts(
+    conn: Connection,
+    levers: HouseholdLevers,
+    account_kinds: Mapping[UUID, AccountKind] | None = None,
+) -> None:
     named = levers.reserve_accounts.added + levers.reserve_accounts.removed
     if not named:
         return
     acc = account_table.c
-    kinds = {
-        r.id: AccountKind(r.kind)
-        for r in conn.execute(select(acc.id, acc.kind).where(acc.id.in_(named)))
-    }
+    kinds = (
+        {
+            r.id: AccountKind(r.kind)
+            for r in conn.execute(select(acc.id, acc.kind).where(acc.id.in_(named)))
+        }
+        if account_kinds is None
+        else account_kinds
+    )
     for account_id in named:
         if account_id not in kinds:
             raise NotFoundError(EntityType.ACCOUNT, account_id)

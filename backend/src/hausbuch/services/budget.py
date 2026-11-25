@@ -19,15 +19,17 @@ from hausbuch.rules.budget.references import references
 from hausbuch.schemas.budget import BudgetView
 from hausbuch.schemas.plan import HouseholdLevers
 
-from .health import _window, ended_months, read_months
+from .health import _window
 from .plan import _scenario
+from .plan_inputs import PlanInputs
 
 
 def household_budget(conn: Connection, today: date, scenario_id: UUID | None = None) -> BudgetView:
     """The Budget on `today` (Berlin) for the scenario's levers; see the module doc."""
-    row = _scenario(conn, scenario_id)
+    inputs = PlanInputs(conn, today)  # the months' reads, kept (phase 10 §7.10 (b))
+    row = _scenario(conn, scenario_id, inputs)
     levers = HouseholdLevers() if row is None else row.levers
-    reads = read_months(conn, ended_months(today), today)
+    reads = inputs.ended_reads()
     win = _window(reads)
     window_reads = [reads[m] for m in win.months]
     return budget(
