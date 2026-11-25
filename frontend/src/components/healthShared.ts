@@ -315,7 +315,12 @@ export function fillLevers(levers: HouseholdLevers | null | undefined): Househol
     plan_overrides: levers?.plan_overrides ?? [],
     income_changes: levers?.income_changes ?? [],
     one_offs: levers?.one_offs ?? [],
-    value_change: { depot: levers?.value_change?.depot ?? null, crypto: levers?.value_change?.crypto ?? null },
+    value_change: {
+      depot: levers?.value_change?.depot ?? null,
+      crypto: levers?.value_change?.crypto ?? null,
+      // Phase 10 §7.11 (D304): the reserve's yearly rate, kept on every save (no screen sets it yet).
+      reserve: levers?.value_change?.reserve ?? null,
+    },
     net_worth_years: levers?.net_worth_years ?? 10,
     bands: levers?.bands ?? [],
     // D263: kept on every save, from Übersicht's limits too; mean_at_save is the server's.
@@ -335,6 +340,9 @@ export function fillLevers(levers: HouseholdLevers | null | undefined): Househol
     // them would drop the goal).
     goal: levers?.goal ?? null,
     goal_choice: levers?.goal_choice ?? null,
+    // Phase 10 §7.11 (a) 2 (D301): the household's investment split, kept on every save (no
+    // screen sets it yet; a save without it would drop it).
+    investment_split: levers?.investment_split ?? null,
     // Every key, so a lever added to the schema and not carried here fails the typecheck instead
     // of being dropped by a save.
   } satisfies Required<HouseholdLevers>;
