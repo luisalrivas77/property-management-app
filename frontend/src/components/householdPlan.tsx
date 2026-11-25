@@ -2,7 +2,7 @@
 
 // The household plan in its places since phase 10 wave 3 (a) (§7.9 (a), D288; mockups 19b,
 // 19c): Planung left the menu, and what its five sections showed now sits where it is used.
-// Haushalt › Budget is components/planningBudget.tsx with „Was mit dem Rest passiert“ at its foot
+// Haushalt › Budget is components/planningBudget.tsx with „Was übrig bleibt“ at its foot
 // (what Planung › Anlegen was: free cash, the buffer, „Anlegbar pro Monat“, the savings plans,
 // „So entsteht die Zahl“, and the AI explanation behind „Erklärung“); Haushalt › Reserve is the
 // reserve, its target, its accounts and the paths to it; the net worth on typed rates (what
@@ -343,7 +343,7 @@ export function PlanProvider({
     data && enough ? draftChanges(fillLevers(data.plan.levers), draft, t, f.short, f.percentValue, defaultClasses(data.budget)) : [];
   const dirty = changes.length > 0;
   // D263: every draft goes through the preview while a member types; each place shows its
-  // figures from it (D288), the Budget's „Mit eurem Plan“ too.
+  // figures from it (D288).
   const preview = usePlanPreview(enough ? data.plan : NO_PLAN, enough ? draft : EMPTY_LEVERS, dirty);
   const setDraft: SetDraft = (update) => setDraftState((previous) => ({ levers: update(resolveDraft(previous, data?.plan)) }));
   const invalid = spendingInvalid;
@@ -368,7 +368,6 @@ export function PlanProvider({
   let panel: ReactNode = null;
   if (data && enough) {
     const { plan } = data;
-    const closedMonths = data.health.window.months ?? [];
 
     const save = async () => {
       setBusy(true);
@@ -555,12 +554,8 @@ export function PlanProvider({
           key={`${budgetClass.id}-${epoch}`}
           lineKey={budgetClass.id}
           budget={data.budget}
-          plan={plan}
-          windowMonths={closedMonths}
-          preview={preview}
           draft={draft}
           setDraft={setDraft}
-          onValidity={setSpendingInvalid}
           onClose={budgetClass.close}
           onChanged={state.reload}
           footer={dirty ? saveBar : null}

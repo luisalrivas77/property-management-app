@@ -248,12 +248,7 @@
   margin: 0;
 }
 
-.budget-with-plan {
-  padding-top: 8px;
-  border-top: 1px solid var(--divider);
-}
-
-/* --- „Was mit dem Rest passiert“ (Haushalt › Budget's foot, mockup 19b) --- */
+/* --- „Was übrig bleibt“ (Haushalt › Budget's foot, mockup 19h; „Was mit dem Rest passiert“ in 19b) --- */
 
 .planning-rest li > span:first-child {
   min-width: 0;

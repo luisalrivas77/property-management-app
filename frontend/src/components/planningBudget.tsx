@@ -7,7 +7,9 @@
 // target is saved; then green when met, amber when missed, never red (D274). The published
 // splits are reference points with their sources: one tap fills only the empty fields of the
 // goals form, never the housing target, and stores nothing (D275). A tapped line opens in the
-// detail panel with its codes, their „geplant“ fields (D277) and the need/want switch.
+// detail panel with its codes, their fixed payments (D300) and the need/want switch; a planned
+// amount is typed on Haushalt › Durchspielen since §7.10 (a) (D299), which the panel links to.
+import Link from "next/link";
 import { type FormEvent, type ReactNode, useId, useState } from "react";
 
 import type { components } from "@/api/types";
@@ -22,13 +24,11 @@ import { FixedPayments } from "./householdRecurring";
 import {
   fillLevers,
   type HouseholdLevers,
-  type HouseholdPlan,
   type HouseholdScenario,
   saveDefaultScenario,
 } from "./healthShared";
 import { ALLOCATION_CATEGORY } from "./labels";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
-import { type PlanPreview, SpendingPlaySection } from "./spendingPlay";
 
 export type BudgetView = components["schemas"]["BudgetView"];
 type BudgetLine = components["schemas"]["BudgetLine"];
@@ -259,24 +259,18 @@ function lineSub(line: BudgetLine, t: T): string {
 export function BudgetClassPanel({
   lineKey,
   budget,
-  plan,
-  windowMonths,
-  preview,
   draft,
   setDraft,
-  onValidity,
   onClose,
   onChanged,
   footer,
 }: {
   lineKey: string;
   budget: BudgetView;
-  plan: HouseholdPlan;
-  windowMonths: readonly string[];
-  preview: PlanPreview;
+  /** The provider's draft: only the class moves (`budget_class_overrides`) are typed here; a
+   * planned amount is typed on Haushalt › Durchspielen since §7.10 (a) (D299). */
   draft: HouseholdLevers;
   setDraft: SetDraft;
-  onValidity: (invalid: boolean) => void;
   onClose: () => void;
   /** Reads the plan, the Budget and the key figures again after an answer on a fixed payment. */
   onChanged: () => void;
@@ -289,10 +283,6 @@ export function BudgetClassPanel({
   const line = lineKey === "one_off" ? budget.one_off : (budget.lines ?? []).find((l) => l.key === lineKey);
   if (!line) return null;
   const codes = line.codes ?? [];
-  const playable = new Set<string>(codes.map((code) => code.category));
-  const inPlay = new Set<string>(
-    (plan.spending_play?.groups ?? []).flatMap((group) => group.rows.filter((row) => playable.has(row.code)).map((row) => row.code)),
-  );
   const overrides = draft.budget_class_overrides ?? {};
   const switchable = line.key === "need" || line.key === "want";
   const months = budget.window.months ?? [];
@@ -327,10 +317,6 @@ export function BudgetClassPanel({
     );
   };
 
-  const segments = preview.withChanges.spending_play?.rates ?? [];
-  const planned = (draft.spending_changes ?? []).some((change) => playable.has(change.code));
-  const last = (plan.months ?? []).map((m) => m.month).at(-1);
-
   return (
     <DetailPanel title={lineLabel(t, line.key)} backLabel={t.back} onClose={onClose}>
       <div className="stack">
@@ -362,57 +348,27 @@ export function BudgetClassPanel({
           ) : (
             <>
               {line.key !== "one_off" ? <p className="muted">{t.classIntro(f.monthRange(months))}</p> : null}
-              {line.key !== "one_off" ? (
-                <SpendingPlaySection
-                  saved={plan}
-                  windowMonths={windowMonths}
-                  preview={preview}
-                  draft={draft}
-                  setDraft={setDraft}
-                  onValidity={onValidity}
-                  only={inPlay}
-                  extra={(category) => classSwitch(category)}
-                />
-              ) : null}
-              {codes.some((code) => !inPlay.has(code.category) || line.key === "one_off") ? (
-                <ul className="budget-codes">
-                  {codes
-                    .filter((code) => !inPlay.has(code.category) || line.key === "one_off")
-                    .map((code) => (
-                      <li key={code.category}>
-                        <span>
-                          {categoryName(code.category)}
-                          {classSwitch(code.category)}
-                        </span>
-                        <span className="num">{f.euro(code.monthly)}</span>
-                      </li>
-                    ))}
-                </ul>
-              ) : null}
+              {/* Every code with its mean and, in Notwendiges and Wünsche, its class switch (19h
+                  frame 2); a planned amount is typed on Durchspielen (§7.10 (a), D299), so this
+                  panel moves no figure before „Als Plan behalten“. */}
+              <ul className="budget-codes">
+                {codes.map((code) => (
+                  <li key={code.category}>
+                    <span>
+                      {categoryName(code.category)}
+                      {classSwitch(code.category)}
+                    </span>
+                    <span className="num">{f.euro(code.monthly)}</span>
+                  </li>
+                ))}
+              </ul>
             </>
           )
         ) : null}
         {switchable ? (
-          <section className="stack budget-with-plan" aria-label={t.withPlan}>
-            <h3>{t.withPlan}</h3>
-            {planned && segments.length > 0 ? (
-              <>
-                <ul className="planning-change-list">
-                  {segments.map((segment) => (
-                    <li key={segment.from_month}>
-                      {t.withPlanRate(
-                        f.ratio(segment.rate),
-                        segment.to_month === last ? t.from(f.month(segment.from_month)) : f.monthRange([segment.from_month, segment.to_month]),
-                      )}
-                    </li>
-                  ))}
-                </ul>
-                <p className="muted">{t.withPlanGap}</p>
-              </>
-            ) : (
-              <p className="muted">{t.withPlanNone}</p>
-            )}
-          </section>
+          <p>
+            <Link href="/household?tab=durchspielen">{m.playLink} ›</Link>
+          </p>
         ) : null}
         {footer}
       </div>

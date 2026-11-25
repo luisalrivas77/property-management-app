@@ -41,6 +41,8 @@ const de = {
   housingTarget: (percent: string) => `Ziel höchstens ${percent}`,
   // „Was übrig bleibt“ (19h frame 1): its header link
   howCalculated: "Wie gerechnet",
+  // the class panel: a planned amount is typed on Durchspielen (§7.10 (a), D299)
+  playLink: "Ausgaben durchspielen",
   // „Was als einmalig zählt“ (19h frame 3)
   oneOffTitle: "Was als einmalig zählt",
   oneOffIntro:
@@ -96,6 +98,7 @@ const en: typeof de = {
   housingLine: (share, amount) => `Housing: ${share} of income, ${amount} a month`,
   housingTarget: (percent) => `Target at most ${percent}`,
   howCalculated: "How it is calculated",
+  playLink: "Try changes under What if",
   oneOffTitle: "What counts as one-off",
   oneOffIntro:
     "One-off is only what you do not spend every year. It does not count in your budget or in the average. Everything else, travel too, belongs in the budget.",
