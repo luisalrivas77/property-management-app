@@ -389,3 +389,33 @@ def test_the_probe_keeps_nothing_without_check_kept(world, dbname):
     finally:
         engine.dispose()
     assert not any(t.hit for one in passes for t in one.timings)
+
+
+def test_plan_times_the_plan_reads_and_the_fixed_previews_and_writes_nothing(world, dbname):
+    """Phase 10 §7.10 (b): --plan adds Haushalt's plan, budget and goal reads and, once a month
+    is closed, four fixed what-if previews, so a speed-up of the preview is digest-proven like
+    the page. Every one answers 200 and nothing is written."""
+    before = _events(world)
+    engine = perf_probe.read_only_engine(_owner_url(dbname))
+    try:
+        passes = perf_probe.run_probe(
+            engine, world.ws, repeat=2, plan=True, digest=True, out=lambda _: None
+        )
+    finally:
+        engine.dispose()
+    last = {t.label: t for t in passes[-1].timings}
+    for label in ("/api/household-plan", "/api/household-budget", "/api/household-goal"):
+        assert last[label].status == 200, label
+        assert last[label].digest is not None
+    previews = [t for t in passes[-1].timings if t.label.startswith("POST ")]
+    assert all(t.status == 200 for t in previews), [(t.label, t.status) for t in previews]
+    assert _events(world) == before
+    # Without --plan none of them is requested.
+    engine = perf_probe.read_only_engine(_owner_url(dbname))
+    try:
+        plain = perf_probe.run_probe(engine, world.ws, repeat=1, out=lambda _: None)
+    finally:
+        engine.dispose()
+    labels = {t.label for t in plain[0].timings}
+    assert "/api/household-plan" not in labels
+    assert not any(label.startswith("POST ") for label in labels)
