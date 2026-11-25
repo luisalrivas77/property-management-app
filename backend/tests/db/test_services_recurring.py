@@ -219,11 +219,13 @@ def test_a_one_off_mark_moves_the_four_places_and_keeps_the_stored_month(world, 
     differences = world.query(health.health, TODAY).differences
     assert HouseholdGroup.MOBILITY not in {g.group for g in differences.groups}
 
-    # the stored month stays as stored, and shows beside the month on read
+    # the stored month stays as stored; a mark changes none of the figures the panel compares
+    # (income, spending, saved, the month's own rate), so it shows no stored copy (review of
+    # phase 10 §7.12: „seit dem Abschluss geändert“ only where a shown figure changed)
     with workspace_transaction(world.engine, world.ws) as conn:
         assert conn.execute(select(health_snapshot_table)).all() == stored
     (view,) = world.query(health.health_months, "2027-03", "2027-03", TODAY)
-    assert view.stored is not None and view.stored.one_off_spending == 0
+    assert view.stored is None and view.household.one_off_spending == Decimal("870.00")
 
     # the newest answer counts
     world.cmd(

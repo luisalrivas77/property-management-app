@@ -948,7 +948,7 @@ def health_months(conn: Connection, first: str, last: str, today: date) -> list[
         held = None
         if snapshot is not None:
             held = snapshot.figures.month
-            if held == read.household.model_copy(update={"sources": {}}):
+            if _same_shown(held, read.household):
                 held = None
         end = month_bounds(month)[1]
         todo = None
@@ -969,6 +969,17 @@ def health_months(conn: Connection, first: str, last: str, today: date) -> list[
             )
         )
     return out
+
+
+# What „seit dem Abschluss geändert“ compares: the month's own figures the panel shows, whose
+# meaning no one-off switch changes (phase 10 D307, D308). The one-off and regular spending and
+# the free cash move with the codes counted as one-off, which a household may switch after a
+# month was stored; health-check compares those under the switches of their day.
+_SHOWN = ("income", "spending", "saved", "savings_rate")
+
+
+def _same_shown(stored: HouseholdMonth, read: HouseholdMonth) -> bool:
+    return all(getattr(stored, name) == getattr(read, name) for name in _SHOWN)
 
 
 def _month_end_todo(end: date) -> HealthTodo:

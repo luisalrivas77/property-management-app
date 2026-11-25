@@ -635,5 +635,56 @@ def test_health_check_over_months_stored_before_d308_names_the_expected_figures(
     assert world.query(health.health, TODAY).one_offs_left_out_since is None
     result = world.query(health.health_check, "2027-01", "2027-03", TODAY)
     moved = {(r.month, r.figure) for r in result.rows if not r.equal}
-    print("MOVED", sorted(moved))
+    assert moved == {
+        (month, figure)
+        for month in ("2027-01", "2027-02", "2027-03")
+        for figure in ("savings_rate_window", "reserve_months", "free_cash")
+    }
     assert all(i.agrees for i in result.inputs)
+
+
+def test_a_one_off_switch_alone_does_not_show_a_stored_month_as_changed(world):
+    """GET /health/months (review of phase 10 §7.12): „seit dem Abschluss geändert“ compares
+    the month's income, spending, saved and own savings rate only, whose meaning no one-off
+    switch changes. January is stored while Elektronik counted as regular (the code set before
+    D307), read after that scenario is withdrawn with Elektronik one-off: no stored copy. A
+    switch saved after storing (Lebensmittel one-off) shows none either; a line booked later
+    still does."""
+    _electronics_in_january(world)
+    world.now = NOW + timedelta(days=1)
+    row = world.cmd(
+        household_scenarios.create_scenario,
+        HouseholdScenarioCreate(
+            name="Basis",
+            is_default=True,
+            levers=HouseholdLevers(one_off_overrides={C.HH_ELECTRONICS: False}),
+        ),
+    )
+    world.cmd(health.store_snapshot, "2027-01")
+    world.now = NOW + timedelta(days=2)
+    world.cmd(household_scenarios.withdraw_scenario, row.id)
+    [january] = world.query(health.health_months, "2027-01", "2027-01", TODAY)
+    assert january.snapshot_id is not None
+    assert january.household.one_off_spending == Decimal("10.00")  # read: Elektronik one-off
+    assert january.stored is None
+    # stored again under today's switches (Elektronik one-off), then switched to regular
+    world.cmd(health.store_snapshot, "2027-01")
+    world.now = NOW + timedelta(days=3)
+    world.cmd(
+        household_scenarios.create_scenario,
+        HouseholdScenarioCreate(
+            name="Basis",
+            is_default=True,
+            levers=HouseholdLevers(one_off_overrides={C.HH_ELECTRONICS: False}),
+        ),
+    )
+    [january] = world.query(health.health_months, "2027-01", "2027-01", TODAY)
+    assert january.household.one_off_spending == 0
+    assert january.stored is None
+    # a line booked later still shows the stored month beside the month on read
+    _booked(world, date(2027, 1, 20), "-100.00", C.INSURANCE)
+    [january] = world.query(health.health_months, "2027-01", "2027-01", TODAY)
+    assert january.stored is not None
+    assert january.stored.spending != january.household.spending or (
+        january.stored.rental_result != january.household.rental_result
+    )
