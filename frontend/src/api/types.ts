@@ -8660,6 +8660,43 @@ export interface components {
             set_on: string;
         };
         /**
+         * GoalAssumption
+         * @description An assumption the walk makes that the household can replace (D301 (a) 5): a property
+         *     without a default scenario is kept at today's value.
+         */
+        GoalAssumption: {
+            /** Text */
+            text: string;
+            /** Action */
+            action: string;
+            /** Href */
+            href: string;
+        };
+        /**
+         * GoalBalanced
+         * @description „Ausgewogener Weg“ (D302), shown first whenever the walk without change misses: half
+         *     of the extra cut from the wants by their means, each want at most to half its mean or, with
+         *     the household's wants target, to that share of the income; `saving_extra` the smallest
+         *     whole euro a month that with these cuts reaches the target (None above the mean income);
+         *     `moved_to_saving` what the limit left open and the saving takes on.
+         */
+        GoalBalanced: {
+            /** Budgets */
+            budgets?: components["schemas"]["GoalBudget"][];
+            /** Cut */
+            cut: string;
+            /** Saving Extra */
+            saving_extra: string | null;
+            /** Moved To Saving */
+            moved_to_saving: string;
+            /** Saving */
+            saving: string | null;
+            /** Closes */
+            closes: boolean;
+            /** Spending Changes */
+            spending_changes?: components["schemas"]["SpendingChange"][];
+        };
+        /**
          * GoalBudget
          * @description One category of a spending scenario: its measured mean and its budget (D272's class).
          */
@@ -8698,6 +8735,35 @@ export interface components {
          * @enum {string}
          */
         GoalKind: "net_worth" | "saved_sum" | "reserve_months";
+        /**
+         * GoalMoreReturn
+         * @description Route 3 „Mehr Rendite“: not available yet; `reason` says why.
+         */
+        GoalMoreReturn: {
+            /**
+             * Available
+             * @default false
+             */
+            available: boolean;
+            reason: components["schemas"]["GoalRouteReason"];
+        };
+        /**
+         * GoalMoreSaving
+         * @description Route 2 „Mehr anlegen“ (D302): the smallest whole-euro `extra` a month from next month
+         *     to the due month that reaches the target on the walk; `noetig` = Heute + extra, None when
+         *     the extra is above the mean income. It never decides the word.
+         */
+        GoalMoreSaving: {
+            /** Extra */
+            extra: string;
+            /** Noetig */
+            noetig: string | null;
+        };
+        /**
+         * GoalRouteReason
+         * @enum {string}
+         */
+        GoalRouteReason: "not_built" | "generic_mode";
         /**
          * GoalScenario
          * @description A spending scenario (§7.9 (d) 3). `cut` is what it takes off the spending each month
@@ -8741,10 +8807,12 @@ export interface components {
         };
         /**
          * GoalWord
-         * @description The one word Übersicht shows beside the financial-health verdict (§7.9 (d) 5).
+         * @description The one word Übersicht shows beside the financial-health verdict (§7.9 (d) 5; D303
+         *     since 25 Nov 2026, „Dahinter“ and „So nicht erreichbar“ until then). Computed on read,
+         *     never stored.
          * @enum {string}
          */
-        GoalWord: "none" | "on_track" | "behind" | "unreachable";
+        GoalWord: "none" | "on_track" | "feasible" | "ambitious" | "hardly";
         /**
          * GroupDifference
          * @description A spending group whose month differs from its own mean over the closed months before
@@ -9399,7 +9467,12 @@ export interface components {
             used_up?: string | null;
             /** Scenarios */
             scenarios?: components["schemas"]["GoalScenario"][];
+            more_saving?: components["schemas"]["GoalMoreSaving"] | null;
+            more_return?: components["schemas"]["GoalMoreReturn"] | null;
+            balanced?: components["schemas"]["GoalBalanced"] | null;
             unreachable?: components["schemas"]["GoalUnreachable"] | null;
+            /** Assumptions */
+            assumptions?: components["schemas"]["GoalAssumption"][];
             /** Todos */
             todos?: components["schemas"]["HealthTodo"][];
         };
@@ -9541,6 +9614,8 @@ export interface components {
             investment_split?: components["schemas"]["EffectiveSplit"] | null;
             investment_split_prefill?: components["schemas"]["SplitPrefill"] | null;
             not_invested?: components["schemas"]["NotInvested"] | null;
+            /** Above Target */
+            above_target?: string | null;
             /** Todos */
             todos?: components["schemas"]["HealthTodo"][];
         };

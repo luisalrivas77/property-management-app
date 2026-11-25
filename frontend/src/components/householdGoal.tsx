@@ -28,7 +28,7 @@ import { type Translation, useT } from "@/i18n";
 import { goalText } from "@/i18n/goal";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { detailHref } from "@/lib/detailHash";
-import { HOUSEHOLD_PLAY, HOUSEHOLD_RESERVE, propertyPlanningHref } from "@/lib/planningRoutes";
+import { HOUSEHOLD_PLAY, HOUSEHOLD_RESERVE } from "@/lib/planningRoutes";
 
 import { DetailPanel, useDetail } from "./DetailPanel";
 import { todayIso } from "./format";
@@ -78,7 +78,8 @@ async function loadNoGoal(): Promise<GoalData | null> {
   return null;
 }
 
-const WORD_MARK: Record<GoalWord, Mark> = { none: "none", on_track: "green", behind: "amber", unreachable: "red" };
+// D303: „Ehrgeizig“ comes only through route 3, which is not built yet.
+const WORD_MARK: Record<GoalWord, Mark> = { none: "none", on_track: "green", feasible: "amber", ambitious: "amber", hardly: "red" };
 
 const SCENARIO_ORDER: GoalSpending[] = ["wants_only", "all_equal"];
 
@@ -90,10 +91,12 @@ export function goalWordText(t: GT, goal: HouseholdGoal): string {
   switch (goal.word) {
     case "on_track":
       return t.onTrack;
-    case "behind":
-      return t.behind;
-    case "unreachable":
-      return t.unreachable;
+    case "feasible":
+      return t.feasible;
+    case "ambitious":
+      return t.ambitious;
+    case "hardly":
+      return t.hardly;
     case "none":
       return t.noGoal;
     default:
@@ -229,13 +232,13 @@ export function GoalSummary({ goal, formHref, onChanged }: { goal: HouseholdGoal
           ) : null}
         </div>
       ) : null}
-      {goal.word === "on_track" || goal.word === "behind" || goal.word === "unreachable" ? (
+      {goal.word != null && goal.word !== "none" ? (
         <p>{goal.reached ? t.reachedAsIs(p.month(goal.reached)) : t.notReachedAsIs}</p>
       ) : null}
       {budgetName && goal.word != null && goal.word !== "none" ? (
         <p>{goal.reached_with_budget ? t.reachedWithBudget(budgetName, p.month(goal.reached_with_budget)) : t.notReachedWithBudget(budgetName)}</p>
       ) : null}
-      {goal.word === "unreachable" && goal.unreachable ? (
+      {goal.word === "hardly" && goal.unreachable ? (
         <div className="notice notice-warn goal-unreachable">
           <p>
             <strong>{t.unreachableTitle}</strong>
@@ -245,6 +248,12 @@ export function GoalSummary({ goal, formHref, onChanged }: { goal: HouseholdGoal
           <p>{t.unreachableWhat}</p>
         </div>
       ) : null}
+      {(goal.assumptions ?? []).map((a) => (
+        <p key={a.text} className="muted goal-assumption">
+          {a.text}{" "}
+          <Link href={a.href}>{a.action}</Link>
+        </p>
+      ))}
       <GoalIssue goal={goal} formHref={formHref} onChanged={onChanged} />
     </div>
   );
@@ -282,9 +291,6 @@ function GoalIssue({ goal, formHref, onChanged }: { goal: HouseholdGoal; formHre
         <div className="stack goal-issue">
           <p>{t.issueBeyond}</p>
           <p className="row">
-            <Link href={propertyPlanningHref()} className="button-link secondary">
-              {t.issueBeyondAction}
-            </Link>
             <FormLink href={formHref} className="button-link secondary">
               {t.changeGoal}
             </FormLink>

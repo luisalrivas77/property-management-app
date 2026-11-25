@@ -93,10 +93,10 @@ const SCENARIOS: GoalScenario[] = [
   },
 ];
 
-function behind(goal: Goal, choice: HouseholdGoal["choice"]): HouseholdGoal {
+function feasible(goal: Goal, choice: HouseholdGoal["choice"]): HouseholdGoal {
   return {
     ...onTrack(goal),
-    word: "behind",
+    word: "feasible",
     heute: "1100.00",
     noetig: "1400.00",
     reached: monthsAhead(30),
@@ -293,13 +293,13 @@ test("a spending scenario is adopted as the budget after the in-page confirmatio
     spending_changes: [],
   };
   const saved = scenario(levers,"00000000-0000-4000-8000-0000000b0001", null);
-  const { posted } = await goalApi(page, { goal: behind(goal, null), history: [saved] }, (body) =>
-    behind(body.levers.goal as Goal, body.levers.goal_choice ?? null),
+  const { posted } = await goalApi(page, { goal: feasible(goal, null), history: [saved] }, (body) =>
+    feasible(body.levers.goal as Goal, body.levers.goal_choice ?? null),
   );
 
   await page.goto("/household?tab=ziel");
   const card = page.getByRole("region", { name: "Euer Ziel" });
-  await expect(card).toContainText("Dahinter");
+  await expect(card).toContainText("Machbar");
   const scenarios = page.getByRole("region", { name: "Ausgaben-Szenarien" });
   await expect(scenarios.getByRole("link", { name: /^Nur Wünsche kürzen/ })).toContainText("schließt die Lücke");
   await expect(scenarios.getByRole("link", { name: /^Alles gleich kürzen/ })).toContainText("reicht nicht");
@@ -329,7 +329,7 @@ test("a spending scenario is adopted as the budget after the in-page confirmatio
 test("the goal at phone width, light and dark", async ({ page, signedIn }) => {
   void signedIn;
   const goal: Goal = { kind: "net_worth", target: "500000.00", due_month: monthsAhead(24), set_on: TODAY };
-  await goalApi(page, { goal: behind(goal, null) }, () => behind(goal, null));
+  await goalApi(page, { goal: feasible(goal, null) }, () => feasible(goal, null));
   await phoneScreens(page, "goal-tab", async () => {
     await page.goto("/household?tab=ziel");
     await expect(page.getByRole("region", { name: "Ausgaben-Szenarien" })).toBeVisible();
@@ -344,7 +344,7 @@ test("the goal at phone width, light and dark", async ({ page, signedIn }) => {
   });
   await phoneScreens(page, "goal-tile", async () => {
     await page.goto("/");
-    await expect(page.getByRole("region", { name: "Auf einen Blick" }).getByRole("link", { name: /Euer Ziel/ })).toContainText("Dahinter");
+    await expect(page.getByRole("region", { name: "Auf einen Blick" }).getByRole("link", { name: /Euer Ziel/ })).toContainText("Machbar");
   });
 });
 

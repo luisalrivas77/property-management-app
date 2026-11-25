@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from hausbuch import i18n
 from hausbuch.schemas.chain import WalletWaiting
+from hausbuch.schemas.goal import GoalAssumption
 from hausbuch.schemas.health import HealthTodo
 from hausbuch.schemas.net_worth import NetWorthTodo
 from hausbuch.services.category_texts import english_label
@@ -390,6 +391,11 @@ PATTERNS = i18n.Patterns(
             "On “{label}”, {n} transactions await your confirmation; together they do not"
             " change the holding.",
         ),
+        # rules/goal/goal.py: the walk's assumption for a property kept without a scenario.
+        (
+            "Annahme: Wohnung wird behalten, Wert unverändert.",
+            "Assumption: the flat is kept, its value unchanged.",
+        ),
     ],
     converters={
         "todo": _nested,
@@ -413,6 +419,7 @@ ACTIONS = i18n.Patterns(
         ("Ampel-Grenzen festlegen", "Set traffic-light limits"),
         ("Monatsabschluss festhalten", "Record month-end"),
         ("Szenario für die Wohnung anlegen", "Create a scenario for the flat"),
+        ("Szenario anlegen", "Create scenario"),
         ("Annahme eintragen", "Enter assumption"),
         ("Rendite eintragen", "Enter return"),
         ("1 Zahlung einordnen", "Categorise 1 payment"),
@@ -431,7 +438,7 @@ ACTIONS = i18n.Patterns(
     ],
 )
 
-_TODO_TYPES = (HealthTodo, NetWorthTodo, WalletWaiting)
+_TODO_TYPES = (HealthTodo, NetWorthTodo, WalletWaiting, GoalAssumption)
 
 
 def _swap(todo: BaseModel) -> BaseModel:

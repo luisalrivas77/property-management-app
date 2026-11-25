@@ -12,6 +12,7 @@ import pytest
 from hausbuch import i18n
 from hausbuch.rules import investment_split
 from hausbuch.rules.budget import budget
+from hausbuch.rules.goal import goal as goal_rules
 from hausbuch.rules.health import bands, figures, window
 from hausbuch.rules.plan import projection
 from hausbuch.schemas.enums import AccountKind
@@ -189,6 +190,19 @@ def test_every_producer_has_english(todo):
     assert _german_free(swapped.text), swapped.text
     assert _german_free(swapped.action), swapped.action
     assert swapped.href == todo.href and swapped.code == todo.code
+
+
+def test_the_goals_assumption_has_english():
+    """Phase 10 D301 (a) 5: the goal's „Annahme: Wohnung wird behalten …“ and its button."""
+    kept = projection.FlatScenario(sale_year=None, kept_value=Decimal("300000.00"))
+    [assumption] = goal_rules._assumptions(SimpleNamespace(flats={"flat": kept}))
+    with i18n.use(i18n.EN):
+        swapped = todo_texts.english(assumption)
+    assert (swapped.text, swapped.action) == (
+        "Assumption: the flat is kept, its value unchanged.",
+        "Create scenario",
+    )
+    assert swapped.href == assumption.href
 
 
 def test_formats_follow_english():
