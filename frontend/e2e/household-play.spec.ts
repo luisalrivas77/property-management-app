@@ -13,6 +13,7 @@
 import type { Page, Route } from "@playwright/test";
 
 import type { components } from "../src/api/types";
+import { effectPeriods, mergePeriods, NO_PLAY, type PlayChanges } from "../src/components/playDraft";
 import { expect, test } from "./support";
 
 type BudgetView = components["schemas"]["BudgetView"];
@@ -57,21 +58,35 @@ const LEVERS: HouseholdLevers = {
 };
 
 // The plan for some levers: income 5,200 € plus the income changes, spending 3,900 € with
-// Restaurant at 200 € unless a change plans it; „Anlegbar“ is 90 % of what is left.
-function figures(levers: HouseholdLevers) {
-  const income = 5200 + (levers.income_changes ?? []).reduce((sum, change) => sum + Number(change.monthly_net), 0);
-  const restaurant = (levers.spending_changes ?? []).find((change) => change.code === "hh_restaurant");
+// Restaurant at 200 € unless a change plans it; „Anlegbar“ is 90 % of what is left. With a
+// month, only the changes in force in that month count (the stretches of „Was das bewirkt“).
+function figures(levers: HouseholdLevers, month?: string) {
+  const inForce = (change: { from_month: string; to_month?: string | null }) =>
+    month === undefined || (change.from_month <= month && (change.to_month == null || month <= change.to_month));
+  const income = 5200 + (levers.income_changes ?? []).filter(inForce).reduce((sum, change) => sum + Number(change.monthly_net), 0);
+  const restaurant = (levers.spending_changes ?? []).find((change) => change.code === "hh_restaurant" && inForce(change));
   const regular = 3900 + (restaurant?.monthly ? Number(restaurant.monthly) - 200 : 0);
   const left = income - regular;
   return { income, regular, left, investable: (left * 0.9).toFixed(2), rate: (left / income).toFixed(4) };
 }
 
+/** The stretches of the horizon that share their figures, as the server joins them. */
+function rates(levers: HouseholdLevers): SpendingPlay["rates"] {
+  const out: NonNullable<SpendingPlay["rates"]> = [];
+  for (const month of HORIZON) {
+    const { regular, investable, rate } = figures(levers, month);
+    const prev = out.at(-1);
+    if (prev && prev.rate === rate && prev.investable === investable) prev.to_month = month;
+    else out.push({ from_month: month, to_month: month, rate, regular_spending: regular.toFixed(2), investable });
+  }
+  return out;
+}
+
 function play(levers: HouseholdLevers): SpendingPlay {
-  const { regular, investable, rate } = figures(levers);
   return {
     mean_regular_spending: "3900.00",
     rate_regular_now: "0.2500",
-    rates: [{ from_month: FIRST, to_month: LAST, rate, regular_spending: regular.toFixed(2), investable }],
+    rates: rates(levers),
     addable: [],
     groups: [
       {
@@ -326,6 +341,96 @@ async function mockPlan(page: Page) {
 }
 
 const effect = (page: Page, key: string) => page.locator(`[data-effect="${key}"]`);
+
+// The stretches „Anlegbar pro Monat“ and „Sparquote“ show (playDraft.ts), as plain functions.
+const change = (from: string, to: string | null = null) => ({
+  code: "hh_restaurant" as const,
+  monthly: "100.00",
+  percent: null,
+  from_month: from,
+  to_month: to,
+  mean_at_save: null,
+});
+
+test("effectPeriods: a line where a row starts and one after it ends, from the earliest change", () => {
+  // Income Jan–Nov 2027 and a spending change from Jan 2027: Jan–Nov, then from Dec.
+  const both: PlayChanges = {
+    spending: { hh_restaurant: change("2027-01") },
+    incomeRow: { monthly: "5500", from: "2027-01", to: "2027-11" },
+  };
+  expect(effectPeriods(both, "2026-12", "2031-11")).toEqual([
+    { from: "2027-01", to: "2027-11" },
+    { from: "2027-12", to: null },
+  ]);
+  // No ends: one open period; nothing before the earliest change.
+  expect(effectPeriods({ spending: { hh_restaurant: change("2027-03") } }, "2026-12")).toEqual([{ from: "2027-03", to: null }]);
+  // A row that started before the first month counts from it; one that ended before it marks nothing.
+  expect(effectPeriods({ spending: { hh_restaurant: change("2026-06") } }, "2026-12")).toEqual([{ from: "2026-12", to: null }]);
+  expect(effectPeriods({ spending: { hh_restaurant: change("2026-06", "2026-08") } }, "2026-12")).toEqual([]);
+  // The month after an end past the horizon's last month marks nothing.
+  expect(effectPeriods({ spending: { hh_restaurant: change("2027-01", "2027-11") } }, "2026-12", "2027-11")).toEqual([
+    { from: "2027-01", to: null },
+  ]);
+  // No rows, or only a dropped saved change: no periods (the card shows one line).
+  expect(effectPeriods(NO_PLAY, "2026-12")).toEqual([]);
+  expect(effectPeriods({ spending: { hh_restaurant: null } }, "2026-12")).toEqual([]);
+  // The server's own stretch starts split a line only from the earliest change on.
+  expect(effectPeriods({ spending: { hh_restaurant: change("2027-03") } }, "2026-12", null, ["2026-12", "2027-01", "2027-06"])).toEqual([
+    { from: "2027-03", to: "2027-05" },
+    { from: "2027-06", to: null },
+  ]);
+  // Five rows with ends: every start and every month after an end, sorted.
+  const many: PlayChanges = {
+    spending: {
+      a: change("2027-01", "2027-02"),
+      b: change("2027-04", "2027-05"),
+      c: change("2027-07"),
+    },
+  };
+  expect(effectPeriods(many, "2026-12").map((period) => period.from)).toEqual(["2027-01", "2027-03", "2027-04", "2027-06", "2027-07"]);
+});
+
+test("mergePeriods: consecutive equal lines become one, an open end stays open", () => {
+  const periods = [
+    { from: "2027-01", to: "2027-02" },
+    { from: "2027-03", to: "2027-05" },
+    { from: "2027-06", to: "2027-06" },
+    { from: "2027-07", to: null },
+  ];
+  const values: Record<string, string> = { "2027-01": "a", "2027-03": "a", "2027-06": "b", "2027-07": "b" };
+  expect(mergePeriods(periods, (period) => ({ today: "x", with: values[period.from] }))).toEqual([
+    { period: { from: "2027-01", to: "2027-05" }, value: { today: "x", with: "a" } },
+    { period: { from: "2027-06", to: null }, value: { today: "x", with: "b" } },
+  ]);
+});
+
+test("an income change with an end shows its months and the months after it in „Was das bewirkt“", async ({ page, signedIn }) => {
+  void signedIn;
+  await mockPlan(page);
+  await page.goto("/household?tab=durchspielen");
+  const end = HORIZON[2] ?? "";
+  const after = HORIZON[3] ?? "";
+  await page.getByLabel("Netto im Monat: angenommen").fill("5500");
+  await page.getByLabel("Netto im Monat: bis").selectOption(end);
+  await page.getByRole("button", { name: "Wünsche" }).click();
+  await page.getByLabel("Geplant pro Monat: Restaurant").fill("100");
+
+  // FIRST … end: (5,500 − 3,800) × 0.9 = 1,530 €; from the month after: (5,200 − 3,800) × 0.9 = 1,260 €.
+  const lines = effect(page, "investable").getByRole("row");
+  await expect(lines).toHaveCount(2);
+  await expect(lines.nth(0).getByRole("cell")).toHaveText(["1.170 €", "1.530 €"]);
+  await expect(lines.nth(1).getByRole("cell")).toHaveText(["1.170 €", "1.260 €"]);
+  await expect(lines.nth(0).getByRole("rowheader")).toContainText("Anlegbar pro Monat");
+  await expect(lines.nth(0).getByRole("rowheader")).toContainText(" bis ");
+  await expect(lines.nth(1).getByRole("rowheader")).toHaveText(new RegExp(`^ab .*${after.slice(0, 4)}$`));
+  // The savings rate too: 1,700 ÷ 5,500 = 30.9 %, then 1,400 ÷ 5,200 = 26.9 %.
+  const rate = effect(page, "rate").getByRole("row");
+  await expect(rate).toHaveCount(2);
+  await expect(rate.nth(0).getByRole("cell").nth(1)).toHaveText("30,9 %");
+  await expect(rate.nth(1).getByRole("cell").nth(1)).toHaveText("26,9 %");
+  // The other rows keep one line.
+  await expect(effect(page, "reserve").getByRole("row")).toHaveCount(1);
+});
 
 test("a typed income and category move „Was das bewirkt“, and only „Als Plan behalten“ stores them", async ({ page, signedIn }) => {
   void signedIn;
