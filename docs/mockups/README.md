@@ -111,7 +111,7 @@ screen they redraw at 390 px.
 
 ## Layout overhaul (drafted 20 Nov 2026; menu and detail panels chosen, the rest open)
 
-**Nothing in this section is built, and only the five choices under „Chosen so far“ are agreed.** These are drafts for Luis to choose from:
+**Nothing in this section is built, and only the choices under „Chosen so far“ are agreed.** These are drafts for Luis to choose from:
 three design directions, each drawing the same four screens at phone width (390 px) and
 computer width (1440 px). The app keeps its current layout until he picks a direction (or a
 mix), and the choice is recorded in the Decisions table of `docs/ARCHITECTURE.md`. The colours,
@@ -160,6 +160,12 @@ Luis mixes the directions screen by screen („I want to mix. Let's go one by on
    until the household sets its own target, the published splits shown only „Zum Vergleich“ with their sources.
 
 The five choices are specced as phase 10 (`docs/phases/phase-10.md`, 20 Nov 2026, not built).
+6. **Cards, not text, everywhere in the app** (Luis, 25 Nov 2026: „Use of cards to display information in an easy
+   and digestable way. If text is needed to explain then move it to the side panel.“; „As a design choice for the whole app“).
+   A card holds a short title, one main number (or two or three small figures with one- or two-word labels) and at most one
+   short line; lists are rows with a label and a figure. Every explanation, assumption, rule or reason sits in the side panel
+   (choice 2) that opens when the card is tapped. Mockups 19f and 19i were redrawn this way on 25 Nov 2026; every later
+   mockup and screen follows it.
 
 ### The remaining screens (drawn and chosen 20 Nov 2026)
 
