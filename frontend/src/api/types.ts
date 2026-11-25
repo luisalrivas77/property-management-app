@@ -2540,10 +2540,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Household Payment One Offs */
+        get: operations["household_payment_one_offs_api_household_one_off_marks_get"];
         put?: never;
         /** Household One Off Mark */
         post: operations["household_one_off_mark_api_household_one_off_marks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/household/one-off-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Household One Off Codes */
+        get: operations["household_one_off_codes_api_household_one_off_codes_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6061,6 +6079,8 @@ export interface components {
             fixed?: components["schemas"]["BudgetFixedPayment"][] | null;
             /** Variable */
             variable?: string | null;
+            /** Fixed Monthly */
+            fixed_monthly?: string | null;
         };
         /**
          * BudgetLineKey
@@ -11233,6 +11253,34 @@ export interface components {
             source: components["schemas"]["OneOffSource"] | string;
         };
         /**
+         * OneOffCode
+         * @description One row of „Was als einmalig zählt“ (GET /household/one-off-codes, phase 10 §7.12 (a),
+         *     D307): a code the household may switch, whether the taxonomy counts it as one-off
+         *     (`default`) and whether it does under the default scenario's switches (`one_off`), and what
+         *     was paid in it in the calendar year `year` up to today (the confirmed private lines of
+         *     money out, the household month's codes), positive.
+         */
+        OneOffCode: {
+            category: components["schemas"]["AllocationCategory"];
+            /** Default */
+            default: boolean;
+            /** One Off */
+            one_off: boolean;
+            /** Year Total */
+            year_total: string;
+        };
+        /**
+         * OneOffCodes
+         * @description GET /household/one-off-codes: the one-off codes first (each listed, also at 0), then
+         *     every other switchable code with a payment this year, the largest sum first.
+         */
+        OneOffCodes: {
+            /** Year */
+            year: number;
+            /** Codes */
+            codes?: components["schemas"]["OneOffCode"][];
+        };
+        /**
          * OneOffMarkRequest
          * @description POST /household/one-off-marks: a person's answer on one confirmed private payment.
          */
@@ -11766,6 +11814,29 @@ export interface components {
             import_id: string;
             /** Payment Iban Masked */
             payment_iban_masked: string;
+        };
+        /**
+         * PaymentOneOff
+         * @description GET /household/one-off-marks?transaction_id= (phase 10 §7.12 (b), D307): one part of a
+         *     private payment that „Als einmalig markieren“ may mark, as of today (the parts POST
+         *     /household/one-off-marks accepts; a payment with none gets no button). `marked`: its newest
+         *     answer is `one_off`; `category_one_off`: its code counts as one-off under the default
+         *     scenario's switches, so it counts as one-off whatever its own answer and the panel shows
+         *     no button. What was paid, positive.
+         */
+        PaymentOneOff: {
+            /**
+             * Allocation Id
+             * Format: uuid
+             */
+            allocation_id: string;
+            category: components["schemas"]["AllocationCategory"];
+            /** Amount */
+            amount: string;
+            /** Marked */
+            marked: boolean;
+            /** Category One Off */
+            category_one_off: boolean;
         };
         /**
          * PaymentProofBody
@@ -22204,6 +22275,37 @@ export interface operations {
             };
         };
     };
+    household_payment_one_offs_api_household_one_off_marks_get: {
+        parameters: {
+            query: {
+                transaction_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentOneOff"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     household_one_off_mark_api_household_one_off_marks_post: {
         parameters: {
             query?: never;
@@ -22224,6 +22326,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SpendingMarkRecorded"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_one_off_codes_api_household_one_off_codes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OneOffCodes"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

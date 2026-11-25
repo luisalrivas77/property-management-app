@@ -6748,18 +6748,60 @@
       }
     },
     "/api/household/one-off-marks": {
+      "get": {
+        "summary": "Household Payment One Offs",
+        "operationId": "household_payment_one_offs_api_household_one_off_marks_get",
+        "parameters": [
+          {
+            "name": "transaction_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transaction Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PaymentOneOff"
+                  },
+                  "title": "Response Household Payment One Offs Api Household One Off Marks Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "summary": "Household One Off Mark",
         "operationId": "household_one_off_mark_api_household_one_off_marks_post",
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/OneOffMarkRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -6768,6 +6810,34 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SpendingMarkRecorded"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/household/one-off-codes": {
+      "get": {
+        "summary": "Household One Off Codes",
+        "operationId": "household_one_off_codes_api_household_one_off_codes_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OneOffCodes"
                 }
               }
             }
@@ -15813,6 +15883,18 @@
               }
             ],
             "title": "Variable"
+          },
+          "fixed_monthly": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed Monthly"
           }
         },
         "additionalProperties": false,
@@ -28877,6 +28959,58 @@
         "title": "OneOff",
         "description": "A one-off in `month`. §7.3 amended (PR #434 review D): a one-off in a month at or\nbefore the newest closed month may stay in a scenario row; the plan ignores it, since the\nmeasured months already hold it. Only a month after the horizon's end is refused."
       },
+      "OneOffCode": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "default": {
+            "type": "boolean",
+            "title": "Default"
+          },
+          "one_off": {
+            "type": "boolean",
+            "title": "One Off"
+          },
+          "year_total": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Year Total"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "default",
+          "one_off",
+          "year_total"
+        ],
+        "title": "OneOffCode",
+        "description": "One row of „Was als einmalig zählt“ (GET /household/one-off-codes, phase 10 §7.12 (a),\nD307): a code the household may switch, whether the taxonomy counts it as one-off\n(`default`) and whether it does under the default scenario's switches (`one_off`), and what\nwas paid in it in the calendar year `year` up to today (the confirmed private lines of\nmoney out, the household month's codes), positive."
+      },
+      "OneOffCodes": {
+        "properties": {
+          "year": {
+            "type": "integer",
+            "title": "Year"
+          },
+          "codes": {
+            "items": {
+              "$ref": "#/components/schemas/OneOffCode"
+            },
+            "type": "array",
+            "title": "Codes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "year"
+        ],
+        "title": "OneOffCodes",
+        "description": "GET /household/one-off-codes: the one-off codes first (each listed, also at 0), then\nevery other switchable code with a payment this year, the largest sum first."
+      },
       "OneOffMarkRequest": {
         "properties": {
           "allocation_id": {
@@ -30087,6 +30221,42 @@
         ],
         "title": "PaymentIbanProposal",
         "description": "The payment IBAN a card statement prints (D176 (4)), masked; POST\n/accounts/{id}/payment-iban with its import_id confirms it."
+      },
+      "PaymentOneOff": {
+        "properties": {
+          "allocation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Allocation Id"
+          },
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "marked": {
+            "type": "boolean",
+            "title": "Marked"
+          },
+          "category_one_off": {
+            "type": "boolean",
+            "title": "Category One Off"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "allocation_id",
+          "category",
+          "amount",
+          "marked",
+          "category_one_off"
+        ],
+        "title": "PaymentOneOff",
+        "description": "GET /household/one-off-marks?transaction_id= (phase 10 §7.12 (b), D307): one part of a\nprivate payment that „Als einmalig markieren“ may mark, as of today (the parts POST\n/household/one-off-marks accepts; a payment with none gets no button). `marked`: its newest\nanswer is `one_off`; `category_one_off`: its code counts as one-off under the default\nscenario's switches, so it counts as one-off whatever its own answer and the panel shows\nno button. What was paid, positive."
       },
       "PaymentProofBody": {
         "properties": {
