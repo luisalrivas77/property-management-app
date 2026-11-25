@@ -9,36 +9,51 @@
 // Planung › Vermögen was) is a card on Anlagen › Übersicht; the property's Planung is Anlagen ›
 // Immobilie (app/(app)/assets/Property.tsx).
 //
-// Every lever of the household scenario is in one detail panel „Annahmen“ (`#d-annahmen-<group>`,
-// lib/planningRoutes.ts), opened from each place at its own group, which it shows first, with
-// the unsaved changes and the save bar. Every figure is the server's (GET /household-plan,
-// /household-budget); a lever changed in „Annahmen“ is a draft until „Szenario speichern“ stores
-// it as a new version of the default (D248, append-only). While a draft differs, each place shows
-// its figures from POST /household-plan/preview with the draft, marked as not saved; „Was eure
-// Änderungen bewirken“ is gone (D288). The draft lives in `PlanProvider`, so it survives a switch
-// between Budget and Reserve, not a move to another page.
+// The levers (§7.10 (a), D299; mockup 19e): the panel „Annahmen“ is gone. Spending, income and
+// one-offs are played through on Haushalt › Durchspielen (components/householdPlay.tsx), whose
+// draft lives in `PlanProvider` beside the Budget class panel's own draft, so no other place moves
+// before „Als Plan behalten“. Every other lever sits beside the figure it acts on and saves on its
+// own as a new version of the default (D248, append-only): the reserve target and its accounts on
+// Reserve (`#reserve-ziel`), the buffer and the savings plans on Budget (`#puffer`), the rates on
+// Anlagen (`#rendite`). Every figure is the server's (GET /household-plan, /household-budget);
+// while the Budget class panel's draft differs, each place shows its figures from POST
+// /household-plan/preview, marked as not saved.
 import Link from "next/link";
-import { createContext, type FormEvent, type ReactNode, useContext, useEffect, useId, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  createContext,
+  type FormEvent,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { useT } from "@/i18n";
 import { goalText } from "@/i18n/goal";
 import { lineLabel, planning, type PlanningText } from "@/i18n/planning";
+import { playText } from "@/i18n/play";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import {
-  ASSUMPTION_GROUPS,
   ASSUMPTIONS,
-  type AssumptionGroup,
+  BUFFER_LEVER,
+  HOUSEHOLD_PLAY,
   HOUSEHOLD_RESERVE,
-  isAssumptionGroup,
   planTodoTarget,
   PROJECTION_ANCHOR,
   propertyPlanningHref,
+  RATE_LEVER,
+  RESERVE_LEVER,
   REST_ANCHOR,
+  staleAssumptionsTarget,
 } from "@/lib/planningRoutes";
 
-import { DetailLayout, DetailPanel, useDetail } from "./DetailPanel";
+import { DetailLayout, useDetail } from "./DetailPanel";
 import { Field } from "./form";
 import { todayIso } from "./format";
 import { HealthTodoItem } from "./healthFigures";
@@ -61,9 +76,10 @@ import { percentInput, toSignedMoneyString } from "./input";
 import { ALLOCATION_CATEGORY } from "./labels";
 import { type GoalView, useGoalView } from "./householdGoal";
 import { PlanExplanationPanel } from "./planExplanation";
+import { applyPlay, NO_PLAY, plannedCount, type PlayChanges } from "./playDraft";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
 import { BudgetClassPanel, BudgetSection, type BudgetView, GoalsPanel, PlanError } from "./planningBudget";
-import { type PlanPreview, SpendingPlaySection, stretch, usePlanPreview } from "./spendingPlay";
+import { type PlanPreview, stretch, usePlanPreview } from "./spendingPlay";
 import { Loading } from "./ui";
 import { type Loaded, useLoad } from "./useLoad";
 
@@ -74,12 +90,11 @@ type BudgetClass = components["schemas"]["BudgetClass"];
 type Account = components["schemas"]["Account"];
 type SavingsPlan = components["schemas"]["SavingsPlan"];
 type SurplusKey = components["schemas"]["SurplusKey"];
-type IncomeChangeNote = components["schemas"]["IncomeChangeNote"];
 type ProjectionPoint = components["schemas"]["ProjectionPoint"];
 type AdviceMode = components["schemas"]["AdviceMode"];
 type AllocationCategory = components["schemas"]["AllocationCategory"];
 
-interface PlanData {
+export interface PlanData {
   plan: HouseholdPlan;
   health: Health;
   budget: BudgetView;
@@ -125,6 +140,9 @@ function resolveDraft(state: DraftState | null, plan: HouseholdPlan | undefined)
 }
 
 type T = PlanningText;
+
+/** The levers „Als Plan behalten“ writes (§7.10 (a) 3) and the goal's choice it may switch. */
+const PLAY_KEYS = ["spending_changes", "income_changes", "one_offs", "goal_choice"] as const;
 
 /** The spending changes as the household set them (code, amount or percent, months), in one
  * order and one number format, so a save that leaves them as they are (the server's
@@ -197,8 +215,29 @@ export type SetDraft = (update: (previous: HouseholdLevers) => HouseholdLevers) 
 
 // --- the plan's state, shared by the places that show it ------------------------------------
 
+/** Haushalt › Durchspielen's draft (§7.10 (a), D299): changes on top of the saved levers, kept
+ * apart from the draft above, so no other place moves before „Als Plan behalten“. It lives in the
+ * provider, so it survives a switch to Budget, Reserve or Ziel and back. */
+export interface PlayState {
+  changes: PlayChanges;
+  set: (update: (previous: PlayChanges) => PlayChanges) => void;
+  /** Stores the saved levers (read again) with the changes as the new default. */
+  keep: () => Promise<void>;
+  reset: () => void;
+  busy: boolean;
+  error: unknown;
+  /** Moves when the draft is replaced as a whole (reset, kept, „Für alle übernehmen“), so the
+   * fields read it again. */
+  round: number;
+  bump: () => void;
+}
+
+/** Stores the saved levers (read again) with `keys` taken from `levers`, as the new default: a
+ * lever saved from its place (§7.10 (a) 7), never with either draft. */
+export type SaveLevers = (keys: readonly (keyof HouseholdLevers)[], levers: HouseholdLevers) => Promise<void>;
+
 /** The plan once at least three months are closed (12c otherwise). */
-interface PlanReady {
+export interface PlanReady {
   /** The saved plan and what was read with it. */
   data: PlanData;
   /** The same with the draft's plan from the preview: what a place shows. */
@@ -213,13 +252,15 @@ interface PlanReady {
   epoch: number;
   current: HouseholdScenario | null;
   onChanged: () => void;
+  play: PlayState;
+  saveLevers: SaveLevers;
 }
 
 interface PlanState {
   state: Loaded<PlanData>;
   ready: PlanReady | null;
-  /** The page this provider sits on (`/household?tab=budget`, `/assets`): a to-do of
-   * „Annahmen“ opens the panel here instead of leaving it. */
+  /** The page this provider sits on (`/household?tab=budget`, `/assets`): a to-do whose lever
+   * sits on this page opens it here instead of leaving it. */
   page: string;
   /** Haushalt › Ziel's goal (§7.9 (d)), or null on a page without it. */
   goal: GoalView | null;
@@ -227,7 +268,7 @@ interface PlanState {
 
 const PlanContext = createContext<PlanState | null>(null);
 
-function usePlan(): PlanState {
+export function usePlan(): PlanState {
   const value = useContext(PlanContext);
   if (!value) throw new Error("PlanProvider missing");
   return value;
@@ -239,9 +280,30 @@ const NO_PLAN = {} as HouseholdPlan;
 /** The levers with nothing changed, for the idle preview before the read. */
 const EMPTY_LEVERS = fillLevers(undefined);
 
-/** Reads the plan once for a page and holds the draft, the save and the „Annahmen“ panel (and
- * Budget's own panels); `backLabel` is the page's name on the panel's „‹“ on the phone. The tree
+/** What each lever beside its figure saves (§7.10 (a) 7). */
+const RESERVE_KEYS = ["reserve_target_months", "reserve_accounts"] as const;
+const BUFFER_KEYS = ["buffer_percent", "plan_overrides"] as const;
+const RATE_KEYS = ["value_change", "net_worth_years"] as const;
+
+/** Reads the plan once for a page and holds Durchspielen's draft, the Budget class panel's draft
+ * and its save, and Budget's own panels; `backLabel` is the page's name on the panel's „‹“ on the phone. The tree
  * around `children` is the same before and after the read, so nothing under it mounts twice. */
+/** A link from before §7.10 (a) (`#d-annahmen-<group>`, a bookmark) leads to the group's new
+ * place, on every tab of the page that calls it (Haushalt, Anlagen), not only where the plan is
+ * read; on the same page only the hash changes, so the browser's hashchange opens the lever. */
+export function useStaleAssumptionsRedirect(page: string) {
+  const annahmen = useDetail(ASSUMPTIONS);
+  const router = useRouter();
+  useEffect(() => {
+    if (annahmen.id === null) return;
+    const target = staleAssumptionsTarget(`#d-${ASSUMPTIONS}-${annahmen.id}`, page);
+    if (target === null) return;
+    const [path] = target.split("#", 1);
+    if (path === window.location.pathname + window.location.search) window.location.replace(target);
+    else router.replace(target);
+  }, [annahmen.id, page, router]);
+}
+
 export function PlanProvider({
   page,
   backLabel,
@@ -262,11 +324,13 @@ export function PlanProvider({
   const [error, setError] = useState<unknown>(null);
   // A field holding an entry it cannot take keeps the draft's old value, so a save would store
   // a value the field does not show (PR #434 review C): no save until it is fixed.
-  const [projectionInvalid, setInvalid] = useState(false);
   const [spendingInvalid, setSpendingInvalid] = useState(false);
   // A discard or a save remounts the fields, so none keeps a text the draft no longer holds.
   const [epoch, setEpoch] = useState(0);
-  const annahmen = useDetail(ASSUMPTIONS);
+  const [play, setPlay] = useState<PlayChanges>(NO_PLAY);
+  const [playBusy, setPlayBusy] = useState(false);
+  const [playError, setPlayError] = useState<unknown>(null);
+  const [playRound, setPlayRound] = useState(0);
   const goals = useDetail("goals");
   const budgetClass = useDetail("budget");
 
@@ -280,7 +344,7 @@ export function PlanProvider({
   // figures from it (D288), the Budget's „Mit eurem Plan“ too.
   const preview = usePlanPreview(enough ? data.plan : NO_PLAN, enough ? draft : EMPTY_LEVERS, dirty);
   const setDraft: SetDraft = (update) => setDraftState((previous) => ({ levers: update(resolveDraft(previous, data?.plan)) }));
-  const invalid = projectionInvalid || spendingInvalid;
+  const invalid = spendingInvalid;
   const current = data ? currentDefault(data.scenarios) : null;
   // The goal writes the default scenario itself (its own read of the history): the plan is read
   // again, and a draft with no change follows the new row instead of reading as changed.
@@ -326,7 +390,6 @@ export function PlanProvider({
         const row = await saveDefaultScenario(posted, current);
         setDraftState({ levers: posted, resetOn: row.id });
         state.reload();
-        setInvalid(false);
         setSpendingInvalid(false);
         setEpoch((value) => value + 1);
       } catch (caught) {
@@ -350,7 +413,6 @@ export function PlanProvider({
               disabled={busy}
               onClick={() => {
                 setDraftState(null);
-                setInvalid(false);
                 setSpendingInvalid(false);
                 setEpoch((value) => value + 1);
               }}
@@ -358,10 +420,67 @@ export function PlanProvider({
               {t.discard}
             </button>
           ) : null}
-          <span className="muted">{projectionInvalid ? t.fixProjection : spendingInvalid ? t.fixSpending : t.saveHint}</span>
+          <span className="muted">{spendingInvalid ? t.fixSpending : t.saveHint}</span>
         </div>
       </div>
     );
+
+    /** The levers just stored also become the draft's, so a later save of the draft (the
+     * Budget's class panel) never writes the old value back; with no other change the draft
+     * follows the new row once it is read. */
+    const adopt = (levers: HouseholdLevers, keys: readonly (keyof HouseholdLevers)[], row: HouseholdScenario) => {
+      setDraftState((previous) => {
+        if (previous === null) return null;
+        const merged: HouseholdLevers = { ...resolveDraft(previous, data.plan) };
+        for (const key of keys) Object.assign(merged, { [key]: levers[key] });
+        return { levers: merged, ...(dirty ? {} : { resetOn: row.id }) };
+      });
+    };
+
+    /** The default scenario as stored now, read again, so a lever saved in another tab since the
+     * page was read is kept; with none stored yet, the levers the served plan used (what „Heute“
+     * shows), so a first save never drops them. */
+    const storedDefault = async () => {
+      const row = currentDefault(await loadScenarioHistory());
+      return { row, levers: fillLevers(row ? row.levers : data.plan.levers) };
+    };
+
+    const saveLevers: SaveLevers = async (keys, levers) => {
+      const stored = await storedDefault();
+      const posted: HouseholdLevers = { ...stored.levers };
+      for (const key of keys) Object.assign(posted, { [key]: levers[key] });
+      const row = await saveDefaultScenario(posted, stored.row);
+      adopt(levers, keys, row);
+      state.reload();
+    };
+
+    const keep = async () => {
+      setPlayBusy(true);
+      setPlayError(null);
+      try {
+        const stored = await storedDefault();
+        const posted = applyPlay(stored.levers, play, surplusRow(data.plan, "mean_income")?.amount ?? null);
+        const choice = stored.levers.goal_choice ?? null;
+        const spendingMoved = spendingKey(posted.spending_changes) !== spendingKey(stored.levers.spending_changes);
+        // As the save above: spending saved over an adopted scenario's is the household's own.
+        const levers: HouseholdLevers = {
+          ...posted,
+          goal_choice:
+            choice?.spending && choice.spending !== "own" && spendingMoved
+              ? { ...choice, spending: "own" as const, spending_chosen_on: todayIso() }
+              : choice,
+        };
+        const row = await saveDefaultScenario(levers, stored.row);
+        setPlay(NO_PLAY);
+        setPlayRound((n) => n + 1);
+        adopt(levers, PLAY_KEYS, row);
+        state.reload();
+      } catch (caught) {
+        setPlayError(caught);
+      } finally {
+        setPlayBusy(false);
+      }
+    };
 
     ready = {
       data,
@@ -375,22 +494,24 @@ export function PlanProvider({
       epoch,
       current,
       onChanged: state.reload,
+      play: {
+        changes: play,
+        set: setPlay,
+        keep,
+        reset: () => {
+          setPlay(NO_PLAY);
+          setPlayRound((n) => n + 1);
+          setPlayError(null);
+        },
+        busy: playBusy,
+        round: playRound,
+        bump: () => setPlayRound((n) => n + 1),
+        error: playError,
+      },
+      saveLevers,
     };
 
-    if (annahmen.id !== null) {
-      const group: AssumptionGroup = isAssumptionGroup(annahmen.id) ? annahmen.id : "reserve";
-      panel = (
-        <DetailPanel title={t.annahmenTitle} backLabel={backLabel} onClose={annahmen.close}>
-          <AssumptionsPanel
-            key={`${group}-${epoch}`}
-            group={group}
-            ready={ready}
-            onProjectionValidity={setInvalid}
-            onSpendingValidity={setSpendingInvalid}
-          />
-        </DetailPanel>
-      );
-    } else if (goals.id !== null) {
+    if (goals.id !== null) {
       panel = (
         <GoalsPanel
           budget={data.budget}
@@ -436,100 +557,7 @@ export function PlanProvider({
   );
 }
 
-
-// --- „Annahmen“ -------------------------------------------------------------------------------
-
-/** Every lever of the household scenario in one panel (§7.9 (a) 5, mockup 19c): the group it was
- * opened at first, then the others in their order; the unsaved changes and the save at its foot. */
-function AssumptionsPanel({
-  group,
-  ready,
-  onProjectionValidity,
-  onSpendingValidity,
-}: {
-  group: AssumptionGroup;
-  ready: PlanReady;
-  onProjectionValidity: (invalid: boolean) => void;
-  onSpendingValidity: (invalid: boolean) => void;
-}) {
-  const t = useT(planning);
-  const { data, draft, setDraft, changes, preview } = ready;
-  const order = [group, ...ASSUMPTION_GROUPS.filter((key) => key !== group)];
-  const body: Record<AssumptionGroup, ReactNode> = {
-    reserve: (
-      <>
-        <h3>{t.leverReserve}</h3>
-        <ReserveLever data={data} draft={draft} setDraft={setDraft} />
-        <ReserveAccountsBlock data={data} draft={draft} setDraft={setDraft} />
-      </>
-    ),
-    puffer: (
-      <>
-        <h3>{t.leverBuffer}</h3>
-        <BufferLever draft={draft} setDraft={setDraft} />
-      </>
-    ),
-    einkommen: <IncomeChanges draft={draft} setDraft={setDraft} />,
-    zahlungen: <OneOffs data={data} draft={draft} setDraft={setDraft} />,
-    sparplaene: <SavingsPlans data={data} draft={draft} setDraft={setDraft} />,
-    rendite: <RateFields data={data} draft={draft} setDraft={setDraft} onValidity={onProjectionValidity} />,
-    ausgaben: (
-      <SpendingPlaySection
-        saved={data.plan}
-        windowMonths={data.health.window.months ?? []}
-        preview={preview}
-        draft={draft}
-        setDraft={setDraft}
-        onValidity={onSpendingValidity}
-      />
-    ),
-  };
-  return (
-    <div className="stack annahmen">
-      <p className="muted">{t.annahmenIntro}</p>
-      {order.map((key) => (
-        <section key={key} id={`annahmen-${key}`} className="annahmen-group stack" data-group={key}>
-          {body[key]}
-        </section>
-      ))}
-      <section className="annahmen-save stack" aria-labelledby="sheet-changes">
-        <h3 id="sheet-changes">{t.changesTitle}</h3>
-        {changes.length === 0 ? (
-          <p className="muted">{t.noChanges}</p>
-        ) : (
-          <ul className="planning-change-list">
-            {changes.map((line, index) => (
-              <li key={index}>{line}</li>
-            ))}
-          </ul>
-        )}
-        {ready.preview.error != null ? <ErrorNotice error={ready.preview.error} /> : null}
-        {ready.saveBar}
-      </section>
-    </div>
-  );
-}
-
-/** The dashed row on top of a place: the scenario, whether the draft is saved, „Annahmen ›“. */
-function ScenarioRow({ group }: { group: AssumptionGroup }) {
-  const t = useT(planning);
-  const { ready } = usePlan();
-  const annahmen = useDetail(ASSUMPTIONS);
-  if (!ready) return null;
-  const { current, changes } = ready;
-  return (
-    <a className="planning-scenario-row" {...annahmen.linkProps(group)} data-dirty={changes.length > 0 ? "" : undefined}>
-      <span>
-        <strong>{current ? t.scenario(current.name) : t.defaults}</strong>
-        {" · "}
-        <span className="planning-scenario-state">{changes.length > 0 ? t.unsaved(changes.length) : t.saved}</span>
-      </span>
-      <span className="planning-scenario-open">
-        {t.assumptions} <span aria-hidden="true">›</span>
-      </span>
-    </a>
-  );
-}
+// --- the notices and to-dos every place shares ---------------------------------------------
 
 /** While a draft differs: what the figures of this place count, whether the preview is still
  * calculating or was refused (the figures then stay at its last good answer), and the save. */
@@ -549,13 +577,13 @@ function DirtyNotice({ text }: { text: string }) {
   );
 }
 
-/** A to-do of the plan: one whose server href (rules/plan/, D271) means „Annahmen“ opens the panel
- * on this page; every other one is HealthTodoItem's link, which maps an old Planung href. */
+/** A to-do of the plan: one whose server href (rules/plan/, D271) leads to a lever on this page
+ * opens it here (a plain anchor, so the browser's hashchange opens the lever); every other one is
+ * HealthTodoItem's link, which maps an old Planung href. */
 function PlanTodos({ todos, onChanged }: { todos: HealthTodo[]; onChanged: () => void }) {
   const { page } = usePlan();
-  const annahmen = useDetail(ASSUMPTIONS);
   if (todos.length === 0) return null;
-  const prefix = `${page}#d-${ASSUMPTIONS}-`;
+  const prefix = `${page}#`;
   return (
     <ul className="health-todos">
       {todos.map((todo, index) => {
@@ -565,13 +593,163 @@ function PlanTodos({ todos, onChanged }: { todos: HealthTodo[]; onChanged: () =>
         return (
           <li key={key} className="health-todo">
             <span>{todo.text}</span>
-            <a {...annahmen.linkProps(target.slice(prefix.length))} className="button-link secondary">
+            <a href={target.slice(page.length)} className="button-link secondary">
               {todo.action}
             </a>
           </li>
         );
       })}
     </ul>
+  );
+}
+
+/** §7.10 (a) 6: once the saved plan holds planned changes (income, spending, one-offs), the
+ * places that count them say so, with the way to Durchspielen, where they are seen and changed. */
+export function PlannedChanges({ levers }: { levers: HouseholdLevers | null | undefined }) {
+  const p = useT(playText);
+  const count = plannedCount(levers);
+  if (count === 0) return null;
+  return (
+    <p className="muted planning-planned" data-testid="planned-changes">
+      {p.planned(count)} · <Link href={HOUSEHOLD_PLAY}>{p.plannedOpen} ›</Link>
+    </p>
+  );
+}
+
+// --- the levers beside their figures (§7.10 (a) 7) ------------------------------------------
+
+function subscribeHash(listener: () => void): () => void {
+  window.addEventListener("hashchange", listener);
+  window.addEventListener("popstate", listener);
+  return () => {
+    window.removeEventListener("hashchange", listener);
+    window.removeEventListener("popstate", listener);
+  };
+}
+
+/** The URL's hash, read again on every render too, so a router navigation that only pushed a
+ * state (a link from another tab) is seen as well as a plain anchor's hashchange. */
+function useLocationHash(): string {
+  return useSyncExternalStore(subscribeHash, () => window.location.hash, () => "");
+}
+
+/** The link that opens a lever: a plain anchor to its hash on this page. */
+function LeverLink({ anchor, children }: { anchor: string; children: ReactNode }) {
+  return <a href={`#${anchor}`}>{children}</a>;
+}
+
+type LeverFields = (levers: HouseholdLevers, setLevers: SetDraft, setInvalid: (invalid: boolean) => void) => ReactNode;
+
+/** A lever beside the figure it acts on (§7.10 (a) 7, D299): open while the URL's hash names it
+ * (`#reserve-ziel`, `#puffer`, `#rendite`), so a link from any page or tab opens it; its form
+ * holds a copy of the saved levers, and „Speichern“ stores only `keys` as a new version of the
+ * default scenario (D248), over the default as stored now (`saveLevers`). Durchspielen's draft and
+ * the Budget class panel's draft stay as they are. */
+function InlineLever({
+  anchor,
+  title,
+  keys,
+  ready,
+  children,
+}: {
+  anchor: string;
+  title: string;
+  keys: readonly (keyof HouseholdLevers)[];
+  ready: PlanReady;
+  children: LeverFields;
+}) {
+  const p = useT(playText);
+  const hash = useLocationHash();
+  const open = hash === `#${anchor}`;
+  const [saved, setSaved] = useState(false);
+  const close = () => {
+    if (window.location.hash !== `#${anchor}`) return;
+    window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  };
+  return (
+    <div id={anchor} className="planning-inline-lever">
+      {open ? (
+        <LeverForm
+          title={title}
+          keys={keys}
+          ready={ready}
+          onCancel={close}
+          onSaved={() => {
+            setSaved(true);
+            close();
+          }}
+        >
+          {children}
+        </LeverForm>
+      ) : saved ? (
+        <p className="muted" role="status">
+          {p.leverSavedNote}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function LeverForm({
+  title,
+  keys,
+  ready,
+  onCancel,
+  onSaved,
+  children,
+}: {
+  title: string;
+  keys: readonly (keyof HouseholdLevers)[];
+  ready: PlanReady;
+  onCancel: () => void;
+  onSaved: () => void;
+  children: LeverFields;
+}) {
+  const p = useT(playText);
+  const ids = useId();
+  const ref = useRef<HTMLFormElement>(null);
+  const [initial] = useState(() => fillLevers(ready.data.plan.levers));
+  const [levers, setLevers] = useState(initial);
+  const [invalid, setInvalid] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const changed = keys.some((key) => JSON.stringify(levers[key]) !== JSON.stringify(initial[key]));
+
+  // Opened by a link from another page, the form appears only once the plan is read, after the
+  // browser looked for the anchor: it is scrolled to here.
+  useEffect(() => {
+    ref.current?.scrollIntoView?.({ block: "nearest" });
+  }, []);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await ready.saveLevers(keys, levers);
+      onSaved();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form ref={ref} className="planning-lever-form stack" aria-labelledby={`${ids}-title`} onSubmit={(event) => void submit(event)}>
+      <h3 id={`${ids}-title`}>{title}</h3>
+      {children(levers, setLevers, setInvalid)}
+      {error != null ? <PlanError error={error} /> : null}
+      <div className="row">
+        <button type="submit" disabled={busy || invalid || !changed}>
+          {busy ? p.saving : p.save}
+        </button>
+        <button type="button" className="secondary" disabled={busy} onClick={onCancel}>
+          {p.cancel}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -596,13 +774,14 @@ export function HouseholdPlanTab({ tab }: { tab: "budget" | "reserve" }) {
 }
 
 /** Haushalt › Ziel (§7.9 (d)): the goal reads its own answer, so it shows before three closed
- * months too (it then says what the projection still needs); an unsaved draft of „Annahmen“
- * (Eigene Wahl) gets the save bar, since the goal counts the saved levers only. */
+ * months too (it then says what the projection still needs); an unsaved draft of the Budget
+ * class panel gets the save bar, since the goal counts the saved levers only. */
 export function HouseholdGoalTab() {
   const g = useT(goalText);
-  const { goal } = usePlan();
+  const { goal, state } = usePlan();
   return (
     <div className="stack planning">
+      <PlannedChanges levers={state.data?.plan.levers} />
       <DirtyNotice text={g.dirtyGoal} />
       {goal?.tab}
     </div>
@@ -613,7 +792,7 @@ function BudgetTab({ ready }: { ready: PlanReady }) {
   const t = useT(planning);
   return (
     <>
-      <ScenarioRow group="ausgaben" />
+      <PlannedChanges levers={ready.data.plan.levers} />
       <DirtyNotice text={t.dirtyNoticeBudget} />
       <BudgetSection budget={ready.data.budget} onChanged={ready.onChanged} />
       <RestCard ready={ready} />
@@ -623,6 +802,7 @@ function BudgetTab({ ready }: { ready: PlanReady }) {
 
 function ReserveTab({ ready }: { ready: PlanReady }) {
   const t = useT(planning);
+  const p = useT(playText);
   const f = usePlanFormat();
   const { shown, onChanged } = ready;
   const closedMonths = shown.health.window.months ?? [];
@@ -630,7 +810,7 @@ function ReserveTab({ ready }: { ready: PlanReady }) {
   const todos = (shown.plan.todos ?? []).filter((todo) => todo.code !== "rate_missing");
   return (
     <>
-      <ScenarioRow group="reserve" />
+      <PlannedChanges levers={ready.data.plan.levers} />
       <p className="muted">
         {t.baseLine(closedMonths.length, f.monthRange(closedMonths))}
         {t.basePaths(f.longDate(newest ? monthEnd(newest) : null))}{" "}
@@ -639,6 +819,14 @@ function ReserveTab({ ready }: { ready: PlanReady }) {
       <PlanTodos todos={todos} onChanged={onChanged} />
       <DirtyNotice text={t.dirtyNotice} />
       <ReserveKpis data={shown} />
+      <InlineLever anchor={RESERVE_LEVER} title={p.changeReserve} keys={RESERVE_KEYS} ready={ready}>
+        {(levers, setLevers) => (
+          <>
+            <ReserveLever data={ready.data} draft={levers} setDraft={setLevers} />
+            <ReserveAccountsBlock data={ready.data} draft={levers} setDraft={setLevers} />
+          </>
+        )}
+      </InlineLever>
       <Paths data={shown} />
       <ReserveAccountsCard data={shown} />
     </>
@@ -651,7 +839,7 @@ function ReserveTab({ ready }: { ready: PlanReady }) {
 function RestCard({ ready }: { ready: PlanReady }) {
   const t = useT(planning);
   const f = usePlanFormat();
-  const annahmen = useDetail(ASSUMPTIONS);
+  const p = useT(playText);
   const [explain, setExplain] = useState(false);
   const [made, setMade] = useState(false);
   const { shown, onChanged } = ready;
@@ -692,7 +880,7 @@ function RestCard({ ready }: { ready: PlanReady }) {
         <li>
           <span>
             {t.madeBuffer(f.percentValue(plan.levers.buffer_percent))}{" "}
-            <a {...annahmen.linkProps("puffer")}>{t.change}</a>
+            <LeverLink anchor={BUFFER_LEVER}>{t.change}</LeverLink>
           </span>
           <span>{f.signedEuro(negated(unsigned(buffer?.amount ?? "0")))}</span>
         </li>
@@ -702,6 +890,14 @@ function RestCard({ ready }: { ready: PlanReady }) {
           <span>{f.euro(plan.investable_left ?? investable?.amount)}</span>
         </li>
       </ul>
+      <InlineLever anchor={BUFFER_LEVER} title={p.changeBuffer} keys={BUFFER_KEYS} ready={ready}>
+        {(levers, setLevers) => (
+          <>
+            <BufferLever draft={levers} setDraft={setLevers} />
+            <SavingsPlans data={ready.data} draft={levers} setDraft={setLevers} />
+          </>
+        )}
+      </InlineLever>
       <p className="muted" data-testid="rest-investable">
         {t.restInvestable(f.euro(investable?.amount))}
       </p>
@@ -741,7 +937,7 @@ function RestCard({ ready }: { ready: PlanReady }) {
 
 // --- 12c: fewer than three closed months ---------------------------------------------------
 
-function TooFewMonths({ data, onChanged }: { data: PlanData; onChanged: () => void }) {
+export function TooFewMonths({ data, onChanged }: { data: PlanData; onChanged: () => void }) {
   const closed = data.health.window.months ?? [];
   const count = closed.length;
   const last = closed[count - 1];
@@ -779,7 +975,7 @@ function nextMonth(month: string): string {
 
 // --- the figures --------------------------------------------------------------------------------
 
-function surplusRow(plan: HouseholdPlan, key: SurplusKey) {
+export function surplusRow(plan: HouseholdPlan, key: SurplusKey) {
   return plan.surplus?.rows.find((row) => row.key === key) ?? null;
 }
 
@@ -798,7 +994,6 @@ function ReserveKpis({ data }: { data: PlanData }) {
   const reserve = plan.reserve;
   const t = useT(planning);
   const f = usePlanFormat();
-  const annahmen = useDetail(ASSUMPTIONS);
   return (
     <div className="planning-kpis">
       <div className="planning-kpi planning-kpi-main">
@@ -811,7 +1006,7 @@ function ReserveKpis({ data }: { data: PlanData }) {
         <p className="planning-kpi-value">{f.euro(reserve?.gap)}</p>
         <p className="planning-kpi-sub">
           {t.kpiTarget(f.euro(reserve?.target), f.short(plan.levers.reserve_target_months))}{" "}
-          <a {...annahmen.linkProps("reserve")}>{t.change}</a>
+          <LeverLink anchor={RESERVE_LEVER}>{t.change}</LeverLink>
         </p>
       </div>
       <div className="planning-kpi">
@@ -827,7 +1022,6 @@ function ReserveKpis({ data }: { data: PlanData }) {
 function ReserveAccountsCard({ data }: { data: PlanData }) {
   const t = useT(planning);
   const f = usePlanFormat();
-  const annahmen = useDetail(ASSUMPTIONS);
   const accounts = data.plan.reserve?.accounts ?? [];
   const label = (id: string) => data.accounts.find((account) => account.id === id)?.label ?? id;
   return (
@@ -835,9 +1029,9 @@ function ReserveAccountsCard({ data }: { data: PlanData }) {
       <div className="planning-card-head">
         <h2 id="reserve-accounts-title">{t.reserveAccountsTitle}</h2>
         <span className="spacer" />
-        <a {...annahmen.linkProps("reserve")}>
+        <LeverLink anchor={RESERVE_LEVER}>
           {t.change} <span aria-hidden="true">›</span>
-        </a>
+        </LeverLink>
       </div>
       {accounts.length > 0 ? (
         <ul className="household-rows">
@@ -916,109 +1110,6 @@ function BufferLever({ draft, setDraft }: { draft: HouseholdLevers; setDraft: Se
   );
 }
 
-// --- Weitere Annahmen -----------------------------------------------------------------------
-
-const INCOME_NOTES: IncomeChangeNote[] = ["parental_leave", "job_change", "part_time", "other"];
-
-function IncomeChanges({ draft, setDraft }: { draft: HouseholdLevers; setDraft: SetDraft }) {
-  const t = useT(planning);
-  const f = usePlanFormat();
-  const ids = useId();
-  const [adding, setAdding] = useState(false);
-  const [amount, setAmount] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [note, setNote] = useState<IncomeChangeNote>("other");
-  const [errors, setErrors] = useState<Partial<Record<"amount" | "from" | "to", string>>>({});
-  const changes = draft.income_changes ?? [];
-
-  function add(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const parsed = toSignedMoneyString(amount);
-    const found: typeof errors = {};
-    if (!parsed.ok) found.amount = parsed.message;
-    if (!/^\d{4}-\d{2}$/.test(from)) found.from = t.pickMonth;
-    if (to !== "" && (!/^\d{4}-\d{2}$/.test(to) || to < from)) found.to = t.endAfterStart;
-    setErrors(found);
-    if (!parsed.ok || Object.keys(found).length > 0) return;
-    setDraft((previous) => ({
-      ...previous,
-      income_changes: [...(previous.income_changes ?? []), { monthly_net: parsed.value, from_month: from, to_month: to || null, note_code: note }],
-    }));
-    setAdding(false);
-    setAmount("");
-    setFrom("");
-    setTo("");
-  }
-
-  return (
-    <div className="stack">
-      <h3>{t.incomeTitle}</h3>
-      {changes.length === 0 ? (
-        <p className="muted">{t.incomeNone}</p>
-      ) : (
-        <ul className="household-rows">
-          {changes.map((change, index) => (
-            <li key={`${change.from_month}-${index}`}>
-              <span>
-                {t.incomeNote(change.note_code)}: {t.incomeSpan(f.month(change.from_month), change.to_month ? f.month(change.to_month) : null)}
-              </span>
-              <span>
-                {t.perMonth(f.signedEuro(change.monthly_net))}{" "}
-                <button
-                  type="button"
-                  className="link"
-                  onClick={() =>
-                    setDraft((previous) => ({ ...previous, income_changes: (previous.income_changes ?? []).filter((_, i) => i !== index) }))
-                  }
-                >
-                  {t.remove}
-                </button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {adding ? (
-        <form className="stack" onSubmit={add} aria-label={t.incomeFormLabel}>
-          <div className="health-limit-fields">
-            <Field id={`${ids}-amount`} label={t.incomeAmount} hint={t.incomeAmountHint} errors={errors.amount ? [errors.amount] : []}>
-              <input type="text" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
-            </Field>
-            <Field id={`${ids}-from`} label={t.fromMonth} errors={errors.from ? [errors.from] : []}>
-              <input type="month" value={from} onChange={(event) => setFrom(event.target.value)} />
-            </Field>
-            <Field id={`${ids}-to`} label={t.toMonth} errors={errors.to ? [errors.to] : []}>
-              <input type="month" value={to} onChange={(event) => setTo(event.target.value)} />
-            </Field>
-            <Field id={`${ids}-note`} label={t.reason}>
-              <select value={note} onChange={(event) => setNote(event.target.value as IncomeChangeNote)}>
-                {INCOME_NOTES.map((code) => (
-                  <option key={code} value={code}>
-                    {t.incomeNote(code)}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-          <div className="row">
-            <button type="submit">{t.add}</button>
-            <button type="button" className="secondary" onClick={() => setAdding(false)}>
-              {t.cancel}
-            </button>
-          </div>
-        </form>
-      ) : (
-        <p>
-          <button type="button" className="secondary" onClick={() => setAdding(true)}>
-            {t.addIncome}
-          </button>
-        </p>
-      )}
-    </div>
-  );
-}
-
 // An accepted refund names its tax year in its source, "return_estimate:2026" (PR #434 review D);
 // a bare "return_estimate" was saved before the year was written and names none.
 const RETURN_ESTIMATE = "return_estimate";
@@ -1031,7 +1122,7 @@ function estimateYear(source: string | undefined): number | null {
   return (source ?? "").startsWith(`${RETURN_ESTIMATE}:`) ? Number(source!.slice(RETURN_ESTIMATE.length + 1)) : null;
 }
 
-function OneOffs({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLevers; setDraft: SetDraft }) {
+export function OneOffs({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLevers; setDraft: SetDraft }) {
   const t = useT(planning);
   const f = usePlanFormat();
   const ids = useId();
@@ -1551,7 +1642,7 @@ function rentalHref(accountId: string, month: string): string {
 
 // --- Vermögen in einigen Jahren (Anlagen › Übersicht) ----------------------------------------
 
-/** „Rendite pro Jahr“ in „Annahmen“: the yearly value change of funds and of crypto the
+/** „Rendite ändern“ on Anlagen's projection: the yearly value change of funds and of crypto the
  * household types (D247, the app proposes none), and the projection's years. */
 function RateFields({
   data,
@@ -1665,7 +1756,7 @@ export function HouseholdProjection() {
 function ProjectionCard({ ready }: { ready: PlanReady }) {
   const t = useT(planning);
   const f = usePlanFormat();
-  const annahmen = useDetail(ASSUMPTIONS);
+  const p = useT(playText);
   const { shown, onChanged } = ready;
   const projection = shown.plan.projection;
   const points = projection?.points ?? [];
@@ -1687,11 +1778,17 @@ function ProjectionCard({ ready }: { ready: PlanReady }) {
       <div className="planning-card-head">
         <h2 id="projection-title">{t.projTitle}</h2>
         <span className="spacer" />
-        <a {...annahmen.linkProps("rendite")}>
-          {t.assumptions} <span aria-hidden="true">›</span>
-        </a>
+        <LeverLink anchor={RATE_LEVER}>
+          {p.changeRate} <span aria-hidden="true">›</span>
+        </LeverLink>
       </div>
       <p className="muted">{t.projIntro}</p>
+      <PlannedChanges levers={ready.data.plan.levers} />
+      <InlineLever anchor={RATE_LEVER} title={p.changeRate} keys={RATE_KEYS} ready={ready}>
+        {(levers, setLevers, setInvalid) => (
+          <RateFields data={ready.data} draft={levers} setDraft={setLevers} onValidity={setInvalid} />
+        )}
+      </InlineLever>
       <DirtyNotice text={t.dirtyNoticeProjection} />
       {points.length === 0 ? (
         <>

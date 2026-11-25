@@ -276,6 +276,10 @@ test("Planung's old links land where their part is now, Immobilie with its lever
   await expect(page).toHaveURL("/household?tab=budget#was-mit-dem-rest");
   await page.goto("/planning?section=budget");
   await expect(page).toHaveURL("/household?tab=budget");
+  // Since §7.10 (a) (D299) the spending play is Haushalt › Durchspielen, and the rates sit on
+  // Anlagen's projection card (`#rendite`).
   await page.goto("/planning?tab=haushalt#ausgaben-durchspielen");
-  await expect(page).toHaveURL("/household?tab=budget#d-annahmen-ausgaben");
+  await expect(page).toHaveURL("/household?tab=durchspielen");
+  await page.goto("/planning?section=vermoegen#annahme");
+  await expect(page).toHaveURL("/assets#rendite");
 });

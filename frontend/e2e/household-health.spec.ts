@@ -435,35 +435,37 @@ test("the rate fields start empty, and the projection appears only after a rate 
   await expect(page).toHaveURL("/assets#annahme");
   const card = page.getByRole("region", { name: "Vermögen in einigen Jahren: eure Annahme" });
   await expect(card.getByText("Annahme fehlt")).toBeVisible();
-  // The server's to-do href (`/planning?tab=haushalt`, rules/plan) opens „Annahmen“ at the rates.
+  // The server's to-do href (`/planning?tab=haushalt`, rules/plan) opens the rates beside the
+  // card itself (§7.10 (a) 7, D299: the panel „Annahmen“ is gone).
   const enter = card.getByRole("link", { name: "Annahme eintragen" });
-  await expect(enter).toHaveAttribute("href", "#d-annahmen-rendite");
+  await expect(enter).toHaveAttribute("href", "#rendite");
   await expect(card.getByText(/nach eurer Annahme:/)).toHaveCount(0);
   await enter.click();
 
-  // The rate fields are in the panel „Annahmen“, its group „Rendite“ first.
-  const panel = page.getByRole("complementary", { name: "Eure Annahmen" });
-  await expect(panel.locator(".annahmen-group").first()).toHaveAttribute("data-group", "rendite");
-  const depot = panel.getByLabel("Fonds und Wertpapiere (% pro Jahr)");
-  const crypto = panel.getByLabel("Krypto (% pro Jahr)");
+  const form = card.getByRole("form", { name: "Rendite ändern" });
+  await expect(form).toBeVisible();
+  const depot = form.getByLabel("Fonds und Wertpapiere (% pro Jahr)");
+  const crypto = form.getByLabel("Krypto (% pro Jahr)");
   for (const field of [depot, crypto]) {
     await expect(field).toHaveValue("");
     await expect(field).not.toHaveAttribute("placeholder");
   }
+  // Nothing typed yet: nothing to save.
+  await expect(form.getByRole("button", { name: "Speichern" })).toBeDisabled();
 
-  await depot.fill("5");
-  // The card itself says it counts the unsaved change (D288: no separate effects box).
-  await expect(card.getByText(/Geändert, noch nicht gespeichert/)).toBeVisible();
-  // An entry the field cannot take keeps the draft's 5 %: no save until it is fixed (review C).
+  // An entry the field cannot take: no save until it is fixed (review C).
   await depot.fill("60");
-  await expect(panel.getByText("Zwischen −50 % und 50 % pro Jahr.")).toBeVisible();
-  await expect(panel.getByRole("button", { name: "Szenario speichern" })).toBeDisabled();
+  await expect(form.getByText("Zwischen −50 % und 50 % pro Jahr.")).toBeVisible();
+  await expect(form.getByRole("button", { name: "Speichern" })).toBeDisabled();
   expect(posted).toHaveLength(0);
   await depot.fill("5");
-  await panel.getByRole("button", { name: "Szenario speichern" }).click();
+  await form.getByRole("button", { name: "Speichern" }).click();
   await expect.poll(() => posted.length).toBe(1);
   expect(Number(posted[0]?.levers?.value_change?.depot)).toBe(0.05);
   expect(posted[0]?.levers?.value_change?.crypto ?? null).toBeNull();
+  // Saved: the form closes and says where the old version went.
+  await expect(form).toHaveCount(0);
+  await expect(card.getByText(/Gespeichert als neue Fassung eures Plans/)).toBeVisible();
 
   await expect(card.getByText(/nach eurer Annahme: 51\.000 €/)).toBeVisible();
   await expect(card.getByText("Annahme fehlt")).toHaveCount(0);
@@ -562,6 +564,12 @@ test("every figure opens what it is made of, and a month opens Haushalt with its
   const reserve = page.locator('div.health-figure[aria-label="Liquiditätsreserve"]');
   await reserve.getByText("Woraus die Reserve besteht").click();
   await expect(reserve.locator(`a[href="/accounts/${SAVINGS}"]`)).toBeVisible();
+  // „Konten der Reserve ändern“ opens the reserve's own form beside its figure on Haushalt ›
+  // Reserve, from another tab (phase 10 §7.10 (a) 7).
+  await reserve.getByRole("link", { name: "Konten der Reserve ändern" }).click();
+  await expect(page).toHaveURL("/household?tab=reserve#reserve-ziel");
+  await expect(page.getByRole("form", { name: "Reserve-Ziel ändern" })).toBeVisible();
+  await page.goto("/household");
   const debtService = page.locator('div.health-figure[aria-label="Schuldendienstquote"]');
   await debtService.getByText("Woraus die Zahl besteht").click();
   // The property's Planung is Anlagen › Immobilie since phase 10 §7.6.

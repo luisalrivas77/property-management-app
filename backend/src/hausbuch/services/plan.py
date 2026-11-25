@@ -580,9 +580,24 @@ def preview_plan(
     as GET shows. A spending change or a budget class override carried unaltered from that row
     is not refused, as the save superseding it would not refuse it (§7.6 (1) amended, phase 10
     D272 (2)). NotFoundError for an unknown `scenario_id`. Reads only: no row, no event."""
+    inputs = PlanInputs(conn, today)
+    row, reads = previewed(conn, today, levers, scenario_id, inputs)
+    return _plan(conn, today, row, levers, reads, inputs)
+
+
+def previewed(
+    conn: Connection,
+    today: date,
+    levers: HouseholdLevers,
+    scenario_id: UUID | None,
+    inputs: PlanInputs,
+) -> tuple[HouseholdScenario | None, dict[str, MonthRead]]:
+    """The row a preview runs on (`scenario_id`, else the default in force; None: none saved)
+    with its levers replaced by `levers`, and today's months with the levers' one-off switches,
+    after the levers were checked as a scenario row superseding it would be. Shared by
+    POST /household-plan/preview and POST /household-goal/preview (phase 10 §7.10 (a))."""
     from .household_scenarios import carried_overrides, check_levers
 
-    inputs = PlanInputs(conn, today)
     reads = inputs.ended_reads(levers_one_off_codes(levers))  # phase 10 D307
     row = _scenario(conn, scenario_id, inputs)
     previous = [] if row is None else row.levers.spending_changes
@@ -598,7 +613,7 @@ def preview_plan(
     )
     if row is not None:
         row = row.model_copy(update={"levers": levers})
-    return _plan(conn, today, row, levers, reads, inputs)
+    return row, reads
 
 
 def window_spending(

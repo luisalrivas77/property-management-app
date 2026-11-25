@@ -36,6 +36,10 @@ replaces (supersedes_id); services/household_scenarios.py holds the checks.
   adopted („Als Budget übernehmen“: its `spending_changes` and `goal_choice`), through
   POST /household-scenarios superseding the default (422 household_scenario.goal_invalid for
   a new or altered goal not due after the current month).
+- POST /household-goal/preview {levers, scenario_id?} (phase 10 §7.10 (a), D299): the goal
+  for typed levers, checked and run on the same row as POST /household-plan/preview (same
+  422s and 404s); word `none` when the levers hold no goal; stores nothing, so it runs as a
+  read („Durchspielen“ shows the goal with the changes beside the saved one).
 - POST /household-plan/explanation {scenario} („Neu erklären“): 202 with `queued`; queues one
   explain_plan job, nothing while ai_private_accounts is off (D253); 404 and nothing queued
   for an unknown, superseded or withdrawn scenario.
@@ -128,3 +132,8 @@ def household_budget_get(cmd: Cmd, scenario_id: UUID | None = None) -> BudgetVie
 @router.get("/household-goal")
 def household_goal_get(cmd: Cmd) -> HouseholdGoal:
     return english(cmd.read(goal_service.goal, _today()))
+
+
+@router.post("/household-goal/preview")
+def household_goal_preview(body: HouseholdPlanPreview, cmd: Cmd) -> HouseholdGoal:
+    return english(cmd.read(goal_service.preview_goal, _today(), body.levers, body.scenario_id))

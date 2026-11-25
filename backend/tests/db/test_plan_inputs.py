@@ -17,7 +17,7 @@ from sqlalchemy import event
 
 from hausbuch.db.session import workspace_transaction
 from hausbuch.schemas.allocation import AllocationCategory
-from hausbuch.schemas.plan import HouseholdLevers, HouseholdScenarioCreate
+from hausbuch.schemas.plan import GoalChoice, GoalSpending, HouseholdLevers, HouseholdScenarioCreate
 from hausbuch.services import budget, goal, household_scenarios, net_worth, plan, plan_inputs
 from hausbuch.services.context import new_command
 from hausbuch.services.errors import NotFoundError, RuleViolationError
@@ -300,3 +300,47 @@ def test_a_changed_one_off_switch_after_a_warm_read_gives_the_uncached_answer(wo
         assert warm == _uncached(world, plan.preview_plan, lv), name
         assert warm != plain, name
     assert _json(world, plan.preview_plan, levers) == plain
+
+
+def test_the_goal_preview_with_the_saved_levers_equals_the_goal_and_moves_with_a_change(world):
+    """Phase 10 §7.10 (a): POST /household-goal/preview's service with the default scenario's
+    own levers is GET /household-goal's answer; an income change moves the value projected
+    without change, and a spending change, sent as the save sends it (the household's own
+    spending chosen), the walk with the budget; each preview equals the store bypassed, and a
+    warm one sends only the stamp's statements."""
+    levers, _ = _projected(world)
+    previews = _previews(levers, "2027-03")
+    previews["spending"] = previews["spending"].model_copy(
+        update={"goal_choice": GoalChoice(spending=GoalSpending.OWN, spending_chosen_on=TODAY)}
+    )
+    saved = _json(world, goal.goal)
+    assert _json(world, goal.preview_goal, previews["unchanged"]) == saved
+    expected = {name: _uncached(world, goal.preview_goal, lv) for name, lv in previews.items()}
+    assert expected["unchanged"] == saved
+    assert len(set(expected.values())) == 4  # each lever changes the answer
+    # 500 € less income a month uses the reserve up on the way to the due month
+    assert world.query(goal.preview_goal, TODAY, previews["unchanged"]).issue is None
+    assert world.query(goal.preview_goal, TODAY, previews["income"]).issue == "used_up"
+
+    plan_inputs.clear()
+    with _counted(world) as cold:
+        assert _json(world, goal.preview_goal, previews["unchanged"]) == expected["unchanged"]
+    for name, lv in previews.items():
+        with _counted(world) as warm:
+            assert _json(world, goal.preview_goal, lv) == expected[name], name
+        assert warm[0] < cold[0]
+        assert warm[0] <= 4, (name, warm[0])
+
+
+def test_the_goal_preview_without_a_goal_is_none_and_checks_as_the_plan_preview(world):
+    levers, _ = _projected(world)
+    no_goal = levers.model_copy(update={"goal": None})
+    assert world.query(goal.preview_goal, TODAY, no_goal).word == "none"
+    unknown = uuid4()
+    with pytest.raises(NotFoundError):
+        world.query(goal.preview_goal, TODAY, levers, unknown)
+    outside = HouseholdLevers.model_validate(
+        {**levers.model_dump(mode="json"), "one_offs": [{"month": "2040-01", "amount": "-1.00"}]}
+    )
+    with pytest.raises(RuleViolationError):
+        world.query(goal.preview_goal, TODAY, outside)
