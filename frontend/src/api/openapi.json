@@ -15528,6 +15528,75 @@
         "title": "BudgetCode",
         "description": "One code inside a line or the housing share: its window mean (largest remainder within\nits line, D273), the class shown (the override, else the taxonomy's) and the default."
       },
+      "BudgetFixedPayment": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "interval": {
+            "$ref": "#/components/schemas/RecurringInterval"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RecurringState"
+          },
+          "monthly": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Monthly"
+          },
+          "mean": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Mean"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "category",
+          "interval",
+          "state",
+          "monthly",
+          "mean"
+        ],
+        "title": "BudgetFixedPayment",
+        "description": "One fixed payment inside Notwendiges or Wünsche (§7.10 (c), D300): a recurring series\nof D296 that GET /household/recurring lists (active or maybe ended, not hidden as „kein\nAbo“) whose newest payment's code the Budget places in the class. `key` is the id of the\nseries' oldest payment, the opaque id the recurring panel uses (never the payee's words);\n`monthly` the expected monthly amount (the yearly total ÷ 12, to the cent half-up); `mean`\nthe series' payments the Budget counts in the class inside the window, ÷ the window's\nmonths, to the cent half-up."
+      },
       "BudgetHousing": {
         "properties": {
           "monthly": {
@@ -15680,6 +15749,32 @@
                 "type": "null"
               }
             ]
+          },
+          "fixed": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/BudgetFixedPayment"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed"
+          },
+          "variable": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variable"
           }
         },
         "additionalProperties": false,

@@ -15,6 +15,7 @@ the one-offs are categories now, and a single payment is marked from its detail 
   of any line on it that is no duplicate, up to `today`, whatever its status or sign.
 """
 
+from dataclasses import dataclass
 from datetime import date
 from uuid import UUID
 
@@ -24,7 +25,7 @@ from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.rules.health.month import cashflow_rows
-from hausbuch.rules.recurring import SpendingLine, recurring
+from hausbuch.rules.recurring import SeriesMark, SpendingLine, recurring
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import AllocationStatus
 from hausbuch.schemas.health import MonthLine
@@ -96,12 +97,36 @@ def accounts_through(conn: Connection, today: date) -> dict[UUID, date]:
     return {account_id: day for account_id, day in rows}
 
 
-def recurring_payments(conn: Connection, today: date) -> RecurringPayments:
-    """GET /household/recurring (see the module)."""
+@dataclass(frozen=True)
+class RecurringInputs:
+    """The database side of the recurring payments as of one day: the lines, the series
+    answers and how far each private account reaches. Lever-free, so services.plan_inputs may
+    keep it per data version and day (GET /household-budget's fixed payments, §7.10 (c))."""
+
+    lines: tuple[SpendingLine, ...]
+    marks: tuple[SeriesMark, ...]
+    through: tuple[tuple[UUID, date], ...]
+
+
+def recurring_inputs(conn: Connection, today: date) -> RecurringInputs:
+    return RecurringInputs(
+        lines=tuple(spending_lines(conn, today)),
+        marks=tuple(series_marks(conn)),
+        through=tuple(accounts_through(conn, today).items()),
+    )
+
+
+def recurring_from(inputs: RecurringInputs, today: date) -> RecurringPayments:
+    """rules.recurring over the inputs, as GET /household/recurring computes it."""
     return recurring(
-        spending_lines(conn, today),
-        series_marks(conn),
+        inputs.lines,
+        inputs.marks,
         today=today,
         history_start=HISTORY_START,
-        accounts_through=accounts_through(conn, today),
+        accounts_through=dict(inputs.through),
     )
+
+
+def recurring_payments(conn: Connection, today: date) -> RecurringPayments:
+    """GET /household/recurring (see the module)."""
+    return recurring_from(recurring_inputs(conn, today), today)

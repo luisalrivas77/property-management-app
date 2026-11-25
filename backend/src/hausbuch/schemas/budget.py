@@ -25,6 +25,7 @@ from .common import _STRING_ONLY, Money, NonNegativeMoney, Schema, _string_schem
 from .health import HealthTodo, Window, YearMonth
 from .household import BudgetClass, HouseholdGroup
 from .household import SavingsRate as Ratio  # signed, four places
+from .recurring import RecurringInterval, RecurringState
 
 # A target in percent of the income (D274): 0 to 100, one place.
 BudgetPercent = Annotated[
@@ -105,6 +106,26 @@ class BudgetCode(Schema):
     total: Money  # the window's sum
 
 
+class BudgetFixedPayment(Schema):
+    """One fixed payment inside Notwendiges or Wünsche (§7.10 (c), D300): a recurring series
+    of D296 that GET /household/recurring lists (active or maybe ended, not hidden as „kein
+    Abo“) whose newest payment's code the Budget places in the class. `key` is the id of the
+    series' oldest payment, the opaque id the recurring panel uses (never the payee's words);
+    `monthly` the expected monthly amount (the yearly total ÷ 12, to the cent half-up); `mean`
+    the series' payments the Budget counts in the class inside the window, ÷ the window's
+    months, to the cent half-up."""
+
+    key: UUID
+    label: str
+    category: AllocationCategory  # the newest payment's code
+    interval: RecurringInterval
+    state: RecurringState
+    monthly: NonNegativeMoney
+    mean: Money
+    change: Money | None = None
+    since: YearMonth | None = None
+
+
 class BudgetLine(Schema):
     key: BudgetLineKey
     monthly: Money  # the window's monthly mean, apportioned so the lines add up to E's mean
@@ -113,6 +134,11 @@ class BudgetLine(Schema):
     codes: list[BudgetCode] = Field(default_factory=list)  # empty for saving
     target: BudgetPercent | None = None  # need, want, saving only
     mark: BudgetMark | None = None
+    # §7.10 (c), D300, need and want only: „Feste Zahlungen (erwartet)“, largest monthly amount
+    # first, and „Veränderlich“ = monthly − Σ the fixed means, so the two add up to `monthly`
+    # to the cent. None on the other lines (and while no recurring read was applied).
+    fixed: list[BudgetFixedPayment] | None = None
+    variable: Money | None = None
 
     @model_validator(mode="after")
     def _codes(self) -> Self:
@@ -126,6 +152,13 @@ class BudgetLine(Schema):
                 raise ValueError(f"{self.key}: the codes' sums must add up to the line's")
         if self.mark is not None and self.target != self.mark.target:
             raise ValueError("a mark is against the line's target")
+        if (self.fixed is None) != (self.variable is None):
+            raise ValueError("fixed and variable come together")
+        if self.fixed is not None and self.variable is not None:
+            if self.key not in (BudgetLineKey.NEED, BudgetLineKey.WANT):
+                raise ValueError("only need and want split into fixed and variable")
+            if sum((f.mean for f in self.fixed), self.variable) != self.monthly:
+                raise ValueError(f"{self.key}: fixed + variable must add up to the line's")
         return self
 
 

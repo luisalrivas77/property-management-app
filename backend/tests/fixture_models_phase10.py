@@ -466,7 +466,59 @@ class GoalFixture(Schema):
     cases: list[GoalCase]
 
 
+# --- budget_fixed.yaml (§7.10 (c), D300) ----------------------------------------------------
+
+
+class FixedRowExpect(Schema):
+    key: str  # the fixture id of the series' oldest payment
+    label: str
+    interval: RecurringInterval
+    state: RecurringState
+    monthly: Money
+    mean: Money
+    change: Money | None
+    since: YearMonth | None
+
+
+class FixedClassExpect(Schema):
+    fixed: list[FixedRowExpect]
+    variable: Money
+
+
+class FixedExpect(Schema):
+    need: FixedClassExpect
+    want: FixedClassExpect
+
+
+class FixedCase(Lenient):
+    today: date
+    history_start: date
+    window: list[YearMonth]
+    lines: list[SpendingLineIn]
+    accounts_through: dict[str, date] = Field(default_factory=dict)
+    marks: list[SeriesMarkIn] = Field(default_factory=list)
+    overrides: dict[AllocationCategory, BudgetClass] = Field(default_factory=dict)
+    class_means: dict[BudgetClass, Money]
+    expect: FixedExpect
+
+    @model_validator(mode="after")
+    def _adds_up(self) -> Self:
+        """What holds whatever the rule does: each class's fixed means and variable part add up
+        to its class mean (D300)."""
+        for budget_class in (BudgetClass.NEED, BudgetClass.WANT):
+            got: FixedClassExpect = getattr(self.expect, budget_class.value)
+            total = sum((row.mean for row in got.fixed), got.variable)
+            if total != self.class_means[budget_class]:
+                raise ValueError(f"{self.id}: {budget_class.value} must add up to its class mean")
+        return self
+
+
+class FixedFixture(Schema):
+    cases: list[FixedCase]
+
+
 MODELS: dict[str, type[Schema]] = {
+    "budget_fixed": FixedFixture,
     "budget_partition": BudgetFixture,
     "budget_overrides": BudgetFixture,
     "budget_marks": BudgetFixture,
