@@ -37,7 +37,6 @@ const de = {
   discard: "Verwerfen",
   saveScenario: "Szenario speichern",
   saveHint: "Gespeichert als neue Fassung eures Szenarios; die alte bleibt im Verlauf.",
-  fixSpending: "Erst die Eingabe bei „geplant“ korrigieren; dann lässt sich das Szenario speichern.",
   dirtyNotice: "Geändert, noch nicht gespeichert: die Zahlen hier rechnen schon mit euren Änderungen.",
   dirtyNoticeBudget:
     "Geändert, noch nicht gespeichert: „Was übrig bleibt“ rechnet schon mit euren Änderungen; die Zeilen des Budgets zeigen die gemessenen Monate.",
@@ -343,7 +342,6 @@ export const planning = defineMessages({
     discard: "Discard",
     saveScenario: "Save scenario",
     saveHint: "Saved as a new version of your scenario; the old one stays in the history.",
-    fixSpending: "First correct the “planned” entry; then the scenario can be saved.",
     dirtyNotice: "Changed, not saved yet: the figures here already use your changes.",
     dirtyNoticeBudget:
       "Changed, not saved yet: “What is left” already uses your changes; the budget lines show the measured months.",

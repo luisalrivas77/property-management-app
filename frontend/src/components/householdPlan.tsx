@@ -324,9 +324,6 @@ export function PlanProvider({
   const [draftState, setDraftState] = useState<DraftState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  // A field holding an entry it cannot take keeps the draft's old value, so a save would store
-  // a value the field does not show (PR #434 review C): no save until it is fixed.
-  const [spendingInvalid, setSpendingInvalid] = useState(false);
   // A discard or a save remounts the fields, so none keeps a text the draft no longer holds.
   const [epoch, setEpoch] = useState(0);
   const [play, setPlay] = useState<PlayChanges>(NO_PLAY);
@@ -346,7 +343,6 @@ export function PlanProvider({
   // figures from it (D288).
   const preview = usePlanPreview(enough ? data.plan : NO_PLAN, enough ? draft : EMPTY_LEVERS, dirty);
   const setDraft: SetDraft = (update) => setDraftState((previous) => ({ levers: update(resolveDraft(previous, data?.plan)) }));
-  const invalid = spendingInvalid;
   const current = data ? currentDefault(data.scenarios) : null;
   // The goal writes the default scenario itself (its own read of the history): the plan is read
   // again, and a draft with no change follows the new row instead of reading as changed.
@@ -391,7 +387,6 @@ export function PlanProvider({
         const row = await saveDefaultScenario(posted, current);
         setDraftState({ levers: posted, resetOn: row.id });
         state.reload();
-        setSpendingInvalid(false);
         setEpoch((value) => value + 1);
       } catch (caught) {
         setError(caught);
@@ -404,7 +399,7 @@ export function PlanProvider({
       <div className="stack">
         {error != null ? <PlanError error={error} /> : null}
         <div className="row">
-          <button type="button" disabled={busy || !dirty || invalid} onClick={() => void save()}>
+          <button type="button" disabled={busy || !dirty} onClick={() => void save()}>
             {t.saveScenario}
           </button>
           {dirty ? (
@@ -414,14 +409,13 @@ export function PlanProvider({
               disabled={busy}
               onClick={() => {
                 setDraftState(null);
-                setSpendingInvalid(false);
                 setEpoch((value) => value + 1);
               }}
             >
               {t.discard}
             </button>
           ) : null}
-          <span className="muted">{spendingInvalid ? t.fixSpending : t.saveHint}</span>
+          <span className="muted">{t.saveHint}</span>
         </div>
       </div>
     );

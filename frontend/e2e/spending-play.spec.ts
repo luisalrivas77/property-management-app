@@ -568,6 +568,11 @@ test("a new class move is saved as an override", async ({ page, signedIn }) => {
   await page.goto("/planning?section=budget");
   await expect(page).toHaveURL("/household?tab=budget");
   await page.getByRole("link", { name: "Notwendiges öffnen" }).click();
+  // A planned amount is typed on Durchspielen (§7.10 (a), D299): the panel has no field for one,
+  // and leads there.
+  const panel = page.getByRole("complementary", { name: "Notwendiges" });
+  await expect(panel.getByRole("textbox")).toHaveCount(0);
+  await expect(panel.getByRole("link", { name: "Ausgaben durchspielen ›" })).toHaveAttribute("href", "/household?tab=durchspielen");
   const switcher = page.getByRole("group", { name: "Klasse von Sonstige Lebensmittel" });
   await expect(switcher.getByRole("button", { name: "Notwendiges" })).toHaveAttribute("aria-pressed", "true");
   await switcher.getByRole("button", { name: "Wünsche" }).click();

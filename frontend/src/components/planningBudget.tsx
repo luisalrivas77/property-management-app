@@ -17,6 +17,7 @@ import { useLocale, useT } from "@/i18n";
 import { monthBudget } from "@/i18n/monthBudget";
 import { lineLabel, planning, type PlanningText } from "@/i18n/planning";
 import { describeError, ErrorNotice } from "@/lib/ErrorNotice";
+import { HOUSEHOLD_PLAY } from "@/lib/planningRoutes";
 
 import { DetailPanel, useDetail } from "./DetailPanel";
 import { HealthTodoItem } from "./healthFigures";
@@ -367,7 +368,7 @@ export function BudgetClassPanel({
         ) : null}
         {switchable ? (
           <p>
-            <Link href="/household?tab=durchspielen">{m.playLink} ›</Link>
+            <Link href={HOUSEHOLD_PLAY}>{m.playLink} ›</Link>
           </p>
         ) : null}
         {footer}
