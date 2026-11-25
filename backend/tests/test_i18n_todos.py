@@ -101,8 +101,8 @@ NET_WORTH_TEXTS = [
 
 PLAN_TEXTS = [
     "Das Szenario nennt ein Konto für die Reserve, das es nicht mehr gibt; es zählt nicht mit.",
-    "Das Szenario zählt ein Konto zur Reserve, das kein Giro-, Spar- oder Kreditkartenkonto "
-    "ist; es zählt nicht mit.",
+    "Das Szenario zählt ein Konto zur Reserve, das kein Giro-, Spar-, Kreditkarten- oder "
+    "Depotkonto ist; es zählt nicht mit.",
     "Das Szenario ändert einen Sparplan, den Hausbuch in den letzten drei abgeschlossenen "
     "Monaten nicht mehr findet; die Änderung zählt nicht mit.",
     "Das Szenario enthält eine Einmalzahlung im Monat 03/2031, der nach dem Ende des Zeitraums "
