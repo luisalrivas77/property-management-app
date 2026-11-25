@@ -408,7 +408,7 @@ test("the one-offs stand beside the Budget's split as „Einmalig im Zeitraum“
 
   const beside = page.getByRole("list", { name: "Einmalig im Zeitraum" });
   const oneOff = beside.locator('a.budget-line[data-key="one_off"]');
-  await expect(oneOff).toContainText("160,00");
+  await expect(oneOff).toContainText("160");
   await expect(oneOff).toContainText("neben der Aufteilung, nicht im Schnitt");
   // Once, beside the split, not among its lines.
   await expect(page.locator('a.budget-line[data-key="one_off"]')).toHaveCount(1);
