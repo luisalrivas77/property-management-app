@@ -304,7 +304,7 @@ test("a typed amount moves the savings rate and „Anlegbar“ through the previ
 
   // Budget now counts the planned change and says so, with the way back to Durchspielen.
   await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Budget" }).click();
-  const rest = page.getByRole("region", { name: "Was mit dem Rest passiert" });
+  const rest = page.getByRole("region", { name: "Was übrig bleibt · im Monat" });
   await expect(rest.getByTestId("rest-with-changes")).toContainText("1.260,00 €");
   const planned = page.getByTestId("planned-changes").first();
   await expect(planned).toContainText("mit 1 geplanten Änderung");
@@ -474,8 +474,13 @@ test("a budget target and the reserve target, each saved in its place, keep Durc
   await expect.poll(() => posted.length).toBe(1);
   expect(posted[0]?.levers?.budget_targets?.wants_max).toBe("30");
   expect(posted[0]?.levers?.spending_changes ?? []).toEqual([]);
-  await expect(page.getByText("Wünsche liegen 5 Prozentpunkte unter eurem Ziel, rund 260 € im Monat.")).toBeVisible();
-  await expect(page.getByText("Ziel höchstens 30 %")).toBeVisible();
+  // The card shows the target on its line (mockup 19h); the sentence is in the class's panel.
+  const wants = page.locator('a.budget-line[data-key="want"]');
+  await expect(wants).toContainText("Ziel bis 30 %");
+  await wants.click();
+  const panel = page.getByRole("complementary", { name: "Wünsche" });
+  await expect(panel.getByText("Wünsche liegen 5 Prozentpunkte unter eurem Ziel, rund 260 € im Monat.")).toBeVisible();
+  await expect(panel.getByText("Ziel höchstens 30 %")).toBeVisible();
 
   // The reserve target, changed beside its figure on Haushalt › Reserve (§7.10 (a) 7), stores
   // only itself over the stored default: the target stays and the spending draft stays a draft.
@@ -563,6 +568,11 @@ test("a new class move is saved as an override", async ({ page, signedIn }) => {
   await page.goto("/planning?section=budget");
   await expect(page).toHaveURL("/household?tab=budget");
   await page.getByRole("link", { name: "Notwendiges öffnen" }).click();
+  // A planned amount is typed on Durchspielen (§7.10 (a), D299): the panel has no field for one,
+  // and leads there.
+  const panel = page.getByRole("complementary", { name: "Notwendiges" });
+  await expect(panel.getByRole("textbox")).toHaveCount(0);
+  await expect(panel.getByRole("link", { name: "Ausgaben durchspielen ›" })).toHaveAttribute("href", "/household?tab=durchspielen");
   const switcher = page.getByRole("group", { name: "Klasse von Sonstige Lebensmittel" });
   await expect(switcher.getByRole("button", { name: "Notwendiges" })).toHaveAttribute("aria-pressed", "true");
   await switcher.getByRole("button", { name: "Wünsche" }).click();
@@ -631,11 +641,11 @@ for (const scheme of ["light", "dark"] as const) {
 
     await page.emulateMedia({ colorScheme: scheme });
     await page.goto("/household?tab=budget");
-    const rest = page.getByRole("region", { name: "Was mit dem Rest passiert" });
+    const rest = page.getByRole("region", { name: "Was übrig bleibt · im Monat" });
     // The saved plan's change shows its stretch of the coming months in the rest card.
     await expect(rest.getByTestId("rest-with-changes")).toContainText("1.260,00 €");
     await expect(page.getByTestId("planned-changes").first()).toContainText("mit 1 geplanten Änderung");
-    await rest.getByRole("button", { name: "So entsteht die Zahl" }).click();
+    await rest.getByRole("button", { name: "Wie gerechnet ›" }).click();
     await expect(rest.getByRole("region", { name: "So entsteht die Zahl" })).toBeVisible();
     expect(await pageWidth()).toBeLessThanOrEqual(390);
 

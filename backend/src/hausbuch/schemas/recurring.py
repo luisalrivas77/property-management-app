@@ -13,6 +13,7 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from .allocation import AllocationCategory
 from .common import Money, NonNegativeMoney, Schema
 from .health import GroupPayment, YearMonth
 
@@ -124,3 +125,39 @@ class SpendingMarkRecorded(Schema):
     id: UUID
     answer: SpendingMarkAnswer
     created_at: datetime
+
+
+class PaymentOneOff(Schema):
+    """GET /household/one-off-marks?transaction_id= (phase 10 §7.12 (b), D307): one part of a
+    private payment that „Als einmalig markieren“ may mark, as of today (the parts POST
+    /household/one-off-marks accepts; a payment with none gets no button). `marked`: its newest
+    answer is `one_off`; `category_one_off`: its code counts as one-off under the default
+    scenario's switches, so it counts as one-off whatever its own answer and the panel shows
+    no button. What was paid, positive."""
+
+    allocation_id: UUID
+    category: AllocationCategory
+    amount: NonNegativeMoney
+    marked: bool
+    category_one_off: bool
+
+
+class OneOffCode(Schema):
+    """One row of „Was als einmalig zählt“ (GET /household/one-off-codes, phase 10 §7.12 (a),
+    D307): a code the household may switch, whether the taxonomy counts it as one-off
+    (`default`) and whether it does under the default scenario's switches (`one_off`), and what
+    was paid in it in the calendar year `year` up to today (the confirmed private lines of
+    money out, the household month's codes), positive."""
+
+    category: AllocationCategory
+    default: bool
+    one_off: bool
+    year_total: NonNegativeMoney
+
+
+class OneOffCodes(Schema):
+    """GET /household/one-off-codes: the one-off codes first (each listed, also at 0), then
+    every other switchable code with a payment this year, the largest sum first."""
+
+    year: int
+    codes: list[OneOffCode] = Field(default_factory=list)

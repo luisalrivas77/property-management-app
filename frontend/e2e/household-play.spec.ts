@@ -358,7 +358,7 @@ test("a typed income and category move „Was das bewirkt“, and only „Als Pl
 
   // Another tab does not move: Budget's „Anlegbar“ is still the saved plan's.
   await tabs.getByRole("link", { name: "Budget" }).click();
-  await expect(page.getByRole("region", { name: "Was mit dem Rest passiert" }).getByTestId("rest-investable")).toContainText("1.170 €");
+  await expect(page.getByRole("region", { name: "Was übrig bleibt · im Monat" }).getByTestId("rest-left")).toContainText("1.170 €");
   // The draft is still there on return: it lives in the provider the Haushalt tabs share.
   await tabs.getByRole("link", { name: "Durchspielen" }).click();
   await expect(page.getByText("2 Änderungen · noch nicht behalten")).toBeVisible();

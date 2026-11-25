@@ -106,9 +106,7 @@
 }
 
 .budget-line-name .muted {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   font-size: 0.85rem;
 }
 
@@ -182,12 +180,75 @@
   padding-left: 1.2em;
 }
 
-.budget-with-plan {
+/* The card's foot (mockup 19h frame 1): the averaging note, then the two links. */
+.budget-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px 16px;
   padding-top: 8px;
   border-top: 1px solid var(--divider);
+  font-size: 0.9rem;
 }
 
-/* --- „Was mit dem Rest passiert“ (Haushalt › Budget's foot, mockup 19b) --- */
+.budget-foot-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+
+.budget-foot-links a {
+  color: var(--accent-text);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* „Was als einmalig zählt“ (mockup 19h frame 3). */
+.one-off-codes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.one-off-code {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--divider);
+  cursor: pointer;
+}
+
+.one-off-codes li:first-child .one-off-code {
+  border-top: 0;
+}
+
+.one-off-code-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.one-off-code input {
+  flex: none;
+}
+
+.planning-rest-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.planning-rest-head h2 {
+  margin: 0;
+}
+
+/* --- „Was übrig bleibt“ (Haushalt › Budget's foot, mockup 19h; „Was mit dem Rest passiert“ in 19b) --- */
 
 .planning-rest li > span:first-child {
   min-width: 0;

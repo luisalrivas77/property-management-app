@@ -158,7 +158,11 @@ def with_fixed(
                 window_ids=window_ids,
             )
             budget_line = budget_line.model_copy(
-                update={"fixed": split.fixed, "variable": split.variable}
+                update={
+                    "fixed": split.fixed,
+                    "variable": split.variable,
+                    "fixed_monthly": budget_line.monthly - split.variable,
+                }
             )
         lines.append(budget_line)
     return view.model_copy(update={"lines": lines})

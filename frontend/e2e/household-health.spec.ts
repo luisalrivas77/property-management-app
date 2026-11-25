@@ -350,17 +350,29 @@ test("the three figures carry their dots on the standard limits, and „Grenzen 
   const posted = await scenarios(page, [saved]);
   await serve(page, "/api/health", () => health(window, { coloured: posted.length > 0 }));
   await serve(page, "/api/health/net-worth-series", () => []);
-
+  // The card sits inside Haushalt › Monat, which waits for the month's own reads.
+  await monthsOf(page, (from, to) => window.filter((month) => month >= from && month <= to).map((month) => monthView(month, true)));
   await page.goto("/household");
-  const figures = page.getByRole("region", { name: "Kennzahlen" });
-  const rate = page.locator('div.health-figure[aria-label="Sparquote"]');
+  // „Finanzielle Gesundheit“ on Haushalt › Monat (mockup 19g): the word, the period and whose
+  // limits, and the three figures as small cards with their green limit.
+  const figures = page.getByRole("region", { name: "Finanzielle Gesundheit" });
+  await expect(figures).toContainText("Gut");
+  await expect(figures).toContainText("Standardgrenzen");
+  const minis = figures.locator("a.health-mini");
+  await expect(minis).toHaveCount(3);
+  const rate = minis.filter({ hasText: "Sparquote Ø 3 Mon." });
   await expect(rate).toContainText("25,0 %");
   await expect(rate).toHaveAttribute("data-state", "good");
-  await expect(rate).toContainText("Standard-Grenze");
-  await expect(page.locator('div.health-figure[aria-label="Liquiditätsreserve"]')).toHaveAttribute("data-state", "ok");
-  await expect(page.locator('div.health-figure[aria-label="Schuldendienstquote"]')).toHaveAttribute("data-state", "good");
+  await expect(rate).toContainText("ab 10,0 % grün");
+  const reserve = minis.filter({ hasText: "Reserve" });
+  await expect(reserve).toHaveAttribute("data-state", "ok");
+  await expect(reserve).toContainText("3,1 Mon.");
+  await expect(reserve).toContainText("ab 6 Mon. grün");
+  const loans = minis.filter({ hasText: "Kreditraten" });
+  await expect(loans).toHaveAttribute("data-state", "good");
+  await expect(loans).toContainText("bis 30,0 % grün");
   for (const gone of ["Beleihungsauslauf", "Verschuldungsgrad", "Schulden zu Jahreseinkommen"]) {
-    await expect(page.locator(`div.health-figure[aria-label="${gone}"]`)).toHaveCount(0);
+    await expect(figures.getByText(gone)).toHaveCount(0);
   }
   // Nothing waits for the limits: the sheet opens only on „Grenzen ändern“.
   await expect(page.getByText("Eure Ampel-Grenzen fehlen.")).toHaveCount(0);
@@ -385,7 +397,8 @@ test("the three figures carry their dots on the standard limits, and „Grenzen 
 
   await expect(bands).toHaveCount(0);
   await expect(rate).toHaveAttribute("data-state", "ok");
-  await expect(rate).toContainText("eure Grenze");
+  await expect(rate).toContainText("ab 30,0 % grün");
+  await expect(figures).toContainText("eure Grenzen");
 });
 
 test("„Übernehmen“ on Haushalt keeps the default's budget targets and class moves", async ({ page, signedIn }) => {
@@ -411,7 +424,7 @@ test("„Übernehmen“ on Haushalt keeps the default's budget targets and class
   await serve(page, "/api/health/net-worth-series", () => []);
 
   await page.goto("/household");
-  await page.getByRole("region", { name: "Kennzahlen" }).getByRole("button", { name: "Grenzen ändern" }).click();
+  await page.getByRole("region", { name: "Finanzielle Gesundheit" }).getByRole("button", { name: "Grenzen ändern" }).click();
   await page.getByRole("region", { name: "Ampel-Grenzen festlegen" }).getByRole("button", { name: "Übernehmen" }).click();
   await expect.poll(() => posted.length).toBe(1);
   expect(posted[0]?.supersedes_id).toBe(saved.id);
@@ -553,15 +566,38 @@ test("every figure opens what it is made of, and a month opens Haushalt with its
   );
   await serve(page, "/api/household-plan", () => plan(window, null, null));
 
-  // Haushalt's Kennzahlen: the savings rate's months, each a link to that month on Haushalt.
+  // Haushalt › Monat's „Finanzielle Gesundheit“ (mockup 19g): a small card opens its side panel
+  // with what it is made of and its green, amber and red ranges; the savings rate's months each
+  // link to that month on Haushalt.
   await page.goto("/household");
-  const rate = page.locator('div.health-figure[aria-label="Sparquote"]');
+  const minis = page.getByRole("region", { name: "Finanzielle Gesundheit" }).locator("a.health-mini");
+  await minis.filter({ hasText: "Sparquote" }).click();
+  await expect(page).toHaveURL(/#d-kennzahl-savings_rate$/);
+  const rate = page.getByRole("complementary", { name: "Sparquote Ø 3 Monate" });
+  await expect(rate.getByRole("heading", { name: "Woraus sie besteht" })).toBeVisible();
+  const madeOf = rate.locator(".household-rows").first().getByRole("listitem");
+  await expect(madeOf.nth(0)).toContainText("Einnahmen");
+  await expect(madeOf.nth(0)).toContainText("15.600");
+  await expect(madeOf.nth(1)).toContainText("Gespart");
+  await expect(madeOf.nth(1)).toContainText("3.900");
+  await expect(madeOf.nth(2)).toContainText("Gespart ÷ Einnahmen");
+  await expect(madeOf.nth(2)).toContainText("25,0 %");
+  const ranges = rate.locator(".health-ranges li");
+  await expect(ranges).toHaveCount(3);
+  await expect(ranges.nth(0)).toContainText("Grün");
+  await expect(ranges.nth(0)).toContainText("ab 10,0 %");
+  await expect(ranges.nth(1)).toContainText("Gelb");
+  await expect(ranges.nth(2)).toContainText("Rot");
+  await expect(rate).toContainText("Standardgrenzen, bis ihr eigene festlegt.");
+  // GET /health names no month since which one-offs stay out, so there is no note.
+  await expect(rate.locator(".health-one-offs")).toHaveCount(0);
   await rate.getByText("Monate ansehen").click();
   for (const month of window) {
     await expect(rate.locator(`a[href="/household?monat=${month}"]`)).toBeVisible();
   }
   // The reserve and the loans' figure: each opens its rows and links to where they come from.
-  const reserve = page.locator('div.health-figure[aria-label="Liquiditätsreserve"]');
+  await minis.filter({ hasText: "Reserve" }).click();
+  const reserve = page.getByRole("complementary", { name: "Liquiditätsreserve" });
   await reserve.getByText("Woraus die Reserve besteht").click();
   await expect(reserve.locator(`a[href="/accounts/${SAVINGS}"]`)).toBeVisible();
   // „Konten der Reserve ändern“ opens the reserve's own form beside its figure on Haushalt ›
@@ -570,17 +606,19 @@ test("every figure opens what it is made of, and a month opens Haushalt with its
   await expect(page).toHaveURL("/household?tab=reserve#reserve-ziel");
   await expect(page.getByRole("form", { name: "Reserve-Ziel ändern" })).toBeVisible();
   await page.goto("/household");
-  const debtService = page.locator('div.health-figure[aria-label="Schuldendienstquote"]');
+  await minis.filter({ hasText: "Kreditraten" }).click();
+  const debtService = page.getByRole("complementary", { name: "Schuldendienstquote" });
   await debtService.getByText("Woraus die Zahl besteht").click();
   // The property's Planung is Anlagen › Immobilie since phase 10 §7.6.
   await expect(debtService.locator('details a[href="/assets?tab=immobilie"]')).toBeVisible();
 
-  // „Was mit dem Rest passiert“ at the foot of Haushalt › Budget (Planung › Anlegen until phase 10
-  // §7.9 (a), whose old link lands there): each row of „So entsteht die Zahl“ that has months opens them.
+  // „Was übrig bleibt · im Monat“ at the foot of Haushalt › Budget (mockup 19h; Planung › Anlegen
+  // until phase 10 §7.9 (a), whose old link lands there): each row of „So entsteht die Zahl“ that
+  // has months opens them.
   await page.goto("/planning?section=anlegen");
   await expect(page).toHaveURL("/household?tab=budget#was-mit-dem-rest");
-  const rest = page.getByRole("region", { name: "Was mit dem Rest passiert" });
-  await rest.getByRole("button", { name: "So entsteht die Zahl" }).click();
+  const rest = page.getByRole("region", { name: "Was übrig bleibt · im Monat" });
+  await rest.getByRole("button", { name: "Wie gerechnet ›" }).click();
   const made = rest.getByRole("region", { name: "So entsteht die Zahl" });
   const rows = made.locator("details");
   await expect(rows).toHaveCount(3); // mean income, mean regular spending, free cash; the buffer and the result have none
@@ -590,21 +628,48 @@ test("every figure opens what it is made of, and a month opens Haushalt with its
       await expect(row.locator(`a[href="/household?monat=${month}"]`)).toBeVisible();
     }
   }
-  // A month opens Haushalt on that month: the means over the 3 closed months with their basis,
-  // the flat's result as an income row, and the chip of a month changed since its closing.
+  // A month opens Haushalt on that month: the means over the 3 closed months with their basis, and
+  // the chip of a month changed since its closing (the income card went with mockup 19g).
   await rows.first().locator(`a[href="/household?monat=${first}"]`).click();
   await expect(page).toHaveURL(`/household?monat=${first}`);
   await expect(page.getByRole("combobox", { name: "Monat" })).toHaveValue(first);
   await expect(page.getByRole("group", { name: "Einnahmen" })).toContainText("Ø 3 Monate");
   await expect(page.getByText("Basis der Durchschnitte: 3 abgeschlossene Monate")).toBeVisible();
   await expect(page.getByRole("region", { name: "Noch keine Durchschnitte" })).toHaveCount(0);
-  const income = page.getByRole("region", { name: "Einnahmen" });
-  await expect(income.getByRole("listitem").filter({ hasText: "Wohnung (Ergebnis des Mietkontos)" })).toContainText("250");
   // The chip opens both values in the detail panel (mockup 19).
   await page.getByRole("link", { name: /seit dem Abschluss geändert/ }).click();
   const chip = page.getByRole("complementary", { name: "Seit dem Abschluss geändert" });
   await expect(chip.getByRole("row", { name: /Einnahmen mit der Wohnung/ })).toContainText("5.000");
   await expect(chip.getByRole("row", { name: /Einnahmen mit der Wohnung/ })).toContainText("5.200");
+});
+
+test("on the phone, Haushalt › Monat's tiles and a figure's side panel fit, light and dark", async ({ page, signedIn }) => {
+  void signedIn;
+  const window = [monthsBack(4), monthsBack(3), monthsBack(2)];
+  await scenarios(page);
+  await serve(page, "/api/health", () => health(window));
+  await serve(page, "/api/health/net-worth-series", () => []);
+  await monthsOf(page, (from, to) => window.filter((month) => month >= from && month <= to).map((month) => monthView(month, true)));
+  await page.setViewportSize({ width: 390, height: 844 });
+  const backgrounds: string[] = [];
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.goto("about:blank");
+    await page.goto(`/household?monat=${monthsBack(2)}`);
+    await expect(page.getByRole("group", { name: "Einnahmen" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Finanzielle Gesundheit" }).locator("a.health-mini")).toHaveCount(3);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await page.screenshot({ path: test.info().outputPath(`monat-${scheme}.png`), fullPage: true });
+
+    // A small card's panel slides in as a dialog and fits too.
+    await page.getByRole("region", { name: "Finanzielle Gesundheit" }).locator("a.health-mini", { hasText: "Reserve" }).click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet.locator(".health-ranges li")).toHaveCount(3);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    backgrounds.push(await page.evaluate(() => getComputedStyle(document.body).backgroundColor));
+    await page.screenshot({ path: test.info().outputPath(`monat-reserve-${scheme}.png`) });
+  }
+  expect(backgrounds[0]).not.toEqual(backgrounds[1]);
 });
 
 test("the month-end card, the split and the net worth over time are on Anlagen, and an old link lands there", async ({
@@ -708,7 +773,7 @@ test("„Was diesen Monat anders ist“ names the server's groups and opens thei
   await expect(page.getByRole("region", { name: "Was diesen Monat anders ist" })).toHaveCount(0);
 });
 
-test("the Budget in one line on Haushalt: only once a target is saved, coloured as on Haushalt › Budget", async ({ page, signedIn }) => {
+test("the Budget tile on Haushalt › Monat: „N von 3“ with a dot per class, coloured as on Haushalt › Budget", async ({ page, signedIn }) => {
   void signedIn;
   const window = [monthsBack(4), monthsBack(3), monthsBack(2)];
   type BudgetView = components["schemas"]["BudgetView"];
@@ -768,21 +833,85 @@ test("the Budget in one line on Haushalt: only once a target is saved, coloured 
   await serve(page, "/api/household-budget", budget);
 
   await page.goto("/household");
-  const line = page.getByRole("region", { name: "Budget", exact: true });
-  await expect(line).toContainText("Ø je Monat über 3 abgeschlossene Monate");
-  await expect(line).toContainText("Notwendiges 2.600 € von 2.340 €");
-  await expect(line).toContainText("Wünsche 1.300 € von 1.560 €");
-  await expect(line).toContainText("Sparen 1.300 € von mindestens 1.040 €");
-  await expect(line.getByRole("img", { name: "Ziel verfehlt" })).toHaveCount(1);
-  await expect(line.getByRole("img", { name: "Ziel erreicht" })).toHaveCount(2);
-  await expect(line.locator(".budget-dot-amber")).toHaveCount(1);
-  await expect(line.locator(".budget-dot-green")).toHaveCount(2);
-  await expect(line.locator(".budget-dot-red")).toHaveCount(0);
-  await expect(line.getByRole("link", { name: /Haushalt › Budget/ })).toHaveAttribute("href", "/household?tab=budget");
+  // Two of the three classes meet their target; Notwendiges misses it by the server's 260 €.
+  const tile = page.getByRole("link", { name: /^Budget: 2 von 3 Zielen erreicht/ });
+  await expect(tile).toHaveAttribute("href", "/household?tab=budget");
+  await expect(tile).toContainText("2 von 3");
+  const classes = tile.getByRole("listitem");
+  await expect(classes).toHaveCount(3);
+  await expect(classes.nth(0)).toContainText(/Notwendiges \+260\s€/);
+  await expect(classes.nth(1)).toHaveText(/^\s*Wünsche$/);
+  await expect(classes.nth(2)).toHaveText(/^\s*Sparen$/);
+  await expect(tile.locator(".budget-dot-amber")).toHaveCount(1);
+  await expect(tile.locator(".budget-dot-green")).toHaveCount(2);
+  await expect(tile.locator(".budget-dot-red")).toHaveCount(0);
+  // „Ohne Kategorie“ is no longer a tile; the Budget took its place.
+  await expect(page.getByRole("group", { name: "Ohne Kategorie" })).toHaveCount(0);
 
-  // Before a target is saved there is no line.
+  // Before a target is saved the tile says so and still leads to the Budget.
   targets = false;
   await page.goto("/household");
   await expect(page.getByRole("region", { name: "Ausgaben nach Kategorie" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Budget", exact: true })).toHaveCount(0);
+  const empty = page.getByRole("link", { name: /^Budget: noch keine Ziele/ });
+  await expect(empty).toContainText("noch keine Ziele");
+  await expect(empty.locator(".budget-dot")).toHaveCount(0);
+});
+
+test("Monat does not wait for the Budget's read: its tiles and cards are there while the Budget tile reads, and a failed read says so", async ({
+  page,
+  signedIn,
+}) => {
+  void signedIn;
+  const window = [monthsBack(4), monthsBack(3), monthsBack(2)];
+  await scenarios(page);
+  await serve(page, "/api/health", () => health(window));
+  await serve(page, "/api/health/net-worth-series", () => []);
+  await monthsOf(page, (from, to) => window.filter((month) => month >= from && month <= to).map((month) => monthView(month, true)));
+  type BudgetView = components["schemas"]["BudgetView"];
+  const noTargets: BudgetView = {
+    as_of: "2026-11-18",
+    scenario_id: null,
+    window: { months: window, enough: true },
+    months: [],
+    income: { monthly: "5200.00", total: "15600.00", rental_monthly: "0.00", private_monthly: "5200.00" },
+    lines: [],
+    housing: null,
+    targets: {},
+    references: [],
+    todos: [],
+  };
+  // GET /household-budget is held open until the test releases it (the real read computes the
+  // household plan and is the slowest of Haushalt's reads); in the second part it fails.
+  let fail = false;
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(
+    (url) => url.pathname === "/api/household-budget",
+    async (route: Route) => {
+      if (fail) return route.fulfill({ status: 500, json: { detail: "kaputt" } });
+      await released;
+      return route.fulfill({ json: noTargets });
+    },
+  );
+
+  await page.goto(`/household?monat=${monthsBack(2)}`);
+  // The month is shown while the Budget's read is still open.
+  await expect(page.getByRole("group", { name: "Einnahmen" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Finanzielle Gesundheit" }).locator("a.health-mini")).toHaveCount(3);
+  const reading = page.getByRole("link", { name: /^Budget: wird gelesen/ });
+  await expect(reading).toContainText("wird gelesen …");
+  await expect(reading).toHaveAttribute("href", "/household?tab=budget");
+  await expect(page.getByTestId("budget-tile")).toHaveCount(1);
+  release();
+  await expect(page.getByRole("link", { name: /^Budget: noch keine Ziele/ })).toContainText("noch keine Ziele");
+
+  // A failed read is named on the tile, never shown as „noch keine Ziele“; the month stays.
+  fail = true;
+  await page.goto("about:blank");
+  await page.goto(`/household?monat=${monthsBack(2)}`);
+  await expect(page.getByRole("group", { name: "Einnahmen" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Budget: konnte nicht gelesen werden/ })).toContainText("nicht lesbar");
+  await expect(page.getByRole("link", { name: /^Budget: noch keine Ziele/ })).toHaveCount(0);
 });

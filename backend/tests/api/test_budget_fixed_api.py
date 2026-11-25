@@ -94,8 +94,11 @@ def test_a_hidden_series_leaves_the_kept_fixed_rows(app_engine, auth_a, person, 
         if line["key"] in ("need", "want"):
             means = sum((Decimal(f["mean"]) for f in line["fixed"]), Decimal(line["variable"]))
             assert means == Decimal(line["monthly"])
+            fixed = sum((Decimal(f["mean"]) for f in line["fixed"]), Decimal("0.00"))
+            assert Decimal(line["fixed_monthly"]) == fixed
         else:
             assert line["fixed"] is None and line["variable"] is None
+            assert line["fixed_monthly"] is None
     want = _want(client_a)
     assert want == _want(client_a)  # kept
     (row,) = want["fixed"]
@@ -108,3 +111,4 @@ def test_a_hidden_series_leaves_the_kept_fixed_rows(app_engine, auth_a, person, 
     after = _want(client_a)
     assert after["fixed"] == []
     assert after["variable"] == after["monthly"] == want["monthly"]
+    assert after["fixed_monthly"] == "0.00"

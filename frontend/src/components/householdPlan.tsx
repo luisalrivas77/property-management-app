@@ -2,7 +2,7 @@
 
 // The household plan in its places since phase 10 wave 3 (a) (§7.9 (a), D288; mockups 19b,
 // 19c): Planung left the menu, and what its five sections showed now sits where it is used.
-// Haushalt › Budget is components/planningBudget.tsx with „Was mit dem Rest passiert“ at its foot
+// Haushalt › Budget is components/planningBudget.tsx with „Was übrig bleibt“ at its foot
 // (what Planung › Anlegen was: free cash, the buffer, „Anlegbar pro Monat“, the savings plans,
 // „So entsteht die Zahl“, and the AI explanation behind „Erklärung“); Haushalt › Reserve is the
 // reserve, its target, its accounts and the paths to it; the net worth on typed rates (what
@@ -36,6 +36,7 @@ import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { useT } from "@/i18n";
 import { goalText } from "@/i18n/goal";
+import { monthBudget } from "@/i18n/monthBudget";
 import { lineLabel, planning, type PlanningText } from "@/i18n/planning";
 import { playText } from "@/i18n/play";
 import { ErrorNotice } from "@/lib/ErrorNotice";
@@ -78,7 +79,8 @@ import { type GoalView, useGoalView } from "./householdGoal";
 import { PlanExplanationPanel } from "./planExplanation";
 import { applyPlay, NO_PLAY, plannedCount, type PlayChanges } from "./playDraft";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
-import { BudgetClassPanel, BudgetSection, type BudgetView, GoalsPanel, PlanError } from "./planningBudget";
+import { OneOffSheet } from "./oneOffSheet";
+import { BudgetClassPanel, BudgetSection, type BudgetView, GoalsPanel, ONE_OFF_SHEET, PlanError } from "./planningBudget";
 import { type PlanPreview, stretch, usePlanPreview } from "./spendingPlay";
 import { Loading } from "./ui";
 import { type Loaded, useLoad } from "./useLoad";
@@ -322,9 +324,6 @@ export function PlanProvider({
   const [draftState, setDraftState] = useState<DraftState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  // A field holding an entry it cannot take keeps the draft's old value, so a save would store
-  // a value the field does not show (PR #434 review C): no save until it is fixed.
-  const [spendingInvalid, setSpendingInvalid] = useState(false);
   // A discard or a save remounts the fields, so none keeps a text the draft no longer holds.
   const [epoch, setEpoch] = useState(0);
   const [play, setPlay] = useState<PlayChanges>(NO_PLAY);
@@ -341,10 +340,9 @@ export function PlanProvider({
     data && enough ? draftChanges(fillLevers(data.plan.levers), draft, t, f.short, f.percentValue, defaultClasses(data.budget)) : [];
   const dirty = changes.length > 0;
   // D263: every draft goes through the preview while a member types; each place shows its
-  // figures from it (D288), the Budget's „Mit eurem Plan“ too.
+  // figures from it (D288).
   const preview = usePlanPreview(enough ? data.plan : NO_PLAN, enough ? draft : EMPTY_LEVERS, dirty);
   const setDraft: SetDraft = (update) => setDraftState((previous) => ({ levers: update(resolveDraft(previous, data?.plan)) }));
-  const invalid = spendingInvalid;
   const current = data ? currentDefault(data.scenarios) : null;
   // The goal writes the default scenario itself (its own read of the history): the plan is read
   // again, and a draft with no change follows the new row instead of reading as changed.
@@ -366,7 +364,6 @@ export function PlanProvider({
   let panel: ReactNode = null;
   if (data && enough) {
     const { plan } = data;
-    const closedMonths = data.health.window.months ?? [];
 
     const save = async () => {
       setBusy(true);
@@ -390,7 +387,6 @@ export function PlanProvider({
         const row = await saveDefaultScenario(posted, current);
         setDraftState({ levers: posted, resetOn: row.id });
         state.reload();
-        setSpendingInvalid(false);
         setEpoch((value) => value + 1);
       } catch (caught) {
         setError(caught);
@@ -403,7 +399,7 @@ export function PlanProvider({
       <div className="stack">
         {error != null ? <PlanError error={error} /> : null}
         <div className="row">
-          <button type="button" disabled={busy || !dirty || invalid} onClick={() => void save()}>
+          <button type="button" disabled={busy || !dirty} onClick={() => void save()}>
             {t.saveScenario}
           </button>
           {dirty ? (
@@ -413,14 +409,13 @@ export function PlanProvider({
               disabled={busy}
               onClick={() => {
                 setDraftState(null);
-                setSpendingInvalid(false);
                 setEpoch((value) => value + 1);
               }}
             >
               {t.discard}
             </button>
           ) : null}
-          <span className="muted">{spendingInvalid ? t.fixSpending : t.saveHint}</span>
+          <span className="muted">{t.saveHint}</span>
         </div>
       </div>
     );
@@ -511,7 +506,24 @@ export function PlanProvider({
       saveLevers,
     };
 
-    if (goals.id !== null) {
+    if (goals.id === ONE_OFF_SHEET) {
+      // „Was als einmalig zählt“ (§7.12 (a), 19h frame 3): each switch stores a row; an unsaved
+      // draft takes the new switches, so its own save never puts the old ones back.
+      panel = (
+        <OneOffSheet
+          saved={fillLevers(plan.levers)}
+          current={current}
+          onClose={goals.close}
+          onSaved={(row) => {
+            setDraftState((previous) => ({
+              levers: { ...resolveDraft(previous, data.plan), one_off_overrides: row.levers?.one_off_overrides ?? {} },
+              ...(dirty ? {} : { resetOn: row.id }),
+            }));
+            state.reload();
+          }}
+        />
+      );
+    } else if (goals.id !== null) {
       panel = (
         <GoalsPanel
           budget={data.budget}
@@ -536,13 +548,10 @@ export function PlanProvider({
           key={`${budgetClass.id}-${epoch}`}
           lineKey={budgetClass.id}
           budget={data.budget}
-          plan={plan}
-          windowMonths={closedMonths}
-          preview={preview}
           draft={draft}
           setDraft={setDraft}
-          onValidity={setSpendingInvalid}
           onClose={budgetClass.close}
+          onChanged={state.reload}
           footer={dirty ? saveBar : null}
         />
       );
@@ -794,7 +803,7 @@ function BudgetTab({ ready }: { ready: PlanReady }) {
     <>
       <PlannedChanges levers={ready.data.plan.levers} />
       <DirtyNotice text={t.dirtyNoticeBudget} />
-      <BudgetSection budget={ready.data.budget} onChanged={ready.onChanged} />
+      <BudgetSection budget={ready.data.budget} savingPlans={ready.data.plan.already_invested ?? null} onChanged={ready.onChanged} />
       <RestCard ready={ready} />
     </>
   );
@@ -838,6 +847,7 @@ function ReserveTab({ ready }: { ready: PlanReady }) {
  * figures' sources behind their buttons. */
 function RestCard({ ready }: { ready: PlanReady }) {
   const t = useT(planning);
+  const m = useT(monthBudget);
   const f = usePlanFormat();
   const p = useT(playText);
   const [explain, setExplain] = useState(false);
@@ -858,7 +868,12 @@ function RestCard({ ready }: { ready: PlanReady }) {
   const lastMonth = plan.months?.[plan.months.length - 1]?.month;
   return (
     <section className="card stack planning-rest-card" id={REST_ANCHOR} aria-labelledby="rest-title">
-      <h2 id="rest-title">{t.restTitle}</h2>
+      <div className="planning-rest-head">
+        <h2 id="rest-title">{t.restTitle}</h2>
+        <button type="button" className="link" aria-expanded={made} onClick={() => setMade((value) => !value)}>
+          {m.howCalculated} ›
+        </button>
+      </div>
       <ul className="household-rows planning-rest">
         <li>
           <span>{t.restFree}</span>
@@ -884,7 +899,7 @@ function RestCard({ ready }: { ready: PlanReady }) {
           </span>
           <span>{f.signedEuro(negated(unsigned(buffer?.amount ?? "0")))}</span>
         </li>
-        <li className="planning-rest-sum">
+        <li className="planning-rest-sum" data-testid="rest-left">
           <span>{t.restLeft}</span>
           {/* The server's: free cash less the buffer less the savings plans. */}
           <span>{f.euro(plan.investable_left ?? investable?.amount)}</span>
@@ -898,9 +913,6 @@ function RestCard({ ready }: { ready: PlanReady }) {
           </>
         )}
       </InlineLever>
-      <p className="muted" data-testid="rest-investable">
-        {t.restInvestable(f.euro(investable?.amount))}
-      </p>
       {segments.length > 0 ? (
         <div className="stack" data-testid="rest-with-changes">
           <h3>{t.restWithChanges}</h3>
@@ -924,9 +936,6 @@ function RestCard({ ready }: { ready: PlanReady }) {
       <div className="row">
         <button type="button" className="secondary" aria-expanded={explain} onClick={() => setExplain((value) => !value)}>
           {t.explain}
-        </button>
-        <button type="button" className="secondary" aria-expanded={made} onClick={() => setMade((value) => !value)}>
-          {t.madeTitle}
         </button>
       </div>
       {explain ? <PlanExplanationPanel scenarioId={plan.scenario_id ?? null} asOf={plan.as_of} /> : null}

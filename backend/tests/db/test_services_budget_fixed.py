@@ -55,8 +55,11 @@ def test_fixed_and_variable_add_up_to_each_class(world, private):  # noqa: F811
         line = lines[key]
         assert line.fixed is not None and line.variable is not None
         assert sum((f.mean for f in line.fixed), line.variable) == line.monthly
+        # „fest X“ is served, so the screen sums nothing (D269)
+        assert line.fixed_monthly == line.monthly - line.variable
     for key in lines.keys() - {L.NEED, L.WANT}:
         assert lines[key].fixed is None and lines[key].variable is None
+        assert lines[key].fixed_monthly is None
 
     listed = {s.sources[0]: s for s in world.query(recurring.recurring_payments, TODAY).series}
     (streaming,) = lines[L.WANT].fixed

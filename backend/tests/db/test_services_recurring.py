@@ -397,3 +397,55 @@ def test_any_counted_spending_payment_up_to_today_can_be_marked(world, private):
     with workspace_transaction(world.engine, world.ws) as conn:
         marked = set(conn.execute(select(mark_table.c.allocation_id)).scalars())
     assert marked == {insurance[1], small}
+
+
+def test_a_payment_panel_reads_its_mark_and_the_sheet_its_codes(world, private):
+    """Phase 10 §7.12 (a), (b), D307: GET /household/one-off-marks?transaction_id= lists the
+    parts the POST accepts, each with its mark and whether its code is one-off (then the panel
+    shows no button); any other payment lists nothing. GET /household/one-off-codes lists the
+    one-off codes first, each also at 0, then every other switchable code paid in this year,
+    the largest sum first; a marked payment does not make its code one-off."""
+    ids = _household(world, private)
+    gadget_tx = private.line(date(2027, 3, 24), "-120.00", name="Kabelhandel Beispiel")
+    gadget = _booked(world, gadget_tx, "-120.00", C.HH_ELECTRONICS)
+    salary_tx = private.line(date(2027, 3, 28), "50.00", name="Arbeitgeber")
+    _booked(world, salary_tx, "50.00", C.HH_SALARY)
+    with workspace_transaction(world.engine, world.ws) as conn:
+        workshop_tx = conn.execute(
+            select(allocation_table.c.transaction_id).where(
+                allocation_table.c.id == ids["workshop"]
+            )
+        ).scalar_one()
+
+    (part,) = world.query(recurring.payment_one_offs, TODAY, workshop_tx)
+    assert (part.allocation_id, part.category, part.amount) == (
+        ids["workshop"],
+        C.HH_CAR_SERVICE,
+        Decimal("870.00"),
+    )
+    assert (part.marked, part.category_one_off) == (False, False)
+    world.cmd(
+        spending_marks.record_one_off,
+        OneOffMarkRequest(allocation_id=ids["workshop"], answer=A.ONE_OFF),
+        TODAY,
+    )
+    (part,) = world.query(recurring.payment_one_offs, TODAY, workshop_tx)
+    assert part.marked is True
+    (part,) = world.query(recurring.payment_one_offs, TODAY, gadget_tx)
+    assert (part.allocation_id, part.marked, part.category_one_off) == (gadget, False, True)
+    assert world.query(recurring.payment_one_offs, TODAY, salary_tx) == []
+
+    sheet = world.query(recurring.one_off_codes_year, TODAY)
+    assert sheet.year == 2027
+    by = {row.category: row for row in sheet.codes}
+    flags = [row.one_off for row in sheet.codes]
+    assert flags == sorted(flags, reverse=True)  # the one-offs first
+    assert (by[C.HH_ELECTRONICS].default, by[C.HH_ELECTRONICS].one_off) == (True, True)
+    assert by[C.HH_ELECTRONICS].year_total == Decimal("120.00")
+    assert by[C.HH_CAR_PURCHASE].year_total == Decimal("0.00")
+    assert by[C.HH_CAR_SERVICE].one_off is False  # a marked payment leaves its code regular
+    assert by[C.HH_CAR_SERVICE].year_total == Decimal("870.00")
+    assert by[C.HH_GROCERIES].year_total == Decimal("540.00")  # January to March 2027
+    regular = [row.year_total for row in sheet.codes if not row.one_off]
+    assert regular == sorted(regular, reverse=True) and all(t > 0 for t in regular)
+    assert C.HH_SALARY not in by
