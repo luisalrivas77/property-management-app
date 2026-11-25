@@ -352,6 +352,13 @@ test("the three figures carry their dots on the standard limits, and „Grenzen 
   await serve(page, "/api/health/net-worth-series", () => []);
   // The card sits inside Haushalt › Monat, which waits for the month's own reads.
   await monthsOf(page, (from, to) => window.filter((month) => month >= from && month <= to).map((month) => monthView(month, true)));
+  // Monat waits for GET /household-budget too, whose real read computes the household plan and
+  // ran past the 10 s wait with four workers on one box; a failed read only leaves the Budget tile
+  // out, which this test does not look at.
+  await page.route(
+    (url) => url.pathname === "/api/household-budget",
+    (route: Route) => route.fulfill({ status: 404, json: { detail: "not mocked" } }),
+  );
 
   await page.goto("/household");
   // „Finanzielle Gesundheit“ on Haushalt › Monat (mockup 19g): the word, the period and whose
