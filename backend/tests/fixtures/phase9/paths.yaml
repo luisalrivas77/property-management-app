@@ -14,6 +14,14 @@
 #   `others` (the screen's „weitere“), with no row of their own;
 # - a reserve already at its target gives every row reached = the newest closed month and
 #   months_needed 0; the rows still carry their reserve at the horizon.
+#
+# The target is an input here; §15.2's is reserve.yaml's 6 × the need 3853.33 = 23119.98 since
+# phase 10 D305 (25 Nov 2026: the need from need-class spending only; 26820.00 = 6 × 4470.00
+# until then). Free cash and „Anlegbar“ still take every regular spending (mean 4116.67), so
+# only `reached` and `months_needed` moved; the balance at the horizon does not depend on the
+# target. From 16830.00 the gap 6289.98 takes ⌈6289.98 ÷ 1002⌉ = 7 months (reserve_first,
+# 2027-12), ⌈÷ 852⌉ = 8 (pause:depot, 2028-01), ⌈÷ 602⌉ = 11 (pause:exchange, 2028-04),
+# ⌈÷ 452⌉ = 14 (as_is, 2028-07); until then 10, 12, 17 and 23.
 bases:
   worked_month: &worked_month {mean_income: "5583.33", mean_regular_spending: "4116.67",
     mean_rental_cash: "-353.33", buffer_percent: "10"}
@@ -27,23 +35,23 @@ cases:
     newest_closed: "2027-05"
     month: *worked_month
     reserve: "16830.00"
-    target: "26820.00"
+    target: "23119.98"
     plans: *worked_plans
     horizon_months: 60
     mode: own_use
     expect:
       rows:
-        - {key: reserve_first, paused: [depot, exchange], to_reserve_first_month: "1002.00", reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "76950.00"}
-        - {key: "pause:depot", paused: [depot], to_reserve_first_month: "852.00", reached: "2028-05", months_needed: 12, used_up: null, reserve_at_horizon: "67950.00"}
-        - {key: "pause:exchange", paused: [exchange], to_reserve_first_month: "602.00", reached: "2028-10", months_needed: 17, used_up: null, reserve_at_horizon: "52950.00"}
-        - {key: as_is, paused: [], to_reserve_first_month: "452.00", reached: "2029-04", months_needed: 23, used_up: null, reserve_at_horizon: "43950.00"}
+        - {key: reserve_first, paused: [depot, exchange], to_reserve_first_month: "1002.00", reached: "2027-12", months_needed: 7, used_up: null, reserve_at_horizon: "76950.00"}
+        - {key: "pause:depot", paused: [depot], to_reserve_first_month: "852.00", reached: "2028-01", months_needed: 8, used_up: null, reserve_at_horizon: "67950.00"}
+        - {key: "pause:exchange", paused: [exchange], to_reserve_first_month: "602.00", reached: "2028-04", months_needed: 11, used_up: null, reserve_at_horizon: "52950.00"}
+        - {key: as_is, paused: [], to_reserve_first_month: "452.00", reached: "2028-07", months_needed: 14, used_up: null, reserve_at_horizon: "43950.00"}
       others: []
 
   - id: already_reached
     newest_closed: "2027-05"
     month: *worked_month
     reserve: "30000.00"
-    target: "26820.00"
+    target: "23119.98"
     plans: *worked_plans
     horizon_months: 60
     mode: own_use
@@ -76,14 +84,14 @@ cases:
     newest_closed: "2027-05"
     month: *worked_month
     reserve: "16830.00"
-    target: "26820.00"
+    target: "23119.98"
     plans: *worked_plans
     horizon_months: 60
     mode: generic
     expect:
       rows:
-        - {key: reserve_first, paused: [depot, exchange], to_reserve_first_month: "1002.00", reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "76950.00"}
-        - {key: as_is, paused: [], to_reserve_first_month: "452.00", reached: "2029-04", months_needed: 23, used_up: null, reserve_at_horizon: "43950.00"}
+        - {key: reserve_first, paused: [depot, exchange], to_reserve_first_month: "1002.00", reached: "2027-12", months_needed: 7, used_up: null, reserve_at_horizon: "76950.00"}
+        - {key: as_is, paused: [], to_reserve_first_month: "452.00", reached: "2028-07", months_needed: 14, used_up: null, reserve_at_horizon: "43950.00"}
       others: []
 
   - id: more_than_four_plans
