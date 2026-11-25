@@ -42,7 +42,7 @@ export function wordText(t: T, word: VerdictWord): string {
   }
 }
 
-function stateText(t: T, state: VerdictState): string {
+export function stateText(t: T, state: VerdictState): string {
   switch (state) {
     case "good":
       return t.stateGood;

@@ -417,3 +417,104 @@
     display: block;
   }
 }
+
+/* „Finanzielle Gesundheit“ on Haushalt › Monat (phase 10 §7.12 (a), mockup 19g): the word, then
+ * three small cards side by side, under each other only on a very narrow screen; a tapped card
+ * opens its panel. */
+.health-word {
+  margin: 0;
+}
+
+.health-minis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (max-width: 340px) {
+  .health-minis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.health-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+}
+
+.health-mini:hover,
+.health-mini[aria-current="true"] {
+  border-color: var(--accent-strong);
+}
+
+.health-mini-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.health-mini-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.health-mini-limit {
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.health-panel h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.health-panel p {
+  margin: 0;
+}
+
+.health-panel-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.75rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.health-panel-value .verdict-dot {
+  width: 14px;
+  height: 14px;
+}
+
+.health-row-sub {
+  display: block;
+  font-size: 13px;
+}
+
+.health-ranges .verdict-dot {
+  vertical-align: middle;
+}
+
+.health-one-offs {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}

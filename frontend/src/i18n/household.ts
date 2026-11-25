@@ -28,11 +28,16 @@ const de = {
   income: "Einnahmen",
   spending: "Ausgaben",
   savingsRate: "Sparquote",
-  savingsRateHow: "Gespart ÷ Einnahmen, mit dem Ergebnis der Wohnung",
-  uncategorised: "Ohne Kategorie",
+  // Haushalt › Monat's tiles (phase 10 §7.12 (a), mockup 19g)
+  savingsRateOf: (month: string) => `Sparquote ${month}`,
+  monthOnly: "nur dieser Monat · der Schnitt mit Farbe steht unten",
+  ofWhichOneOff: (amount: string) => `davon einmalig ${amount}`,
+  budgetTile: "Budget",
+  budgetMet: (n: number, total: number) => `${n} von ${total}`,
+  budgetMetAria: (n: number, total: number) => `Budget: ${n} von ${total} Zielen erreicht, öffnet Haushalt › Budget`,
+  budgetNoTargets: "noch keine Ziele",
+  budgetNoTargetsAria: "Budget: noch keine Ziele, öffnet Haushalt › Budget",
   openLines: (n: number) => (n === 1 ? "1 Umsatz" : `${n} Umsätze`),
-  answerInInbox: "In Zu prüfen beantworten ›",
-  allAssigned: "Alles zugeordnet",
   mean: (n: number) => `Ø ${n} ${n === 1 ? "Monat" : "Monate"}`,
   meanShort: (n: number) => `Ø ${n} Mon.`,
   basis: (n: number, range: string) => `Basis der Durchschnitte: ${n} abgeschlossene Monate, ${range}.`,
@@ -40,10 +45,6 @@ const de = {
   noMeansText: (n: number) =>
     `Die Durchschnitte erscheinen ab 3 abgeschlossenen Monaten in Folge; bisher ${n === 1 ? "ist es 1" : `sind es ${n}`}.`,
 
-  budgetLineTitle: "Budget",
-  budgetLineBasis: (n: number) => `Ø je Monat über ${n} abgeschlossene ${n === 1 ? "Monat" : "Monate"}`,
-  budgetOf: (label: string, amount: string, target: string) => `${label} ${amount} von ${target}`,
-  budgetOfMinimum: (label: string, amount: string, target: string) => `${label} ${amount} von mindestens ${target}`,
 
   differencesTitle: "Was diesen Monat anders ist",
   differencesBasis: (month: string, n: number) =>
@@ -88,9 +89,6 @@ const de = {
   planFooter: (day: string) => `Geplant laut eurem Szenario vom ${day}. Ändern unter `,
   planFooterNone: "Planen könnt ihr unter ",
 
-  noIncome: "In diesem Monat ist keine Einnahme bestätigt.",
-  flatResult: "Wohnung (Ergebnis des Mietkontos)",
-  flatHint: "Das Ergebnis der Wohnung vor Tilgung zählt zu den Einnahmen des Haushalts; die Sparquote rechnet damit.",
 
   savedTitle: "Gespart, nicht ausgegeben",
   savedText: "Überweisungen an eigene Konten zählen nicht als Ausgaben.",
@@ -125,21 +123,21 @@ const en: Messages = {
   income: "Income",
   spending: "Spending",
   savingsRate: "Savings rate",
-  savingsRateHow: "Saved ÷ income, with the flat's result",
-  uncategorised: "Without a category",
+  savingsRateOf: (month) => `Savings rate ${month}`,
+  monthOnly: "this month only · the coloured average is below",
+  ofWhichOneOff: (amount) => `of which one-off ${amount}`,
+  budgetTile: "Budget",
+  budgetMet: (n, total) => `${n} of ${total}`,
+  budgetMetAria: (n, total) => `Budget: ${n} of ${total} targets met, opens Household › Budget`,
+  budgetNoTargets: "no targets yet",
+  budgetNoTargetsAria: "Budget: no targets yet, opens Household › Budget",
   openLines: (n) => (n === 1 ? "1 transaction" : `${n} transactions`),
-  answerInInbox: "Answer in To review ›",
-  allAssigned: "Everything categorised",
   mean: (n) => `Ø ${n} ${n === 1 ? "month" : "months"}`,
   meanShort: (n) => `Ø ${n} mo.`,
   basis: (n, range) => `Basis of the averages: ${n} closed months, ${range}.`,
   noMeansTitle: "No averages yet",
   noMeansText: (n) => `The averages appear from 3 closed months in a row; so far there ${n === 1 ? "is 1" : `are ${n}`}.`,
 
-  budgetLineTitle: "Budget",
-  budgetLineBasis: (n) => `Monthly average over ${n} closed ${n === 1 ? "month" : "months"}`,
-  budgetOf: (label, amount, target) => `${label} ${amount} of ${target}`,
-  budgetOfMinimum: (label, amount, target) => `${label} ${amount} of at least ${target}`,
 
   differencesTitle: "What is different this month",
   differencesBasis: (month, n) => `${month}, compared with the average of the ${n} closed months before it`,
@@ -183,9 +181,6 @@ const en: Messages = {
   planFooter: (day) => `Planned in your scenario of ${day}. Change it under `,
   planFooterNone: "You can plan under ",
 
-  noIncome: "No income is confirmed in this month.",
-  flatResult: "Flat (rental account's result)",
-  flatHint: "The flat's result before repayment counts as household income; the savings rate includes it.",
 
   savedTitle: "Saved, not spent",
   savedText: "Transfers to your own accounts do not count as spending.",

@@ -28,24 +28,28 @@
 // phone the groups are rows (name and amount, a thin bar under it), the six largest first and
 // „Alle <N> anzeigen“, with no table; the mean and the plan are in a tapped group's panel.
 //
-// Phase 10 §7.6 (Luis, 23 Nov 2026: „They should be moved to their respective sections as
-// Planung will be removed“): below the month, the household's key figures that were on
-// Übersicht: „Kennzahlen“ (`/household#figures-title`), since 23 Nov 2026 the three figures of
-// Finanzielle Gesundheit (Sparquote, Liquiditätsreserve, Schuldendienstquote) as cards with their
-// dots, and „Ampel-Grenzen festlegen“ (`/household#ampel-grenzen` opens it), from
-// components/healthFigures.tsx. They are the window's figures, not the chosen month's, so they
-// sit outside the month's own read.
+// Phase 10 §7.12 (a) (D309, mockup 19g): Monat opens with four tiles: Einnahmen and Ausgaben with
+// their means (Ausgaben with the month's one-offs, „davon einmalig“), the chosen month's own
+// Sparquote without a colour („der Schnitt mit Farbe steht unten“), and the Budget's „N von 3“
+// with a dot per class (it replaced „Ohne Kategorie“ and the Budget line, §7.6 Haushalt (4)).
+// Under the line on the averages, the card „Finanzielle Gesundheit“ (`/household#figures-title`,
+// components/healthFigures.tsx): the verdict's word and the window's three figures (Sparquote,
+// Reserve, Kreditraten) as small cards, each opening its side panel (`#d-kennzahl-<figure>`), and
+// „Ampel-Grenzen festlegen“ (`/household#ampel-grenzen` opens it). They are the window's figures,
+// not the chosen month's, read once beside the month's own read. Then „Überschuss je Monat“,
+// „Ausgaben nach Kategorie“ and last „Was diesen Monat anders ist“; the income card went.
 //
-// Phase 10 §7.6 Haushalt (3), build decision (a): „Was diesen Monat anders ist“ at the top, from
+// Phase 10 §7.6 Haushalt (3), build decision (a): „Was diesen Monat anders ist“ (at the foot since
+// §7.12 (a)), from
 // GET /health's `differences`: the newest closed month (named, whichever month is chosen) against
 // the mean of the closed months before it, at most three groups, each opening its payments in
 // the panel (`#d-anders-<group>`). The server picks the groups and every figure; nothing is
 // coloured and nothing is shown when it names none or has fewer than three months to compare.
 //
-// Phase 10 §7.6 Haushalt (4): the Budget in one line under it, from GET /household-budget: each of
-// Notwendiges, Wünsche and Sparen that has a target saved, its monthly mean against the target's
-// euros (both the server's), with the dot of Haushalt › Budget (green met, amber missed, never red)
-// and a link there. No line before a target is saved; a failed read shows no line either.
+// The Budget tile reads GET /household-budget: each of Notwendiges, Wünsche and Sparen with a
+// target saved, with the dot of Haushalt › Budget (green met, amber missed, never red) and, when
+// missed, the server's gap in euros; „noch keine Ziele“ before a target is saved or when the read
+// failed.
 //
 // Phase 10 wave 3 (a) (§7.9 (a), D288; mockups 19b, 19c): Planung folded in. Haushalt has four
 // tabs, ?tab=budget|ziel|reserve, and Monat (everything above) by default. Budget and Reserve are
@@ -70,20 +74,26 @@ import {
   lastFullMonth,
   loadCashflow,
   monthsUpTo,
-  rateOfSums,
   spent,
   sumMoney,
   toCents,
 } from "@/components/cashflow";
 import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { todayIso } from "@/components/format";
-import { HealthTodoList, HouseholdHealthSection } from "@/components/healthFigures";
+import {
+  FIGURE_DETAIL,
+  HealthFigurePanel,
+  HealthTodoList,
+  type HouseholdHealthData,
+  HouseholdHealthCard,
+  useHouseholdHealth,
+} from "@/components/healthFigures";
 import { HouseholdGoalTab, HouseholdPlanTab, PlanProvider, useStaleAssumptionsRedirect } from "@/components/householdPlan";
 import { HouseholdPlayTab } from "@/components/householdPlay";
 import { ALLOCATION_CATEGORY, HOUSEHOLD_GROUP, HOUSEHOLD_SPENDING_GROUPS } from "@/components/labels";
 import { usePlanFormat } from "@/components/planFormat";
 import { Loading } from "@/components/ui";
-import { useLoad } from "@/components/useLoad";
+import { type Loaded, useLoad } from "@/components/useLoad";
 import { useFormat, useT, type Formatter } from "@/i18n";
 import { common } from "@/i18n/common";
 import { household } from "@/i18n/household";
@@ -270,10 +280,7 @@ function Household() {
       </nav>
       {tab === "monat" ? (
         <>
-          <HouseholdYear month={month} onHealthChanged={healthChanged} />
-          <div className="stack household-health">
-            <HouseholdHealthSection refresh={healthRefresh} />
-          </div>
+          <HouseholdYear month={month} healthRefresh={healthRefresh} onHealthChanged={healthChanged} />
         </>
       ) : null}
       {/* Budget, Ziel, Reserve and Durchspielen share one plan and one draft (one element in one
@@ -299,37 +306,47 @@ function householdTab(raw: string | null): HouseholdTab {
   return raw !== null && (HOUSEHOLD_TABS as readonly string[]).includes(raw) ? (raw as HouseholdTab) : "monat";
 }
 
-function HouseholdYear({ month, onHealthChanged }: { month: string; onHealthChanged: () => void }) {
+function HouseholdYear({
+  month,
+  healthRefresh,
+  onHealthChanged,
+}: {
+  month: string;
+  healthRefresh: number;
+  onHealthChanged: () => void;
+}) {
   const load = useCallback(() => loadYear(month), [month]);
   const year = useLoad(load);
+  const health = useHouseholdHealth(healthRefresh);
   const { reload } = year;
   const changed = useCallback(() => {
     reload();
     onHealthChanged();
   }, [reload, onHealthChanged]);
-  return <Loading state={year}>{(data) => <HouseholdMonth year={data} onChanged={changed} />}</Loading>;
+  return <Loading state={year}>{(data) => <HouseholdMonth year={data} health={health} onChanged={changed} />}</Loading>;
 }
 
-function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void }) {
+function HouseholdMonth({ year, health: figures, onChanged }: { year: Year; health: Loaded<HouseholdHealthData>; onChanged: () => void }) {
   const t = useT(household);
   const f = useFormat();
   const groupDetail = useDetail("gruppe");
   const closingDetail = useDetail("abschluss");
   const savedDetail = useDetail("angelegt");
   const differenceDetail = useDetail("anders");
+  const figureDetail = useDetail(FIGURE_DETAIL);
   const { months, transfers, health, overall, windowMonths, comparison, budget } = year;
   const month = months[months.length - 1];
   if (!month) return null;
   const view = health.find((h) => h.month === month.month);
   const householdNow = view?.household;
   const spentNow = spent(month);
+  // The month's one-offs as the household counts them (D307, D297), only when there are any.
+  const oneOffNow = householdNow && toCents(householdNow.one_off_spending) !== 0n ? householdNow.one_off_spending : null;
+  const shortMonth = t.shortMonths.split(",")[Number(month.month.slice(5, 7)) - 1] ?? f.month(month.month);
   const closed = overall.window.months ?? [];
   const enough = overall.window.enough;
   const means = enough ? windowMonths : [];
   const mean = (values: string[]) => (enough ? f.money(averageMoney(values)) : "–");
-  // The window's rate as the household counts it (D235), the same Σ S ÷ Σ E as Übersicht.
-  const windowViews = health.filter((h) => closed.includes(h.month)).map((h) => h.household);
-  const windowRate = overall.savings_rate?.rate ?? (windowViews.length === closed.length ? rateOfSums(windowViews) : null);
   const last = closed[closed.length - 1];
   // What holds the month after the window open (its own closing to-dos), when it is loaded.
   const after = health.find((h) => (last === undefined || h.month > last) && !h.closed.closed);
@@ -346,7 +363,19 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
   const shownDifference = (differences?.groups ?? []).find((d) => d.group === differenceDetail.id);
 
   let panel = null;
-  if (differences && shownDifference) {
+  if (figureDetail.id && figures.data) {
+    panel = (
+      <HealthFigurePanel
+        key={figureDetail.id}
+        data={figures.data}
+        figure={figureDetail.id}
+        monthRate={{ month: month.month, rate: householdNow?.savings_rate ?? null }}
+        backLabel={t.title}
+        onClose={figureDetail.close}
+        onChanged={figures.reload}
+      />
+    );
+  } else if (differences && shownDifference) {
     panel = (
       <DetailPanel title={groupLabel(shownDifference.group)} backLabel={t.title} onClose={differenceDetail.close}>
         <DifferencePanel differences={differences} difference={shownDifference} />
@@ -382,9 +411,7 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
             </a>
           </p>
         ) : null}
-        {differences ? <Differences differences={differences} link={differenceDetail.linkProps} /> : null}
-        {budget ? <BudgetOneLine budget={budget} /> : null}
-        <div className="planning-kpis">
+        <div className="planning-kpis household-month-tiles">
           <div className="planning-kpi" role="group" aria-label={t.income}>
             <p className="planning-kpi-label">{t.income}</p>
             <p className="planning-kpi-value">{f.money(month.income)}</p>
@@ -398,19 +425,14 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
             <p className="planning-kpi-sub">
               {t.mean(closed.length)} {mean(windowMonths.map(spent))}
             </p>
+            {oneOffNow !== null ? <p className="planning-kpi-sub">{t.ofWhichOneOff(f.money(oneOffNow))}</p> : null}
           </div>
-          <div className="planning-kpi" role="group" aria-label={t.savingsRate}>
-            <p className="planning-kpi-label">{t.savingsRate}</p>
+          <div className="planning-kpi" role="group" aria-label={t.savingsRateOf(shortMonth)}>
+            <p className="planning-kpi-label">{t.savingsRateOf(shortMonth)}</p>
             <p className="planning-kpi-value">{householdNow?.savings_rate != null ? f.percent(householdNow.savings_rate) : "–"}</p>
-            <p className="planning-kpi-sub">
-              {t.mean(closed.length)} {enough && windowRate != null ? f.percent(windowRate) : "–"} · {t.savingsRateHow}
-            </p>
+            <p className="planning-kpi-sub">{t.monthOnly}</p>
           </div>
-          <div className={month.open_lines > 0 ? "planning-kpi household-open" : "planning-kpi"} role="group" aria-label={t.uncategorised}>
-            <p className="planning-kpi-label">{t.uncategorised}</p>
-            <p className="planning-kpi-value">{t.openLines(month.open_lines)}</p>
-            <p className="planning-kpi-sub">{month.open_lines > 0 ? <Link href="/inbox">{t.answerInInbox}</Link> : t.allAssigned}</p>
-          </div>
+          <BudgetTile budget={budget} />
         </div>
         {enough ? (
           <p className="muted">{t.basis(closed.length, monthSpan(f, closed))}</p>
@@ -421,6 +443,7 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
             <HealthTodoList todos={[...tooFew, ...holding]} onChanged={onChanged} />
           </section>
         )}
+        <Loading state={figures}>{(data) => <HouseholdHealthCard data={data} onChanged={figures.reload} />}</Loading>
         <SurplusBars months={months} windowMonths={means} savedLink={savedDetail.linkProps(month.month)} />
         <SpendingTable
           months={months}
@@ -429,7 +452,7 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
           groupLink={groupDetail.linkProps}
           openGroup={groupDetail.id}
         />
-        <IncomeCard month={month} household={householdNow ?? null} />
+        {differences ? <Differences differences={differences} link={differenceDetail.linkProps} /> : null}
       </div>
     </DetailLayout>
   );
@@ -504,35 +527,44 @@ function DifferenceText({ difference: d }: { difference: GroupDifference }) {
   return <>{d.words === "more" ? t.differenceMore(groupLabel(d.group), amount) : t.differenceLess(groupLabel(d.group), amount)}</>;
 }
 
-/** The Budget in one line (§7.6 Haushalt (4)): the lines with a mark, i.e. with a saved target. */
-function BudgetOneLine({ budget }: { budget: BudgetView }) {
+/** The Budget tile (mockup 19g): how many of the classes with a saved target meet it, „2 von 3“,
+ * and a dot per class, a missed one with the server's gap in euros (`gap_monthly`: over the target
+ * for Notwendiges and Wünsche, under it for Sparen). Opens Haushalt › Budget. */
+function BudgetTile({ budget }: { budget: BudgetView | null }) {
   const t = useT(household);
   const tp = useT(planning);
   const p = usePlanFormat();
-  const marked = (budget.lines ?? []).flatMap((l: BudgetLine) =>
-    l.mark && (l.key === "need" || l.key === "want" || l.key === "saving") ? [{ key: l.key, monthly: l.monthly, mark: l.mark }] : [],
+  const marked = (budget?.lines ?? []).flatMap((l: BudgetLine) =>
+    l.mark && (l.key === "need" || l.key === "want" || l.key === "saving") ? [{ key: l.key, mark: l.mark }] : [],
   );
-  if (marked.length === 0) return null;
+  const met = marked.filter(({ mark }) => mark.colour === "green").length;
   return (
-    <section className="card household-budget-line" aria-labelledby="budget-line-title">
-      <p>
-        <strong id="budget-line-title">{t.budgetLineTitle}</strong>{" "}
-        <span className="muted">({t.budgetLineBasis((budget.window.months ?? []).length)})</span>
+    <Link
+      href={HOUSEHOLD_BUDGET}
+      className="planning-kpi household-budget-tile"
+      aria-label={marked.length > 0 ? t.budgetMetAria(met, marked.length) : t.budgetNoTargetsAria}
+    >
+      <p className="planning-kpi-label">
+        {t.budgetTile} <span aria-hidden="true">›</span>
       </p>
-      <p>
-        {marked.map(({ key, monthly, mark }) => (
-          <span key={key} className="household-budget-item">
-            <span
-              className={`budget-dot budget-dot-${mark.colour}`}
-              role="img"
-              aria-label={mark.colour === "green" ? tp.markGreen : tp.markAmber}
-            />{" "}
-            {(key === "saving" ? t.budgetOfMinimum : t.budgetOf)(lineLabel(tp, key), p.euro(monthly), p.euro(mark.at_target))}
-          </span>
-        ))}
-        <Link href={HOUSEHOLD_BUDGET}>{t.planningBudget} ›</Link>
-      </p>
-    </section>
+      <p className="planning-kpi-value">{marked.length > 0 ? t.budgetMet(met, marked.length) : "–"}</p>
+      {marked.length > 0 ? (
+        <ul className="household-budget-dots">
+          {marked.map(({ key, mark }) => {
+            const gap = mark.colour === "amber" ? mark.gap_monthly.trim() : null;
+            const under = gap !== null && gap.startsWith("-");
+            return (
+              <li key={key}>
+                <span className={`budget-dot budget-dot-${mark.colour}`} aria-hidden="true" /> {lineLabel(tp, key)}
+                {gap !== null ? ` ${under ? "−" : "+"}${p.euro(gap.replace(/^[-+]/, ""))}` : ""}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="planning-kpi-sub">{t.budgetNoTargets}</p>
+      )}
+    </Link>
   );
 }
 
@@ -969,38 +1001,6 @@ function groupCodes(months: HouseholdCashflow[], group: string): string[] {
   if (codes.length > 1) return codes;
   const fallback = fallbackOf(group);
   return codes.length === 1 && fallback !== null && codes[0] !== fallback ? codes : [];
-}
-
-function IncomeCard({ month, household: figures }: { month: HouseholdCashflow; household: HouseholdMonthFigures | null }) {
-  const t = useT(household);
-  const f = useFormat();
-  const rows = Object.entries(month.income_by_category ?? {});
-  // The flat's cash result before repayment (R, D233): part of the household's income, signed.
-  const flat = figures && toCents(figures.rental_result) !== 0n ? figures.rental_result : null;
-  return (
-    <section className="card stack household-side" aria-labelledby="income-title">
-      <h2 id="income-title">{t.income}</h2>
-      {rows.length === 0 && flat === null ? (
-        <p className="muted">{t.noIncome}</p>
-      ) : (
-        <ul className="household-rows">
-          {rows.map(([category, amount]) => (
-            <li key={category}>
-              <span>{categoryLabel(category)}</span>
-              <strong>{f.money(amount)}</strong>
-            </li>
-          ))}
-          {flat !== null ? (
-            <li>
-              <span>{t.flatResult}</span>
-              <strong>{signed(f, flat)}</strong>
-            </li>
-          ) : null}
-        </ul>
-      )}
-      {flat !== null ? <p className="muted">{t.flatHint}</p> : null}
-    </section>
-  );
 }
 
 /** „seit dem Abschluss geändert“ (D242): the month's stored closing beside the month on read. */

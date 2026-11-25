@@ -139,6 +139,6 @@ test("Übersicht shows one word with its dot, the panel explains it with three q
   await expect(bands).toHaveCount(0);
   await expect(page).toHaveURL(/\/household$/);
   await page.reload();
-  await expect(page.getByRole("region", { name: "Kennzahlen" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Finanzielle Gesundheit" })).toBeVisible();
   await expect(bands).toHaveCount(0);
 });

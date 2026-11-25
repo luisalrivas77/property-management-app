@@ -165,8 +165,8 @@ test("below three closed months the month-end to-do shows once, and its button r
   // Once on the page: the Kennzahlen below do not list GET /health's copy of the same to-dos.
   await expect(page.getByRole("button", { name: "Monatsabschluss festhalten" })).toHaveCount(1);
   await expect(page.getByText(WAITING.text)).toHaveCount(1);
-  // The savings rate's card is there, still without a figure.
-  const rate = page.locator('div.health-figure[aria-label="Sparquote"]');
+  // The savings rate's small card is there, still without a figure.
+  const rate = page.getByRole("region", { name: "Finanzielle Gesundheit" }).locator("a.health-mini", { hasText: "Sparquote" });
   await expect(rate).toHaveAttribute("data-state", "missing");
   await expect(rate).not.toContainText("%");
   await page.evaluate(() => {
