@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 import fixture_models_phase9 as phase9
 import pytest
 
+from hausbuch.rules import investment_split as X
 from hausbuch.rules.budget import budget as BU
 from hausbuch.rules.health import bands as B
 from hausbuch.rules.health import figures as F
@@ -1268,8 +1269,18 @@ def worked_plan(hh, want, months, reserve, run, kinds):
     levers = HouseholdLevers(
         value_change=hh.levers.value_change, net_worth_years=hh.levers.net_worth_years
     )
+    # Phase 10 D301: the money above the reserve target moves in the split the plans give.
+    split = X.effective_split(None, plans, (), levers.value_change, frozenset()).shares
     got = N.project_net_worth(
-        basis, start, run.month_end, reserve.amount, plans, flats, levers
+        basis,
+        start,
+        run.month_end,
+        reserve.amount,
+        plans,
+        flats,
+        levers,
+        target=reserve.target,
+        split=split,
     ).projection
     assert [phase9.as_np(p) for p in got.points] == want.projection.points
     assert got.points[-1].change == want.projection.change

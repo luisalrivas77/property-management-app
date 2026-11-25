@@ -317,9 +317,12 @@ def test_plan_levers(case):
     got = P.paths(case.reserve, case.target, case.plans, months, case.newest_closed)
     compare_rows(got.rows, case.expect.rows, case.id)
     # What stands in for the projection's flat when a property has no default scenario.
-    flats = {} if flat_years is not None else {"p1": None}
-    todos = N.projection_todos(None, date(2027, 5, 31), [], flats, HouseholdLevers())
-    codes = [t.code for t in todos if t.code is not HealthTodoCode.MONTH_END_MISSING]
+    # Phase 10 D301 (a) 5: the property is kept and the plan carries the to-do (flat_todos),
+    # no longer the projection (projection_todos).
+    kept = N.FlatScenario(sale_year=None, kept_value=ZERO)
+    flats = {} if flat_years is not None else {"p1": kept}
+    assert not N.projection_todos(None, date(2027, 5, 31), [], HouseholdLevers())[1:]
+    codes = [t.code for t in N.flat_todos(flats)]
     assert codes == case.expect.todos
 
 
@@ -356,6 +359,7 @@ def start_of(s) -> N.ProjectionStart | None:
         property=s.property,
         loans=s.loans,
         other_liabilities=s.other_liabilities,
+        reserve_depot=s.reserve_depot,
     )
 
 
@@ -373,6 +377,9 @@ def scenario_of(flat) -> N.FlatScenario | None:
             )
             for y, f in flat.years.items()
         },
+        net_proceeds=flat.net_proceeds,
+        kept_value=flat.kept_value,
+        kept_loans=flat.kept_loans,
     )
 
 
@@ -391,6 +398,8 @@ def run_case(case) -> N.ProjectionRun:
         case.plans,
         {p: scenario_of(f) for p, f in case.flats.items()},
         levers,
+        target=case.target,
+        split=case.split,
     )
 
 
@@ -403,7 +412,6 @@ def as_got(run: N.ProjectionRun) -> dict:
         "decembers": run.decembers,
         "as_is": run.as_is,
         "bank": run.bank,
-        "ends_before_sale_year": p.ends_before_sale_year,
         "used_up": p.used_up,
         "start_bank": p.start.bank if p.start else None,
         "start_reserve": None,
@@ -442,17 +450,16 @@ def test_projection_todo_texts_and_links():
                 months=[Decimal("1.00")] * 3,
             )
         ],  # fmt: skip
-        {"p1": None},
         HouseholdLevers(),
     )
+    # phase 10 D301 (a) 5: a property without a scenario is kept, no longer a to-do here
     assert [(t.code, t.href) for t in todos] == [
         (HealthTodoCode.MONTH_END_MISSING, "/?month_end=2027-05-31"),
-        (HealthTodoCode.NO_DEFAULT_SCENARIO, "/planning"),
         (HealthTodoCode.RATE_MISSING, "/planning?tab=haushalt"),
     ]
     assert all(t.action and t.text for t in todos)
     assert "31.05.2027" in todos[0].text
-    assert "Krypto" in todos[2].text and "Fonds" not in todos[2].text
+    assert "Krypto" in todos[1].text and "Fonds" not in todos[1].text
 
 
 def test_projection_without_property_runs_on_calendar_years():
@@ -475,4 +482,4 @@ def test_projection_without_property_runs_on_calendar_years():
     assert [x.on for x in p.points] == [date(2028, 12, 31), date(2029, 12, 31)]
     # 7 months of 2027 + 12 of 2028 at 100 a month.
     assert p.points[0].bank == Decimal("2900.00")
-    assert p.points[0].property == ZERO and p.ends_before_sale_year is None
+    assert p.points[0].property == ZERO and p.ends_before_sale_year is None  # always None now

@@ -1,6 +1,8 @@
 """rules/goal against tests/fixtures/phase10/goal.yaml (docs/phases/phase-10.md §7.9 (d); D289,
 D298), the monthly walk against phase 9's net-worth projection, and rule_version() unchanged."""
 
+from decimal import Decimal
+
 import fixture_models_phase10 as phase10
 import pytest
 from test_phase9_plan import PROJECTION, basis, run_case, scenario_of, start_of
@@ -10,7 +12,7 @@ from hausbuch.rules.goal import GoalInputs, Projection, household_goal, none_set
 from hausbuch.rules.plan import levers as L
 from hausbuch.rules.plan import projection as N
 from hausbuch.schemas.goal import GoalSpending, GoalWord
-from hausbuch.schemas.plan import HouseholdLevers
+from hausbuch.schemas.plan import HouseholdLevers, InvestmentSplit
 from hausbuch.services.health import rule_version
 
 GOAL = phase10.load("goal").cases
@@ -22,7 +24,9 @@ GOAL = phase10.load("goal").cases
 # as it was; a change of rules/health or rules/plan must update this value on purpose (D242).
 # §7.11 (g), (f) 1 (D305, D304: the reserve's need from need-class spending, a depot the
 # lever adds) changed rules/health once more; it was 19e42b29... until then.
-RULE_VERSION = "2b975321a70b2f6db315190b54d89f696e96b793c6f4093ac5363cadd26e9ed0"
+# §7.11 (a) (D301: one month walk in rules/plan/projection, money above the reserve target
+# invested, the walk past each sale) changed rules/plan; it was 2b975321... until then.
+RULE_VERSION = "2e15bb62d7a6cdef49b49cb362a57dce84b8bb15f5ac75c058bf0689c1eccde6"
 
 
 def _projection(case) -> Projection:
@@ -82,6 +86,7 @@ def _answer(case):
             classes=classes,
             household_changes=tuple(levers.spending_changes),
             projection=_projection(case),
+            mean_income=case.month.mean_income,
         )
     )
 
@@ -164,6 +169,8 @@ def test_the_walk_equals_phase_9_at_every_december(case) -> None:
         plans=case.plans,
         flats={k: f for k, f in flats.items() if f is not None},
         levers=levers,
+        target=case.target,
+        split=case.split,
     )
     w = walk(p)
     assert run.projection.points, "a case with points"
@@ -182,3 +189,151 @@ def test_the_walk_equals_phase_9_at_every_december(case) -> None:
 def test_rule_version_is_unchanged() -> None:
     rule_version.cache_clear()
     assert rule_version() == RULE_VERSION
+
+
+# --- goal_routes.yaml and reserve_above.yaml (§7.11 (a)–(d), D301–D303) -------------------
+
+ROUTES = phase10.load("goal_routes").cases + phase10.load("reserve_above").cases
+
+
+def _route_flat(f) -> N.FlatScenario:
+    zero = Decimal("0.00")
+    return N.FlatScenario(
+        sale_year=f.sale_year,
+        years={
+            y: L.FlatYear(net_cash=zero, tax_effect=None, value=v, loan_balance=loan)
+            for y, (v, loan) in f.years.items()
+        },
+        net_proceeds=f.net_proceeds,
+        kept_value=f.kept_value,
+        kept_loans=f.kept_loans,
+    )
+
+
+def _route_inputs(case) -> tuple[GoalInputs, Projection | None, Decimal]:
+    m, s, levers = case.month, case.start, case.levers
+    basis = L.MonthBasis(
+        newest_closed=case.newest_closed,
+        mean_income=m.mean_income,
+        mean_regular_spending=m.mean_regular_spending,
+        mean_rental_cash=m.mean_rental_cash,
+        buffer_percent=m.buffer_percent,
+        spending_changes=tuple(levers.spending_changes),
+        code_means=dict(case.means),
+    )
+    start = N.ProjectionStart(
+        month_end=s.month_end,
+        bank=s.bank,
+        depot=s.depot,
+        crypto=s.crypto,
+        property=s.property,
+        loans=s.loans,
+        other_liabilities=s.other_liabilities,
+        reserve_depot=s.reserve_depot,
+    )
+    split = (
+        None
+        if case.split is None
+        else InvestmentSplit(depot=case.split["depot"], crypto=case.split["crypto"])
+    )
+    target = (levers.reserve_target_months * case.reserve.need).quantize(Decimal("0.01"))
+    todos = N.projection_todos(start, s.month_end, [], levers, split)
+    p = None
+    if not todos:
+        p = Projection(
+            basis=basis,
+            start=start,
+            reserve_start=case.reserve.amount,
+            plans=(),
+            flats={k: _route_flat(f) for k, f in case.flats.items()},
+            levers=levers,
+            target=target,
+            split=split,
+        )
+    classes = {
+        code: cls
+        for code in case.means
+        if (cls := B.class_of(code, levers.budget_class_overrides)) is not None
+    }
+    goal = levers.goal
+    inputs = GoalInputs(
+        today=case.today,
+        goal=goal,
+        choice=levers.goal_choice,
+        heute=case.saved_mean,
+        value_today=(
+            case.value_today.net_worth
+            if goal.kind.value == "net_worth"
+            else case.value_today.reserve
+        ),
+        need=case.reserve.need,
+        code_means=dict(case.means),
+        classes=classes,
+        household_changes=tuple(levers.spending_changes),
+        projection=p,
+        todos=todos,
+        mean_income=m.mean_income,
+        wants_max=levers.budget_targets.wants_max,
+        mode=case.mode,
+    )
+    return inputs, p, target
+
+
+@pytest.mark.parametrize("case", ROUTES, ids=lambda c: c.id)
+def test_goal_routes(case) -> None:
+    inputs, p, target = _route_inputs(case)
+    got = household_goal(inputs)
+    want = case.expect
+    assert (got.word.value if got.word is not None else None) == want.word
+    assert (got.issue.value if got.issue is not None else None) == want.issue
+    assert [t.code for t in got.todos] == want.todos
+    for name in ("projected", "reached", "noetig"):
+        if name in want.model_fields_set:
+            assert getattr(got, name) == getattr(want, name), name
+    if "more_saving" in want.model_fields_set:
+        expect = want.more_saving
+        if expect is None:
+            assert got.more_saving is None
+        else:
+            assert (got.more_saving.extra, got.more_saving.noetig) == (expect.extra, expect.noetig)
+    if want.more_return is not None:
+        assert got.more_return.available is False
+        assert got.more_return.reason.value == want.more_return.reason
+    if "balanced" in want.model_fields_set:
+        b, expect = got.balanced, want.balanced
+        if expect is None:
+            assert b is None
+        else:
+            assert {x.code: x.mean - x.budget for x in b.budgets} == expect.cuts
+            assert (b.cut, b.saving_extra, b.moved_to_saving, b.closes) == (
+                expect.cut,
+                expect.saving_extra,
+                expect.moved_to_saving,
+                expect.closes,
+            )
+    if "scenarios" in want.model_fields_set:
+        scenarios = {s.kind.value: s for s in got.scenarios}
+        assert set(scenarios) == set(want.scenarios)
+        for kind, expect in want.scenarios.items():
+            assert (scenarios[kind].closes, scenarios[kind].cut) == (expect.closes, expect.cut)
+    if "assumption" in want.model_fields_set:
+        assert [f"{a.text} {a.action}" for a in got.assumptions] == (
+            [want.assumption] if want.assumption else []
+        )
+        assert all(a.href == "/assets?tab=immobilie" for a in got.assumptions)
+    if want.above_target is not None:
+        assert N.above_target(case.reserve.amount, target) == want.above_target
+    if want.reserve_at or want.net_worth_at:
+        assert p is not None
+        w = walk(p)
+        for ym, value in want.reserve_at.items():
+            assert w.at(ym).reserve == value, ym
+        for ym, value in want.net_worth_at.items():
+            assert w.at(ym).net_worth == value, ym
+
+
+def test_route_3_is_never_the_word() -> None:
+    """D303: „Ehrgeizig“ comes only through route 3, which is not built."""
+    for case in ROUTES:
+        inputs, _, _ = _route_inputs(case)
+        assert household_goal(inputs).word is not GoalWord.AMBITIOUS

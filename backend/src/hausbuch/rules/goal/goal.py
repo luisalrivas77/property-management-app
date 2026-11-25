@@ -1,32 +1,45 @@
-"""The household goal's figures, word and spending scenarios (docs/phases/phase-10.md §7.9 (d),
-D289, D298). Pure functions over what services.plan computes for phase 9's projection; nothing
-here calls a model, and nothing proposes a goal, a date or an amount (D289 (1)).
+"""The household goal's figures, word and routes (docs/phases/phase-10.md §7.9 (d), §7.11 (b),
+(c); D289, D298, D301–D303). Pure functions over the one month walk of rules/plan/projection
+(D301); nothing here calls a model, and nothing proposes a goal, a date, an amount, a rate or
+a product (D247, D251, D289 (1)).
 
 - „Heute im Monat“ is the mean monthly saved over the closed window (phase 9's household
   month), passed in.
-- The value at a month comes from rules/goal/walk.py: the net worth on phase 9's projection
-  (D247) for a net-worth goal, the reserve's as-is row (D237) for a sum saved and a reserve in
-  months; a reserve goal's target is its months × the monthly need.
-- „Nötig im Monat“ = Heute + (target − the value at the due month without change) ÷ the months
-  left, the months from the current month to the due month, to the cent half-up.
-- A spending scenario cuts, from next month to the due month, gap ÷ months left ÷ (1 − buffer)
-  rounded up to the cent, one cent more when a buffer is kept (phase 9 keeps the buffer back
-  from every positive free month, so a cut reaches the projection only at 1 − buffer). Each
-  cut code gives the same share of its mean, rounded up to the cent; when the codes cannot
-  give the cut, each goes to 0 and the rest is named. It closes the gap when the walk with its
-  spending changes reaches the target by the due month.
+- The value at a month comes from the walk: the net worth for a net-worth goal, the reserve
+  row for a sum saved and a reserve in months; a reserve goal's target is its months × the
+  monthly need, and it is walked with nothing moved out of the reserve (no split), since the
+  reserve itself is what it counts.
+- „Nötig im Monat“ (D302) = Heute + the smallest whole-euro extra which, added to each
+  month's „Anlegbar“ from next month to the due month, makes the walk reach the target at the
+  due month; found by bisection between 0 and the mean income, with growth; none above it.
+  Route 2 „Mehr anlegen“ is that extra (found without the income's limit) and never decides
+  the word.
+- Route 4, the spending scenarios: each cuts, from next month to the due month, the extra ÷
+  (1 − buffer) rounded up to the cent, one cent more when a buffer is kept (phase 9 keeps the
+  buffer back from every positive free month, so a cut reaches the walk only at 1 − buffer).
+  Each cut code gives the same share of its mean, rounded up to the cent; when the codes
+  cannot give the cut, each goes to 0 and the rest is named. It closes the gap when the walk
+  with its spending changes reaches the target by the due month.
+- „Ausgewogener Weg“ (D302), shown first whenever the walk without change misses: half the
+  extra (rounded up to the cent) cut from the wants by their means, each want cut at most to
+  half its mean, or with the household's wants target to that share of the income (the room
+  Σ wants − target × income shared by the means, each part to the cent down); then the saving
+  extra = the smallest whole euro that with those cuts reaches the target, within the mean
+  income; what the limit left open moves to saving and is named.
+- Route 3 „Mehr Rendite“ is a seam: not available, `not_built` (`generic_mode` in that mode).
 - „Eigene Wahl“ (D289 (3)) is the household's own spending in play (D263) on the Ziel tab; once
   adopted with `goal_choice.spending = own`, it is read like any adopted budget.
-- The word: „Auf Kurs“ when the walk without change, or with the budget the household
-  adopted, reaches the target by the due month; „Dahinter“ when a spending scenario closes the
-  gap; „So nicht erreichbar“ otherwise (also when the gap is smaller than the month's regular
-  spending but no scenario reaches the projection in time: the word never says „Dahinter“
-  without a scenario that closes it).
+- The word (D303): „Auf Kurs“ when the walk without change, or with the budget the household
+  adopted, reaches the target by the due month; „Machbar“ when a route 4 scenario closes the
+  gap; „Ehrgeizig“ only through route 3 (not built, never in `generic` mode); „Kaum
+  erreichbar“ otherwise.
+- A property without a default scenario is kept (D301 (a) 5); the answer names that
+  assumption with the link that replaces it.
 """
 
 import math
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from fractions import Fraction
@@ -35,10 +48,16 @@ from hausbuch.rules.household.taxonomy import FALLBACK_CODES, fallback_of
 from hausbuch.rules.plan.levers import add_months, months_after
 from hausbuch.rules.plan.spending import mean_of, playable
 from hausbuch.rules.plan.surplus import ZERO
+from hausbuch.schemas.advice import AdviceMode
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.goal import (
+    GoalAssumption,
+    GoalBalanced,
     GoalBudget,
     GoalIssue,
+    GoalMoreReturn,
+    GoalMoreSaving,
+    GoalRouteReason,
     GoalScenario,
     GoalUnreachable,
     GoalWord,
@@ -52,6 +71,11 @@ from .walk import Projection, Walk, last_month, walk
 
 CENT = Decimal("0.01")
 TENTH = Decimal("0.1")
+# Where a property's default scenario is made (Anlagen › Immobilie, D288).
+PROPERTY_SCENARIO_HREF = "/assets?tab=immobilie"
+# Route 2's extra, found without the income's limit, stops looking here (a goal no saving
+# reaches within the walk).
+EXTRA_CEILING = Decimal(10) ** 9
 
 
 @dataclass(frozen=True)
@@ -71,6 +95,9 @@ class GoalInputs:
     household_changes: Sequence[SpendingChange]  # the default scenario's spending changes
     projection: Projection | None
     todos: Sequence[HealthTodo] = ()
+    mean_income: Decimal = ZERO  # the window's mean income, the bisection's upper end (D302)
+    wants_max: Decimal | None = None  # the household's wants target, % of income (D274)
+    mode: AdviceMode = AdviceMode.OWN_USE
 
 
 def none_set() -> HouseholdGoal:
@@ -130,19 +157,33 @@ def household_goal(i: GoalInputs) -> HouseholdGoal:
     p = i.projection
     if p is None:
         return HouseholdGoal(word=None, issue=GoalIssue.NO_PROJECTION, todos=list(i.todos), **known)
-    if goal.due_month > last_month(p):
+    if goal.kind is not GoalKind.NET_WORTH:
+        p = replace(p, split=None)  # the reserve itself is counted: nothing moves out of it
+    if goal.due_month > last_month(p):  # forty years after the newest closed month
         return HouseholdGoal(word=None, issue=GoalIssue.BEYOND_PROJECTION, **known)
+    known["assumptions"] = _assumptions(p)
     as_is = walk(p)
     due = as_is.at(goal.due_month)
     if due is None:  # the reserve runs out on the way
         return HouseholdGoal(word=None, issue=GoalIssue.USED_UP, used_up=as_is.used_up, **known)
     projected = value_of(goal, due)
-    gap = target - projected
+    first = add_months(current_month(i.today), 1)
+    reaches = _reaches(i, p, target, first)
+    extra = _smallest(lambda e: reaches(e, ()), EXTRA_CEILING, grow=True)
+    noetig = None if extra is None or extra > i.mean_income else i.heute + extra
     known |= {
         "projected": projected,
-        "noetig": (i.heute + gap / left).quantize(CENT, ROUND_HALF_UP),
+        "noetig": noetig,
         "reached": reached_in(goal, as_is, target),
         "used_up": as_is.used_up,
+        "more_saving": None if extra is None else GoalMoreSaving(extra=extra, noetig=noetig),
+        "more_return": GoalMoreReturn(
+            reason=(
+                GoalRouteReason.GENERIC_MODE
+                if i.mode is AdviceMode.GENERIC
+                else GoalRouteReason.NOT_BUILT
+            )
+        ),
     }
     with_budget = None
     if i.choice is not None and i.choice.spending is not None and i.household_changes:
@@ -152,34 +193,87 @@ def household_goal(i: GoalInputs) -> HouseholdGoal:
             with_budget = reached_in(goal, walk(p, i.household_changes), target)
     known["reached_with_budget"] = with_budget
     on_track = projected >= target or (with_budget is not None and with_budget <= goal.due_month)
-    scenarios = [] if gap <= 0 else _scenarios(i, p, target, gap, left)
+    scenarios: list[GoalScenario] = []
+    if projected < target:
+        scenarios = _scenarios(i, p, target, extra, first)
+        known["balanced"] = _balanced(i, reaches, extra, first)
     if on_track:
         word = GoalWord.ON_TRACK
     elif any(s.closes for s in scenarios):
-        word = GoalWord.BEHIND
+        word = GoalWord.FEASIBLE
     else:
-        word = GoalWord.UNREACHABLE
+        word = GoalWord.HARDLY
     unreachable = (
         GoalUnreachable(later=known["reached"], reaches_by_due=projected)
-        if word is GoalWord.UNREACHABLE
+        if word is GoalWord.HARDLY
         else None
     )
     return HouseholdGoal(word=word, scenarios=scenarios, unreachable=unreachable, **known)
+
+
+def _assumptions(p: Projection) -> list[GoalAssumption]:
+    if not any(f.kept for f in p.flats.values()):
+        return []
+    return [
+        GoalAssumption(
+            text="Annahme: Wohnung wird behalten, Wert unverändert.",
+            action="Szenario anlegen",
+            href=PROPERTY_SCENARIO_HREF,
+        )
+    ]
+
+
+Reaches = Callable[[Decimal, Sequence[SpendingChange]], bool]
+
+
+def _reaches(i: GoalInputs, p: Projection, target: Decimal, first: str) -> Reaches:
+    """Whether the walk with `extra` a month from next month and the spending `changes` reaches
+    the target at the due month."""
+    due = i.goal.due_month
+
+    def reaches(extra: Decimal, changes: Sequence[SpendingChange]) -> bool:
+        w = walk(p, changes, until=due, extra=extra, extra_from=first)
+        month = w.at(due)
+        return month is not None and value_of(i.goal, month) >= target
+
+    return reaches
+
+
+def _smallest(fn: Callable[[Decimal], bool], hi: Decimal, grow: bool = False) -> Decimal | None:
+    """The smallest whole euro e in [0, hi] with fn(e), fn growing with e; None when fn(hi)
+    fails. With `grow`, the upper end starts at 1,000 and doubles up to `hi`."""
+    if fn(ZERO):
+        return ZERO
+    lo = 0  # fn(lo) is false
+    top = min(Decimal(1000), hi) if grow else hi
+    while not fn(top):
+        if not grow or top >= hi:
+            return None
+        lo = int(top)
+        top = min(top * 2, hi)
+    up = math.ceil(top)
+    while up - lo > 1:
+        mid = (lo + up) // 2
+        if fn(Decimal(mid)):
+            up = mid
+        else:
+            lo = mid
+    return Decimal(up).quantize(CENT)
 
 
 # --- The spending scenarios ---------------------------------------------------------------
 
 
 def _scenarios(
-    i: GoalInputs, p: Projection, target: Decimal, gap: Decimal, left: int
+    i: GoalInputs, p: Projection, target: Decimal, extra: Decimal | None, first: str
 ) -> list[GoalScenario]:
-    buffer = p.basis.buffer_percent
-    cut = Fraction(gap) / left / (1 - Fraction(buffer) / 100)
-    wanted = _ceil_cent(cut) + (CENT if buffer > 0 else ZERO)
-    first = add_months(current_month(i.today), 1)
-    # The means hold no one-off code in force (rules/plan/spending.month_spending), so only the
-    # structural test is left here (phase 10 D307: a switch decides the one-offs).
-    codes = {c: m for c, m in i.code_means.items() if m > 0 and playable(c, ()) and c in i.classes}
+    codes = _codes(i)
+    if extra is None:  # no saving reaches it within the walk: every code to 0
+        wanted = sum(codes.values(), ZERO) + CENT
+    else:
+        buffer = p.basis.buffer_percent
+        wanted = _ceil_cent(Fraction(extra) / (1 - Fraction(buffer) / 100))
+        wanted += CENT if buffer > 0 else ZERO
     out = []
     for kind, chosen in (
         (GoalSpending.WANTS_ONLY, {c for c in codes if i.classes[c] is BudgetClass.WANT}),
@@ -187,6 +281,53 @@ def _scenarios(
     ):
         out.append(_cut(i, p, target, kind, {c: codes[c] for c in chosen}, wanted, first))
     return out
+
+
+def _codes(i: GoalInputs) -> dict[AllocationCategory, Decimal]:
+    # The means hold no one-off code in force (rules/plan/spending.month_spending), so only the
+    # structural test is left here (phase 10 D307: a switch decides the one-offs).
+    return {c: m for c, m in i.code_means.items() if m > 0 and playable(c, ()) and c in i.classes}
+
+
+def _balanced(
+    i: GoalInputs, reaches: Reaches, extra: Decimal | None, first: str
+) -> GoalBalanced | None:
+    """„Ausgewogener Weg“: half of the extra from the wants, within their limit, the rest
+    saved."""
+    if extra is None:
+        return None
+    wants = {c: m for c, m in _codes(i).items() if i.classes[c] is BudgetClass.WANT}
+    total = sum(wants.values(), ZERO)
+    half = _ceil_cent(Fraction(extra) / 2)
+    cuts: dict[AllocationCategory, Decimal] = {}
+    if total > 0:
+        if i.wants_max is None:
+            limits = {c: _floor_cent(Fraction(m) / 2) for c, m in wants.items()}
+        else:
+            room = max(ZERO, total - i.wants_max * i.mean_income / 100)
+            limits = {
+                c: _floor_cent(Fraction(room) * Fraction(m) / Fraction(total))
+                for c, m in wants.items()
+            }
+        for code, mean in wants.items():
+            share = _ceil_cent(Fraction(mean) * Fraction(half) / Fraction(total))
+            if (cut := min(limits[code], share)) > 0:
+                cuts[code] = cut
+    cut = sum(cuts.values(), ZERO)
+    changes = _changes(i.code_means, cuts, first, i.goal.due_month)
+    saving_extra = _smallest(lambda e: reaches(e, changes), i.mean_income)
+    return GoalBalanced(
+        budgets=[
+            GoalBudget(code=c, budget_class=i.classes[c], mean=wants[c], budget=wants[c] - cuts[c])
+            for c in sorted(cuts, key=lambda c: c.value)
+        ],
+        cut=cut,
+        saving_extra=saving_extra,
+        moved_to_saving=ZERO if saving_extra is None else max(ZERO, saving_extra - half),
+        saving=None if saving_extra is None else i.heute + saving_extra,
+        closes=saving_extra is not None,
+        spending_changes=changes,
+    )
 
 
 def _cut(
@@ -256,7 +397,11 @@ def _closes(
 
 
 def _ceil_cent(value: Fraction) -> Decimal:
-    return Decimal(math.ceil(value * 100)) / 100
+    return (Decimal(math.ceil(value * 100)) / 100).quantize(CENT)
+
+
+def _floor_cent(value: Fraction) -> Decimal:
+    return (Decimal(math.floor(value * 100)) / 100).quantize(CENT)
 
 
 __all__ = [
