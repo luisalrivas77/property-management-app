@@ -9,6 +9,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from db.test_plan_inputs import _counted
 from db.test_services_recurring import (  # noqa: F401  (fixtures)
     STREAMING,
     TODAY,
@@ -108,3 +109,17 @@ def test_the_read_equals_the_uncached_computation_cold_and_warm(world, private):
     changed = world.query(household_budget, TODAY)
     assert changed != want
     assert changed == _uncached(world)
+
+
+def test_the_recurring_reads_are_kept_per_data_version(world, private):  # noqa: F811
+    """A warm read sends no statement for the series' inputs: the private lines, the answers
+    and each account's reach are kept with the months' reads (services.plan_inputs)."""
+    _household(world, private)
+    with _counted(world) as cold:
+        first = world.query(household_budget, TODAY)
+    with _counted(world) as warm:
+        again = world.query(household_budget, TODAY)
+    assert again == first
+    with plan_inputs.bypass(), _counted(world) as uncached:
+        world.query(household_budget, TODAY)
+    assert warm[0] < cold[0] and warm[0] < uncached[0]
