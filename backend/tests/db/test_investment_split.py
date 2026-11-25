@@ -3,17 +3,20 @@ the form's prefill from the window's purchases and „noch nicht angelegt“, re
 services.plan. The arithmetic is tests/fixtures/phase10/investment_split.yaml
 (tests/rules/test_phase10_investment_split.py)."""
 
+from datetime import date
 from decimal import Decimal
 
 import pytest
 from db.matching_support import World
 from db.test_household_plan import BROKER, _savings_history
+from db.test_services_health import _book
 from db.test_services_health_snapshots import NOW, TODAY
 from sqlalchemy import update
 
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.rules.plan.savings_plans import payee_key
+from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.health import HealthTodoCode
 from hausbuch.schemas.plan import (
     HouseholdLevers,
@@ -24,7 +27,7 @@ from hausbuch.schemas.plan import (
     SplitSource,
     ValueChange,
 )
-from hausbuch.services import health, plan, plan_inputs
+from hausbuch.services import plan, plan_inputs
 
 pytestmark = pytest.mark.db
 
@@ -46,7 +49,7 @@ def _parts(world: World, levers: HouseholdLevers):
 
 
 def test_the_plans_give_the_mix_and_the_purchases_the_prefill(world):
-    """Closed months up to March 2027; the depot plan (50 €) and the broker (25 €) are both
+    """Closed months January to March 2027; the depot plan (50 €) and the broker (25 €) are both
     funds, so the mix is all funds. Without a typed rate nothing moves and the to-do names
     the funds; with one the mix is 100/0 from the plans. The prefill is every purchase of the
     plan's own closed window: 50 + 60 + 50 into the depot and 3 × 25 to the broker, 235 €,
@@ -72,12 +75,8 @@ def test_the_plans_give_the_mix_and_the_purchases_the_prefill(world):
 
     prefill = got.investment_split_prefill
     assert prefill is not None
-    codes = health.levers_one_off_codes(HouseholdLevers())
-    window = world.query(
-        lambda conn, today: health._window(plan_inputs.PlanInputs(conn, today).ended_reads(codes)),
-        TODAY,
-    )
-    assert (prefill.from_month, prefill.to_month) == (window.months[0], "2027-03")
+    # the private account's first line is in January 2027, so its window starts there
+    assert (prefill.from_month, prefill.to_month) == ("2027-01", "2027-03")
     assert prefill.bought == {PlanClass.DEPOT: D("235.00"), PlanClass.CRYPTO: D("0.00")}
     assert prefill.split == InvestmentSplit(depot=D("100.0"), crypto=D("0.0"))
     assert got.not_invested is None  # no split saved
@@ -134,3 +133,33 @@ def test_without_plans_the_holdings_decide(world):
     assert got.plans == []
     assert got.investment_split.source is SplitSource.HOLDINGS
     assert got.investment_split.shares == InvestmentSplit(depot=D("100.0"), crypto=D("0.0"))
+
+
+def test_the_window_reaches_back_twelve_closed_months_not_three(world):
+    """The prefill and „noch nicht angelegt“ read the whole window (the closed months, at
+    most twelve), not only the last three the savings plans are detected from. With the
+    private account's first line in February 2026, February 2026 to March 2027 are closed and
+    the window is April 2026 to March 2027: a crypto purchase in October 2026 (100 €) and a
+    broker purchase in November 2026 (40 €) count, the broker's February 2026 purchase (999 €,
+    before the window) does not. Funds 235 + 40 = 275, crypto 100, 375 invested; saved 50/50:
+    crypto's 187.50 less its 100 leaves 87.50."""
+    private, depot = _savings_history(world)
+    for day, amount, name, code in (
+        (date(2026, 2, 20), "-999.00", BROKER, C.HH_INVESTMENT_SECURITIES),
+        (date(2026, 10, 20), "-100.00", "Beispiel Krypto Börse", C.HH_INVESTMENT_CRYPTO),
+        (date(2026, 11, 20), "-40.00", BROKER, C.HH_INVESTMENT_SECURITIES),
+    ):
+        _book(world, private.line(day, amount, name=name), amount, code)
+    saved = InvestmentSplit(depot=D("50.0"), crypto=D("50.0"))
+    got = _parts(world, HouseholdLevers(value_change=RATES, investment_split=saved))
+    prefill = got.investment_split_prefill
+    assert (prefill.from_month, prefill.to_month) == ("2026-04", "2027-03")
+    assert prefill.bought == {PlanClass.DEPOT: D("275.00"), PlanClass.CRYPTO: D("100.00")}
+    assert prefill.split == InvestmentSplit(depot=D("73.3"), crypto=D("26.7"))
+    gap = got.not_invested
+    assert (gap.from_month, gap.invested, gap.amount) == ("2026-04", D("375.00"), D("87.50"))
+    assert [(x.asset_class, x.actual_percent, x.amount) for x in gap.lines] == [
+        (PlanClass.CRYPTO, D("26.7"), D("87.50"))
+    ]
+    # the savings plans still come from the last three closed months only
+    assert {p.key for p in got.plans} == {str(depot.account_id), payee_key(BROKER)}
