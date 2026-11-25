@@ -172,6 +172,7 @@ def test_a_new_day_is_seen(world, monkeypatch):
     _json(world, plan.preview_plan, previews["unchanged"])
     with _counted(world) as warm:
         _json(world, plan.preview_plan, previews["income"])
+    assert warm[0] <= 4
 
     class Tomorrow(datetime):
         @classmethod
@@ -179,11 +180,13 @@ def test_a_new_day_is_seen(world, monkeypatch):
             return datetime.now(UTC) + timedelta(days=1)
 
     monkeypatch.setattr(plan_inputs, "datetime", Tomorrow)
+    want = _uncached(world, plan.preview_plan, previews["income"])
     with _counted(world) as next_day:
-        assert _json(world, plan.preview_plan, previews["income"]) == _uncached(
-            world, plan.preview_plan, previews["income"]
-        )
-    assert next_day[0] > warm[0] + 10
+        assert _json(world, plan.preview_plan, previews["income"]) == want
+    assert next_day[0] > warm[0] + 10  # read afresh
+    with _counted(world) as again:
+        assert _json(world, plan.preview_plan, previews["income"]) == want
+    assert again[0] <= 4  # and kept for the new day
 
 
 def test_a_transaction_that_has_written_reads_its_own_rows_and_keeps_nothing(world):
@@ -194,6 +197,7 @@ def test_a_transaction_that_has_written_reads_its_own_rows_and_keeps_nothing(wor
     kept = _json(world, plan.household_plan)
     assert _json(world, plan.household_plan) == kept
 
+    plan_inputs.clear()
     changed = levers.model_copy(update={"net_worth_years": 5})
     with pytest.raises(_Rollback), workspace_transaction(world.engine, world.ws) as conn:
         ctx = new_command(conn, world.ws, USER, now=NOW)
@@ -211,6 +215,7 @@ def test_a_transaction_that_has_written_reads_its_own_rows_and_keeps_nothing(wor
         assert inside.levers.net_worth_years == 5
         raise _Rollback
 
+    assert len(plan_inputs.STORE) == 0  # nothing read after the write was kept
     assert _json(world, plan.household_plan) == kept
     assert _json(world, plan.preview_plan, previews["one_off"]) == _uncached(
         world, plan.preview_plan, previews["one_off"]
@@ -248,6 +253,9 @@ def test_errors_are_the_same_cold_and_warm(world):
         assert one_off.value.codes
         with pytest.raises(NotFoundError):
             world.query(plan.household_plan, TODAY, unknown)
+        # A scenario id nobody has is never kept, so unknown ids cannot grow the store.
+        [entry] = plan_inputs.STORE._entries.values()
+        assert not any(key[0] == "scenario" for key in entry.parts)
 
 
 def test_two_workspaces_never_share_a_part(app_engine, fresh_workspaces):

@@ -143,9 +143,16 @@ def _scenario(
         row = default_scenario(conn) if scenario_id is None else get_scenario(conn, scenario_id)
     elif scenario_id is None:
         row = inputs.part(("default_scenario",), default_scenario)
-    else:
-        row = inputs.part(("scenario", scenario_id), lambda c: get_scenario(c, scenario_id))
+    else:  # an unknown id raises inside the read, so nothing is kept for it
+        row = inputs.part(("scenario", scenario_id), lambda c: _named_scenario(c, scenario_id))
     if row is None and scenario_id is not None:
+        raise NotFoundError(EntityType.HOUSEHOLD_SCENARIO, scenario_id)
+    return row
+
+
+def _named_scenario(conn: Connection, scenario_id: UUID) -> HouseholdScenario:
+    row = get_scenario(conn, scenario_id)
+    if row is None:
         raise NotFoundError(EntityType.HOUSEHOLD_SCENARIO, scenario_id)
     return row
 
