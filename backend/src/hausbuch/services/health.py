@@ -31,7 +31,7 @@ hands the rules plain facts.
 """
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -496,6 +496,29 @@ class MonthRead:
     one_off_ids: frozenset[UUID] = field(default_factory=frozenset)
 
 
+@dataclass(frozen=True)
+class MonthInputs:
+    """What read_months reads from the database for its months, before any rule runs: the
+    payments marked one-off, the private accounts' months, the rental blocks and the closed
+    months' facts. Lever-independent rows only, so services.plan_inputs may keep them for a
+    data version (phase 10 §7.10 (b)); months_from_inputs turns them into MonthReads."""
+
+    marked: frozenset[UUID]
+    private: Mapping[str, PrivateMonth]
+    rental: RentalMonths
+    facts: Mapping[str, MonthFacts]
+
+
+def read_month_inputs(conn: Connection, months: Sequence[str], today: date) -> MonthInputs:
+    """read_months' reads for `months` (consecutive, oldest first, at least one)."""
+    first, last = months[0], months[-1]
+    marked = one_off_marked(conn)
+    private = private_months(conn, first, last)
+    rental = rental_months(conn, first, last)
+    facts = closed_month_facts(conn, months, today)
+    return MonthInputs(marked=marked, private=private, rental=rental, facts=facts)
+
+
 def read_months(conn: Connection, months: Sequence[str], today: date) -> dict[str, MonthRead]:
     """`months` (consecutive, oldest first) on read: rules.health.month.household_month over
     the private accounts' month (services.household.private_months, the Haushalt screen's
@@ -504,11 +527,12 @@ def read_months(conn: Connection, months: Sequence[str], today: date) -> dict[st
     §7.9 (c) 2) are read once here and carried on every MonthRead."""
     if not months:
         return {}
-    first, last = months[0], months[-1]
-    marked = one_off_marked(conn)
-    private = private_months(conn, first, last)
-    rental = rental_months(conn, first, last)
-    facts = closed_month_facts(conn, months, today)
+    return months_from_inputs(months, read_month_inputs(conn, months, today))
+
+
+def months_from_inputs(months: Sequence[str], inputs: MonthInputs) -> dict[str, MonthRead]:
+    """read_months' rules over its reads (read_month_inputs): nothing is read here."""
+    marked, private, rental, facts = inputs.marked, inputs.private, inputs.rental, inputs.facts
     out = {}
     for month in months:
         p = private[month]
@@ -650,10 +674,13 @@ def key_figures(
     balances: NetWorth,
     debt_figure: NetWorth | None,
     today: date,
+    balance_rows: Sequence[ReserveBalance] | None = None,
 ) -> KeyFigures:
     """The flow figures over the window's months, None below three closed months (D231):
     the savings rate (D235), the reserve from `balances` (D237), the debt figures from
-    `debt_figure` with the window's rental interest (D239) and the free cash (D244)."""
+    `debt_figure` with the window's rental interest (D239) and the free cash (D244).
+    `balance_rows`: `balances`' account balances as _reserve_balances reads them, when
+    the caller has them (services.plan_inputs keeps them, phase 10 §7.10 (b))."""
     if not win.enough:
         return KeyFigures(None, None, None, None)
     months = [reads[m].household for m in win.months]
@@ -670,7 +697,12 @@ def key_figures(
         )
     return KeyFigures(
         savings_rate=savings_rate(months),
-        reserve=reserve(_reserve_balances(conn, balances), months, levers, today=today),
+        reserve=reserve(
+            list(balance_rows) if balance_rows is not None else _reserve_balances(conn, balances),
+            months,
+            levers,
+            today=today,
+        ),
         debt=debt_figures,
         free_cash=_free_cash(months),
     )

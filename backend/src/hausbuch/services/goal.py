@@ -26,19 +26,19 @@ from hausbuch.rules.plan.surplus import mean_cent
 from hausbuch.schemas.goal import GoalIssue, HouseholdGoal
 from hausbuch.schemas.plan import GoalKind
 
-from .health import _window, ended_months, key_figures, read_months
-from .household_scenarios import default_scenario
-from .net_worth import net_worth
-from .plan import plan_parts
+from .health import _reserve_balances, _window, key_figures
+from .plan import _net_worth, _scenario, plan_parts
+from .plan_inputs import PlanInputs
 
 
 def goal(conn: Connection, today: date) -> HouseholdGoal:
-    row = default_scenario(conn)
+    inputs = PlanInputs(conn, today)  # the plan's reads, kept (phase 10 §7.10 (b))
+    row = _scenario(conn, None, inputs)
     if row is None or row.levers.goal is None:
         return none_set()
     levers = row.levers
-    reads = read_months(conn, ended_months(today), today)
-    plan, parts = plan_parts(conn, today, row, levers, reads)
+    reads = inputs.ended_reads()
+    plan, parts = plan_parts(conn, today, row, levers, reads, inputs)
     if parts is None:  # below three closed months: the plan's to-dos say what is missing
         assert plan.projection is not None
         passed = levers.goal.due_month <= current_month(today)
@@ -49,12 +49,22 @@ def goal(conn: Connection, today: date) -> HouseholdGoal:
             issue=GoalIssue.DUE_PASSED if passed else GoalIssue.NO_PROJECTION,
             todos=[] if passed else list(plan.projection.todos),
         )
-    now = net_worth(conn, today)
+    now = _net_worth(inputs, today)
     if levers.goal.kind is GoalKind.NET_WORTH:
         value_today = now.total
     else:
+        rows = inputs.part(
+            ("reserve_balances", ("net_worth", today)), lambda c: _reserve_balances(c, now)
+        )
         reserve = key_figures(
-            conn, reads, _window(reads), levers, balances=now, debt_figure=None, today=today
+            conn,
+            reads,
+            _window(reads),
+            levers,
+            balances=now,
+            debt_figure=None,
+            today=today,
+            balance_rows=rows,
         ).reserve
         assert reserve is not None  # three closed months, as parts
         value_today = reserve.amount

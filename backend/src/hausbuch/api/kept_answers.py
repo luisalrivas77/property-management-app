@@ -97,6 +97,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from hausbuch import i18n
 from hausbuch.db.session import workspace_transaction
+from hausbuch.services import plan_inputs
 
 from .auth_context import AuthContext, NotAuthenticatedError, current_auth
 
@@ -780,7 +781,11 @@ class KeptAnswersMiddleware:
                 complete = not message.get("more_body", False)
             await send(message)
 
-        await self.app(scope, receive, capture)
+        if bypass:  # a check recomputes from the database: no kept plan reads either
+            with plan_inputs.bypass():
+                await self.app(scope, receive, capture)
+        else:
+            await self.app(scope, receive, capture)
         if bypass:
             state["kept_answer"] = "bypass"
             state["kept_inner"] = (status, headers, bytes(body))
