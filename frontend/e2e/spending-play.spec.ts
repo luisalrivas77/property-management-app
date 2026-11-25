@@ -583,6 +583,16 @@ test("a rate left invalid on Anlagen does not block a save from Haushalt › Res
   await serve(page, "/api/household-budget", () => budget({}));
 
   // Planung › Vermögen's „Annahme“ link opens the rates beside Anlagen's projection (§7.10 (a)).
+  // A bookmark of the panel „Annahmen“ (`#d-annahmen-<group>`, before §7.10 (a)) opens the
+  // group's new place: the reserve target's form on Reserve.
+  await page.goto("/household#d-annahmen-reserve");
+  await expect(page).toHaveURL("/household?tab=reserve#reserve-ziel");
+  await expect(page.getByRole("form", { name: "Reserve-Ziel ändern" })).toBeVisible();
+  // On Anlagen too, from a tab that does not read the plan.
+  await page.goto("/assets?tab=etf#d-annahmen-rendite");
+  await expect(page).toHaveURL("/assets#rendite");
+  await expect(page.getByRole("form", { name: "Rendite ändern" })).toBeVisible();
+
   await page.goto("/planning?section=vermoegen#annahme");
   await expect(page).toHaveURL("/assets#rendite");
   const rates = page.getByRole("form", { name: "Rendite ändern" });
@@ -653,10 +663,17 @@ for (const scheme of ["light", "dark"] as const) {
 
     await page.goto("/household?tab=reserve");
     await expect(page.getByRole("region", { name: "Wege zum Reserveziel" })).toBeVisible();
+    // The saved plan's change is named on Reserve, Ziel and Anlagen too (§7.10 (a) 6).
+    await expect(page.getByTestId("planned-changes").first()).toContainText("mit 1 geplanten Änderung");
+    expect(await pageWidth()).toBeLessThanOrEqual(390);
+
+    await page.goto("/household?tab=ziel");
+    await expect(page.getByTestId("planned-changes").first()).toContainText("mit 1 geplanten Änderung");
     expect(await pageWidth()).toBeLessThanOrEqual(390);
 
     await page.goto("/assets");
     await expect(page.getByRole("region", { name: "Vermögen in einigen Jahren: eure Annahme" })).toBeVisible();
+    await expect(page.getByTestId("planned-changes").first()).toContainText("mit 1 geplanten Änderung");
     expect(await pageWidth()).toBeLessThanOrEqual(390);
 
     // Each lever's own form, opened by a cold load of its link (§7.10 (a) 7).

@@ -78,7 +78,7 @@ import {
 import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { todayIso } from "@/components/format";
 import { HealthTodoList, HouseholdHealthSection } from "@/components/healthFigures";
-import { HouseholdGoalTab, HouseholdPlanTab, PlanProvider } from "@/components/householdPlan";
+import { HouseholdGoalTab, HouseholdPlanTab, PlanProvider, useStaleAssumptionsRedirect } from "@/components/householdPlan";
 import { HouseholdPlayTab } from "@/components/householdPlay";
 import { useRecurringPayments } from "@/components/householdRecurring";
 import { ALLOCATION_CATEGORY, HOUSEHOLD_GROUP, HOUSEHOLD_SPENDING_GROUPS } from "@/components/labels";
@@ -217,6 +217,7 @@ function Household() {
   const search = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
+  useStaleAssumptionsRedirect(pathname);
   const current = todayIso().slice(0, 7);
   const month = chosenMonth(search.get("monat"), current);
   const tab = householdTab(search.get("tab"));

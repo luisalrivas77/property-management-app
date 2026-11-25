@@ -11,7 +11,6 @@ const de = {
   scenario: (name: string) => `Szenario „${name}“`,
   defaults: "Ohne gespeichertes Szenario",
   saved: "gespeichert",
-  unsaved: (n: number) => (n === 1 ? "1 Änderung, nicht gespeichert" : `${n} Änderungen, nicht gespeichert`),
   assumptions: "Annahmen",
   change: "Ändern",
   // Haushalt › Budget: „Was mit dem Rest passiert“ (what Planung › Anlegen was)
@@ -327,7 +326,6 @@ export const planning = defineMessages({
     scenario: (name: string) => `Scenario “${name}”`,
     defaults: "No saved scenario",
     saved: "saved",
-    unsaved: (n: number) => (n === 1 ? "1 change, not saved" : `${n} changes, not saved`),
     assumptions: "Assumptions",
     change: "Change",
     restTitle: "What happens to the rest",

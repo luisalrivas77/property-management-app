@@ -38,7 +38,7 @@ import type { components } from "@/api/types";
 import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { todayIso } from "@/components/format";
 import { AssetsHealthSection } from "@/components/healthFigures";
-import { HouseholdProjection, PlanProvider } from "@/components/householdPlan";
+import { HouseholdProjection, PlanProvider, useStaleAssumptionsRedirect } from "@/components/householdPlan";
 import { DOCUMENT_SUBTYPE } from "@/components/labels";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -79,6 +79,7 @@ function Fallback() {
 
 function Assets() {
   const t = useT(assets);
+  useStaleAssumptionsRedirect("/assets");
   const f = useFormat();
   const search = useSearchParams();
   const priceFor = search.get("kurs");

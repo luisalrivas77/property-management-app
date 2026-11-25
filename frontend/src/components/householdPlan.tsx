@@ -288,6 +288,22 @@ const RATE_KEYS = ["value_change", "net_worth_years"] as const;
 /** Reads the plan once for a page and holds Durchspielen's draft, the Budget class panel's draft
  * and its save, and Budget's own panels; `backLabel` is the page's name on the panel's „‹“ on the phone. The tree
  * around `children` is the same before and after the read, so nothing under it mounts twice. */
+/** A link from before §7.10 (a) (`#d-annahmen-<group>`, a bookmark) leads to the group's new
+ * place, on every tab of the page that calls it (Haushalt, Anlagen), not only where the plan is
+ * read; on the same page only the hash changes, so the browser's hashchange opens the lever. */
+export function useStaleAssumptionsRedirect(page: string) {
+  const annahmen = useDetail(ASSUMPTIONS);
+  const router = useRouter();
+  useEffect(() => {
+    if (annahmen.id === null) return;
+    const target = staleAssumptionsTarget(`#d-${ASSUMPTIONS}-${annahmen.id}`, page);
+    if (target === null) return;
+    const [path] = target.split("#", 1);
+    if (path === window.location.pathname + window.location.search) window.location.replace(target);
+    else router.replace(target);
+  }, [annahmen.id, page, router]);
+}
+
 export function PlanProvider({
   page,
   backLabel,
@@ -315,21 +331,8 @@ export function PlanProvider({
   const [playBusy, setPlayBusy] = useState(false);
   const [playError, setPlayError] = useState<unknown>(null);
   const [playRound, setPlayRound] = useState(0);
-  const annahmen = useDetail(ASSUMPTIONS);
   const goals = useDetail("goals");
   const budgetClass = useDetail("budget");
-  const router = useRouter();
-
-  // A link from before §7.10 (a) (`#d-annahmen-<group>`, a bookmark) leads to the group's new
-  // place; on the same page only the hash changes, so the browser's hashchange opens the lever.
-  useEffect(() => {
-    if (annahmen.id === null) return;
-    const target = staleAssumptionsTarget(`#d-${ASSUMPTIONS}-${annahmen.id}`, page);
-    if (target === null) return;
-    const [path] = target.split("#", 1);
-    if (path === window.location.pathname + window.location.search) window.location.replace(target);
-    else router.replace(target);
-  }, [annahmen.id, page, router]);
 
   const data = state.data;
   const enough = data !== undefined && data.health.window.enough && data.plan.surplus != null;

@@ -388,6 +388,14 @@ test("„Für alle übernehmen“ sets one month on every changed row, and „Zu
   await page.getByRole("button", { name: "Wünsche" }).click();
   await page.getByLabel("Geplant pro Monat: Restaurant").fill("150");
   await expect(page.getByText("2 Änderungen · noch nicht behalten")).toBeVisible();
+  // A one-off keeps its own month: „Für alle übernehmen“ moves only the changed rows.
+  const oneOffMonth = HORIZON[1] ?? "";
+  await page.getByRole("button", { name: "Betrag eintragen" }).click();
+  const oneOff = page.getByRole("form", { name: "Einmaliger Betrag" });
+  await oneOff.getByLabel("Monat").selectOption(oneOffMonth);
+  await oneOff.getByLabel("Betrag (+ Einnahme, − Ausgabe)").fill("-2400");
+  await oneOff.getByRole("button", { name: "Hinzufügen" }).click();
+  await expect(page.getByText("3 Änderungen · noch nicht behalten")).toBeVisible();
 
   const month = HORIZON[3] ?? "";
   await page.getByLabel("Ab wann gilt das?").selectOption(month);
@@ -395,8 +403,17 @@ test("„Für alle übernehmen“ sets one month on every changed row, and „Zu
   await expect(page.getByLabel("Netto im Monat: ab")).toHaveValue(month);
   await expect.poll(() => planPreviews.at(-1)?.income_changes?.[0]?.from_month).toBe(month);
   expect(planPreviews.at(-1)?.spending_changes?.[0]?.from_month).toBe(month);
+  expect(planPreviews.at(-1)?.one_offs?.[0]?.month).toBe(oneOffMonth);
   // The effect rows read the month the changes start.
   await expect(effect(page, "investable")).toContainText("ab");
+
+  // A row typed back to today's figure is no change (§7.10 (a) 3).
+  await page.getByLabel("Geplant pro Monat: Restaurant").fill("200");
+  await expect(page.getByText("2 Änderungen · noch nicht behalten")).toBeVisible();
+  await page.getByLabel("Netto im Monat: angenommen").fill("5200");
+  await expect(page.getByText("1 Änderung · noch nicht behalten")).toBeVisible();
+  await expect.poll(() => planPreviews.at(-1)?.spending_changes ?? []).toEqual([]);
+  expect(planPreviews.at(-1)?.income_changes ?? []).toEqual([]);
 
   await page.getByRole("button", { name: "Zurücksetzen" }).click();
   await expect(page.getByText("Noch nichts geändert.")).toBeVisible();
