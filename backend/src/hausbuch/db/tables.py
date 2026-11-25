@@ -1272,3 +1272,28 @@ spending_mark = Table(
     _uuid("created_by", nullable=True),
     _created_at(),
 )
+
+# Phase 10 §7.11 (c) 3, D310 amended (migration 0057): Kenneth French's annual Developed market
+# return per download and year, as published (percent, USD); insert-only, the newest download
+# per series counts; never committed to the repository.
+reference_return = Table(
+    "reference_return",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("download_id"),
+    _text("series"),
+    Column("year", SmallInteger, nullable=False),
+    Column("market_excess_pct", Numeric(9, 4), nullable=False),
+    Column("risk_free_pct", Numeric(9, 4), nullable=False),
+    _text("currency"),
+    _text("source"),
+    _text("url"),
+    _text("series_key"),
+    _date("read_on"),
+    _text("licence"),
+    _text("attribution"),
+    Column("repo_allowed", Boolean, nullable=False, server_default=text("false")),
+    Column("commercial_use", Boolean, nullable=False, server_default=text("false")),
+    _timestamp("fetched_at"),
+)
