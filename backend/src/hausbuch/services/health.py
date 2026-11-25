@@ -1388,23 +1388,28 @@ def levers_in_force_at(conn: Connection, at: datetime) -> HouseholdLevers:
 
 
 def _one_offs_left_out_since(conn: Connection) -> str | None:
-    """Phase 10 D308: the first month whose stored key figures leave the one-offs out of the
-    savings rate („Seit <Monat>: Einmaliges nicht im Schnitt“), from the newest row of each
-    month; None while no stored month does. The months stored before keep their figures
-    (D242)."""
+    """Phase 10 D308: the first month of the newest unbroken run of stored months whose key
+    figures leave the one-offs out of the savings rate („Seit <Monat>: Einmaliges nicht im
+    Schnitt“), from the newest row of each month, so a month stored again under D308 before
+    one that kept its old figures (`recapture-months`) never names a start that months with
+    one-offs follow; None while the newest stored month does not leave them out. The months
+    stored before keep their figures (D242)."""
     h = health_snapshot_table.c
     rows = conn.execute(
         select(h.month_end, h.figures).order_by(h.month_end, h.created_at.desc(), h.id)
     )
     seen: set[date] = set()
+    since: str | None = None
     for row in rows:
         if row.month_end in seen:
             continue
         seen.add(row.month_end)
         rate = (row.figures or {}).get("savings_rate") or {}
-        if rate.get("one_offs_left_out"):
-            return month_of(row.month_end)
-    return None
+        if not rate.get("one_offs_left_out"):
+            since = None
+        elif since is None:
+            since = month_of(row.month_end)
+    return since
 
 
 def _stored_levers(figures: HealthSnapshotFigures) -> HouseholdLevers:

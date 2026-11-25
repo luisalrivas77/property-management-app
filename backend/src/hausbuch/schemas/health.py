@@ -790,9 +790,10 @@ class Health(Schema):
     # Phase 10 §7.6 Haushalt (3): the newest closed month's spending groups that differ most
     # from their mean over the closed months before it; None below three such months.
     differences: MonthDifferences | None = None
-    # Phase 10 D308: the first month whose stored key figures leave the one-offs out of the
-    # savings rate, for „Seit <Monat>: Einmaliges nicht im Schnitt“; None while none does
-    # (the months stored before keep their figures, D242).
+    # Phase 10 D308: the first month of the newest unbroken run of stored months whose key
+    # figures leave the one-offs out of the savings rate, for „Seit <Monat>: Einmaliges nicht
+    # im Schnitt“; None while the newest stored month does not (the months stored before keep
+    # their figures, D242).
     one_offs_left_out_since: YearMonth | None = None
 
 

@@ -3,15 +3,16 @@ GET /health, the months on read, the stored snapshot of a closed month, the dail
 and `hausbuch health-check`, over invented data (owners A and B, a flat and its rental
 account). The arithmetic is held by the rule fixtures; these tests hold the reads and writes."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 from db.matching_support import World
 from db.test_cli_evals_report import _owner_url
 from db.test_services_health import _account, _book, _statement
 from db.test_services_net_worth import _asset, _held, _price
-from sqlalchemy import func, select, update
+from sqlalchemy import func, insert, select, update
 
 from hausbuch import cli
 from hausbuch.db.session import workspace_transaction
@@ -35,7 +36,8 @@ from hausbuch.schemas.allocation import (
 )
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.health import ClosedReasonCode, HealthSnapshotOutcome, HealthTodoCode
-from hausbuch.services import allocations, health, net_worth
+from hausbuch.schemas.plan import HouseholdLevers, HouseholdScenarioCreate
+from hausbuch.services import allocations, health, household_scenarios, net_worth
 from hausbuch.services.errors import RuleViolationError
 
 C = AllocationCategory
@@ -489,3 +491,117 @@ def test_health_carries_the_last_ended_month_as_the_months_read_returns_it(world
     assert got.last_ended.model_dump_json() == march.household.model_dump_json()
 
     assert world.query(health.health, date(2026, 1, 15)).last_ended is None
+
+
+def _electronics_in_january(world: World) -> None:
+    """_closed_history with a private current account covered from January 2026 to March
+    2027 (its history starting with a grocery line of 10 € on 2 Jan 2026) and one purchase of
+    10 € on 12 Jan 2027 booked as Elektronik (one-off by its code, phase 10 D307)."""
+    _closed_history(world)
+    current = _account(world, "Giro", AccountKind.BANK_CURRENT)
+    first, line = _statement(
+        world,
+        current,
+        date(2026, 1, 1),
+        date(2027, 3, 31),
+        datetime(2027, 4, 9, tzinfo=UTC),
+        closing="-20.00",
+        lines=[date(2026, 1, 2), date(2027, 1, 12)],
+    )
+    _book(world, first, "-10.00", C.HH_GROCERIES)
+    _book(world, line, "-10.00", C.HH_ELECTRONICS)
+
+
+ENDS = {"2027-01": date(2027, 1, 31), "2027-02": date(2027, 2, 28), "2027-03": date(2027, 3, 31)}
+
+
+def _rate(world: World, month: str) -> Decimal:
+    with workspace_transaction(world.engine, world.ws) as conn:
+        figures = conn.execute(
+            select(health_snapshot_table.c.figures).where(
+                health_snapshot_table.c.month_end == ENDS[month]
+            )
+        ).scalar_one()
+    return Decimal(figures["savings_rate"]["rate"])
+
+
+def test_health_check_reads_the_switches_in_force_when_each_month_was_stored(world):
+    """Phase 10 §7.12 (c): a recomputation of a stored month reads the default scenario's
+    one-off switches in force when it was stored. January is stored with Elektronik one-off
+    (the taxonomy's default), February after a default scenario switched it to regular,
+    March after that scenario was withdrawn; each window holds the January purchase, so
+    February's rate is below the others. health-check matches every month, though today's
+    switches are the default ones, and with Elektronik regular again today it still does,
+    while today's own rate moves."""
+    _electronics_in_january(world)
+    world.cmd(health.store_snapshot, "2027-01")
+    world.now = NOW + timedelta(days=1)
+    row = world.cmd(
+        household_scenarios.create_scenario,
+        HouseholdScenarioCreate(
+            name="Basis",
+            is_default=True,
+            levers=HouseholdLevers(one_off_overrides={C.HH_ELECTRONICS: False}),
+        ),
+    )
+    world.cmd(health.store_snapshot, "2027-02")
+    world.now = NOW + timedelta(days=2)
+    world.cmd(household_scenarios.withdraw_scenario, row.id)
+    world.cmd(health.store_snapshot, "2027-03")
+    assert _rate(world, "2027-02") < _rate(world, "2027-01") == _rate(world, "2027-03")
+    result = world.query(health.health_check, "2027-01", "2027-03", TODAY)
+    assert result.match, [r for r in result.rows if not r.equal]
+    today = world.query(health.health, TODAY).savings_rate.rate
+    world.now = NOW + timedelta(days=3)
+    world.cmd(
+        household_scenarios.create_scenario,
+        HouseholdScenarioCreate(
+            name="Basis",
+            is_default=True,
+            levers=HouseholdLevers(one_off_overrides={C.HH_ELECTRONICS: False}),
+        ),
+    )
+    assert world.query(health.health, TODAY).savings_rate.rate < today
+    result = world.query(health.health_check, "2027-01", "2027-03", TODAY)
+    assert result.match, [r for r in result.rows if not r.equal]
+
+
+def test_one_offs_left_out_since_names_the_newest_unbroken_run(world):
+    """Phase 10 D308: „Seit <Monat>“ names the first month of the newest unbroken run of
+    months whose newest row is stored under D308: a month whose newest row is stored before
+    it (the savings rate without the flag) between them starts the run later, a newest month
+    stored before D308 names none, and the months stored again under it restore the run."""
+    _closed_history(world)
+    for month in ("2027-01", "2027-02", "2027-03"):
+        world.cmd(health.store_snapshot, month)
+
+    def stored_again(month: str, *, d308: bool, at: datetime) -> None:
+        # a newer row of the month (the newest counts), its savings rate as a row stored
+        # before D308 holds it (`d308` False) or as one stored under it; nothing one-off here
+        h = health_snapshot_table.c
+        with workspace_transaction(world.engine, world.ws) as conn:
+            row = conn.execute(
+                select(health_snapshot_table)
+                .where(h.month_end == ENDS[month])
+                .order_by(h.created_at.desc())
+                .limit(1)
+            ).one()
+            figures = dict(row.figures)
+            rate = dict(figures["savings_rate"])
+            rate["one_offs_left_out"] = d308
+            rate["rate_regular"] = None if d308 else rate["rate"]
+            figures["savings_rate"] = rate
+            conn.execute(
+                insert(health_snapshot_table).values(
+                    {**row._mapping, "id": uuid4(), "figures": figures, "created_at": at}
+                )
+            )
+
+    assert world.query(health.health, TODAY).one_offs_left_out_since == "2027-01"
+    stored_again("2027-02", d308=False, at=NOW + timedelta(hours=1))
+    assert world.query(health.health, TODAY).one_offs_left_out_since == "2027-03"
+    stored_again("2027-03", d308=False, at=NOW + timedelta(hours=1))
+    assert world.query(health.health, TODAY).one_offs_left_out_since is None
+    stored_again("2027-02", d308=True, at=NOW + timedelta(hours=2))
+    stored_again("2027-03", d308=True, at=NOW + timedelta(hours=2))
+    assert world.query(health.health, TODAY).one_offs_left_out_since == "2027-01"
