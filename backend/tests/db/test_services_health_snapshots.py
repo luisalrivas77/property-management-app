@@ -269,8 +269,11 @@ def test_health_check_recomputes_each_stored_month(world):
     """D259 amended: each stored figure equals its recomputation from the stored rows; a line
     booked later in a stored month makes the check name the figures that moved."""
     _closed_history(world)
+    assert world.query(health.health, date(2027, 4, 10)).one_offs_left_out_since is None
     for month in ("2027-01", "2027-02", "2027-03"):
         world.cmd(health.store_snapshot, month)
+    # phase 10 D308: „Seit Januar 2027: Einmaliges nicht im Schnitt“
+    assert world.query(health.health, date(2027, 4, 10)).one_offs_left_out_since == "2027-01"
     result = world.query(health.health_check, "2027-01", "2027-03", date(2027, 4, 10))
     assert result.months == ["2027-01", "2027-02", "2027-03"]
     assert result.match, [r for r in result.rows if not r.equal]

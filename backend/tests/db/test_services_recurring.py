@@ -1,9 +1,10 @@
 """services.recurring and services.spending_marks under hausbuch_app and RLS (docs/phases/
-phase-10.md §7.9 (b), (c), (f); D296, D297; Q-O183 (a)): the recurring payments and the
-one-off candidates read from the confirmed private lines, the answers stored with their event,
-and a payment marked one-off moving the four places that read it (the household month, the
-plan's means, the Budget's one-off line, Haushalt's differences) while a stored month stays as
-stored. The arithmetic is the phase 10 fixtures; invented payees and amounts only."""
+phase-10.md §7.9 (b), (c), (f), §7.12 (b); D296, D297, D307; Q-O183 (a)): the recurring
+payments read from the confirmed private lines, the answers stored with their event, and a
+payment marked one-off from its detail panel moving the four places that read it (the
+household month, the plan's means, the Budget's „Einmalig im Zeitraum“, Haushalt's
+differences) while a stored month stays as stored. The candidate search of D297 went with
+D307. The arithmetic is the phase 10 fixtures; invented payees and amounts only."""
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -184,13 +185,6 @@ def test_one_missed_payment_is_maybe_ended_once_the_account_reads_on(world, priv
 
 def test_a_one_off_mark_moves_the_four_places_and_keeps_the_stored_month(world, private):
     ids = _household(world, private)
-    got = world.query(recurring.one_off_candidates, TODAY)
-    assert got.window.months[-1] == "2027-03"
-    assert [c.payment.allocation_id for c in got.candidates] == [ids["workshop"]]
-    (candidate,) = got.candidates
-    assert candidate.payment.amount == Decimal("870.00") and candidate.code_median == 0
-    assert got.answered == []
-
     before = world.query(health.health, TODAY)
     assert HouseholdGroup.MOBILITY in {g.group for g in before.differences.groups}
     world.cmd(net_worth.capture_month_end, date(2027, 3, 31))
@@ -216,19 +210,15 @@ def test_a_one_off_mark_moves_the_four_places_and_keeps_the_stored_month(world, 
     # 2 the plan's means: the code is gone from March's regular spending
     (spent,) = plan.window_spending(reads, ["2027-03"])
     assert spent.get(C.HH_CAR_SERVICE, Decimal("0.00")) == 0
-    # 3 the Budget's one-off line
+    # 3 the Budget's „Einmalig im Zeitraum“, beside the partition (D307)
     budget = world.query(household_budget, TODAY)
-    assert next(li for li in budget.lines if li.key is L.ONE_OFF).total == Decimal("870.00")
+    assert budget.one_off is not None and budget.one_off.key is L.ONE_OFF
+    assert budget.one_off.total == Decimal("870.00")
+    assert L.ONE_OFF not in {li.key for li in budget.lines}
     # 4 Haushalt's differences: Mobilität no longer differs
     differences = world.query(health.health, TODAY).differences
     assert HouseholdGroup.MOBILITY not in {g.group for g in differences.groups}
 
-    # the candidate is answered, listed for a change of mind
-    got = world.query(recurring.one_off_candidates, TODAY)
-    assert got.candidates == []
-    assert [(c.payment.allocation_id, c.answer) for c in got.answered] == [
-        (ids["workshop"], A.ONE_OFF)
-    ]
     # the stored month stays as stored, and shows beside the month on read
     with workspace_transaction(world.engine, world.ws) as conn:
         assert conn.execute(select(health_snapshot_table)).all() == stored
@@ -243,7 +233,6 @@ def test_a_one_off_mark_moves_the_four_places_and_keeps_the_stored_month(world, 
     )
     again = world.query(health.read_months, ["2027-03"], TODAY)["2027-03"].household
     assert again.one_off_spending == 0
-    assert world.query(recurring.one_off_candidates, TODAY).candidates == []
 
 
 def test_only_a_confirmed_private_spending_payment_can_be_marked(world, private, fresh_workspaces):
@@ -279,8 +268,8 @@ def test_only_a_confirmed_private_spending_payment_can_be_marked(world, private,
 
 def test_a_privately_paid_purchase_cost_is_not_spending_and_cannot_be_marked(world, private):
     """D234: the notary's bill of the purchase, paid privately and booked hh_property_cost
-    with the bill, is invested, not spent: no candidate and 404 for a mark, as the household
-    month counts it; a repair paid the same way is spending and can be marked."""
+    with the bill, is invested, not spent: 404 for a mark, as the household month counts it;
+    a repair paid the same way is spending and can be marked."""
     _household(world, private)
     notary = world.document("invoice", {})
     world.cmd(
@@ -308,9 +297,6 @@ def test_a_privately_paid_purchase_cost_is_not_spending_and_cannot_be_marked(wor
         property_id=world.property_id,
         document_id=world.document("invoice", {}),
     )[0].id
-    got = world.query(recurring.one_off_candidates, TODAY)
-    found = {c.payment.allocation_id for c in got.candidates}
-    assert paid not in found and fixed in found
     with pytest.raises(NotFoundError):
         world.cmd(
             spending_marks.record_one_off,
@@ -326,7 +312,7 @@ def test_a_privately_paid_purchase_cost_is_not_spending_and_cannot_be_marked(wor
 
 def test_a_re_booked_payment_is_asked_again(world, private):
     """§7.9 (c) 4: a correction gives the payment a new allocation; the old one's mark no
-    longer counts, the old id cannot be marked, the new one is a candidate again."""
+    longer counts, the old id cannot be marked, the new one can."""
     ids = _household(world, private)
     world.cmd(
         spending_marks.record_one_off,
@@ -341,9 +327,6 @@ def test_a_re_booked_payment_is_asked_again(world, private):
         ).scalar_one()
     rebooked = _booked(world, tx, "-870.00", C.HH_CAR_SERVICE)
     assert rebooked != ids["workshop"]
-    got = world.query(recurring.one_off_candidates, TODAY)
-    assert [c.payment.allocation_id for c in got.candidates] == [rebooked]
-    assert got.answered == []
     march = world.query(health.read_months, ["2027-03"], TODAY)["2027-03"].household
     assert march.one_off_spending == 0
     with pytest.raises(NotFoundError):
@@ -352,13 +335,20 @@ def test_a_re_booked_payment_is_asked_again(world, private):
             OneOffMarkRequest(allocation_id=ids["workshop"], answer=A.REGULAR),
             TODAY,
         )
+    world.cmd(
+        spending_marks.record_one_off,
+        OneOffMarkRequest(allocation_id=rebooked, answer=A.ONE_OFF),
+        TODAY,
+    )
 
 
-def test_a_mark_is_refused_for_what_the_candidates_leave_out(world, private):
-    """Review of PR #590: the POST accepts exactly what GET /household/one-off-candidates
-    lists as of the same day, so a payment under the limits, a cash withdrawal, a payment of
-    a recurring series and one dated after today are each a 404, as an unknown id is."""
-    ids = _household(world, private)
+def test_any_counted_spending_payment_up_to_today_can_be_marked(world, private):
+    """Phase 10 §7.12 (b), D307: a payment is marked from its detail panel, so the POST takes
+    any confirmed private payment the household month counts as spending up to today: one in
+    a recurring series and one in a code one-off in force too (that mark counts only while a
+    switch makes the code regular). A cash withdrawal and a payment dated after today are a
+    404, as an unknown id is."""
+    _household(world, private)
     cash = _booked(
         world, private.line(date(2027, 3, 20), "-900.00", name="Geldautomat"), "-900.00", C.HH_CASH
     )
@@ -387,14 +377,7 @@ def test_a_mark_is_refused_for_what_the_candidates_leave_out(world, private):
         s for s in world.query(recurring.recurring_payments, TODAY).series if s.last_amount == 600
     ]
     assert yearly.interval is RecurringInterval.YEARLY
-    got = world.query(recurring.one_off_candidates, TODAY)
-    assert [c.payment.allocation_id for c in got.candidates] == [ids["workshop"]]
-    refused = {
-        "under the limits": small,  # once, in a code with nothing else in the window
-        "a cash withdrawal": cash,
-        "in a recurring series": insurance[1],
-        "dated after today": later,
-    }
+    refused = {"a cash withdrawal": cash, "dated after today": later}
     for why, allocation in refused.items():
         with pytest.raises(NotFoundError):
             world.cmd(
@@ -403,5 +386,12 @@ def test_a_mark_is_refused_for_what_the_candidates_leave_out(world, private):
                 TODAY,
             )
         assert allocation not in world.query(spending_marks.one_off_marked), why
+    for allocation in (insurance[1], small):  # in a series; in a one-off code (Elektronik)
+        world.cmd(
+            spending_marks.record_one_off,
+            OneOffMarkRequest(allocation_id=allocation, answer=A.ONE_OFF),
+            TODAY,
+        )
     with workspace_transaction(world.engine, world.ws) as conn:
-        assert conn.execute(select(mark_table.c.id)).all() == []
+        marked = set(conn.execute(select(mark_table.c.allocation_id)).scalars())
+    assert marked == {insurance[1], small}

@@ -16,12 +16,16 @@ from sqlalchemy import select
 
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import event as event_table
+from hausbuch.db.tables import household_scenario as scenario_table
 from hausbuch.rules.errors import (
     HOUSEHOLD_SCENARIO_ACCOUNT_INVALID,
     HOUSEHOLD_SCENARIO_NOT_CURRENT,
+    HOUSEHOLD_SCENARIO_ONE_OFF_CODE_INVALID,
     HOUSEHOLD_SCENARIO_ONE_OFF_OUTSIDE,
+    HOUSEHOLD_SCENARIO_SPENDING_INVALID,
     HOUSEHOLD_SCENARIO_WITHDRAWAL_INVALID,
 )
+from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.bank import AccountCreate
 from hausbuch.schemas.enums import AccountKind, ActorType
 from hausbuch.schemas.events import EventType
@@ -272,3 +276,129 @@ def test_another_workspace_sees_nothing_and_cannot_supersede(app_engine, fresh_w
         _cmd(app_engine, b, svc.withdraw_scenario, row.id)
     # B's own default is independent of A's.
     _cmd(app_engine, b, svc.create_scenario, _body(is_default=True))
+
+
+def test_one_off_switches_are_stored_and_checked(app_engine, fresh_workspaces):
+    """Phase 10 D307: a household's one-off switches are stored with the levers and change the
+    codes the household reads as one-off; a switch on a code that is not a household spending
+    code is refused; a new or altered spending change of a code one-off in force is refused,
+    one carried unaltered from the row superseded is kept (and counts for nothing on read);
+    a row without switches stores no key, as every row before D307, and reads as none."""
+    ws, _ = fresh_workspaces
+    plain = _cmd(app_engine, ws, svc.create_scenario, _body(name="Ohne"))
+    stored = _read(
+        app_engine,
+        ws,
+        lambda conn: conn.execute(
+            select(scenario_table.c.levers).where(scenario_table.c.id == plain.id)
+        ).scalar_one(),
+    )
+    assert "one_off_overrides" not in stored
+    assert _read(app_engine, ws, svc.get_scenario, plain.id).levers.one_off_overrides == {}
+
+    switches = {"hh_electronics": False, "hh_car_service": True}
+    change = {"code": "hh_electronics", "monthly": "40.00", "from_month": "2026-11"}
+    row = _cmd(
+        app_engine,
+        ws,
+        svc.create_scenario,
+        _body(
+            is_default=True,
+            levers={"one_off_overrides": switches, "spending_changes": [change]},
+        ),
+    )
+    assert row.levers.one_off_overrides == {C.HH_ELECTRONICS: False, C.HH_CAR_SERVICE: True}
+    assert _read(app_engine, ws, svc.default_scenario).levers == row.levers
+    codes = health.levers_one_off_codes(_read(app_engine, ws, health.household_levers))
+    assert C.HH_CAR_SERVICE in codes and C.HH_ELECTRONICS not in codes
+    assert C.HH_DENTAL_OPTICAL in codes  # untouched codes keep the taxonomy's default
+
+    with pytest.raises(RuleViolationError) as exc:
+        _cmd(
+            app_engine,
+            ws,
+            svc.create_scenario,
+            _body(name="Lohn", levers={"one_off_overrides": {"hh_salary": True}}),
+        )
+    assert _codes(exc) == [HOUSEHOLD_SCENARIO_ONE_OFF_CODE_INVALID]
+    with pytest.raises(RuleViolationError) as exc:  # a new change of a code one-off in force
+        _cmd(
+            app_engine,
+            ws,
+            svc.create_scenario,
+            _body(
+                name="Werkstatt",
+                levers={
+                    "one_off_overrides": switches,
+                    "spending_changes": [change | {"code": "hh_car_service"}],
+                },
+            ),
+        )
+    assert _codes(exc) == [HOUSEHOLD_SCENARIO_SPENDING_INVALID]
+
+    # The switch back to one-off carries the change unaltered: kept, never refused ...
+    carried = _cmd(
+        app_engine,
+        ws,
+        svc.create_scenario,
+        _body(
+            is_default=True,
+            supersedes_id=str(row.id),
+            levers={"spending_changes": [change]},
+        ),
+    )
+    assert [c.code for c in carried.levers.spending_changes] == [C.HH_ELECTRONICS]
+    # ... an altered one is refused.
+    with pytest.raises(RuleViolationError) as exc:
+        _cmd(
+            app_engine,
+            ws,
+            svc.create_scenario,
+            _body(
+                is_default=True,
+                supersedes_id=str(carried.id),
+                levers={"spending_changes": [change | {"monthly": "30.00"}]},
+            ),
+        )
+    assert _codes(exc) == [HOUSEHOLD_SCENARIO_SPENDING_INVALID]
+
+
+def test_the_switches_in_force_at_an_instant(app_engine, fresh_workspaces):
+    """Phase 10 D307: health-check reads the default scenario's switches in force when a month
+    was stored: a row created later does not count yet, a row superseded or withdrawn later
+    still does, a non-default row never does."""
+    ws, _ = fresh_workspaces
+
+    def at(when: datetime) -> dict:
+        return _read(app_engine, ws, health.levers_in_force_at, when).one_off_overrides
+
+    first = _cmd(
+        app_engine,
+        ws,
+        svc.create_scenario,
+        _body(is_default=True, levers={"one_off_overrides": {"hh_car_service": True}}),
+    )
+    second = _cmd(
+        app_engine,
+        ws,
+        svc.create_scenario,
+        _body(
+            is_default=True,
+            supersedes_id=str(first.id),
+            levers={"one_off_overrides": {"hh_electronics": False}},
+        ),
+    )
+    _cmd(
+        app_engine,
+        ws,
+        svc.create_scenario,
+        _body(name="Variante", levers={"one_off_overrides": {"hh_groceries": True}}),
+    )
+    gone = _cmd(app_engine, ws, svc.withdraw_scenario, second.id)
+    second_at = second.created_at
+    assert at(first.created_at - timedelta(seconds=1)) == {}
+    assert at(first.created_at) == {C.HH_CAR_SERVICE: True}
+    assert at(second_at - timedelta(milliseconds=1)) == {C.HH_CAR_SERVICE: True}
+    assert at(second_at) == {C.HH_ELECTRONICS: False}
+    assert at(gone.created_at - timedelta(milliseconds=1)) == {C.HH_ELECTRONICS: False}
+    assert at(gone.created_at) == {}
