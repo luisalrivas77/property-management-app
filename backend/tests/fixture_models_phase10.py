@@ -21,13 +21,14 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from fractions import Fraction
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import yaml
 from fixture_models import Lenient
-from pydantic import Field, model_validator
+from pydantic import AfterValidator, Field, model_validator
 
 from hausbuch.rules.health.month import cashflow_rows, household_month, rental_month
 from hausbuch.rules.household.cashflow import month_cashflow
@@ -489,6 +490,22 @@ class RouteFlatIn(Schema):
     kept_loans: dict[int, Money] = Field(default_factory=dict)
 
 
+class InvestedIn(Schema):
+    """Route 3's weights (§7.11 „Route 3 as decided“ 1): the funds' value today (a ticked depot
+    left out) and each coin's, by its symbol."""
+
+    funds: Money
+    coins: dict[str, Money] = Field(default_factory=dict)
+
+
+class HistoryIn(Schema):
+    """The reference series as yearly returns in euros (0.10 = +10 %), INVENTED numbers, never
+    French's or Coin Metrics' data: `funds` None is the funds series not downloaded."""
+
+    funds: dict[int, Decimal] | None = None
+    coins: dict[str, dict[int, Decimal]] = Field(default_factory=dict)
+
+
 class RouteScenarioExpect(Schema):
     closes: bool
     cut: Money
@@ -497,9 +514,12 @@ class RouteScenarioExpect(Schema):
 class BalancedExpect(Schema):
     cuts: dict[AllocationCategory, Money]  # per want code, a month
     cut: Money
-    saving_extra: Money  # whole euros
+    saving_extra: Money | None  # whole euros; None when no saving up to the income closes it
     moved_to_saving: Money
     closes: bool
+    # the one rate the route is walked at for funds and crypto: route 3's median when it
+    # decides (available, not thin, own use), else None (the household's typed rates)
+    return_rate: Decimal | None = None
 
 
 class MoreSavingExpect(Schema):
@@ -507,9 +527,45 @@ class MoreSavingExpect(Schema):
     noetig: Money | None
 
 
+class LeftOutExpect(Schema):
+    """A part of the invested value route 3's mix leaves out (§7.11 „Route 3 as decided“ 1, 2):
+    `share` its percent of the invested value today, to 0.1 %."""
+
+    kind: Literal["funds", "coin"]
+    symbol: str | None = None  # a coin's symbol; None for the funds or a split's crypto part
+    share: Decimal
+    reason: Literal["too_short", "no_series", "no_coin"]
+
+
+RouteReason = Literal[
+    "generic_mode", "nothing_invested", "series_missing", "history_short", "out_of_range"
+]
+
+
 class MoreReturnExpect(Schema):
-    available: Literal[False]
-    reason: Literal["not_built", "generic_mode"]
+    """Route 3 „Mehr Rendite“ (§7.11 (c) 3, D310 amended). Rates as fractions to 0.001
+    (0.128 = 12.8 %): `needed_return` on the 0.1 % grid between −0.5 and 1.0, `median` and
+    `best` the windows' annualised returns rounded down to it. `sources` the series keys in
+    the mix (the funds series `funds`, a coin by its symbol)."""
+
+    available: bool
+    reason: RouteReason | None = None
+    needed_return: Decimal | None = None
+    window_years: int | None = None
+    windows: int | None = None
+    reached_windows: int | None = None
+    median: Decimal | None = None
+    best: Decimal | None = None
+    verdict: Literal["within_history", "good_times", "never"] | None = None
+    thin: bool | None = None
+    left_out: list[LeftOutExpect] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _reason(self) -> Self:
+        if self.available == (self.reason is not None):
+            raise ValueError("route 3 has a reason exactly when it is not available")
+        return self
 
 
 class RouteExpect(Schema):
@@ -546,6 +602,8 @@ class RouteCase(Lenient):
     split: dict[PlanClass, Money] | None = None  # the effective split; None: nothing moves
     flats: dict[str, RouteFlatIn] = Field(default_factory=dict)
     mode: AdviceMode = AdviceMode.OWN_USE
+    invested: InvestedIn | None = None  # None: the funds are the start's depot less its ticked part
+    history: HistoryIn = Field(default_factory=lambda: HistoryIn())
     expect: RouteExpect
 
     @model_validator(mode="after")
@@ -739,7 +797,43 @@ class InvestmentSplitFixture(Schema):
     not_invested: list[NotInvestedCase]
 
 
+# --- reference_returns.yaml (§7.11 (c) 3, D310 amended) -------------------------------------
+
+
+def _fraction(value: str) -> str:
+    Fraction(value)  # an exact fraction such as '-1/25'
+    return value
+
+
+ExactFraction = Annotated[str, AfterValidator(_fraction)]
+
+
+class ReferenceFxIn(Schema):
+    usd_per_eur: dict[int, Decimal]  # the ECB's year-end rate, USD per EUR
+    dem_per_usd: dict[int, Decimal] = Field(default_factory=dict)  # the Bundesbank's, before 1999
+
+
+class FundsRowIn(Schema):
+    mkt_rf: Decimal  # percent, as French publishes it
+    rf: Decimal
+
+
+class ReferenceExpect(Schema):
+    usd_per_eur: dict[int, ExactFraction]
+    funds: dict[int, ExactFraction]
+    coins: dict[str, dict[int, ExactFraction]]
+    pegged: dict[Literal["USD", "EUR"], dict[int, ExactFraction]]
+
+
+class ReferenceFixture(Schema):
+    fx: ReferenceFxIn
+    funds: dict[int, FundsRowIn]
+    coins: dict[str, dict[int, Decimal]]  # 31 Dec prices in USD
+    expect: ReferenceExpect
+
+
 MODELS: dict[str, type[Schema]] = {
+    "reference_returns": ReferenceFixture,
     "budget_fixed": FixedFixture,
     "budget_partition": BudgetFixture,
     "budget_overrides": BudgetFixture,

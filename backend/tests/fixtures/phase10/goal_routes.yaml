@@ -26,8 +26,10 @@
 # Nötig (D302): extra E = the smallest whole euro which, added to each month's saving from Dec
 # 2026 to the due month, makes the walk reach the target at the due month; found by bisection
 # between 0 and the mean income; nötig = 2,000 + E, none above it. Route 2 „Mehr anlegen“ is
-# that extra (it never decides the word). Route 3 „Mehr Rendite“ is not built: not available,
-# reason not_built (generic_mode in `generic`). Route 4 the two spending scenarios of goal.yaml,
+# that extra (it never decides the word). Route 3 „Mehr Rendite“ below (the cases route3_*);
+# the cases above hold no reference series, so their route 3 is not available: series_missing
+# (funds in the mix, no download), nothing_invested (nothing held, no split), generic_mode in
+# `generic`; none of their words changed with route 3. Route 4 the two spending scenarios of goal.yaml,
 # cut = E (no buffer here), shared by the codes' means, each rounded up to the cent.
 # „Ausgewogener Weg“, shown whenever route 1 misses: half of E (to the cent, up) cut from the
 # wants by their means, each want cut at most to half its mean, or with `budget_targets.
@@ -36,7 +38,42 @@
 # the target; moved_to_saving = max(0, s − half of E) (what the limit leaves open); closes when
 # s ≤ the mean income.
 # Words (D303): on_track when route 1 reaches the target by the due month; feasible when a route
-# 4 scenario closes the gap; ambitious never now (route 3); hardly otherwise.
+# 4 scenario closes the gap or route 3 decides with the verdict within_history; ambitious when
+# route 3 decides with good_times and no scenario closes; hardly otherwise.
+#
+# Route 3 „Mehr Rendite“ (§7.11 (c) 3, „Route 3 as decided for the build“, D310 amended). The
+# reference series are INVENTED yearly returns in euros (never French's or Coin Metrics' data).
+# 1. Weights: the funds (the depot less a depot ticked into the reserve) and each coin at
+#    today's value; with nothing held, the split's shares, the split's crypto part left out and
+#    named (no_coin) since no coin is held; nothing held and no split: nothing_invested. A coin
+#    without a series (no_series) or with fewer yearly returns than the window (too_short) is
+#    left out and named with its share of the invested value (to 0.1 %), its weight shared by
+#    the rest pro rata; under half of the value covered: history_short.
+# 2. The mix's yearly return = Σ weight × the part's return, over the years every part has.
+# 3. Window L = months_left ÷ 12 whole years, at least 1 (Nov 2026 → Dec 2029: 37 months, L = 3);
+#    every run of L consecutive mix years is a window, its product Π(1 + r); fewer than 5
+#    windows is thin: shown, but it never decides the word and the balanced route keeps the
+#    typed rates.
+# 4. needed_return = the smallest rate on the 0.1 % grid in [−0.5, 1.0] which, typed as both
+#    the funds' and the crypto's yearly rate, makes the walk reach the target at the due month;
+#    none there: out_of_range (the windows still shown). A window reached it when its product
+#    ≥ (1 + needed)^L, compared exactly. median = the sorted products' element M ÷ 2 (the middle;
+#    of an even M the upper middle, so within means at least half the windows reached it), best
+#    the largest; both shown annualised, product^(1/L) − 1 rounded down to 0.1 %. verdict:
+#    within_history when (1 + needed)^L ≤ the median product, good_times when ≤ the best,
+#    never otherwise.
+# 5. Route 3 decides when it is available, not thin and in own use: then the balanced route is
+#    walked with the median's annualised rate as both rates (`return_rate`), half of the extra
+#    at that rate cut from the wants as above; a rate that alone reaches the target needs no cut
+#    and no extra (cut 0, saving_extra 0).
+# The investor household of the route 3 cases is the one above with 500,000 of funds at the
+# start (bank 50,000), today worth 551,000; the goal is a net worth by Dec 2029, funds typed at
+# 6 %. Its walk: 31 Dec 2026 funds 521,070.00 (500,000 × (1 + 0.06 × 2/12) + 14,000 × (1 + 0.06 ×
+# 1/12) + 2,000), net worth 559,070.00; 2027 614,994.20; 2028 674,273.85; 2029 737,110.28.
+# Its funds series FUNDS (2015–2025): 10, 30, 20, −10, 40, 20, 30, −20, 50, 10, 20 %; nine
+# windows of three years, products by first year 2015 1.716, 2016 1.404, 2017 1.512, 2018 1.512,
+# 2019 2.184, 2020 1.248, 2021 1.56, 2022 1.32, 2023 1.98; sorted 1.248, 1.32, 1.404, 1.512, 1.512 (median, 14.7 %:
+# 1.147³ = 1.50898 ≤ 1.512 < 1.148³ = 1.51294), 1.56, 1.716, 1.98, 2.184 (best, 29.7 %).
 bases:
   household: &household
     today: '2026-11-24'
@@ -53,6 +90,12 @@ bases:
     sale_year: 2030
     years: {2027: ['300000.00', '200000.00'], 2028: ['310000.00', '190000.00'], 2029: ['320000.00', '180000.00'], 2030: ['330000.00', '170000.00']}
     net_proceeds: '150000.00'
+  investor: &investor
+    <<: *household
+    start: {month_end: '2026-10-31', bank: '50000.00', depot: '500000.00', crypto: '0.00', property: '0.00', loans: '0.00', other_liabilities: '0.00'}
+    value_today: {net_worth: '551000.00', reserve: '31000.00'}
+    history: &funds_history
+      funds: {2015: '0.10', 2016: '0.30', 2017: '0.20', 2018: '-0.10', 2019: '0.40', 2020: '0.20', 2021: '0.30', 2022: '-0.20', 2023: '0.50', 2024: '0.10', 2025: '0.20'}
 
 cases:
 - id: on_track
@@ -67,7 +110,7 @@ cases:
     reached: '2036-04'           # 362,796.29 at 30 Apr 2036
     noetig: '2000.00'            # E = 0
     more_saving: {extra: '0.00', noetig: '2000.00'}
-    more_return: {available: false, reason: not_built}
+    more_return: {available: false, reason: series_missing}
     balanced: null
     scenarios: {}
 
@@ -85,7 +128,7 @@ cases:
     reached: '2037-03'
     noetig: '2196.00'            # 196: 400,127.28 at 30 Jun 2036
     more_saving: {extra: '196.00', noetig: '2196.00'}
-    more_return: {available: false, reason: not_built}
+    more_return: {available: false, reason: series_missing}
     scenarios:
       wants_only: {closes: true, cut: '196.01'}   # 600×196/900 = 130.666… → 130.67; 65.34
       all_equal: {closes: true, cut: '196.00'}    # 98.00 + 39.20 + 39.20 + 19.60
@@ -111,7 +154,7 @@ cases:
     reached: '2045-09'
     noetig: '5448.00'            # E = 3,448 ≤ the mean income 5,000
     more_saving: {extra: '3448.00', noetig: '5448.00'}
-    more_return: {available: false, reason: not_built}
+    more_return: {available: false, reason: series_missing}
     scenarios:
       wants_only: {closes: false, cut: '900.00'}  # every want to 0
       all_equal: {closes: false, cut: '3000.00'}  # every code to 0, 448 left open
@@ -137,7 +180,7 @@ cases:
     reached: '2041-12'
     noetig: '3822.00'            # E = 1,822
     more_saving: {extra: '1822.00', noetig: '3822.00'}
-    more_return: {available: false, reason: not_built}
+    more_return: {available: false, reason: series_missing}
     scenarios:
       wants_only: {closes: false, cut: '900.00'}
       all_equal: {closes: true, cut: '1822.00'}   # 911.00 + 364.40 + 364.40 + 182.20
@@ -186,7 +229,7 @@ cases:
     reached: '2041-05'           # 50,000 + 2,000k ≥ 400,000 → k = 175
     noetig: '3027.00'            # E = ⌈118,000 ÷ 115⌉ = ⌈1,026.09⌉
     more_saving: {extra: '1027.00', noetig: '3027.00'}
-    more_return: {available: false, reason: not_built}
+    more_return: {available: false, reason: nothing_invested}
     scenarios:
       wants_only: {closes: false, cut: '900.00'}
       all_equal: {closes: true, cut: '1027.00'}   # 513.50 + 205.40 + 205.40 + 102.70
@@ -230,7 +273,7 @@ cases:
     reached: '2038-08'
     noetig: '2802.00'            # E = 802
     more_saving: {extra: '802.00', noetig: '2802.00'}
-    more_return: {available: false, reason: not_built}
+    more_return: {available: false, reason: series_missing}
     scenarios:
       wants_only: {closes: true, cut: '802.01'}   # 534.67 + 267.34
       all_equal: {closes: true, cut: '802.00'}
@@ -262,7 +305,7 @@ cases:
     reached: '2037-02'
     noetig: '2235.00'            # E = 235
     more_saving: {extra: '235.00', noetig: '2235.00'}
-    more_return: {available: false, reason: not_built}
+    more_return: {available: false, reason: series_missing}
     scenarios:
       wants_only: {closes: true, cut: '235.01'}   # 156.67 + 78.34
       all_equal: {closes: true, cut: '235.00'}
@@ -275,3 +318,310 @@ cases:
     assumption: >-
       Annahme: Wohnung wird behalten, Wert unverändert. Szenario anlegen
     net_worth_at: {'2027-12': '171694.20'}   # 79,694.20 + 290,000 − 198,000
+
+# --- Route 3 „Mehr Rendite“ (the header's last part) ------------------------------------------
+# Route 2's extra, route 4's scenarios and the balanced route at the typed rates are found as
+# above; none of the investor cases closes a spending scenario (each extra is above 3,000).
+
+- id: route3_within
+  description: >-
+    „Machbar“ through route 3: 880,000 by Dec 2029 needs 12.8 % a year, which six of the nine
+    windows reached (the median's 14.7 % among them); no spending scenario closes (3,533 more a
+    month); at the median's 14.7 % the walk alone reaches 880,000, so the balanced route needs
+    no cut and no extra
+  <<: *investor
+  levers:
+    goal: {kind: net_worth, target: '880000.00', due_month: '2029-12', set_on: '2026-11-20'}
+    value_change: {depot: '0.06'}
+  expect:
+    word: feasible
+    projected: '737110.28'
+    noetig: '5533.00'            # E = 3,533
+    more_saving: {extra: '3533.00', noetig: '5533.00'}
+    more_return:
+      available: true
+      needed_return: '0.128'     # 880,509.17 at 12.8 %, 878,258.99 at 12.7 %
+      window_years: 3
+      windows: 9
+      reached_windows: 6         # 1.128³ = 1.435249: 1.716, 1.512, 1.512, 2.184, 1.56, 1.98
+      median: '0.147'
+      best: '0.297'
+      verdict: within_history    # 1.435249 ≤ 1.512
+      thin: false
+      left_out: []
+      sources: [funds]
+    scenarios:
+      wants_only: {closes: false, cut: '900.00'}
+      all_equal: {closes: false, cut: '3000.00'}
+    balanced:
+      cuts: {}
+      cut: '0.00'
+      saving_extra: '0.00'       # at 14.7 % the walk alone gives more than 880,000
+      moved_to_saving: '0.00'
+      closes: true
+      return_rate: '0.147'
+
+- id: route3_good_times
+  description: >-
+    „Ehrgeizig“: 1,250,000 by Dec 2029 needs 27.2 % a year, which only the best window (2019–21,
+    29.7 %) reached; no spending scenario closes; the balanced route at the median's 14.7 %
+    still misses with all the income
+  <<: *investor
+  levers:
+    goal: {kind: net_worth, target: '1250000.00', due_month: '2029-12', set_on: '2026-11-20'}
+    value_change: {depot: '0.06'}
+  expect:
+    word: ambitious
+    projected: '737110.28'
+    noetig: null                 # E = 12,682 above the mean income
+    more_saving: {extra: '12682.00', noetig: null}
+    more_return:
+      available: true
+      needed_return: '0.272'     # 1,252,268.29 at 27.2 %, 1,249,342.27 at 27.1 %
+      window_years: 3
+      windows: 9
+      reached_windows: 1         # 1.272³ = 2.058076: 2.184 only
+      median: '0.147'
+      best: '0.297'
+      verdict: good_times        # 1.512 < 2.058076 ≤ 2.184
+      thin: false
+      left_out: []
+      sources: [funds]
+    scenarios:
+      wants_only: {closes: false, cut: '900.00'}
+      all_equal: {closes: false, cut: '3000.00'}
+    balanced:
+      cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # at 14.7 % the extra is 7,107, half 3,553.50 above the limit
+      cut: '450.00'
+      saving_extra: null         # with the cuts, 5,000 more a month still misses
+      moved_to_saving: '0.00'
+      closes: false
+      return_rate: '0.147'
+
+- id: route3_never
+  description: >-
+    „Kaum erreichbar“: 1,600,000 by Dec 2029 needs 38.1 % a year, more than any window gave
+  <<: *investor
+  levers:
+    goal: {kind: net_worth, target: '1600000.00', due_month: '2029-12', set_on: '2026-11-20'}
+    value_change: {depot: '0.06'}
+  expect:
+    word: hardly
+    projected: '737110.28'
+    more_saving: {extra: '21335.00', noetig: null}
+    more_return:
+      available: true
+      needed_return: '0.381'     # 1,602,716.38 at 38.1 %, 1,599,206.94 at 38.0 %
+      window_years: 3
+      windows: 9
+      reached_windows: 0         # 1.381³ = 2.633789 > 2.184
+      median: '0.147'
+      best: '0.297'
+      verdict: never
+      thin: false
+      left_out: []
+      sources: [funds]
+    scenarios:
+      wants_only: {closes: false, cut: '900.00'}
+      all_equal: {closes: false, cut: '3000.00'}
+    balanced:
+      cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # at 14.7 %: extra 14,739
+      cut: '450.00'
+      saving_extra: null
+      moved_to_saving: '0.00'
+      closes: false
+      return_rate: '0.147'
+
+- id: route3_out_of_range
+  description: >-
+    6,000,000 by Dec 2029: even 100 % a year gives 5,087,000, so no needed return is named; the
+    windows are still shown; route 3 does not decide, and the balanced route keeps the typed
+    rates
+  <<: *investor
+  levers:
+    goal: {kind: net_worth, target: '6000000.00', due_month: '2029-12', set_on: '2026-11-20'}
+    value_change: {depot: '0.06'}
+  expect:
+    word: hardly
+    projected: '737110.28'
+    more_saving: {extra: '130126.00', noetig: null}
+    more_return:
+      available: false
+      reason: out_of_range
+      needed_return: null
+      window_years: 3
+      windows: 9
+      reached_windows: null
+      median: '0.147'
+      best: '0.297'
+      verdict: null
+      thin: false
+      sources: [funds]
+    balanced:
+      cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # at 6 %: half of 130,126
+      cut: '450.00'
+      saving_extra: null
+      moved_to_saving: '0.00'
+      closes: false
+      return_rate: null
+
+- id: route3_thin
+  description: >-
+    a funds series of six years (2020–25) gives four windows, fewer than five: shown with its
+    verdict, never the word; 950,000 needs 15.8 %, within the median's 15.9 %, but the word is
+    „Kaum erreichbar“ (5,264 more a month, no scenario closes) and the balanced route keeps the
+    typed 6 %
+  <<: *investor
+  history:
+    funds: {2020: '0.20', 2021: '0.30', 2022: '-0.20', 2023: '0.50', 2024: '0.10', 2025: '0.20'}
+  levers:
+    goal: {kind: net_worth, target: '950000.00', due_month: '2029-12', set_on: '2026-11-20'}
+    value_change: {depot: '0.06'}
+  expect:
+    word: hardly
+    projected: '737110.28'
+    noetig: null                 # E = 5,264 above the mean income
+    more_saving: {extra: '5264.00', noetig: null}
+    more_return:
+      available: true
+      needed_return: '0.158'     # 950,051.79 at 15.8 %, 947,669.46 at 15.7 %
+      window_years: 3
+      windows: 4                 # 2020 1.248, 2021 1.56, 2022 1.32, 2023 1.98
+      reached_windows: 2         # 1.158³ = 1.552836: 1.56, 1.98
+      median: '0.159'            # sorted 1.248, 1.32, 1.56, 1.98: element 2; 1.159³ = 1.55686 ≤ 1.56 < 1.16³
+      best: '0.255'              # 1.255³ = 1.97665 ≤ 1.98 < 1.256³ = 1.98137
+      verdict: within_history
+      thin: true
+      left_out: []
+      sources: [funds]
+    scenarios:
+      wants_only: {closes: false, cut: '900.00'}
+      all_equal: {closes: false, cut: '3000.00'}
+    balanced:
+      cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # half 2,632.00 above the limit
+      cut: '450.00'
+      saving_extra: '4814.00'
+      moved_to_saving: '2182.00'  # 4,814 − 2,632
+      closes: true
+      return_rate: null
+
+- id: route3_coins_left_out
+  description: >-
+    funds 300,000 and crypto 200,000 (BTC 100,000, SOL 60,000 with no series, ETH 40,000 with
+    two years, fewer than the window's three): SOL (12 %) and ETH (8 %) are left out and named,
+    the funds weigh 3/4 and BTC 1/4 over their common years 2017–25; 1,300,000 by Dec 2029 needs
+    28.9 % a year, which three of the seven windows reached: „Ehrgeizig“; the balanced route at
+    the mix's median 22.2 % cuts the wants to half and saves 3,240 more
+  <<: *household
+  start: {month_end: '2026-10-31', bank: '50000.00', depot: '300000.00', crypto: '200000.00', property: '0.00', loans: '0.00', other_liabilities: '0.00'}
+  value_today: {net_worth: '551000.00', reserve: '31000.00'}
+  invested: {funds: '300000.00', coins: {BTC: '100000.00', SOL: '60000.00', ETH: '40000.00'}}
+  history:
+    <<: *funds_history
+    coins:
+      BTC: {2017: '1.00', 2018: '-0.50', 2019: '0.90', 2020: '3.00', 2021: '0.60', 2022: '-0.60', 2023: '1.50', 2024: '1.20', 2025: '-0.10'}
+      ETH: {2024: '0.50', 2025: '-0.20'}
+  levers:
+    goal: {kind: net_worth, target: '1300000.00', due_month: '2029-12', set_on: '2026-11-20'}
+    value_change: {depot: '0.06', crypto: '0.10'}
+  # the walk: crypto 200,000 grows at 10 % (31 Dec 2026 203,333.33, 2029 270,636.67), funds at
+  # 6 % with each month's 2,000 (31 Dec 2029 458,525.05), bank 38,000: 767,161.72.
+  # The mix, ¾ × funds + ¼ × BTC: 2017 0.4, 2018 −0.2, 2019 0.525, 2020 0.9, 2021 0.375,
+  # 2022 −0.3, 2023 0.75, 2024 0.375, 2025 0.125; windows 2017 1.708, 2018 2.318, 2019 3.984063,
+  # 2020 1.82875, 2021 1.684375, 2022 1.684375, 2023 2.707031; sorted 1.684375, 1.684375, 1.708,
+  # 1.82875 (median: 1.222³ = 1.82480 ≤ 1.82875 < 1.223³ = 1.82929), 2.318, 2.707031, 3.984063
+  # (best: 1.585³ = 3.98187 ≤ 3.984063 < 1.586³ = 3.98942)
+  expect:
+    word: ambitious
+    projected: '767161.72'
+    more_saving: {extra: '13175.00', noetig: null}
+    more_return:
+      available: true
+      needed_return: '0.289'     # 1,302,790.10 at 28.9 % for both, 1,299,777.24 at 28.8 %
+      window_years: 3
+      windows: 7
+      reached_windows: 3         # 1.289³ = 2.141701: 2.318, 2.707031, 3.984063
+      median: '0.222'
+      best: '0.585'
+      verdict: good_times
+      thin: false
+      left_out:
+      - {kind: coin, symbol: ETH, share: '8.0', reason: too_short}
+      - {kind: coin, symbol: SOL, share: '12.0', reason: no_series}
+      sources: [funds, BTC]
+    scenarios:
+      wants_only: {closes: false, cut: '900.00'}
+      all_equal: {closes: false, cut: '3000.00'}
+    balanced:
+      cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # at 22.2 % the extra is 3,690, half 1,845.00
+      cut: '450.00'
+      saving_extra: '3240.00'    # with the cuts, 3,240 reaches 1,300,000 at 22.2 %; 3,239 does not
+      moved_to_saving: '1395.00'  # 3,240 − 1,845
+      closes: true
+      return_rate: '0.222'
+
+- id: route3_split_without_coin
+  description: >-
+    nothing held, the split 60 % funds and 40 % crypto with no coin held: the crypto part is
+    left out and named, the funds weigh 100 %; 200,000 by Dec 2029 needs 37.3 % a year, which no
+    window reached, but „Alles gleich kürzen“ closes the gap: „Machbar“; route 3 decides, so the
+    balanced route is walked at the median's 14.7 %
+  <<: *household
+  split: {depot: '60', crypto: '40'}
+  history: *funds_history
+  levers:
+    goal: {kind: net_worth, target: '200000.00', due_month: '2029-12', set_on: '2026-11-20'}
+    value_change: {depot: '0.06', crypto: '0.10'}
+  # the walk: Nov 2026 14,000 moves (8,400 funds, 5,600 crypto), then 1,200 and 800 a month;
+  # 31 Dec 2029 funds 58,588.32, crypto 41,812.91, bank 38,000: 138,401.24
+  expect:
+    word: feasible
+    projected: '138401.24'
+    noetig: '3488.00'            # E = 1,488
+    more_saving: {extra: '1488.00', noetig: '3488.00'}
+    more_return:
+      available: true
+      needed_return: '0.373'     # 200,205.05 at 37.3 %, 199,957.11 at 37.2 %
+      window_years: 3
+      windows: 9
+      reached_windows: 0         # 1.373³ = 2.588282 > 2.184
+      median: '0.147'
+      best: '0.297'
+      verdict: never
+      thin: false
+      left_out:
+      - {kind: coin, symbol: null, share: '40.0', reason: no_coin}
+      sources: [funds]
+    scenarios:
+      wants_only: {closes: false, cut: '900.00'}
+      all_equal: {closes: true, cut: '1488.00'}   # 744.00 + 297.60 + 297.60 + 148.80
+    balanced:
+      cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # at 14.7 % the extra is 1,067, half 533.50
+      cut: '450.00'
+      saving_extra: '617.00'
+      moved_to_saving: '83.50'   # 617 − 533.50
+      closes: true
+      return_rate: '0.147'
+
+- id: route3_history_short
+  description: >-
+    funds 100,000 and SOL 150,000 with no series: the series cover 40 % of the invested value,
+    under half, so route 3 is not offered (history_short) and names what it left out
+  <<: *household
+  start: {month_end: '2026-10-31', bank: '50000.00', depot: '100000.00', crypto: '150000.00', property: '0.00', loans: '0.00', other_liabilities: '0.00'}
+  value_today: {net_worth: '301000.00', reserve: '31000.00'}
+  invested: {funds: '100000.00', coins: {SOL: '150000.00'}}
+  history: *funds_history
+  levers:
+    goal: {kind: net_worth, target: '600000.00', due_month: '2029-12', set_on: '2026-11-20'}
+    value_change: {depot: '0.06', crypto: '0.10'}
+  expect:
+    word: hardly                 # E = 3,489: no scenario closes
+    projected: '458917.32'
+    more_saving: {extra: '3489.00', noetig: '5489.00'}
+    more_return:
+      available: false
+      reason: history_short
+      left_out:
+      - {kind: coin, symbol: SOL, share: '60.0', reason: no_series}
+
