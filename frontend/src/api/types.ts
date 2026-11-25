@@ -2852,6 +2852,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/household-goal/reference-returns/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Household Goal Reference Refresh */
+        post: operations["household_goal_reference_refresh_api_household_goal_reference_returns_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts/{account_id}/movement-imports": {
         parameters: {
             query?: never;
@@ -13697,6 +13714,18 @@ export interface components {
             does_not_say: string;
         };
         /**
+         * ReferenceRefreshQueued
+         * @description POST /household-goal/reference-returns/refresh, 202 (phase 10 §7.11 (c) 3, point 8):
+         *     the job that downloads route 3's funds series again for the household; `queued` false
+         *     when one already waits or runs, its id then that job's.
+         */
+        ReferenceRefreshQueued: {
+            /** Job Id */
+            job_id: number;
+            /** Queued */
+            queued: boolean;
+        };
+        /**
          * RelatedDocument
          * @description GET /properties/{id}/documents and GET /units/{id}/documents: a document linked to the
          *     target or to one of its children (units, tenancies, loans), with every such link.
@@ -23195,6 +23224,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HouseholdGoal"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_goal_reference_refresh_api_household_goal_reference_returns_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferenceRefreshQueued"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

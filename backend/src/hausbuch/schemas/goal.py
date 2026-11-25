@@ -235,3 +235,12 @@ class HouseholdGoal(Schema):
     unreachable: GoalUnreachable | None = None
     assumptions: list[GoalAssumption] = Field(default_factory=list)
     todos: list[HealthTodo] = Field(default_factory=list)
+
+
+class ReferenceRefreshQueued(Schema):
+    """POST /household-goal/reference-returns/refresh, 202 (phase 10 §7.11 (c) 3, point 8):
+    the job that downloads route 3's funds series again for the household; `queued` false
+    when one already waits or runs, its id then that job's."""
+
+    job_id: int
+    queued: bool

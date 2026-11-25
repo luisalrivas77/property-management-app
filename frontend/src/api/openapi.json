@@ -7596,6 +7596,34 @@
         }
       }
     },
+    "/api/household-goal/reference-returns/refresh": {
+      "post": {
+        "summary": "Household Goal Reference Refresh",
+        "operationId": "household_goal_reference_refresh_api_household_goal_reference_returns_refresh_post",
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceRefreshQueued"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/accounts/{account_id}/movement-imports": {
       "post": {
         "summary": "Movement Import Create",
@@ -34864,6 +34892,26 @@
           "does_not_say"
         ],
         "title": "ReferencePoint"
+      },
+      "ReferenceRefreshQueued": {
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "title": "Job Id"
+          },
+          "queued": {
+            "type": "boolean",
+            "title": "Queued"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "job_id",
+          "queued"
+        ],
+        "title": "ReferenceRefreshQueued",
+        "description": "POST /household-goal/reference-returns/refresh, 202 (phase 10 §7.11 (c) 3, point 8):\nthe job that downloads route 3's funds series again for the household; `queued` false\nwhen one already waits or runs, its id then that job's."
       },
       "RelatedDocument": {
         "properties": {
