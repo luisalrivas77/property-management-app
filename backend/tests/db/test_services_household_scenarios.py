@@ -188,7 +188,9 @@ def test_supersedes_must_be_in_force_and_one_default(app_engine, fresh_workspace
         _cmd(app_engine, ws, svc.create_scenario, _body(supersedes_id=uuid.uuid4()))
 
 
-def test_reserve_accounts_are_current_savings_or_card_accounts(app_engine, fresh_workspaces):
+def test_reserve_accounts_are_current_savings_card_or_depot_accounts(app_engine, fresh_workspaces):
+    """An exchange is refused in `added`; a depot may be added since phase 10 D304
+    (test_services_net_worth_transit)."""
     ws, _ = fresh_workspaces
     current = _account(app_engine, ws, AccountKind.BANK_CURRENT, "Giro A")
     exchange = _account(app_engine, ws, AccountKind.EXCHANGE, "Börse B")
