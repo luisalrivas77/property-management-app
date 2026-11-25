@@ -46,6 +46,13 @@ AssumptionValue = Annotated[
     _STRING_ONLY,
     _string_schema(6, signed=True),
 ]
+# A share of the investment split (phase 10 §7.11 (a) 2, D301): 0 to 100 %, one place.
+SplitPercent = Annotated[
+    Decimal,
+    Field(ge=0, le=100, max_digits=4, decimal_places=1),
+    _STRING_ONLY,
+    _string_schema(1),
+]
 # A planned change of a code's measured mean (D263, §7.6 (1)): −1.00 to 2.00 in steps of 0.01.
 SpendingPercent = Annotated[
     Decimal,
@@ -176,6 +183,34 @@ class ValueChange(Schema):
 
     depot: ValueChangeRate | None = None
     crypto: ValueChangeRate | None = None
+    # Phase 10 §7.11 (D304): the reserve's yearly rate, typed like the two above (no default,
+    # an empty field means none, a typed 0 is a rate). Read by the goal's walk only. A None is
+    # left out of the dump, so a row stored before stays byte for byte what it was.
+    reserve: ValueChangeRate | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_unset_reserve(self, handler: SerializerFunctionWrapHandler):
+        # No return annotation: pydantic then keeps the fields' JSON schema for the answer.
+        data = handler(self)
+        if isinstance(data, dict) and data.get("reserve") is None:
+            data.pop("reserve", None)
+        return data
+
+
+class InvestmentSplit(Schema):
+    """Phase 10 §7.11 (a) 2, D301: the share of the money invested that goes to funds and
+    securities (`depot`) and to crypto, each a percent with one place, adding up to exactly
+    100. The household's own lever; the form is only prefilled from its purchases (§7.11 (f))
+    and the app proposes no split (D247)."""
+
+    depot: SplitPercent
+    crypto: SplitPercent
+
+    @model_validator(mode="after")
+    def _hundred(self) -> Self:
+        if self.depot + self.crypto != Decimal(100):
+            raise ValueError(f"{LEVER_INVALID}: the split's shares add up to 100")
+        return self
 
 
 class SpendingChange(Schema):
@@ -310,13 +345,17 @@ class HouseholdLevers(Schema):
     # was, and every answer that shows levers is unchanged (_without_unset_goal).
     goal: Goal | None = None
     goal_choice: GoalChoice | None = None
+    # Phase 10 §7.11 (a) 2, D301: the household's investment split, None when unset (the walk
+    # then takes the savings plans' or the holdings' mix, rules/investment_split.py). Left out
+    # of the dump when None, like the goal.
+    investment_split: InvestmentSplit | None = None
 
     @model_serializer(mode="wrap")
     def _without_unset_goal(self, handler: SerializerFunctionWrapHandler):
         # No return annotation: pydantic then keeps the fields' JSON schema for the answer.
         data = handler(self)
         if isinstance(data, dict):
-            for key in ("goal", "goal_choice"):
+            for key in ("goal", "goal_choice", "investment_split"):
                 if data.get(key) is None:
                     data.pop(key, None)
             if not data.get("one_off_overrides"):
@@ -416,6 +455,62 @@ class Surplus(Schema):
 class PlanClass(StrEnum):
     DEPOT = "depot"
     CRYPTO = "crypto"
+
+
+class SplitSource(StrEnum):
+    """Where the effective split came from (§7.11 (a) 2): the saved lever, the continuing
+    savings plans' mix, today's holdings' mix, or nothing (nothing saved, planned or held)."""
+
+    SAVED = "saved"
+    SAVINGS_PLANS = "savings_plans"
+    HOLDINGS = "holdings"
+    NONE = "none"
+
+
+class EffectiveSplit(Schema):
+    """§7.11 (a) 2: the mix the goal's walk invests the money above the reserve in. A kind
+    without a typed yearly rate is in `left_out` and the other kind takes its share; when
+    every kind with a share is left out, `shares` is None (nothing moves) and the to-do
+    „Rendite eintragen“ names them. Computed by rules/investment_split.py from the levers and the
+    stored rows, on every read."""
+
+    source: SplitSource
+    shares: InvestmentSplit | None = None  # None: nothing moves
+    left_out: list[PlanClass] = Field(default_factory=list)
+    todos: list[HealthTodo] = Field(default_factory=list)
+
+
+class SplitPrefill(Schema):
+    """§7.11 (f) 1: what the household bought per kind over the window (the closed months,
+    at most twelve), as shares that only fill the form. Purchases into an account of the
+    reserve's set are left out (D304)."""
+
+    from_month: YearMonth
+    to_month: YearMonth
+    bought: dict[PlanClass, NonNegativeMoney]
+    split: InvestmentSplit
+
+
+class NotInvestedLine(Schema):
+    """One kind whose purchases over the window stayed below its saved share (§7.11 (a) 6):
+    `amount` = the share of everything invested less what was bought in it."""
+
+    asset_class: PlanClass
+    target_percent: SplitPercent
+    actual_percent: SplitPercent
+    amount: PositiveMoney
+
+
+class NotInvested(Schema):
+    """§7.11 (a) 6, „noch nicht angelegt“: once a split is saved, the amount by which the
+    window's purchases fall short of it. A fact only: no reminder, no email, no colour. In
+    `generic` mode (D251) `lines` is empty and only the amount is named."""
+
+    from_month: YearMonth
+    to_month: YearMonth
+    invested: PositiveMoney
+    amount: PositiveMoney
+    lines: list[NotInvestedLine] = Field(default_factory=list)
 
 
 class SavingsPlan(Schema):
@@ -718,4 +813,11 @@ class HouseholdPlan(Schema):
     proposed_one_offs: list[ProposedOneOff] = Field(default_factory=list)
     projection: NetWorthProjection | None = None
     spending_play: SpendingPlay | None = None  # D263, §7.6; None below three closed months
+    # Phase 10 §7.11 (a) 2, (a) 6, (f) 1: the mix the goal's walk invests in, the form's
+    # prefill from the window's purchases, and „noch nicht angelegt“ for Anlagen; each None
+    # below three closed months (the prefill also when nothing was bought, the last also
+    # without a saved split or a shortfall). The split's to-do stays on `investment_split`.
+    investment_split: EffectiveSplit | None = None
+    investment_split_prefill: SplitPrefill | None = None
+    not_invested: NotInvested | None = None
     todos: list[HealthTodo] = Field(default_factory=list)

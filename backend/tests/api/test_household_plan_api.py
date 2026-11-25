@@ -173,3 +173,34 @@ def test_the_explanation_reads_the_template_and_queues_nothing_without_consent(c
     unknown = client_a.get(EXPLANATION, params={"scenario": str(uuid4())})
     assert unknown.status_code == 404
     assert client_a.post(EXPLANATION, json={"scenario": str(uuid4())}).status_code == 404
+
+
+def test_the_investment_split_and_the_reserve_rate_are_saved_and_checked(client_a, sessions):
+    """Phase 10 §7.11 (a) 2, D301, D304: both levers stored as typed and echoed; a split not
+    adding up to 100 or with two places is a validation error; unset, neither is in the
+    dump."""
+    plain = create(client_a, PATH, {"name": "Basis", "is_default": True})
+    assert "investment_split" not in plain["levers"]
+    assert plain["levers"]["value_change"] == {"depot": None, "crypto": None}
+    levers = {
+        "investment_split": {"depot": "70.0", "crypto": "30.0"},
+        "value_change": {"depot": "0.050", "reserve": "0.010"},
+    }
+    body = {"name": "Basis", "is_default": True, "supersedes_id": plain["id"], "levers": levers}
+    row = create(client_a, PATH, body)
+    assert row["levers"]["investment_split"] == {"depot": "70.0", "crypto": "30.0"}
+    assert row["levers"]["value_change"] == {"depot": "0.050", "crypto": None, "reserve": "0.010"}
+    for split in ({"depot": "70.0", "crypto": "20.0"}, {"depot": "70.05", "crypto": "29.95"}):
+        response = client_a.post(PATH, json={"name": "X", "levers": {"investment_split": split}})
+        assert response.status_code == 422 and response.json()["error"] == "validation", split
+    plan = ok(client_a.get("/api/household-plan"))
+    assert plan["levers"]["investment_split"] == {"depot": "70.0", "crypto": "30.0"}
+    # the saved split, crypto left out for want of a rate and the funds taking its share;
+    # nothing bought, so no prefill and nothing „noch nicht angelegt“
+    assert plan["investment_split"] == {
+        "source": "saved",
+        "shares": {"depot": "100.0", "crypto": "0.0"},
+        "left_out": ["crypto"],
+        "todos": [],
+    }
+    assert plan["investment_split_prefill"] is None and plan["not_invested"] is None

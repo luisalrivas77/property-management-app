@@ -344,3 +344,47 @@ def test_the_goal_preview_without_a_goal_is_none_and_checks_as_the_plan_preview(
     )
     with pytest.raises(RuleViolationError):
         world.query(goal.preview_goal, TODAY, outside)
+
+
+def _split(depot: str, crypto: str) -> dict[str, str]:
+    return {"depot": depot, "crypto": crypto}
+
+
+def test_a_changed_split_or_reserve_rate_after_a_warm_read_gives_the_uncached_answer(world):
+    """Phase 10 §7.11 (a) 2, D301, D304: the investment split and the reserve's yearly rate
+    are levers, never inside a kept part (the kept reads are the window's purchases, the
+    accounts' kinds, the rental ids and today's net worth, all lever-free). After a warm
+    GET /household-plan, previews with typed rates, two splits, a reserve rate and the plans
+    dropped (so today's holdings decide) each equal the store bypassed, warm or not; the
+    split's own answers move with the split."""
+    levers, _ = _projected(world)
+    warmed = world.query(plan.household_plan, TODAY)  # warm: the parts kept
+    base = levers.model_dump(mode="json")
+    rates = {"depot": "0.050", "crypto": "0.080"}
+    dropped = [{"plan_key": p.key, "dropped": True} for p in warmed.plans]
+    bodies = {
+        "rates": {"value_change": rates},
+        "split_70": {
+            "value_change": rates,
+            "investment_split": {"depot": "70.0", "crypto": "30.0"},
+        },
+        "split_40": {
+            "value_change": rates,
+            "investment_split": {"depot": "40.0", "crypto": "60.0"},
+        },
+        "reserve_rate": {"value_change": rates | {"reserve": "0.020"}},
+        "plans_dropped": {"value_change": rates, "plan_overrides": dropped},
+    }
+    previews = {n: HouseholdLevers.model_validate(base | b) for n, b in bodies.items()}
+    for name, lv in previews.items():
+        warm = _json(world, plan.preview_plan, lv)
+        assert warm == _uncached(world, plan.preview_plan, lv), name
+        assert _json(world, plan.preview_plan, lv) == warm, name
+    got = {n: world.query(plan.preview_plan, TODAY, lv) for n, lv in previews.items()}
+    assert got["rates"].investment_split.source == "savings_plans"
+    assert got["plans_dropped"].investment_split.source == "holdings"
+    assert got["split_70"].investment_split.shares.depot == 70
+    assert got["split_40"].investment_split.shares.depot == 40
+    assert got["split_40"].not_invested is not None  # nothing bought in crypto
+    assert got["split_70"].not_invested != got["split_40"].not_invested
+    assert got["reserve_rate"].levers.value_change.reserve is not None

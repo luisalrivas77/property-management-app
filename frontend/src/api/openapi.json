@@ -19979,6 +19979,44 @@
         "title": "DuplicateStatus",
         "description": "possible_duplicate.status (D22)."
       },
+      "EffectiveSplit": {
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/SplitSource"
+          },
+          "shares": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvestmentSplit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "left_out": {
+            "items": {
+              "$ref": "#/components/schemas/PlanClass"
+            },
+            "type": "array",
+            "title": "Left Out"
+          },
+          "todos": {
+            "items": {
+              "$ref": "#/components/schemas/HealthTodo"
+            },
+            "type": "array",
+            "title": "Todos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "title": "EffectiveSplit",
+        "description": "§7.11 (a) 2: the mix the goal's walk invests the money above the reserve in. A kind\nwithout a typed yearly rate is in `left_out` and the other kind takes its share; when\nevery kind with a share is left out, `shares` is None (nothing moves) and the to-do\n„Rendite eintragen“ names them. Computed by rules/plan/split.py from the levers and the\nstored rows, on every read."
+      },
       "EndTenancyBody": {
         "properties": {
           "end_date": {
@@ -24416,6 +24454,16 @@
                 "type": "null"
               }
             ]
+          },
+          "investment_split": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvestmentSplit"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -24690,6 +24738,36 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/SpendingPlay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "investment_split": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectiveSplit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "investment_split_prefill": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SplitPrefill"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "not_invested": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotInvested"
               },
               {
                 "type": "null"
@@ -25888,6 +25966,28 @@
           "amount"
         ],
         "title": "InterestCertified"
+      },
+      "InvestmentSplit": {
+        "properties": {
+          "depot": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,1})?$",
+            "title": "Depot"
+          },
+          "crypto": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,1})?$",
+            "title": "Crypto"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "depot",
+          "crypto"
+        ],
+        "title": "InvestmentSplit",
+        "description": "Phase 10 §7.11 (a) 2, D301: the share of the money invested that goes to funds and\nsecurities (`depot`) and to crypto, each a percent with one place, adding up to exactly\n100. The household's own lever; the form is only prefilled from its purchases (§7.11 (f))\nand the app proposes no split (D247)."
       },
       "Invite": {
         "properties": {
@@ -28866,6 +28966,79 @@
         ],
         "title": "NoRateReason",
         "description": "Why a portfolio shows no yearly return (rules.performance.portfolio.NoRate)."
+      },
+      "NotInvested": {
+        "properties": {
+          "from_month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "From Month"
+          },
+          "to_month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "To Month"
+          },
+          "invested": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Invested"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/NotInvestedLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "from_month",
+          "to_month",
+          "invested",
+          "amount"
+        ],
+        "title": "NotInvested",
+        "description": "§7.11 (a) 6, „noch nicht angelegt“: once a split is saved, the amount by which the\nwindow's purchases fall short of it. A fact only: no reminder, no email, no colour. In\n`generic` mode (D251) `lines` is empty and only the amount is named."
+      },
+      "NotInvestedLine": {
+        "properties": {
+          "asset_class": {
+            "$ref": "#/components/schemas/PlanClass"
+          },
+          "target_percent": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,1})?$",
+            "title": "Target Percent"
+          },
+          "actual_percent": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,1})?$",
+            "title": "Actual Percent"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_class",
+          "target_percent",
+          "actual_percent",
+          "amount"
+        ],
+        "title": "NotInvestedLine",
+        "description": "One kind whose purchases over the window stayed below its saved share (§7.11 (a) 6):\n`amount` = the share of everything invested less what was bought in it."
       },
       "NotarizedOnCorrection": {
         "properties": {
@@ -37319,6 +37492,55 @@
         "title": "SplitMethod",
         "description": "matching_rule.split_method (D25): how a rule splits, never how much."
       },
+      "SplitPrefill": {
+        "properties": {
+          "from_month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "From Month"
+          },
+          "to_month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "To Month"
+          },
+          "bought": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/PlanClass"
+            },
+            "type": "object",
+            "title": "Bought"
+          },
+          "split": {
+            "$ref": "#/components/schemas/InvestmentSplit"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "from_month",
+          "to_month",
+          "bought",
+          "split"
+        ],
+        "title": "SplitPrefill",
+        "description": "§7.11 (f) 1: what the household bought per kind over the window (the closed months,\nat most twelve), as shares that only fill the form. Purchases into an account of the\nreserve's set are left out (D304)."
+      },
+      "SplitSource": {
+        "type": "string",
+        "enum": [
+          "saved",
+          "savings_plans",
+          "holdings",
+          "none"
+        ],
+        "title": "SplitSource",
+        "description": "Where the effective split came from (§7.11 (a) 2): the saved lever, the continuing\nsavings plans' mix, today's holdings' mix, or nothing (nothing saved, planned or held)."
+      },
       "Spread82b": {
         "properties": {
           "years": {
@@ -41304,6 +41526,18 @@
               }
             ],
             "title": "Crypto"
+          },
+          "reserve": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve"
           }
         },
         "additionalProperties": false,
