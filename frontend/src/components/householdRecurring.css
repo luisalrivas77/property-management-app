@@ -100,3 +100,24 @@
 .recurring-panel-row button {
   flex: none;
 }
+
+/* The fixed payments in the Budget's class panel (phase 10 §7.10 (c), mockup 19d frame 6). */
+.recurring-fixed {
+  border-top: 1px solid var(--border);
+}
+
+.recurring-fixed .recurring-row {
+  border-top: 0;
+}
+
+.recurring-ask {
+  padding: 0 0 8px;
+}
+
+.recurring-sum {
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}

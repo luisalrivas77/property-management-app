@@ -12,11 +12,13 @@ import { type FormEvent, type ReactNode, useId, useState } from "react";
 
 import type { components } from "@/api/types";
 import { useLocale, useT } from "@/i18n";
+import { monthBudget } from "@/i18n/monthBudget";
 import { lineLabel, planning, type PlanningText } from "@/i18n/planning";
 import { describeError, ErrorNotice } from "@/lib/ErrorNotice";
 
 import { DetailPanel, useDetail } from "./DetailPanel";
 import { HealthTodoItem } from "./healthFigures";
+import { FixedPayments } from "./householdRecurring";
 import {
   fillLevers,
   type HouseholdLevers,
@@ -39,6 +41,7 @@ type BudgetClass = components["schemas"]["BudgetClass"];
 type AllocationCategory = components["schemas"]["AllocationCategory"];
 type SetDraft = (update: (previous: HouseholdLevers) => HouseholdLevers) => void;
 type T = PlanningText;
+type MonthBudgetText = (typeof monthBudget)["de"];
 
 const BAR_TOKEN: Record<BudgetLineKey, string> = {
   need: "var(--budget-need)",
@@ -58,6 +61,10 @@ function negative(value: string | null | undefined): boolean {
 
 function unsigned(value: string): string {
   return value.trim().replace(/^[-+]/, "");
+}
+
+function zero(value: string): boolean {
+  return /^[-+]?0(\.0+)?$/.test(value.trim());
 }
 
 /** The mark's sentence: the server's in German, built from its figures in English. */
@@ -98,8 +105,22 @@ export function PlanError({ error }: { error: unknown }) {
 
 // --- the section ---------------------------------------------------------------------------
 
-export function BudgetSection({ budget, onChanged }: { budget: BudgetView; onChanged: () => void }) {
+/** One card as mockup 19h frame 1 (§7.12 (a), D309): the income, the bar, Notwendiges, Wünsche
+ * and Sparen each with „fest · schwankend“ (D300, both the server's) and its target, „Einmalig im
+ * Zeitraum“ beside the partition (D308), and „Ziele ändern“ inside. The housing share is one line
+ * in Notwendiges' panel; a mark's sentence is in its class's panel. */
+export function BudgetSection({
+  budget,
+  savingPlans = null,
+  onChanged,
+}: {
+  budget: BudgetView;
+  /** The savings plans' monthly sum (the plan's `already_invested`), shown under Sparen. */
+  savingPlans?: string | null;
+  onChanged: () => void;
+}) {
   const t = useT(planning);
+  const m = useT(monthBudget);
   const f = usePlanFormat();
   const goals = useDetail("goals");
   const line = useDetail("budget");
@@ -109,12 +130,8 @@ export function BudgetSection({ budget, onChanged }: { budget: BudgetView; onCha
   const todos = budget.todos ?? [];
   const targets = budget.targets ?? {};
   const anyTarget = Object.values(targets).some((value) => value != null);
-  const housing = budget.housing;
-  const marks: { label: string; mark: BudgetMark }[] = [
-    ...lines.flatMap((l) => (l.mark ? [{ label: lineLabel(t, l.key), mark: l.mark }] : [])),
-    ...(housing?.mark ? [{ label: t.housing, mark: housing.mark }] : []),
-  ];
   const barOk = lines.length > 0 && lines.every((l) => l.share != null && !negative(l.share));
+  const plans = savingPlans != null && !zero(savingPlans) ? savingPlans : null;
 
   return (
     <div className="stack">
@@ -127,14 +144,14 @@ export function BudgetSection({ budget, onChanged }: { budget: BudgetView; onCha
       ) : null}
       {income ? (
         <section className="card stack" aria-labelledby="budget-month-title">
-          <p className="eyebrow" id="budget-month-title">
-            {t.yourMonth}
-          </p>
           <div className="budget-income">
-            <p className="budget-big">{f.euro(income.monthly)}</p>
+            <p className="eyebrow" id="budget-month-title">
+              {m.cardEyebrow}
+            </p>
+            <p className="budget-big">{m.income(f.euro(income.monthly))}</p>
             <p className="muted">
-              {t.incomePerMonth} · {t.meanOver(f.monthRange(months))}
-              {income.rental_monthly && !/^-?0(\.0+)?$/.test(income.rental_monthly) ? ` · ${t.rentalIncluded(f.euro(income.rental_monthly))}` : ""}
+              {t.meanOver(f.monthRange(months))}
+              {income.rental_monthly && !zero(income.rental_monthly) ? ` · ${t.rentalIncluded(f.euro(income.rental_monthly))}` : ""}
             </p>
           </div>
           {barOk ? (
@@ -147,65 +164,66 @@ export function BudgetSection({ budget, onChanged }: { budget: BudgetView; onCha
           {budget.no_shares ? <p className="muted">{f.locale === "de" ? budget.no_shares : t.noShares}</p> : null}
           <ul className="budget-lines">
             {lines.map((l) => (
-              <BudgetLineRow key={l.key} line={l} link={line.linkProps(l.key)} />
+              <BudgetLineRow key={l.key} line={l} plans={plans} link={line.linkProps(l.key)} />
             ))}
           </ul>
           {budget.one_off ? (
             // „Einmalig im Zeitraum“ (D308): beside the partition, never in it or in the bar.
             <ul className="budget-lines" aria-label={lineLabel(t, "one_off")}>
-              <BudgetLineRow line={budget.one_off} link={line.linkProps(budget.one_off.key)} />
+              <BudgetLineRow line={budget.one_off} plans={null} link={line.linkProps(budget.one_off.key)} />
             </ul>
           ) : null}
+          {anyTarget ? null : <p className="muted">{m.noTargets}</p>}
+          <div className="budget-foot">
+            <span className="muted">{m.footNote(f.monthRange(months))}</span>
+            <span className="budget-foot-links">
+              <a {...goals.linkProps(ONE_OFF_SHEET)}>{m.oneOffLink} ›</a>
+              <a {...goals.linkProps("eigene")}>{anyTarget ? m.changeGoals : m.setGoals} ›</a>
+            </span>
+          </div>
         </section>
       ) : todos.length === 0 ? (
         <p className="muted">{t.budgetTooFew}</p>
-      ) : null}
-      {housing ? (
-        <section className="card stack" aria-labelledby="budget-housing-title">
-          <div className="planning-card-head">
-            <Dot mark={housing.mark} t={t} />
-            <h2 id="budget-housing-title">{t.housing}</h2>
-          </div>
-          <p className="budget-big">{housing.share != null ? t.housingShare(f.wholePercent(housing.share)) : "–"}</p>
-          <p>
-            {t.perMonth(f.euro(housing.monthly))} · <span className="muted">{targetText(housing, true, t, f)}</span>
-          </p>
-          <p className="muted">
-            {(housing.codes ?? []).map((code) => categoryName(code.category)).join(", ")}
-            {(housing.codes ?? []).length > 0 ? " · " : ""}
-            {t.housingNote}
-          </p>
-        </section>
-      ) : null}
-      {income ? (
-        <section className="card stack budget-sentences" aria-label={anyTarget ? t.changeGoals : t.noTargetsTitle}>
-          {anyTarget ? (
-            marks.map(({ label, mark }) => (
-              <p key={label}>
-                <Dot mark={mark} t={t} /> {markSentence(mark, label, t, f)}
-              </p>
-            ))
-          ) : (
-            <>
-              <h2>{t.noTargetsTitle}</h2>
-              <p className="muted">{t.noTargetsText}</p>
-            </>
-          )}
-          <div className="row">
-            <a className="button-link secondary" {...goals.linkProps("eigene")}>
-              {anyTarget ? t.changeGoals : t.setGoals}
-            </a>
-          </div>
-        </section>
       ) : null}
     </div>
   );
 }
 
-function BudgetLineRow({ line, link }: { line: BudgetLine; link: ReturnType<ReturnType<typeof useDetail>["linkProps"]> }) {
+/** The goals sheet's id for „Was als einmalig zählt“ (19h frame 3), on the goals panel's prefix. */
+export const ONE_OFF_SHEET = "einmalig";
+
+/** „Ziel bis 50 %“, with „· 300 € drüber“ (or „darunter“ for Sparen) when the mark is amber. */
+function rowTarget(line: BudgetLine, m: MonthBudgetText, f: PlanFormat): string {
+  if (line.target == null) return m.noTarget;
+  const target = line.key === "saving" ? m.targetFrom(f.percentValue(line.target)) : m.targetUpTo(f.percentValue(line.target));
+  const mark = line.mark;
+  if (!mark || mark.colour !== "amber") return target;
+  const amount = f.euro(unsigned(mark.gap_monthly));
+  return `${target} · ${negative(mark.gap_monthly) ? m.under(amount) : m.over(amount)}`;
+}
+
+function BudgetLineRow({
+  line,
+  plans,
+  link,
+}: {
+  line: BudgetLine;
+  plans: string | null;
+  link: ReturnType<ReturnType<typeof useDetail>["linkProps"]>;
+}) {
   const t = useT(planning);
+  const m = useT(monthBudget);
   const f = usePlanFormat();
   const marked = line.key === "need" || line.key === "want" || line.key === "saving";
+  const sub =
+    line.fixed_monthly != null && line.variable != null
+      ? m.fixedVariable(f.euro(line.fixed_monthly), f.euro(line.variable))
+      : line.key === "saving"
+        ? plans != null
+          ? m.savingPlans(f.euro(plans))
+          : t.savingSub
+        : lineSub(line, t);
+  const amount = f.euro(line.monthly);
   return (
     <li>
       <a className="budget-line" data-key={line.key} {...link} aria-label={t.openClass(lineLabel(t, line.key))}>
@@ -213,12 +231,11 @@ function BudgetLineRow({ line, link }: { line: BudgetLine; link: ReturnType<Retu
         {marked ? <Dot mark={line.mark} t={t} /> : <span className="budget-dot-space" />}
         <span className="budget-line-name">
           <strong>{lineLabel(t, line.key)}</strong>
-          <span className="muted">{lineSub(line, t)}</span>
+          <span className="muted">{sub}</span>
         </span>
         <span className="budget-line-figures">
-          <strong>{f.euro(line.monthly)}</strong>
-          <span>{line.share != null ? f.wholePercent(line.share) : "–"}</span>
-          {marked ? <span className="muted">{targetText(line, line.key !== "saving", t, f)}</span> : null}
+          <strong>{line.share != null ? m.amountShare(amount, f.wholePercent(line.share)) : amount}</strong>
+          {marked ? <span className="muted">{rowTarget(line, m, f)}</span> : null}
         </span>
         <span className="budget-chevron" aria-hidden="true">
           ›
@@ -249,6 +266,7 @@ export function BudgetClassPanel({
   setDraft,
   onValidity,
   onClose,
+  onChanged,
   footer,
 }: {
   lineKey: string;
@@ -260,9 +278,12 @@ export function BudgetClassPanel({
   setDraft: SetDraft;
   onValidity: (invalid: boolean) => void;
   onClose: () => void;
+  /** Reads the plan, the Budget and the key figures again after an answer on a fixed payment. */
+  onChanged: () => void;
   footer: ReactNode;
 }) {
   const t = useT(planning);
+  const m = useT(monthBudget);
   const f = usePlanFormat();
   // „Einmalig im Zeitraum“ stands beside the partition (D308), so it is not among the lines.
   const line = lineKey === "one_off" ? budget.one_off : (budget.lines ?? []).find((l) => l.key === lineKey);
@@ -324,6 +345,15 @@ export function BudgetClassPanel({
             <Dot mark={line.mark} t={t} /> {markSentence(line.mark, lineLabel(t, line.key), t, f)}
           </p>
         ) : null}
+        {line.key === "need" && budget.housing ? (
+          // The housing share (D276) is one line here since §7.12 (a); its own card went (19h).
+          <p data-testid="budget-housing">
+            {budget.housing.mark ? <Dot mark={budget.housing.mark} t={t} /> : null}{" "}
+            {m.housingLine(budget.housing.share != null ? f.wholePercent(budget.housing.share) : "–", f.euro(budget.housing.monthly))}
+            {budget.housing.target != null ? ` · ${m.housingTarget(f.percentValue(budget.housing.target))}` : ""}
+          </p>
+        ) : null}
+        {switchable ? <FixedPayments line={line} onChanged={onChanged} /> : null}
         {line.key === "saving" ? <p className="muted">{t.savingPanel}</p> : null}
         {line.key === "one_off" ? <p className="muted">{t.oneOffPanel}</p> : null}
         {line.key !== "saving" ? (

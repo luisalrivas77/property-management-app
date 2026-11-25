@@ -36,6 +36,7 @@ import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { useT } from "@/i18n";
 import { goalText } from "@/i18n/goal";
+import { monthBudget } from "@/i18n/monthBudget";
 import { lineLabel, planning, type PlanningText } from "@/i18n/planning";
 import { playText } from "@/i18n/play";
 import { ErrorNotice } from "@/lib/ErrorNotice";
@@ -78,7 +79,8 @@ import { type GoalView, useGoalView } from "./householdGoal";
 import { PlanExplanationPanel } from "./planExplanation";
 import { applyPlay, NO_PLAY, plannedCount, type PlayChanges } from "./playDraft";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
-import { BudgetClassPanel, BudgetSection, type BudgetView, GoalsPanel, PlanError } from "./planningBudget";
+import { OneOffSheet } from "./oneOffSheet";
+import { BudgetClassPanel, BudgetSection, type BudgetView, GoalsPanel, ONE_OFF_SHEET, PlanError } from "./planningBudget";
 import { type PlanPreview, stretch, usePlanPreview } from "./spendingPlay";
 import { Loading } from "./ui";
 import { type Loaded, useLoad } from "./useLoad";
@@ -511,7 +513,24 @@ export function PlanProvider({
       saveLevers,
     };
 
-    if (goals.id !== null) {
+    if (goals.id === ONE_OFF_SHEET) {
+      // „Was als einmalig zählt“ (§7.12 (a), 19h frame 3): each switch stores a row; an unsaved
+      // draft takes the new switches, so its own save never puts the old ones back.
+      panel = (
+        <OneOffSheet
+          saved={fillLevers(plan.levers)}
+          current={current}
+          onClose={goals.close}
+          onSaved={(row) => {
+            setDraftState((previous) => ({
+              levers: { ...resolveDraft(previous, data.plan), one_off_overrides: row.levers?.one_off_overrides ?? {} },
+              ...(dirty ? {} : { resetOn: row.id }),
+            }));
+            state.reload();
+          }}
+        />
+      );
+    } else if (goals.id !== null) {
       panel = (
         <GoalsPanel
           budget={data.budget}
@@ -543,6 +562,7 @@ export function PlanProvider({
           setDraft={setDraft}
           onValidity={setSpendingInvalid}
           onClose={budgetClass.close}
+          onChanged={state.reload}
           footer={dirty ? saveBar : null}
         />
       );
@@ -794,7 +814,7 @@ function BudgetTab({ ready }: { ready: PlanReady }) {
     <>
       <PlannedChanges levers={ready.data.plan.levers} />
       <DirtyNotice text={t.dirtyNoticeBudget} />
-      <BudgetSection budget={ready.data.budget} onChanged={ready.onChanged} />
+      <BudgetSection budget={ready.data.budget} savingPlans={ready.data.plan.already_invested ?? null} onChanged={ready.onChanged} />
       <RestCard ready={ready} />
     </>
   );
@@ -838,6 +858,7 @@ function ReserveTab({ ready }: { ready: PlanReady }) {
  * figures' sources behind their buttons. */
 function RestCard({ ready }: { ready: PlanReady }) {
   const t = useT(planning);
+  const m = useT(monthBudget);
   const f = usePlanFormat();
   const p = useT(playText);
   const [explain, setExplain] = useState(false);
@@ -858,7 +879,12 @@ function RestCard({ ready }: { ready: PlanReady }) {
   const lastMonth = plan.months?.[plan.months.length - 1]?.month;
   return (
     <section className="card stack planning-rest-card" id={REST_ANCHOR} aria-labelledby="rest-title">
-      <h2 id="rest-title">{t.restTitle}</h2>
+      <div className="planning-rest-head">
+        <h2 id="rest-title">{t.restTitle}</h2>
+        <button type="button" className="link" aria-expanded={made} onClick={() => setMade((value) => !value)}>
+          {m.howCalculated} ›
+        </button>
+      </div>
       <ul className="household-rows planning-rest">
         <li>
           <span>{t.restFree}</span>
@@ -884,7 +910,7 @@ function RestCard({ ready }: { ready: PlanReady }) {
           </span>
           <span>{f.signedEuro(negated(unsigned(buffer?.amount ?? "0")))}</span>
         </li>
-        <li className="planning-rest-sum">
+        <li className="planning-rest-sum" data-testid="rest-left">
           <span>{t.restLeft}</span>
           {/* The server's: free cash less the buffer less the savings plans. */}
           <span>{f.euro(plan.investable_left ?? investable?.amount)}</span>
@@ -898,9 +924,6 @@ function RestCard({ ready }: { ready: PlanReady }) {
           </>
         )}
       </InlineLever>
-      <p className="muted" data-testid="rest-investable">
-        {t.restInvestable(f.euro(investable?.amount))}
-      </p>
       {segments.length > 0 ? (
         <div className="stack" data-testid="rest-with-changes">
           <h3>{t.restWithChanges}</h3>
@@ -924,9 +947,6 @@ function RestCard({ ready }: { ready: PlanReady }) {
       <div className="row">
         <button type="button" className="secondary" aria-expanded={explain} onClick={() => setExplain((value) => !value)}>
           {t.explain}
-        </button>
-        <button type="button" className="secondary" aria-expanded={made} onClick={() => setMade((value) => !value)}>
-          {t.madeTitle}
         </button>
       </div>
       {explain ? <PlanExplanationPanel scenarioId={plan.scenario_id ?? null} asOf={plan.as_of} /> : null}

@@ -80,7 +80,6 @@ import { todayIso } from "@/components/format";
 import { HealthTodoList, HouseholdHealthSection } from "@/components/healthFigures";
 import { HouseholdGoalTab, HouseholdPlanTab, PlanProvider, useStaleAssumptionsRedirect } from "@/components/householdPlan";
 import { HouseholdPlayTab } from "@/components/householdPlay";
-import { useRecurringPayments } from "@/components/householdRecurring";
 import { ALLOCATION_CATEGORY, HOUSEHOLD_GROUP, HOUSEHOLD_SPENDING_GROUPS } from "@/components/labels";
 import { usePlanFormat } from "@/components/planFormat";
 import { Loading } from "@/components/ui";
@@ -318,8 +317,6 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
   const closingDetail = useDetail("abschluss");
   const savedDetail = useDetail("angelegt");
   const differenceDetail = useDetail("anders");
-  // The recurring payments (§7.9 (b)): their own read, so a failure leaves the card out only.
-  const recurring = useRecurringPayments(t.title);
   const { months, transfers, health, overall, windowMonths, comparison, budget } = year;
   const month = months[months.length - 1];
   if (!month) return null;
@@ -373,8 +370,6 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
         <GroupPanel group={groupDetail.id} month={month} windowMonths={means} comparison={comparison} />
       </DetailPanel>
     );
-  } else if (recurring.panel) {
-    panel = recurring.panel;
   }
 
   return (
@@ -388,7 +383,6 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
           </p>
         ) : null}
         {differences ? <Differences differences={differences} link={differenceDetail.linkProps} /> : null}
-        {recurring.card}
         {budget ? <BudgetOneLine budget={budget} /> : null}
         <div className="planning-kpis">
           <div className="planning-kpi" role="group" aria-label={t.income}>
