@@ -359,13 +359,14 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   );
 
   // Phase 10 §7.9 (a): the explanation and the savings plans in „Was mit dem Rest passiert“ on
-  // Haushalt › Budget, the paths on Haushalt › Reserve, the plans' levers in „Annahmen“.
+  // Haushalt › Budget, the paths on Haushalt › Reserve; the plans' levers open beside the buffer
+  // on Budget (`#puffer`, §7.10 (a) 7, D299).
   await page.goto("/household?tab=budget");
   const panel = await openExplanation(page);
   const paths = page.getByRole("region", { name: "Wege zum Reserveziel" });
   await expect(panel.getByText("In Fondsdepot A fließen 300 € im Monat.")).toBeVisible();
   await expect(panel.getByText("(Modus: eigene Nutzung)")).toBeVisible();
-  // Eigene Nutzung names each plan by its account: the rest card, the paths and „Annahmen“.
+  // Eigene Nutzung names each plan by its account: the rest card, the paths and the buffer's form.
   const invested = page.locator(".planning-rest li").filter({ hasText: "schon in Sparplänen" });
   await expect(invested).toContainText("450 €");
   await expect(invested).toContainText("Fondsdepot A 300 € · Kryptobörse B 100 € · Fondsdepot C 50 €");
@@ -373,13 +374,10 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   await expect(paths.locator("tbody tr")).toHaveCount(4);
   await expect(paths.getByText("Sparplan Fondsdepot A pausiert")).toBeVisible();
   await expect(paths.getByText("Weitere Sparpläne ohne eigene Zeile: Fondsdepot C.")).toBeVisible();
-  // The scenario row opens the sheet; its „›“ is hidden from the accessible name.
-  await page.getByRole("link", { name: /Annahmen$/ }).click();
-  await expect(page.getByRole("complementary", { name: "Eure Annahmen" }).locator(".annahmen-group").first()).toHaveAttribute(
-    "data-group",
-    "reserve",
-  );
-  const more = page.getByRole("complementary", { name: "Eure Annahmen" }).locator('[data-group="sparplaene"]');
+  // Back on Budget, the buffer's „Ändern“ opens the buffer and the savings plans in place.
+  await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Budget" }).click();
+  await page.getByRole("region", { name: "Was mit dem Rest passiert" }).locator('a[href="#puffer"]').click();
+  const more = page.getByRole("form", { name: "Puffer ändern" });
   await expect(more.getByText("Kryptobörse B", { exact: true })).toBeVisible();
 
   await page.goto("/settings#d-setting-advice");
@@ -405,11 +403,8 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   await expect(paths.locator("tbody tr").nth(1)).toContainText("Alles weiter wie bisher");
   await expect(paths.getByText("Weitere Sparpläne ohne eigene Zeile")).toHaveCount(0);
   for (const label of labels) await expect(page.getByText(label)).toHaveCount(0);
-  await page.getByRole("link", { name: /Annahmen$/ }).click();
-  await expect(page.getByRole("complementary", { name: "Eure Annahmen" }).locator(".annahmen-group").first()).toHaveAttribute(
-    "data-group",
-    "reserve",
-  );
+  // A cold load of the buffer's link opens the form too.
+  await page.goto("/household?tab=budget#puffer");
   await expect(more.getByTestId("plans-total")).toHaveText("450 € im Monat, aus 3 Sparplänen zusammen");
   for (const label of labels) await expect(page.getByText(label)).toHaveCount(0);
   await expect(more.getByRole("button", { name: "Betrag ändern" })).toHaveCount(0);

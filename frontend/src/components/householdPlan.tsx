@@ -435,10 +435,11 @@ export function PlanProvider({
     };
 
     /** The default scenario as stored now, read again, so a lever saved in another tab since the
-     * page was read is kept. */
+     * page was read is kept; with none stored yet, the levers the served plan used (what „Heute“
+     * shows), so a first save never drops them. */
     const storedDefault = async () => {
       const row = currentDefault(await loadScenarioHistory());
-      return { row, levers: fillLevers(row?.levers) };
+      return { row, levers: fillLevers(row ? row.levers : data.plan.levers) };
     };
 
     const saveLevers: SaveLevers = async (keys, levers) => {
