@@ -159,6 +159,13 @@ PATTERNS = i18n.Patterns(
             "Your assumed yearly change in value is missing for {words}. Hausbuch assumes no"
             " value; once you enter one, the card calculates with it.",
         ),
+        # rules/investment_split.py (phase 10 §7.11 (a) 2)
+        (
+            "Für {words:classes} fehlt eure angenommene Rendite pro Jahr. Ohne sie legt euer Ziel"
+            " das Geld über der Reserve nicht an; Hausbuch nimmt keinen Wert an.",
+            "Your assumed yearly return is missing for {words}. Without it your goal does not"
+            " invest the money above the reserve; Hausbuch assumes no value.",
+        ),
         # rules/budget/budget.py
         (
             "Im Zeitraum sind eine Zahlung ohne Einordnung gebucht, zusammen {a:money}; sie"
@@ -407,6 +414,7 @@ ACTIONS = i18n.Patterns(
         ("Monatsabschluss festhalten", "Record month-end"),
         ("Szenario für die Wohnung anlegen", "Create a scenario for the flat"),
         ("Annahme eintragen", "Enter assumption"),
+        ("Rendite eintragen", "Enter return"),
         ("1 Zahlung einordnen", "Categorise 1 payment"),
         ("{n} Zahlungen einordnen", "Categorise {n} payments"),
         ("Anlagen öffnen", "Open Investments"),

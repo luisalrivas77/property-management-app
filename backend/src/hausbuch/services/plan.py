@@ -60,6 +60,7 @@ from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import workspace as workspace_table
+from hausbuch.rules import investment_split as X
 from hausbuch.rules.categories import CATEGORY_LABEL
 from hausbuch.rules.errors import RuleError
 from hausbuch.rules.goal.walk import Projection as GoalProjection
@@ -86,14 +87,18 @@ from hausbuch.schemas.net_worth import NetWorth
 from hausbuch.schemas.performance import YearKind
 from hausbuch.schemas.plan import (
     AssumptionKind,
+    EffectiveSplit,
     HouseholdLevers,
     HouseholdPlan,
     HouseholdScenario,
     NetWorthProjection,
+    NotInvested,
+    PlanClass,
     ProjectionAssumption,
     ProposedOneOff,
     SavingsPlan,
     SpendingComparison,
+    SplitPrefill,
     SurplusKey,
 )
 
@@ -748,6 +753,7 @@ def plan_parts(
     # „… auf dem Mietkonto, das nicht zur Reserve zählt“ is said only while no rental account
     # is counted: the lever `reserve_accounts.added` may count it (PR #434 review E).
     rental_ids = inputs.part(("rental_ids",), rental_account_ids)
+    split, prefill, not_invested = _investment_split(inputs, win.months, levers, plans, mode)
     rental_counted = any(a.counted and a.account_id in rental_ids for a in reserve.accounts)
 
     walked: GoalProjection | None = None
@@ -808,10 +814,64 @@ def plan_parts(
                 one_off_codes=codes,
             ),
             "proposed_one_offs": proposed_refund(conn, today, levers, inputs),
+            "investment_split": split,
+            "investment_split_prefill": prefill,
+            "not_invested": not_invested,
             "projection": projection,
             "todos": todos,
         }
     ), parts
+
+
+# --- The investment split (phase 10 §7.11 (a) 2, (a) 6, (f) 1) -------------------------------
+
+_HELD_CLASSES = {NetWorthClass.DEPOT: PlanClass.DEPOT, NetWorthClass.CRYPTO: PlanClass.CRYPTO}
+
+
+def _held(inputs: PlanInputs) -> list[X.Held]:
+    """Today's valued depot and crypto lines of the net worth (§7.11 (a) 2's third source)."""
+    return [
+        X.Held(line.account_id, _HELD_CLASSES[line.net_worth_class], line.value_eur)
+        for line in _net_worth(inputs, inputs.today).lines
+        if line.net_worth_class in _HELD_CLASSES and line.value_eur is not None
+    ]
+
+
+class _LazyHeld:
+    """Today's holdings, read only when neither the saved split nor the plans give a mix."""
+
+    def __init__(self, inputs: PlanInputs) -> None:
+        self.inputs = inputs
+
+    def __iter__(self):
+        return iter(_held(self.inputs))
+
+
+def _investment_split(
+    inputs: PlanInputs,
+    window: Sequence[str],
+    levers: HouseholdLevers,
+    plans: Sequence[SavingsPlan],
+    mode: AdviceMode,
+) -> tuple[EffectiveSplit, SplitPrefill | None, NotInvested | None]:
+    """The effective split, the form's prefill and „noch nicht angelegt“ over the window (the
+    closed months, at most twelve). The reads are lever-free kept parts (the purchases are
+    phase 9's plan lines over the window, the accounts' kinds, the rental ids, today's net
+    worth); the reserve's set and every figure are computed from the levers on each call."""
+    reserve = X.reserve_account_ids(
+        _kinds(inputs),
+        inputs.part(("rental_ids",), rental_account_ids),
+        levers.reserve_accounts,
+    )
+    months = tuple(window)
+    bought = inputs.part(("plan_lines", months), lambda c: plan_lines(c, months))
+    return (
+        X.effective_split(
+            levers.investment_split, plans, _LazyHeld(inputs), levers.value_change, reserve
+        ),
+        X.prefill(bought, months, reserve),
+        X.not_invested(bought, months, reserve, levers.investment_split, mode),
+    )
 
 
 # --- GET /household-plan/comparison (D263 (d), §7.7) ------------------------------------------

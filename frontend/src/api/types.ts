@@ -7761,6 +7761,22 @@ export interface components {
          * @enum {string}
          */
         DuplicateStatus: "open" | "kept_both" | "merged";
+        /**
+         * EffectiveSplit
+         * @description §7.11 (a) 2: the mix the goal's walk invests the money above the reserve in. A kind
+         *     without a typed yearly rate is in `left_out` and the other kind takes its share; when
+         *     every kind with a share is left out, `shares` is None (nothing moves) and the to-do
+         *     „Rendite eintragen“ names them. Computed by rules/investment_split.py from the levers and the
+         *     stored rows, on every read.
+         */
+        EffectiveSplit: {
+            source: components["schemas"]["SplitSource"];
+            shares?: components["schemas"]["InvestmentSplit"] | null;
+            /** Left Out */
+            left_out?: components["schemas"]["PlanClass"][];
+            /** Todos */
+            todos?: components["schemas"]["HealthTodo"][];
+        };
         /** EndTenancyBody */
         EndTenancyBody: {
             /**
@@ -9442,6 +9458,7 @@ export interface components {
             };
             goal?: components["schemas"]["Goal"] | null;
             goal_choice?: components["schemas"]["GoalChoice"] | null;
+            investment_split?: components["schemas"]["InvestmentSplit"] | null;
         };
         /**
          * HouseholdMonth
@@ -9521,6 +9538,9 @@ export interface components {
             proposed_one_offs?: components["schemas"]["ProposedOneOff"][];
             projection?: components["schemas"]["NetWorthProjection"] | null;
             spending_play?: components["schemas"]["SpendingPlay"] | null;
+            investment_split?: components["schemas"]["EffectiveSplit"] | null;
+            investment_split_prefill?: components["schemas"]["SplitPrefill"] | null;
+            not_invested?: components["schemas"]["NotInvested"] | null;
             /** Todos */
             todos?: components["schemas"]["HealthTodo"][];
         };
@@ -9953,6 +9973,19 @@ export interface components {
         InterestCertified: {
             /** Amount */
             amount: string;
+        };
+        /**
+         * InvestmentSplit
+         * @description Phase 10 §7.11 (a) 2, D301: the share of the money invested that goes to funds and
+         *     securities (`depot`) and to crypto, each a percent with one place, adding up to exactly
+         *     100. The household's own lever; the form is only prefilled from its purchases (§7.11 (f))
+         *     and the app proposes no split (D247).
+         */
+        InvestmentSplit: {
+            /** Depot */
+            depot: string;
+            /** Crypto */
+            crypto: string;
         };
         /**
          * Invite
@@ -11207,6 +11240,38 @@ export interface components {
          * @enum {string}
          */
         NoRateReason: "short_history" | "unpriced" | "unvalued" | "no_flows" | "no_rate";
+        /**
+         * NotInvested
+         * @description §7.11 (a) 6, „noch nicht angelegt“: once a split is saved, the amount by which the
+         *     window's purchases fall short of it. A fact only: no reminder, no email, no colour. In
+         *     `generic` mode (D251) `lines` is empty and only the amount is named.
+         */
+        NotInvested: {
+            /** From Month */
+            from_month: string;
+            /** To Month */
+            to_month: string;
+            /** Invested */
+            invested: string;
+            /** Amount */
+            amount: string;
+            /** Lines */
+            lines?: components["schemas"]["NotInvestedLine"][];
+        };
+        /**
+         * NotInvestedLine
+         * @description One kind whose purchases over the window stayed below its saved share (§7.11 (a) 6):
+         *     `amount` = the share of everything invested less what was bought in it.
+         */
+        NotInvestedLine: {
+            asset_class: components["schemas"]["PlanClass"];
+            /** Target Percent */
+            target_percent: string;
+            /** Actual Percent */
+            actual_percent: string;
+            /** Amount */
+            amount: string;
+        };
         /** NotarizedOnCorrection */
         NotarizedOnCorrection: {
             /**
@@ -14653,6 +14718,30 @@ export interface components {
          * @enum {string}
          */
         SplitMethod: "single_category" | "by_rent_schedule" | "by_loan_schedule" | "by_wirtschaftsplan" | "owner_transfer" | "as_last_split";
+        /**
+         * SplitPrefill
+         * @description §7.11 (f) 1: what the household bought per kind over the window (the closed months,
+         *     at most twelve), as shares that only fill the form. Purchases into an account of the
+         *     reserve's set are left out (D304).
+         */
+        SplitPrefill: {
+            /** From Month */
+            from_month: string;
+            /** To Month */
+            to_month: string;
+            /** Bought */
+            bought: {
+                [key: string]: string;
+            };
+            split: components["schemas"]["InvestmentSplit"];
+        };
+        /**
+         * SplitSource
+         * @description Where the effective split came from (§7.11 (a) 2): the saved lever, the continuing
+         *     savings plans' mix, today's holdings' mix, or nothing (nothing saved, planned or held).
+         * @enum {string}
+         */
+        SplitSource: "saved" | "savings_plans" | "holdings" | "none";
         /** Spread82b */
         Spread82b: {
             /** Years */
@@ -16237,6 +16326,8 @@ export interface components {
             depot?: string | null;
             /** Crypto */
             crypto?: string | null;
+            /** Reserve */
+            reserve?: string | null;
         };
         /**
          * Verdict

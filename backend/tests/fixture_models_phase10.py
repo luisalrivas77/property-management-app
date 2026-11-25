@@ -33,6 +33,7 @@ from hausbuch.rules.health.month import cashflow_rows, household_month, rental_m
 from hausbuch.rules.household.cashflow import month_cashflow
 from hausbuch.rules.household.taxonomy import ONE_OFF, one_off_codes
 from hausbuch.rules.recurring import SpendingLine
+from hausbuch.schemas.advice import AdviceMode
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.budget import (
     BudgetLineKey,
@@ -43,9 +44,10 @@ from hausbuch.schemas.budget import (
     Points,
 )
 from hausbuch.schemas.common import _STRING_ONLY, Money, Schema
+from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.health import HealthTodoCode, HouseholdMonth, MonthLine, YearMonth
 from hausbuch.schemas.household import BudgetClass
-from hausbuch.schemas.plan import HouseholdLevers
+from hausbuch.schemas.plan import HouseholdLevers, PlanClass
 from hausbuch.schemas.recurring import RecurringInterval, RecurringState, SpendingMarkAnswer
 
 FIXTURES = Path(__file__).parent / "fixtures" / "phase10"
@@ -517,6 +519,134 @@ class FixedFixture(Schema):
     cases: list[FixedCase]
 
 
+# --- investment_split.yaml (§7.11 (a) 2, (a) 6, (f) 1, D301, D304) -------------------------
+
+SplitPercent = Annotated[Decimal, _STRING_ONLY, Field(ge=0, le=100, max_digits=4, decimal_places=1)]
+
+
+class SplitIn(Schema):
+    depot: SplitPercent
+    crypto: SplitPercent
+
+    @model_validator(mode="after")
+    def _hundred(self) -> Self:
+        if self.depot + self.crypto != Decimal(100):
+            raise ValueError("a split's shares must add up to 100")
+        return self
+
+
+class SplitPlanIn(Schema):
+    key: str
+    account: str | None = None
+    payee: str | None = None
+    asset_class: PlanClass
+    monthly: Money
+
+
+class SplitHeldIn(Schema):
+    account: str
+    asset_class: PlanClass
+    value: Money
+
+
+class SplitRatesIn(Schema):
+    depot: Dec | None
+    crypto: Dec | None
+
+
+class SplitTodoExpect(Schema):
+    action: str
+    names: str
+
+
+class MixExpect(Schema):
+    source: Literal["saved", "savings_plans", "holdings", "none"]
+    shares: SplitIn | None
+    left_out: list[PlanClass]
+    todo: SplitTodoExpect | None = None
+
+    @model_validator(mode="after")
+    def _todo(self) -> Self:
+        if (self.todo is not None) != (self.shares is None and bool(self.left_out)):
+            raise ValueError("the to-do comes exactly when nothing moves for a missing rate")
+        return self
+
+
+class MixCase(Lenient):
+    saved: SplitIn | None = None
+    plans: list[SplitPlanIn] = Field(default_factory=list)
+    held: list[SplitHeldIn] = Field(default_factory=list)
+    reserve_added: list[str] = Field(default_factory=list)
+    rates: SplitRatesIn
+    expect: MixExpect
+
+
+class PurchaseIn(Schema):
+    booked: date
+    amount: Money  # signed as on the private account, money out negative
+    account: str | None = None  # an own account the money went into, by its name
+    account_kind: AccountKind | None = None
+    payee: str | None = None  # a third party, with the household code it was booked to
+    category: AllocationCategory | None = None
+
+    @model_validator(mode="after")
+    def _one_destination(self) -> Self:
+        own = self.account is not None and self.account_kind is not None
+        payee = self.payee is not None and self.category is not None
+        if own == payee:
+            raise ValueError("a purchase goes into an own account or to a payee, not both")
+        return self
+
+
+class PrefillExpect(Schema):
+    depot: Money
+    crypto: Money
+    split: SplitIn
+
+
+class PrefillCase(Lenient):
+    window: list[YearMonth]
+    purchases: list[PurchaseIn]
+    reserve_added: list[str] = Field(default_factory=list)
+    expect: PrefillExpect | None
+
+
+class NotInvestedLineExpect(Schema):
+    asset_class: PlanClass
+    target_percent: SplitPercent
+    actual_percent: SplitPercent
+    amount: Money
+
+
+class NotInvestedExpect(Schema):
+    invested: Money
+    amount: Money
+    lines: list[NotInvestedLineExpect]
+
+    @model_validator(mode="after")
+    def _sum(self) -> Self:
+        if self.lines and sum((x.amount for x in self.lines), ZERO) != self.amount:
+            raise ValueError("the lines must add up to the amount")
+        return self
+
+
+class NotInvestedCase(Lenient):
+    window: list[YearMonth]
+    purchases: list[PurchaseIn]
+    reserve_added: list[str] = Field(default_factory=list)
+    saved: SplitIn | None = None
+    mode: AdviceMode
+    expect: NotInvestedExpect | None
+
+
+class InvestmentSplitFixture(Schema):
+    purchases: dict[str, Any] = Field(default_factory=dict)  # YAML anchors only
+    windows: dict[str, Any] = Field(default_factory=dict)  # YAML anchors only
+    mix: list[MixCase]
+    prefill: list[PrefillCase]
+    not_invested: list[NotInvestedCase]
+
+
 MODELS: dict[str, type[Schema]] = {
     "budget_fixed": FixedFixture,
     "budget_partition": BudgetFixture,
@@ -527,6 +657,7 @@ MODELS: dict[str, type[Schema]] = {
     "recurring": RecurringFixture,
     "one_off_marks": OneOffFixture,
     "goal": GoalFixture,
+    "investment_split": InvestmentSplitFixture,
 }
 
 

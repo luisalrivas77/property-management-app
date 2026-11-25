@@ -50,6 +50,9 @@ beyond HouseholdScenarioCreate's own validator (HouseholdLevers checks the range
   target above 0 and a reserve goal's months (up to 24, in half months) are Goal's own
   checks. A goal carried unaltered is never refused, so a goal whose month has passed does
   not block saving another lever; GET /household-goal names it (`issue` due_passed).
+- the investment split and the reserve's yearly rate (phase 10 §7.11 (a) 2, D301, D304) are
+  checked by HouseholdLevers alone (InvestmentSplit: shares with one place adding up to 100;
+  ValueChange.reserve: the depot's and crypto's range); no further rule here.
 
 A withdrawal is not re-checked against the accounts, the horizon or the spending: it only
 ends a row, and it repeats the withdrawn row's levers with their `mean_at_save` as stored.

@@ -10,6 +10,7 @@ from uuid import uuid4
 import pytest
 
 from hausbuch import i18n
+from hausbuch.rules import investment_split
 from hausbuch.rules.budget import budget
 from hausbuch.rules.health import bands, figures, window
 from hausbuch.rules.plan import projection
@@ -142,6 +143,14 @@ def _producers() -> list[HealthTodo | NetWorthTodo]:
         projection.scenario_todo(),
         *(
             projection._rate_todo(classes)
+            for classes in (
+                [projection.PlanClass.DEPOT],
+                [projection.PlanClass.CRYPTO],
+                [projection.PlanClass.DEPOT, projection.PlanClass.CRYPTO],
+            )
+        ),
+        *(
+            investment_split.rate_todo(classes)
             for classes in (
                 [projection.PlanClass.DEPOT],
                 [projection.PlanClass.CRYPTO],
