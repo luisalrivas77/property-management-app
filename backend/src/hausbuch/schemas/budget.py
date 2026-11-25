@@ -139,6 +139,9 @@ class BudgetLine(Schema):
     # to the cent. None on the other lines (and while no recurring read was applied).
     fixed: list[BudgetFixedPayment] | None = None
     variable: Money | None = None
+    # Σ the fixed means, served so the screen's „fest X · schwankend Y“ sums nothing (D269):
+    # fixed_monthly + variable = monthly. Present exactly when `fixed` is.
+    fixed_monthly: Money | None = None
 
     @model_validator(mode="after")
     def _codes(self) -> Self:
@@ -152,13 +155,15 @@ class BudgetLine(Schema):
                 raise ValueError(f"{self.key}: the codes' sums must add up to the line's")
         if self.mark is not None and self.target != self.mark.target:
             raise ValueError("a mark is against the line's target")
-        if (self.fixed is None) != (self.variable is None):
-            raise ValueError("fixed and variable come together")
+        if not (self.fixed is None) == (self.variable is None) == (self.fixed_monthly is None):
+            raise ValueError("fixed, variable and fixed_monthly come together")
         if self.fixed is not None and self.variable is not None:
             if self.key not in (BudgetLineKey.NEED, BudgetLineKey.WANT):
                 raise ValueError("only need and want split into fixed and variable")
             if sum((f.mean for f in self.fixed), self.variable) != self.monthly:
                 raise ValueError(f"{self.key}: fixed + variable must add up to the line's")
+            if sum((f.mean for f in self.fixed), Decimal("0.00")) != self.fixed_monthly:
+                raise ValueError(f"{self.key}: fixed_monthly is the fixed means' sum")
         return self
 
 

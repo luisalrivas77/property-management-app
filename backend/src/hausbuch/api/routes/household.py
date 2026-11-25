@@ -29,6 +29,11 @@
   the confirmed private line paid them (D161 (1), D143's rule). 404 as above.
 - GET /household/recurring (phase 10 §7.9 (b), D296): the recurring payments as of today
   (Berlin), the shown ones and those marked „kein Abo“.
+- GET /household/one-off-marks?transaction_id= (§7.12 (b), D307): the parts of a payment that
+  „Als einmalig markieren“ may mark today, each with its mark and whether its category is
+  one-off; empty for any other payment (the panel then shows no button).
+- GET /household/one-off-codes (§7.12 (a), D307): „Was als einmalig zählt“, the switchable
+  categories with what was paid in each this calendar year, the one-off ones first.
 - POST /household/one-off-marks {allocation_id, answer}: „Als einmalig markieren“
   (`one_off`) or „Doch normal zählen“ (`regular`) on a payment's detail panel (phase 10
   §7.12 (b), D307; the candidate search of D297 and GET /household/one-off-candidates are
@@ -55,7 +60,9 @@ from hausbuch.schemas.household import (
     TransferUnlinkBody,
 )
 from hausbuch.schemas.recurring import (
+    OneOffCodes,
     OneOffMarkRequest,
+    PaymentOneOff,
     RecurringPayments,
     SeriesMarkRequest,
     SpendingMarkRecorded,
@@ -133,6 +140,18 @@ def household_cashflow(month: Month, cmd: Cmd) -> HouseholdCashflow:
 @router.get("/household/recurring")
 def household_recurring(cmd: Cmd) -> RecurringPayments:
     return cmd.read(recurring.recurring_payments, datetime.now(LOCAL_TIME_ZONE).date())
+
+
+@router.get("/household/one-off-marks")
+def household_payment_one_offs(transaction_id: UUID, cmd: Cmd) -> list[PaymentOneOff]:
+    return cmd.read(
+        recurring.payment_one_offs, datetime.now(LOCAL_TIME_ZONE).date(), transaction_id
+    )
+
+
+@router.get("/household/one-off-codes")
+def household_one_off_codes(cmd: Cmd) -> OneOffCodes:
+    return cmd.read(recurring.one_off_codes_year, datetime.now(LOCAL_TIME_ZONE).date())
 
 
 @router.post("/household/one-off-marks", status_code=201)

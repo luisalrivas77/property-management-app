@@ -8,6 +8,11 @@ the one-offs are categories now, and a single payment is marked from its detail 
   duplicate, booked from 1 Jan 2026 (the household's bank history, §7.9 (b) 1) to `today`,
   with its account, payee and purpose; its code as the household month counts it (D234's
   recode applied by rules.health.month.cashflow_rows, the one place it lives).
+- **GET /household/one-off-marks?transaction_id=** (§7.12 (b), D307): the parts of one
+  payment that POST /household/one-off-marks accepts as of `today`, each with its newest
+  answer and whether its code is one-off under the default scenario's switches.
+- **GET /household/one-off-codes** (§7.12 (a), D307): „Was als einmalig zählt“, the codes the
+  household may switch with what was paid in each this calendar year.
 - **GET /household/recurring**: rules.recurring.recurring over those lines and the series
   answers, as of `today` (Berlin). A series' state and the yearly detection read the day, so
   the kept answer's key (it holds the Berlin day, §7.4) covers it. The state also reads how
@@ -15,8 +20,10 @@ the one-offs are categories now, and a single payment is marked from its detail 
   of any line on it that is no duplicate, up to `today`, whatever its status or sign.
 """
 
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import Connection, func, select
@@ -24,15 +31,25 @@ from sqlalchemy import Connection, func, select
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import transaction as transaction_table
+from hausbuch.rules.budget.budget import is_spending
 from hausbuch.rules.health.month import cashflow_rows
+from hausbuch.rules.household.taxonomy import ONE_OFF, SWITCHABLE
 from hausbuch.rules.recurring import SeriesMark, SpendingLine, recurring
+from hausbuch.rules.recurring.series import counted
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import AllocationStatus
 from hausbuch.schemas.health import MonthLine
-from hausbuch.schemas.recurring import RecurringPayments
+from hausbuch.schemas.recurring import (
+    OneOffCode,
+    OneOffCodes,
+    PaymentOneOff,
+    RecurringPayments,
+    SpendingMarkAnswer,
+)
 
+from .health import household_levers, levers_one_off_codes
 from .household import _private_lines, _purchase_cost
-from .spending_marks import HISTORY_START, series_marks
+from .spending_marks import HISTORY_START, allocation_answers, series_marks
 
 
 def spending_lines(conn: Connection, today: date) -> list[SpendingLine]:
@@ -130,3 +147,49 @@ def recurring_from(inputs: RecurringInputs, today: date) -> RecurringPayments:
 def recurring_payments(conn: Connection, today: date) -> RecurringPayments:
     """GET /household/recurring (see the module)."""
     return recurring_from(recurring_inputs(conn, today), today)
+
+
+def payment_one_offs(conn: Connection, today: date, transaction_id: UUID) -> list[PaymentOneOff]:
+    """GET /household/one-off-marks?transaction_id= (see the module): the payment's parts that
+    services.spending_marks.record_one_off accepts as of `today`, in booking order."""
+    parts = [
+        line
+        for line in spending_lines(conn, today)
+        if line.transaction_id == transaction_id and counted(line)
+    ]
+    if not parts:
+        return []
+    answers = allocation_answers(conn)
+    codes = levers_one_off_codes(household_levers(conn))
+    return [
+        PaymentOneOff(
+            allocation_id=line.allocation_id,
+            category=line.category,
+            amount=-line.amount,
+            marked=answers.get(line.allocation_id) is SpendingMarkAnswer.ONE_OFF,
+            category_one_off=line.category in codes,
+        )
+        for line in parts
+    ]
+
+
+def one_off_codes_year(conn: Connection, today: date) -> OneOffCodes:
+    """GET /household/one-off-codes (see the module): money out per switchable code in
+    `today`'s calendar year, the one-off codes under the default scenario's switches first."""
+    paid: dict[AllocationCategory, Decimal] = defaultdict(lambda: Decimal("0.00"))
+    for line in spending_lines(conn, today):
+        if line.booked_on.year == today.year and line.amount < 0 and is_spending(line.category):
+            paid[line.category] -= line.amount
+    codes = levers_one_off_codes(household_levers(conn))
+    rows = [
+        OneOffCode(
+            category=code,
+            default=code in ONE_OFF,
+            one_off=code in codes,
+            year_total=paid.get(code, Decimal("0.00")),
+        )
+        for code in SWITCHABLE
+        if code in codes or paid.get(code, Decimal("0.00")) > 0
+    ]
+    rows.sort(key=lambda r: (not r.one_off, -r.year_total, r.category.value))
+    return OneOffCodes(year=today.year, codes=rows)

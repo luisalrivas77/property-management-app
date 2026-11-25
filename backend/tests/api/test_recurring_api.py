@@ -41,6 +41,27 @@ def test_the_reads_of_an_empty_household(client_a, sessions):
     assert client_a.get(CANDIDATES).status_code == 404  # removed by D307
 
 
+def test_the_one_off_reads_of_an_empty_household(client_a, sessions):
+    """§7.12 (a), (b): a payment that cannot be marked lists nothing (no button); the sheet
+    lists the six default one-off categories at 0, nothing else."""
+    assert ok(client_a.get(ONE_OFF, params={"transaction_id": str(uuid4())})) == []
+    assert client_a.get(ONE_OFF).status_code == 422
+    assert client_a.get(ONE_OFF, params={"transaction_id": "nope"}).status_code == 422
+    got = ok(client_a.get("/api/household/one-off-codes"))
+    assert got["year"] >= 2026
+    assert sorted(row["category"] for row in got["codes"]) == [
+        "hh_car_purchase",
+        "hh_dental_optical",
+        "hh_electronics",
+        "hh_flat_search",
+        "hh_pregnancy_birth",
+        "hh_work_education",
+    ]
+    assert {(r["default"], r["one_off"], r["year_total"]) for r in got["codes"]} == {
+        (True, True, "0.00")
+    }
+
+
 def test_a_series_answer_is_stored(client_a, client_b, sessions):
     body = {"key": "STREAMDIENST MUSTER", "interval": "monthly", "answer": "hidden"}
     response = client_a.post(SERIES, json=body)
