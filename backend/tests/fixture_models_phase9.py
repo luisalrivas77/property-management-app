@@ -94,6 +94,7 @@ from hausbuch.schemas.plan import (
     BufferPercent,
     HouseholdLevers,
     IncomeChange,
+    InvestmentSplit,
     OneOff,
     OneOffSource,
     PathKey,
@@ -1402,11 +1403,30 @@ class NpStart(Schema):
     property: Money
     loans: Money
     other_liabilities: Money
+    # Phase 10 D304: the part of `depot` on depots ticked „Zählt zur Reserve“. It is in the
+    # reserve's start, earns the reserve rate (on the bank row) and stays at its start value in
+    # the depot row.
+    reserve_depot: Money = Decimal("0.00")
 
 
 class NpFlat(Schema):
-    sale_year: int
-    years: dict[int, YearFigures]
+    """A property's default scenario (phase 4): its sale year, its projected years (phase 4
+    projects today's year + 1 through the sale year) and the sale's net proceeds
+    (`SaleResult.net_proceeds`). With `sale_year` null the property is kept without a
+    scenario (phase 10 D301): its value today for ever (`kept_value`) and its loans' balance
+    per 31 December along their schedules (`kept_loans`), its cash the measured mean."""
+
+    sale_year: int | None = None
+    years: dict[int, YearFigures] = Field(default_factory=dict)
+    net_proceeds: Money = Decimal("0.00")
+    kept_value: Money | None = None
+    kept_loans: dict[int, Money] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _kept(self) -> Self:
+        if self.sale_year is None and self.kept_value is None:
+            raise ValueError("a kept property names its value")
+        return self
 
 
 class NpLevers(Schema):
@@ -1436,11 +1456,12 @@ class NpClasses(Schema):
 class NpExpect(Schema):
     points: list[NpPoint] | None = None
     end_of_2027: NpClasses | None = None
-    ends_before_sale_year: int | None = None
     used_up: YearMonth | None = None
     todos: list[HealthTodoCode] | None = None
     last: NpPoint | None = None
     change: ProjectionChange | None = None
+    # The reserve row at the end of a month (phase 10 D301: after its interest, its saving, a
+    # sale's proceeds and the move of what lies above the target).
     as_is_reserve: dict[YearMonth, Money] | None = None
     bank: dict[date, Money] | None = None
     difference: Money | None = None
@@ -1462,6 +1483,44 @@ def stretch(value: Fraction, rate: Fraction, payments: list[Fraction], months: i
     return out
 
 
+def walk_flat_years(flats: dict[str, NpFlat], first: int, last: int) -> dict[int, Decimal]:
+    """Phase 10 D301: per year from `first` to `last`, Σ over the properties of the scenario's
+    (net_cash + tax_effect) ÷ 12, each to the cent, and 0 for a property after its sale year.
+    A year some property's scenario does not project keeps the measured mean (left out of the
+    map). Empty, so the measured mean throughout, when no property has a scenario or one is
+    kept without one."""
+    if not flats or any(f.sale_year is None for f in flats.values()):
+        return {}
+    out: dict[int, Decimal] = {}
+    for y in range(first, last + 1):
+        parts = []
+        for f in flats.values():
+            if y > f.sale_year:
+                parts.append(ZERO)
+            elif y in f.years:
+                parts.append(cent((f.years[y].net_cash + f.years[y].tax_effect) / 12))
+            else:
+                break
+        else:
+            out[y] = sum(parts, ZERO)
+    return out
+
+
+def flats_on(flats: dict[str, NpFlat], year: int) -> tuple[Decimal, Decimal]:
+    """The properties' value and loans on 31 December of `year`: a property sold on that day
+    or before counts 0 (its proceeds are on the reserve), a kept one its value today and its
+    loans' balance of that day."""
+    value = loans = ZERO
+    for f in flats.values():
+        if f.sale_year is None:
+            value += f.kept_value
+            loans += f.kept_loans[year]
+        elif year < f.sale_year:
+            value += f.years[year].value
+            loans += f.years[year].loan_balance
+    return value, loans
+
+
 def project(
     newest: str,
     month: PaMonth,
@@ -1470,80 +1529,110 @@ def project(
     plans: list[PaPlan],
     flats: dict[str, NpFlat | None],
     levers: NpLevers,
+    target: Decimal | None = None,
+    split: InvestmentSplit | None = None,
 ) -> dict[str, Any]:
-    """§7.5, D247 amended: the points, the Decembers on the way, the as_is reserve, the
-    change rows of the last point."""
+    """§7.5, D247 amended by phase 10 D301 (§7.11 (a)): one month walk. Each month k after the
+    newest closed one, in this order:
+    1. the reserve row R earns the typed reserve rate for one month, R × r ÷ 12 (simple, only
+       while R > 0; no reserve rate typed: nothing);
+    2. R += the month's „Anlegbar“ (§7.1, the buffer kept back) − every savings plan;
+    3. in December of a property's sale year, R += its net proceeds (counted once);
+    4. R < 0: the walk ends there, `used_up` = that month, no point from it on;
+    5. what lies above the reserve target moves out of R into the classes in the split's
+       shares (no split or no target: nothing moves; nothing ever moves back);
+    6. a class's payment this month = its plans + its share of what moved; on 31 December each
+       class with a rate grows by the stretch formula over the year's payments.
+    The bank row = the start's bank + (R − R at the start); the depot row is the invested funds
+    plus the ticked depot's start value. Points: 31 December of each year after the newest
+    closed month's year, `net_worth_years` of them, past any sale."""
+    vc = levers.value_change
     todos = []
     if start is None:
         todos.append(HealthTodoCode.MONTH_END_MISSING)
-    if any(f is None for f in flats.values()):
-        todos.append(HealthTodoCode.NO_DEFAULT_SCENARIO)
-    rates = {"depot": levers.value_change.depot, "crypto": levers.value_change.crypto}
-    held = {c for c in rates if start is not None and getattr(start, c) != 0}
+    rates = {"depot": vc.depot, "crypto": vc.crypto}
+    shares = {c: Fraction(getattr(split, c)) / 100 for c in rates} if split is not None else {}
+    invested = {"depot": start.depot - start.reserve_depot, "crypto": start.crypto} if start else {}
+    held = {c for c in rates if start is not None and invested[c] != 0}
     held |= {p.asset_class.value for p in plans}
+    held |= {c for c, share in shares.items() if share > 0}
     if any(rates[c] is None for c in held):
         todos.append(HealthTodoCode.RATE_MISSING)
     if todos:
         return {"points": [], "todos": todos}
-    years_by = {k: f.years for k, f in flats.items()}
-    flat_month = flat_by_year(years_by)
-    sale = min(f.sale_year for f in flats.values())
-    candidates = sorted(y for y in flat_month if y < sale)
-    years = candidates[: levers.net_worth_years]
-    ends_before = sale if len(candidates) < levers.net_worth_years else None
+    kept = {k: f for k, f in flats.items() if f is not None}
+    first = int(newest[:4]) + 1
+    years = list(range(first, first + levers.net_worth_years))
+    flat_month = walk_flat_years(kept, first, years[-1])
     by_class = {c: sum((p.monthly for p in plans if p.asset_class.value == c), ZERO) for c in rates}
     continuing = sum((p.monthly for p in plans), ZERO)
-    bank, as_is = Fraction(start.bank), reserve_start
-    values = {c: Fraction(getattr(start, c)) for c in rates}
-    paid = dict.fromkeys(rates, ZERO)
+    r0 = Fraction(reserve_start)
+    reserve = r0
+    values = {c: Fraction(invested[c]) for c in rates}
+    pays: dict[str, list[Fraction]] = {c: [] for c in rates}
+    paid = {c: Fraction(0) for c in rates}
+    paid_by_year: dict[int, dict[str, Fraction]] = {}
     decembers, as_is_by_month, bank_by_day, used = {}, {}, {}, None
-    k, payments = 0, 0
-    while years and add_months(newest, k) < f"{years[-1]}-12":
+    k = 0
+    while add_months(newest, k) < f"{years[-1]}-12":
         k += 1
         ym, _, _, investable = month_function(
             newest, k, month, flat_month, levers.income_changes, levers.one_offs
         )
-        bank += Fraction(investable - continuing)
-        as_is += investable - continuing
-        as_is_by_month[ym] = as_is
-        if used is None and as_is < 0:
+        if vc.reserve is not None and reserve > 0:
+            reserve += reserve * Fraction(vc.reserve) / 12
+        reserve += Fraction(investable - continuing)
+        if ym.endswith("-12"):
+            for f in kept.values():
+                if f.sale_year == int(ym[:4]):
+                    reserve += Fraction(f.net_proceeds)
+        if reserve < 0:
+            as_is_by_month[ym] = cent(reserve)
             used = ym
-        payments += 1
+            break
+        moved = Fraction(0)
+        if shares and target is not None and reserve > Fraction(target):
+            moved = reserve - Fraction(target)
+            reserve -= moved
+        as_is_by_month[ym] = cent(reserve)
         for c in rates:
-            paid[c] += by_class[c]
+            pay = Fraction(by_class[c]) + moved * shares.get(c, Fraction(0))
+            pays[c].append(pay)
+            paid[c] += pay
         if ym.endswith("-12"):
             for c, rate in rates.items():
-                if rate is None:
-                    continue  # nothing held and nothing paid in (the reading of §15.1)
-                monthly = Fraction(by_class[c])
-                values[c] = stretch(values[c], Fraction(rate), [monthly] * payments, payments)
-            payments = 0
-            decembers[int(ym[:4])] = {
-                "bank": cent(bank),
-                "depot": cent(values["depot"]),
+                if rate is not None:  # nothing held and nothing paid in (§15.1)
+                    values[c] = stretch(values[c], Fraction(rate), pays[c], len(pays[c]))
+                pays[c] = []
+            year = int(ym[:4])
+            bank = cent(Fraction(start.bank) + reserve - r0)
+            decembers[year] = {
+                "bank": bank,
+                "depot": cent(values["depot"]) + start.reserve_depot,
                 "crypto": cent(values["crypto"]),
             }
-            bank_by_day[last_day(ym)] = cent(bank)
+            paid_by_year[year] = dict(paid)
+            bank_by_day[last_day(ym)] = bank
     points = []
     start_total = (
         start.bank + start.depot + start.crypto + start.property - start.loans
         - start.other_liabilities
     )  # fmt: skip
     for year in years:
-        if used is not None and f"{year}-12" >= used:
+        if year not in decembers:
             break
         classes = decembers[year]
-        value = sum((f.years[year].value for f in flats.values()), ZERO)
-        loans = sum((f.years[year].loan_balance for f in flats.values()), ZERO)
+        value, loans = flats_on(kept, year)
         total = sum(classes.values(), ZERO) + value - loans - start.other_liabilities
+        paid_in = {c: cent(paid_by_year[year][c]) for c in rates}
         by_assumption = {
-            PlanClass(c): classes[c] - getattr(start, c) - paid_until(by_class[c], newest, year)
+            PlanClass(c): classes[c] - getattr(start, c) - paid_in[c]
             for c in rates
             if rates[c] is not None
         }
         change = ProjectionChange(
             on_accounts=classes["bank"] - start.bank,
-            paid_in=sum(paid_until(by_class[c], newest, year) for c in rates),
+            paid_in=sum(paid_in.values(), ZERO),
             from_assumptions=sum(by_assumption.values(), ZERO),
             from_assumptions_by_class=by_assumption,
             flat_value=value - start.property,
@@ -1566,16 +1655,10 @@ def project(
         "decembers": decembers,
         "as_is": as_is_by_month,
         "bank": bank_by_day,
-        "ends_before_sale_year": ends_before,
         "used_up": used,
         "start_bank": start.bank,
         "start_reserve": reserve_start,
     }
-
-
-def paid_until(monthly: Decimal, newest: str, year: int) -> Decimal:
-    months = (year - int(newest[:4])) * 12 + 12 - int(newest[5:])
-    return monthly * months
 
 
 def as_np(point: ProjectionPoint) -> NpPoint:
@@ -1592,6 +1675,10 @@ class NpCase(Lenient):
     plans: list[PaPlan] = Field(default_factory=list)
     flats: dict[str, NpFlat | None] = Field(default_factory=dict)
     levers: NpLevers | None = None
+    # Phase 10 D301: the reserve target (months × need) and the effective investment split;
+    # without a split nothing moves out of the reserve.
+    target: Money | None = None
+    split: InvestmentSplit | None = None
     stretch: NpStretch | None = None
     expect: NpExpect
 
@@ -1609,7 +1696,7 @@ class NpCase(Lenient):
             raise ValueError(f"{self.id}: a projection case names its household")
         got = project(
             self.newest_closed, self.month, self.start, self.reserve, self.plans, self.flats,
-            self.levers,
+            self.levers, self.target, self.split,
         )  # fmt: skip
         check_projection(got, e, self.id)
         return self
@@ -1628,8 +1715,6 @@ def check_projection(got: dict[str, Any], e: NpExpect, what: str) -> None:
     if e.end_of_2027 is not None:
         check(NpClasses(**got["decembers"][2027]), e.end_of_2027, f"{what}: end of 2027")
     named = e.model_fields_set
-    if "ends_before_sale_year" in named:
-        check(got.get("ends_before_sale_year"), e.ends_before_sale_year, f"{what}: sale year")
     if "used_up" in named:
         check(got.get("used_up"), e.used_up, f"{what}: used up")
     for ym, want in (e.as_is_reserve or {}).items():
@@ -2020,7 +2105,17 @@ def worked_case(case: HwCase, figures: HwExpect) -> None:
         levers = NpLevers(
             value_change=hh.levers.value_change, net_worth_years=hh.levers.net_worth_years
         )
-        got = project(hh.newest_closed, pa_month, start, res.amount, pa_plans, flats, levers)
+        # Phase 10 D301: the money above the reserve target moves into the split the savings
+        # plans give (no split typed): each class's share of the plans, one place half-up, the
+        # crypto share the rest to 100 (400 ÷ 550 = 72.7 %).
+        total = sum((p.monthly for p in pa_plans), ZERO)
+        depot = sum((p.monthly for p in pa_plans if p.asset_class is PlanClass.DEPOT), ZERO)
+        share = (depot * 100 / total).quantize(Decimal("0.1"), ROUND_HALF_UP)
+        split = InvestmentSplit(depot=share, crypto=Decimal(100) - share)
+        got = project(
+            hh.newest_closed, pa_month, start, res.amount, pa_plans, flats, levers, res.target,
+            split,
+        )  # fmt: skip
         check([as_np(p) for p in got["points"]], e.projection.points, f"{what}: points")
         check(got["points"][-1].change, e.projection.change, f"{what}: change rows")
         quoted = _quoted("net_worth_projection", "worked")

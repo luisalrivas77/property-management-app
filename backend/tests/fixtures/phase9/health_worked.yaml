@@ -213,13 +213,17 @@ cases:
         - {key: "pause:exchange", reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "60215.77"}
         - {key: as_is, reached: "2028-06", months_needed: 13, used_up: null, reserve_at_horizon: "51215.77"}
       projection:
+        # Phase 10 D301 (25 Nov 2026): what lies above the reserve target 23,119.98 moves into
+        # funds and crypto in the savings plans' split, 72.7 / 27.3, from June 2028
+        # (net_worth_projection.yaml, case worked); until then the bank row grew to 58,459.40
+        # and the total to 257,747.90 by 31 Dec 2032.
         points:
-          - {"on": "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161271.63"}
-          - {"on": "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "184840.46"}
-          - {"on": "2030-12-31", bank: "44321.24", depot: "42837.41", crypto: "10213.86", property: "334617.08", loans: "222400.00", other_liabilities: "820.00", total: "208769.59"}
-          - {"on": "2031-12-31", bank: "51390.32", depot: "49303.80", crypto: "11848.28", property: "339636.34", loans: "218290.00", other_liabilities: "820.00", total: "233068.74"}
-          - {"on": "2032-12-31", bank: "58459.40", depot: "56009.44", crypto: "13458.18", property: "344730.88", loans: "214090.00", other_liabilities: "820.00", total: "257747.90"}
-        change: {on_accounts: "38509.40", paid_in: "36850.00", from_assumptions: "6967.62",
-          from_assumptions_by_class: {depot: "7709.44", crypto: "-741.82"},
-          flat_value: "24730.88", loan_repaid: "22310.00", total: "129367.90"}
+          - {"on": "2028-12-31", bank: "26239.98", depot: "33480.51", crypto: "7942.59", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161293.08"}
+          - {"on": "2029-12-31", bank: "26239.98", depot: "44827.06", crypto: "11527.67", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "185026.71"}
+          - {"on": "2030-12-31", bank: "26239.98", depot: "56593.43", crypto: "15058.97", property: "334617.08", loans: "222400.00", other_liabilities: "820.00", total: "209289.46"}
+          - {"on": "2031-12-31", bank: "26239.98", depot: "68795.16", crypto: "18537.30", property: "339636.34", loans: "218290.00", other_liabilities: "820.00", total: "234098.78"}
+          - {"on": "2032-12-31", bank: "26239.98", depot: "81448.36", crypto: "21963.46", property: "344730.88", loans: "214090.00", other_liabilities: "820.00", total: "259472.68"}
+        change: {on_accounts: "6289.98", paid_in: "69069.42", from_assumptions: "8692.40",
+          from_assumptions_by_class: {depot: "9724.84", crypto: "-1032.44"},
+          flat_value: "24730.88", loan_repaid: "22310.00", total: "131092.68"}
       todos: []
