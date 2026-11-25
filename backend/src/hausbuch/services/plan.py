@@ -64,6 +64,7 @@ from hausbuch.rules import investment_split as X
 from hausbuch.rules.categories import CATEGORY_LABEL
 from hausbuch.rules.errors import RuleError
 from hausbuch.rules.goal.walk import Projection as GoalProjection
+from hausbuch.rules.health.figures import reserve_set
 from hausbuch.rules.health.window import window_todos
 from hausbuch.rules.plan import levers as L
 from hausbuch.rules.plan import projection as N
@@ -858,10 +859,9 @@ def _investment_split(
     closed months, at most twelve). The reads are lever-free kept parts (the purchases are
     phase 9's plan lines over the window, the accounts' kinds, the rental ids, today's net
     worth); the reserve's set and every figure are computed from the levers on each call."""
-    reserve = X.reserve_account_ids(
-        _kinds(inputs),
-        inputs.part(("rental_ids",), rental_account_ids),
-        levers.reserve_accounts,
+    rental = inputs.part(("rental_ids",), rental_account_ids)
+    reserve = reserve_set(
+        ((a, k, a in rental) for a, k in _kinds(inputs).items()), levers.reserve_accounts
     )
     months = tuple(window)
     bought = inputs.part(("plan_lines", months), lambda c: plan_lines(c, months))
