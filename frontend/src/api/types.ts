@@ -2533,23 +2533,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/household/one-off-candidates": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Household One Off Candidates */
-        get: operations["household_one_off_candidates_api_household_one_off_candidates_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/household/one-off-marks": {
         parameters: {
             query?: never;
@@ -6060,7 +6043,8 @@ export interface components {
         BudgetMarkColour: "green" | "amber";
         /**
          * BudgetMonth
-         * @description One window month's partition, exact sums (D273 per month): the lines add up to E.
+         * @description One window month's partition, exact sums (D273 per month): the lines add up to E, the
+         *     one-offs beside them (D308).
          */
         BudgetMonth: {
             /** Month */
@@ -6163,6 +6147,7 @@ export interface components {
             income?: components["schemas"]["BudgetIncome"] | null;
             /** Lines */
             lines?: components["schemas"]["BudgetLine"][];
+            one_off?: components["schemas"]["BudgetLine"] | null;
             housing?: components["schemas"]["BudgetHousing"] | null;
             targets?: components["schemas"]["BudgetTargets"];
             /** No Shares */
@@ -9017,6 +9002,8 @@ export interface components {
             last_ended?: components["schemas"]["HouseholdMonth"] | null;
             verdict?: components["schemas"]["Verdict"] | null;
             differences?: components["schemas"]["MonthDifferences"] | null;
+            /** One Offs Left Out Since */
+            one_offs_left_out_since?: string | null;
         };
         /**
          * HealthMonthView
@@ -9377,6 +9364,10 @@ export interface components {
             /** Budget Class Overrides */
             budget_class_overrides?: {
                 [key: string]: components["schemas"]["BudgetClass"];
+            };
+            /** One Off Overrides */
+            one_off_overrides?: {
+                [key: string]: boolean;
             };
             goal?: components["schemas"]["Goal"] | null;
             goal_choice?: components["schemas"]["GoalChoice"] | null;
@@ -11189,37 +11180,6 @@ export interface components {
              * @default typed
              */
             source: components["schemas"]["OneOffSource"] | string;
-        };
-        /**
-         * OneOffCandidate
-         * @description One payment that may be one-off (D297): its line, what was paid (`payment.amount`,
-         *     positive), its code's median month over the window, and the newest answer when it has
-         *     one (None for a candidate).
-         */
-        OneOffCandidate: {
-            payment: components["schemas"]["GroupPayment"];
-            /** Code Median */
-            code_median: string;
-            answer?: components["schemas"]["SpendingMarkAnswer"] | null;
-        };
-        /**
-         * OneOffCandidates
-         * @description GET /household/one-off-candidates (§7.9 (c) 1): the payments not answered yet that
-         *     may be one-off, and the window's payments a person answered, with their newest answer,
-         *     so an answer can be changed. Nothing while the window has fewer than three closed
-         *     months.
-         */
-        OneOffCandidates: {
-            /**
-             * As Of
-             * Format: date
-             */
-            as_of: string;
-            window: components["schemas"]["Window"];
-            /** Candidates */
-            candidates?: components["schemas"]["OneOffCandidate"][];
-            /** Answered */
-            answered?: components["schemas"]["OneOffCandidate"][];
         };
         /**
          * OneOffMarkRequest
@@ -14144,6 +14104,11 @@ export interface components {
             rate_without_principal?: string | null;
             /** Months */
             months?: components["schemas"]["MonthRate"][];
+            /**
+             * One Offs Left Out
+             * @default false
+             */
+            one_offs_left_out: boolean;
         };
         /** Scenario */
         Scenario: {
@@ -22175,35 +22140,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecurringPayments"];
-                };
-            };
-            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    household_one_off_candidates_api_household_one_off_candidates_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OneOffCandidates"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

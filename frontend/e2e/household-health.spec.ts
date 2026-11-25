@@ -175,6 +175,7 @@ function health(window: string[], options: { coloured?: boolean } = {}): Health 
           rate: "0.2500",
           rate_regular: "0.2500",
           rate_without_principal: "0.2500",
+          one_offs_left_out: true,
           months: window.map((month) => ({ month, rate: "0.2500" })),
         }
       : null,
@@ -737,7 +738,6 @@ test("the Budget in one line on Haushalt: only once a target is saved, coloured 
         target: targets ? "30.0" : null,
         mark: targets ? mark("green", "30.0", "-5.0", "-260.00", "1560.00") : null,
       },
-      { key: "one_off", monthly: "0.00", total: "0.00", share: "0.0000", codes: [] },
       {
         key: "saving",
         monthly: "1300.00",

@@ -1,29 +1,24 @@
 "use client";
 
-// The recurring payments on Haushalt › Monat and the one-off check on Haushalt › Budget (phase 10
-// §7.9 (b), (c); D296, D297; mockup 19c panels 4 to 7). Every amount is the server's (GET
-// /household/recurring, GET /household/one-off-candidates); the browser formats it and adds
-// nothing up. A person's answers are POSTed and the reads are asked again.
+// The recurring payments on Haushalt › Monat (phase 10 §7.9 (b); D296; mockup 19c panels 4 and 5).
+// Every amount is the server's (GET /household/recurring); the browser formats it and adds
+// nothing up. A person's answers are POSTed and the reads are asked again. The one-off check of
+// §7.9 (c) (the line „<N> Zahlungen vielleicht einmalig“ and its panel) is gone since §7.12 (D307):
+// a category is one-off by default or by its switch, and a single payment is marked from its
+// detail panel (mockup 19h, built later).
 //
 // - useRecurringPayments(): the card „Regelmäßige Zahlungen“ and its panels for the page's one
 //   DetailLayout (D267): `#d-abos-alle` lists every series, `#d-abos-ausgeblendet` the hidden
 //   ones, `#d-abo-<id>` one series, its id the opaque id of its oldest payment (never the payee's
 //   words in the URL). „Kein Abo, ausblenden“ posts `hidden`, „Wieder anzeigen“ `shown`; neither
 //   changes a figure (D296 (4)).
-// - useOneOffCheck(): the line „<N> Zahlungen vielleicht einmalig · Prüfen“ and its panel
-//   `#d-einmalig-pruefen`. An answer moves the key figures, so `onChanged` asks the plan, the
-//   household month, the Budget and the key figures again. While the window has fewer than three
-//   closed months the read lists nothing and every POST is a 404: then nothing is shown. A 404
-//   after the list was shown (the payment left the window, or it was booked again) reloads the
-//   list and says so in a plain sentence.
 // - Every answer shows at once (optimistic, Luis 24 Nov 2026): the row takes its new state before
 //   the POST, only that row waits for its POST (a double tap on it is ignored, the other rows stay
 //   clickable), and a failure puts that row back as it was and shows the error. The reads are asked
 //   again afterwards as before.
-import { type ReactNode, useCallback, useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 
 import { api, ok } from "@/api/client";
-import { ApiError } from "@/api/errors";
 import type { components } from "@/api/types";
 import { DetailPanel, useDetail } from "@/components/DetailPanel";
 import { ALLOCATION_CATEGORY } from "@/components/labels";
@@ -37,21 +32,15 @@ import "./householdRecurring.css";
 type AllocationCategory = components["schemas"]["AllocationCategory"];
 type RecurringPayments = components["schemas"]["RecurringPayments"];
 type RecurringSeries = components["schemas"]["RecurringSeries"];
-type OneOffCandidates = components["schemas"]["OneOffCandidates"];
-type OneOffCandidate = components["schemas"]["OneOffCandidate"];
 type Messages = (typeof catalogue)["de"];
 
 const LIST = "abos";
 const SERIES = "abo";
-const ONE_OFF = "einmalig";
 const ALL = "alle";
 const HIDDEN = "ausgeblendet";
-const CHECK = "pruefen";
 
 /** At most this many price changes on the card itself (mockup 19c panel 4). */
 const CARD_CHANGES = 3;
-/** At most this many payments named on the Budget's one-off line. */
-const LINE_ITEMS = 2;
 
 function categoryLabel(category: string): string {
   return ALLOCATION_CATEGORY[category as AllocationCategory] ?? category;
@@ -59,11 +48,6 @@ function categoryLabel(category: string): string {
 
 function isNegative(value: string): boolean {
   return value.trim().startsWith("-");
-}
-
-/** A positive amount of a non-zero, non-negative decimal string. */
-function isPositive(value: string): boolean {
-  return !isNegative(value) && /[1-9]/.test(value);
 }
 
 function unsigned(value: string): string {
@@ -449,221 +433,6 @@ function HiddenPanel({ hidden, state }: { hidden: RecurringSeries[]; state: Load
           ))}
         </ul>
       )}
-    </div>
-  );
-}
-
-// --- (c) the one-off check ---------------------------------------------------------------------
-
-async function loadOneOff(): Promise<OneOffCandidates | null> {
-  // The check is an extra beside the Budget: a read that fails shows no line, never the error.
-  return ok(api.GET("/api/household/one-off-candidates")).catch(() => null);
-}
-
-async function loadNothing(): Promise<OneOffCandidates | null> {
-  return null;
-}
-
-export interface OneOffView {
-  /** The line for the Budget, or null when nothing is to check or answered. */
-  line: ReactNode;
-  /** The open panel, or null. */
-  panel: ReactNode;
-}
-
-/** The one-off check; `enabled` false reads nothing (the plan's other pages); `onChanged` asks
- * every read an answer moves again (the plan, the Budget, the key figures). */
-export function useOneOffCheck(enabled: boolean, backLabel: string, onChanged: () => void): OneOffView {
-  const t = useT(catalogue);
-  const state = useLoad(enabled ? loadOneOff : loadNothing);
-  const detail = useDetail(ONE_OFF);
-  const [gone, setGone] = useState(false);
-  const { reload } = state;
-  const refresh = useCallback(() => {
-    reload();
-    onChanged();
-  }, [reload, onChanged]);
-  const data = state.data ?? null;
-  const candidates = data?.candidates ?? [];
-  const answered = data?.answered ?? [];
-  const any = candidates.length + answered.length > 0;
-
-  let panel: ReactNode = null;
-  if (data && detail.id !== null && (any || gone)) {
-    panel = (
-      <DetailPanel
-        title={t.oneOffTitle}
-        backLabel={backLabel}
-        onClose={() => {
-          setGone(false);
-          detail.close();
-        }}
-      >
-        <OneOffPanel
-          data={data}
-          gone={gone}
-          onAnswered={() => {
-            setGone(false);
-            refresh();
-          }}
-          onGone={() => {
-            setGone(true);
-            refresh();
-          }}
-        />
-      </DetailPanel>
-    );
-  }
-  const line = data && any ? <OneOffLine data={data} link={detail.linkProps(CHECK)} /> : null;
-  return { line, panel };
-}
-
-function OneOffLine({ data, link }: { data: OneOffCandidates; link: LinkProps }) {
-  const t = useT(catalogue);
-  const f = useFormat();
-  const candidates = data.candidates ?? [];
-  const answered = data.answered ?? [];
-  const named = candidates
-    .slice(0, LINE_ITEMS)
-    .map((c) => t.oneOffItem(paymentLabel(c), f.money(c.payment.amount), f.month(c.payment.booked_on)));
-  return (
-    <section className="card recurring-oneoff-line" aria-labelledby="oneoff-line-title">
-      <a {...link} className="recurring-oneoff-link">
-        <span className="recurring-row-text">
-          <strong id="oneoff-line-title">{candidates.length > 0 ? t.oneOffLine(candidates.length) : t.oneOffAnsweredLine}</strong>
-          <span className="muted">{candidates.length > 0 ? `${named.join(", ")}${candidates.length > LINE_ITEMS ? ", …" : "."}` : t.oneOffAnsweredSub(answered.length)}</span>
-        </span>
-        <span className="recurring-oneoff-action">{candidates.length > 0 ? t.check : t.showAnswers} ›</span>
-      </a>
-    </section>
-  );
-}
-
-function paymentLabel(candidate: OneOffCandidate): string {
-  const p = candidate.payment;
-  return p.payee || p.purpose || categoryLabel(p.category);
-}
-
-/** Candidates and answered payments in one list, newest first, so a row stays where it is when
- * it is answered and moves from one list of the read to the other. */
-function ordered(data: OneOffCandidates): OneOffCandidate[] {
-  return [...(data.candidates ?? []), ...(data.answered ?? [])].sort((a, b) => {
-    const day = b.payment.booked_on.localeCompare(a.payment.booked_on);
-    return day !== 0 ? day : a.payment.allocation_id.localeCompare(b.payment.allocation_id);
-  });
-}
-
-function OneOffPanel({
-  data,
-  gone,
-  onAnswered,
-  onGone,
-}: {
-  data: OneOffCandidates;
-  gone: boolean;
-  onAnswered: () => void;
-  onGone: () => void;
-}) {
-  const t = useT(catalogue);
-  const f = useFormat();
-  // Per row: the POST in flight, and the answer just given, shown at once (before the POST) and
-  // kept until the reload brings it back from the server.
-  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
-  const inFlight = useRef(new Set<string>()); // a double tap is ignored before the row is disabled
-  const [error, setError] = useState<unknown>(null);
-  const [given, setGiven] = useState<Record<string, "one_off" | "regular">>({});
-  const items = ordered(data);
-
-  async function answer(candidate: OneOffCandidate, next: "one_off" | "regular") {
-    const id = candidate.payment.allocation_id;
-    if (inFlight.current.has(id)) return;
-    inFlight.current.add(id);
-    const before = given[id];
-    setBusy((previous) => withId(previous, id, true));
-    setGiven((previous) => ({ ...previous, [id]: next }));
-    setError(null);
-    try {
-      await ok(api.POST("/api/household/one-off-marks", { body: { allocation_id: id, answer: next } }));
-      onAnswered();
-    } catch (caught) {
-      // That row as it was: its earlier answer given here, else the server's.
-      setGiven((previous) => {
-        const rest = { ...previous };
-        if (before === undefined) delete rest[id];
-        else rest[id] = before;
-        return rest;
-      });
-      if (caught instanceof ApiError && caught.status === 404) onGone();
-      else setError(caught);
-    } finally {
-      inFlight.current.delete(id);
-      setBusy((previous) => withId(previous, id, false));
-    }
-  }
-
-  return (
-    <div className="stack recurring-panel">
-      <p className="muted">{t.oneOffIntro}</p>
-      {gone ? (
-        <div className="notice notice-info" role="status">
-          <p>{t.oneOffGone}</p>
-        </div>
-      ) : null}
-      {error != null ? <ErrorNotice error={error} /> : null}
-      {items.length === 0 ? (
-        <p className="muted">{t.oneOffEmpty}</p>
-      ) : (
-        <ul className="detail-rows">
-          {items.map((c) => {
-            const id = c.payment.allocation_id;
-            const read = c.answer === "one_off" || c.answer === "regular" ? c.answer : null;
-            const current = given[id] ?? read;
-            const waiting = busy.has(id);
-            const label = paymentLabel(c);
-            const sub = [f.date(c.payment.booked_on), categoryLabel(c.payment.category), isPositive(c.code_median) ? t.otherwise(f.money(c.code_median)) : null].filter(
-              (part): part is string => part !== null,
-            );
-            return (
-              <li key={id} className="recurring-oneoff-item" data-allocation={id}>
-                <div className="recurring-oneoff-head">
-                  <span className="detail-row-text">
-                    <span className="detail-row-title">{label}</span>
-                    <span className="detail-row-sub">{sub.join(" · ")}</span>
-                  </span>
-                  <strong>{f.money(c.payment.amount)}</strong>
-                </div>
-                <div className="recurring-oneoff-answers" role="group" aria-label={t.answerGroup(label)}>
-                  <button
-                    type="button"
-                    className={current === "one_off" ? undefined : "secondary"}
-                    aria-pressed={current === "one_off"}
-                    disabled={waiting}
-                    onClick={() => void answer(c, "one_off")}
-                  >
-                    {t.yesOneOff}
-                  </button>
-                  <button
-                    type="button"
-                    className={current === "regular" ? undefined : "secondary"}
-                    aria-pressed={current === "regular"}
-                    disabled={waiting}
-                    onClick={() => void answer(c, "regular")}
-                  >
-                    {t.noRegular}
-                  </button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      <div className="notice notice-info">
-        <p>
-          <strong>{t.oneOffWhatTitle}</strong>
-        </p>
-        <p>{t.oneOffWhat}</p>
-      </div>
-      <p className="muted">{t.oneOffFoot}</p>
     </div>
   );
 }

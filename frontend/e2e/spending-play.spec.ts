@@ -91,6 +91,7 @@ function health(): Health {
       rate: "0.2500",
       rate_regular: "0.2500",
       rate_without_principal: "0.2500",
+      one_offs_left_out: true,
       months: WINDOW.map((month) => ({ month, rate: "0.2500" })),
     },
     reserve: null,
@@ -439,7 +440,6 @@ function budget(targets: BudgetTargets, overrides: Record<string, "need" | "want
             }
           : null,
       },
-      { key: "one_off", monthly: "0.00", total: "0.00", share: "0.0000", codes: [] },
       { key: "uncategorized", monthly: "0.00", total: "0.00", share: "0.0000", codes: [] },
       { key: "saving", monthly: "1300.00", total: "3900.00", share: "0.2500" },
     ],

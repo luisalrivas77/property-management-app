@@ -328,6 +328,9 @@ export function fillLevers(levers: HouseholdLevers | null | undefined): Househol
       housing_max: levers?.budget_targets?.housing_max ?? null,
     },
     budget_class_overrides: levers?.budget_class_overrides ?? {},
+    // Phase 10 §7.12 (D307): the household's one-off switches per category, kept on every save
+    // (no screen sets them yet; a save without them would drop them).
+    one_off_overrides: levers?.one_off_overrides ?? {},
     // Phase 10 §7.9 (d): the goal and its chosen scenario, kept on every save (a save without
     // them would drop the goal).
     goal: levers?.goal ?? null,

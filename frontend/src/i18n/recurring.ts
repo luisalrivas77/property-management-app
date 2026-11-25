@@ -42,28 +42,6 @@ const de = {
   show: "Wieder anzeigen",
   showAria: (label: string) => `Wieder anzeigen: ${label}`,
   hiddenBadge: "ausgeblendet",
-
-  // (c) the one-off check
-  oneOffLine: (n: number) => (n === 1 ? "1 Zahlung vielleicht einmalig" : `${n} Zahlungen vielleicht einmalig`),
-  oneOffItem: (label: string, amount: string, month: string) => `${label} ${amount} im ${month}`,
-  oneOffAnsweredLine: "Einmalige Zahlungen",
-  oneOffAnsweredSub: (n: number) => (n === 1 ? "1 Zahlung beantwortet" : `${n} Zahlungen beantwortet`),
-  check: "Prüfen",
-  showAnswers: "Antworten ansehen",
-  oneOffTitle: "Vielleicht einmalig?",
-  oneOffIntro: "Diese Zahlungen sind viel größer als sonst in ihrer Kategorie.",
-  otherwise: (amount: string) => `sonst ${amount} im Monat`,
-  yesOneOff: "Ja, einmalig",
-  noRegular: "Nein, normal",
-  answerGroup: (label: string) => `Einmalig? ${label}`,
-  oneOffGone:
-    "Eine Zahlung steht nicht mehr zur Prüfung: Sie liegt nicht mehr im Zeitraum der abgeschlossenen Monate oder wurde anders gebucht. Die Liste ist neu geladen.",
-  oneOffEmpty: "Gerade ist keine Zahlung zu prüfen.",
-  oneOffWhatTitle: "Was „einmalig“ ändert",
-  oneOffWhat:
-    "Die Zahlung zählt weiter in euren Ausgaben, aber nicht mehr im Schnitt: euer Budget, die Sparquote ohne Einmaliges, die Reserve, die ihr braucht, und „Anlegbar“ rechnen dann ohne sie.",
-  oneOffFoot:
-    "Hausbuch markiert nichts allein. Eure Antwort könnt ihr jederzeit ändern. Schon festgehaltene Monate bleiben, wie sie waren; die App zeigt dort, dass sie heute anders rechnet.",
 };
 
 const en: typeof de = {
@@ -104,27 +82,6 @@ const en: typeof de = {
   show: "Show again",
   showAria: (label) => `Show again: ${label}`,
   hiddenBadge: "hidden",
-
-  oneOffLine: (n) => (n === 1 ? "1 payment may be one-off" : `${n} payments may be one-off`),
-  oneOffItem: (label, amount, month) => `${label} ${amount} in ${month}`,
-  oneOffAnsweredLine: "One-off payments",
-  oneOffAnsweredSub: (n) => (n === 1 ? "1 payment answered" : `${n} payments answered`),
-  check: "Check",
-  showAnswers: "See your answers",
-  oneOffTitle: "One-off?",
-  oneOffIntro: "These payments are much larger than usual in their category.",
-  otherwise: (amount) => `usually ${amount} a month`,
-  yesOneOff: "Yes, one-off",
-  noRegular: "No, regular",
-  answerGroup: (label) => `One-off? ${label}`,
-  oneOffGone:
-    "A payment is no longer up for checking: it is no longer in the closed months' window or was booked differently. The list has been reloaded.",
-  oneOffEmpty: "There is no payment to check at the moment.",
-  oneOffWhatTitle: "What „one-off“ changes",
-  oneOffWhat:
-    "The payment still counts in your spending, but no longer in the average: your budget, the savings rate without one-offs, the reserve you need and „Available to invest“ are then computed without it.",
-  oneOffFoot:
-    "Hausbuch marks nothing on its own. You can change your answer at any time. Months already recorded stay as they were; the app shows there that it computes differently today.",
 };
 
 export const recurring = defineMessages({ de, en });

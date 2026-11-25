@@ -75,11 +75,11 @@ const de = {
   rentalIncluded: (amount: string) => `davon Wohnung ${amount}`,
   lineNeed: "Notwendiges",
   lineWant: "Wünsche",
-  lineOneOff: "Einmalige Ausgaben",
+  lineOneOff: "Einmalig im Zeitraum",
   lineUncategorized: "Ohne Einordnung",
   lineSaving: "Sparen",
   savingSub: "was übrig bleibt, mit Tilgung",
-  oneOffSub: "zählt weder zu Notwendiges noch zu Wünsche",
+  oneOffSub: "neben der Aufteilung, nicht im Schnitt",
   uncategorizedSub: "noch keiner Klasse zugeordnet",
   targetMax: (percent: string) => `Ziel höchstens ${percent}`,
   targetMin: (percent: string) => `Ziel mindestens ${percent}`,
@@ -119,7 +119,8 @@ const de = {
   noCodes: "In diesen Monaten keine Ausgabe in dieser Gruppe.",
   savingPanel:
     "Sparen ist, was vom Einkommen übrig bleibt, mit der Tilgung des Darlehens; Sparen geteilt durch das Einkommen ist eure Sparquote.",
-  oneOffPanel: "Einmalige Ausgaben wie ein Autokauf zählen weder zu Notwendiges noch zu Wünsche und werden nicht geplant.",
+  oneOffPanel:
+    "Einmalige Ausgaben wie ein Autokauf stehen neben der Aufteilung: Sie zählen weder zu Notwendiges noch zu Wünsche, nicht in Sparquote, Reserve und „Anlegbar“ und werden nicht geplant. In den Ausgaben des Monats und im Vermögen bleiben sie.",
   // the goals sheet
   goalsTitle: "Eigene Ziele",
   goalsIntro:
@@ -390,11 +391,11 @@ export const planning = defineMessages({
     rentalIncluded: (amount: string) => `of which the flat ${amount}`,
     lineNeed: "Needs",
     lineWant: "Wants",
-    lineOneOff: "One-off spending",
+    lineOneOff: "One-off in the period",
     lineUncategorized: "Not classified",
     lineSaving: "Saving",
     savingSub: "what is left, repayment included",
-    oneOffSub: "counts as neither needs nor wants",
+    oneOffSub: "beside the split, not in the average",
     uncategorizedSub: "not yet in a class",
     targetMax: (percent: string) => `Target at most ${percent}`,
     targetMin: (percent: string) => `Target at least ${percent}`,
@@ -433,7 +434,8 @@ export const planning = defineMessages({
     noCodes: "No spending in this group in these months.",
     savingPanel:
       "Saving is what is left of the income, the loan's repayment included; saving divided by income is your savings rate.",
-    oneOffPanel: "One-off spending such as buying a car counts as neither needs nor wants and is not planned.",
+    oneOffPanel:
+      "One-off spending such as buying a car stands beside the split: it counts as neither needs nor wants, not in the savings rate, the reserve or the amount investable per month, and is not planned. It stays in the month's spending and in your net worth.",
     goalsTitle: "Your own targets",
     goalsIntro:
       "Each target is a share of your income. Empty means no target and no dot. Hausbuch proposes no figure; the values below are for comparison only.",
@@ -461,6 +463,7 @@ export const planning = defineMessages({
         "household_scenario.budget_class_invalid": "This category cannot be moved between needs and wants.",
         "household_scenario.account_invalid": "A reserve account must be a current account, a savings account or a credit card.",
         "household_scenario.one_off_outside": "A one-off lies after the end of the plan's span.",
+        "household_scenario.one_off_code_invalid": "This category cannot be marked as one-off.",
         "household_scenario.spending_invalid": "A planned amount cannot be taken as entered.",
         "household_scenario.not_current": "The scenario was changed in the meantime; reload the page and try again.",
       })[code] ?? "",
@@ -641,7 +644,7 @@ export const planning = defineMessages({
 
 export type PlanningText = Translation<typeof de>;
 
-/** A Budget line's name: Notwendiges, Wünsche, Einmalige Ausgaben, Ohne Einordnung, Sparen. */
+/** A Budget line's name: Notwendiges, Wünsche, Einmalig im Zeitraum, Ohne Einordnung, Sparen. */
 export function lineLabel(t: PlanningText, key: "need" | "want" | "one_off" | "uncategorized" | "saving"): string {
   const labels = { need: t.lineNeed, want: t.lineWant, one_off: t.lineOneOff, uncategorized: t.lineUncategorized, saving: t.lineSaving };
   return labels[key];

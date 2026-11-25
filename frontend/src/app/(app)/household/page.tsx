@@ -276,7 +276,7 @@ function Household() {
       {/* Budget, Ziel and Reserve share one plan and one draft (one element in one place), so an
           unsaved change survives a switch between them (§7.9 (a)); Ziel reads the goal too. */}
       {planTab ? (
-        <PlanProvider page={`${pathname}?tab=${planTab}`} backLabel={t.title} oneOff goal={planTab === "ziel"}>
+        <PlanProvider page={`${pathname}?tab=${planTab}`} backLabel={t.title} goal={planTab === "ziel"}>
           {planTab === "ziel" ? <HouseholdGoalTab /> : <HouseholdPlanTab tab={planTab} />}
         </PlanProvider>
       ) : null}
