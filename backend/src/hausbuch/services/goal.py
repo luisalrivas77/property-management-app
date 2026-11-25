@@ -22,11 +22,12 @@ from sqlalchemy import Connection
 
 from hausbuch.rules.budget import budget as B
 from hausbuch.rules.goal import GoalInputs, current_month, household_goal, none_set
+from hausbuch.rules.plan import spending as SP
 from hausbuch.rules.plan.surplus import mean_cent
 from hausbuch.schemas.goal import GoalIssue, HouseholdGoal
 from hausbuch.schemas.plan import GoalKind
 
-from .health import _reserve_balances, _window, key_figures
+from .health import _reserve_balances, _window, key_figures, levers_one_off_codes
 from .plan import _net_worth, _scenario, plan_parts
 from .plan_inputs import PlanInputs
 
@@ -37,7 +38,8 @@ def goal(conn: Connection, today: date) -> HouseholdGoal:
     if row is None or row.levers.goal is None:
         return none_set()
     levers = row.levers
-    reads = inputs.ended_reads()
+    codes = levers_one_off_codes(levers)  # phase 10 D307
+    reads = inputs.ended_reads(codes)
     plan, parts = plan_parts(conn, today, row, levers, reads, inputs)
     if parts is None:  # below three closed months: the plan's to-dos say what is missing
         assert plan.projection is not None
@@ -71,7 +73,7 @@ def goal(conn: Connection, today: date) -> HouseholdGoal:
     classes = {
         code: cls
         for code in parts.means
-        if (cls := B.class_of(code, levers.budget_class_overrides)) is not None
+        if (cls := B.class_of(code, levers.budget_class_overrides, codes)) is not None
     }
     todos = () if parts.projection is not None or plan.projection is None else plan.projection.todos
     return household_goal(
@@ -84,7 +86,7 @@ def goal(conn: Connection, today: date) -> HouseholdGoal:
             need=parts.reserve.need,
             code_means=parts.means,
             classes=classes,
-            household_changes=tuple(levers.spending_changes),
+            household_changes=tuple(SP.in_play(levers.spending_changes, codes)),
             projection=parts.projection,
             todos=tuple(todos),
         )

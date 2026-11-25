@@ -318,10 +318,6 @@ function FigureDetails({ part, data, onChanged }: { part: VerdictPart; data: Hea
         <>
           <ul className="household-rows">
             <li>
-              <span>{t.withoutOneOffs}</span>
-              <span>{p.ratio(rate.rate_regular)}</span>
-            </li>
-            <li>
               <span>{t.ofWhichPrincipal}</span>
               <span>{p.euro(rate.principal)}</span>
             </li>

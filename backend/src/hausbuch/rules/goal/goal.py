@@ -177,7 +177,9 @@ def _scenarios(
     cut = Fraction(gap) / left / (1 - Fraction(buffer) / 100)
     wanted = _ceil_cent(cut) + (CENT if buffer > 0 else ZERO)
     first = add_months(current_month(i.today), 1)
-    codes = {c: m for c, m in i.code_means.items() if m > 0 and playable(c) and c in i.classes}
+    # The means hold no one-off code in force (rules/plan/spending.month_spending), so only the
+    # structural test is left here (phase 10 D307: a switch decides the one-offs).
+    codes = {c: m for c, m in i.code_means.items() if m > 0 and playable(c, ()) and c in i.classes}
     out = []
     for kind, chosen in (
         (GoalSpending.WANTS_ONLY, {c for c in codes if i.classes[c] is BudgetClass.WANT}),

@@ -60,7 +60,6 @@ import {
 import { percentInput, toSignedMoneyString } from "./input";
 import { ALLOCATION_CATEGORY } from "./labels";
 import { type GoalView, useGoalView } from "./householdGoal";
-import { useOneOffCheck } from "./householdRecurring";
 import { PlanExplanationPanel } from "./planExplanation";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
 import { BudgetClassPanel, BudgetSection, type BudgetView, GoalsPanel, PlanError } from "./planningBudget";
@@ -214,9 +213,6 @@ interface PlanReady {
   epoch: number;
   current: HouseholdScenario | null;
   onChanged: () => void;
-  /** Haushalt › Budget's line „<N> Zahlungen vielleicht einmalig · Prüfen“ (§7.9 (c)), or null
-   * on a page without the check or while nothing is to check. */
-  oneOffLine: ReactNode;
 }
 
 interface PlanState {
@@ -249,14 +245,11 @@ const EMPTY_LEVERS = fillLevers(undefined);
 export function PlanProvider({
   page,
   backLabel,
-  oneOff = false,
   goal = false,
   children,
 }: {
   page: string;
   backLabel: string;
-  /** Read the one-off check for Haushalt › Budget (§7.9 (c)); Anlagen leaves it out. */
-  oneOff?: boolean;
   /** Read the household goal for Haushalt › Ziel (§7.9 (d)). */
   goal?: boolean;
   children: ReactNode;
@@ -276,8 +269,6 @@ export function PlanProvider({
   const annahmen = useDetail(ASSUMPTIONS);
   const goals = useDetail("goals");
   const budgetClass = useDetail("budget");
-  // An answer moves the window's means: the plan, the Budget and the key figures are read again.
-  const oneOffCheck = useOneOffCheck(oneOff, backLabel, state.reload);
 
   const data = state.data;
   const enough = data !== undefined && data.health.window.enough && data.plan.surplus != null;
@@ -384,7 +375,6 @@ export function PlanProvider({
       epoch,
       current,
       onChanged: state.reload,
-      oneOffLine: oneOffCheck.line,
     };
 
     if (annahmen.id !== null) {
@@ -435,8 +425,6 @@ export function PlanProvider({
           footer={dirty ? saveBar : null}
         />
       );
-    } else if (oneOffCheck.panel) {
-      panel = oneOffCheck.panel;
     }
   }
   if (panel === null && goalView.panel) panel = goalView.panel;
@@ -628,7 +616,6 @@ function BudgetTab({ ready }: { ready: PlanReady }) {
       <ScenarioRow group="ausgaben" />
       <DirtyNotice text={t.dirtyNoticeBudget} />
       <BudgetSection budget={ready.data.budget} onChanged={ready.onChanged} />
-      {ready.oneOffLine}
       <RestCard ready={ready} />
     </>
   );

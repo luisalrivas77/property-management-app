@@ -147,28 +147,15 @@ export function BudgetSection({ budget, onChanged }: { budget: BudgetView; onCha
           {budget.no_shares ? <p className="muted">{f.locale === "de" ? budget.no_shares : t.noShares}</p> : null}
           <ul className="budget-lines">
             {lines.map((l) => (
-              <li key={l.key}>
-                <a className="budget-line" data-key={l.key} {...line.linkProps(l.key)} aria-label={t.openClass(lineLabel(t, l.key))}>
-                  <span className="budget-edge" style={{ background: BAR_TOKEN[l.key] }} aria-hidden="true" />
-                  {l.key === "need" || l.key === "want" || l.key === "saving" ? <Dot mark={l.mark} t={t} /> : <span className="budget-dot-space" />}
-                  <span className="budget-line-name">
-                    <strong>{lineLabel(t, l.key)}</strong>
-                    <span className="muted">{lineSub(l, t)}</span>
-                  </span>
-                  <span className="budget-line-figures">
-                    <strong>{f.euro(l.monthly)}</strong>
-                    <span>{l.share != null ? f.wholePercent(l.share) : "–"}</span>
-                    {l.key === "need" || l.key === "want" || l.key === "saving" ? (
-                      <span className="muted">{targetText(l, l.key !== "saving", t, f)}</span>
-                    ) : null}
-                  </span>
-                  <span className="budget-chevron" aria-hidden="true">
-                    ›
-                  </span>
-                </a>
-              </li>
+              <BudgetLineRow key={l.key} line={l} link={line.linkProps(l.key)} />
             ))}
           </ul>
+          {budget.one_off ? (
+            // „Einmalig im Zeitraum“ (D308): beside the partition, never in it or in the bar.
+            <ul className="budget-lines" aria-label={lineLabel(t, "one_off")}>
+              <BudgetLineRow line={budget.one_off} link={line.linkProps(budget.one_off.key)} />
+            </ul>
+          ) : null}
         </section>
       ) : todos.length === 0 ? (
         <p className="muted">{t.budgetTooFew}</p>
@@ -215,6 +202,32 @@ export function BudgetSection({ budget, onChanged }: { budget: BudgetView; onCha
   );
 }
 
+function BudgetLineRow({ line, link }: { line: BudgetLine; link: ReturnType<ReturnType<typeof useDetail>["linkProps"]> }) {
+  const t = useT(planning);
+  const f = usePlanFormat();
+  const marked = line.key === "need" || line.key === "want" || line.key === "saving";
+  return (
+    <li>
+      <a className="budget-line" data-key={line.key} {...link} aria-label={t.openClass(lineLabel(t, line.key))}>
+        <span className="budget-edge" style={{ background: BAR_TOKEN[line.key] }} aria-hidden="true" />
+        {marked ? <Dot mark={line.mark} t={t} /> : <span className="budget-dot-space" />}
+        <span className="budget-line-name">
+          <strong>{lineLabel(t, line.key)}</strong>
+          <span className="muted">{lineSub(line, t)}</span>
+        </span>
+        <span className="budget-line-figures">
+          <strong>{f.euro(line.monthly)}</strong>
+          <span>{line.share != null ? f.wholePercent(line.share) : "–"}</span>
+          {marked ? <span className="muted">{targetText(line, line.key !== "saving", t, f)}</span> : null}
+        </span>
+        <span className="budget-chevron" aria-hidden="true">
+          ›
+        </span>
+      </a>
+    </li>
+  );
+}
+
 function lineSub(line: BudgetLine, t: T): string {
   if (line.key === "saving") return t.savingSub;
   const names = (line.codes ?? []).slice(0, 3).map((code) => categoryName(code.category));
@@ -251,7 +264,8 @@ export function BudgetClassPanel({
 }) {
   const t = useT(planning);
   const f = usePlanFormat();
-  const line = (budget.lines ?? []).find((l) => l.key === lineKey);
+  // „Einmalig im Zeitraum“ stands beside the partition (D308), so it is not among the lines.
+  const line = lineKey === "one_off" ? budget.one_off : (budget.lines ?? []).find((l) => l.key === lineKey);
   if (!line) return null;
   const codes = line.codes ?? [];
   const playable = new Set<string>(codes.map((code) => code.category));

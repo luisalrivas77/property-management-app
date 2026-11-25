@@ -3,11 +3,13 @@ of Konten › Umsätze (docs/phases/phase-10.md D269, D272–D276, §4, §6; no 
 
 Phase 10 step 0 writes the shapes; step 1 fills them (rules/budget/, services/budget.py,
 rules/account_month.py). The Budget is a partition of phase 9's household month over the same
-window (D273): Notwendiges + Wünsche + Einmalige Ausgaben + Ohne Einordnung + Sparen = E, the
-window's income, so Sparen ÷ E is phase 9's Sparquote. Every figure is computed on read and
-never stored; only the targets and the class overrides are stored, in the default household
-scenario's levers (D274). Amounts are exact sums to the cent or monthly means apportioned by
-largest remainder; shares are of E, four places half-up, None when E ≤ 0.
+window (D273): Notwendiges + Wünsche + Ohne Einordnung + Sparen = E, the window's income, so
+Sparen ÷ E is phase 9's Sparquote; the one-offs („Einmalig im Zeitraum“) stand beside the
+partition, not in it, and Sparen is the income less the regular spending (§7.12 (c), D308,
+amended 25 Nov 2026; until then the one-offs were a line of the partition). Every figure is
+computed on read and never stored; only the targets and the class overrides are stored, in
+the default household scenario's levers (D274). Amounts are exact sums to the cent or monthly
+means apportioned by largest remainder; shares are of E, four places half-up, None when E ≤ 0.
 """
 
 from datetime import date
@@ -62,7 +64,9 @@ class BudgetLineKey(StrEnum):
 
     NEED = "need"  # Notwendiges
     WANT = "want"  # Wünsche
-    ONE_OFF = "one_off"  # Einmalige Ausgaben, shown only in a window that holds one
+    # „Einmalig im Zeitraum“: served beside the partition (BudgetView.one_off), never in
+    # `lines` (D308, 25 Nov 2026)
+    ONE_OFF = "one_off"
     UNCATEGORIZED = "uncategorized"  # Ohne Einordnung, shown only when not zero
     SAVING = "saving"  # Sparen = E − A
 
@@ -152,19 +156,20 @@ class BudgetIncome(Schema):
 
 
 class BudgetMonth(Schema):
-    """One window month's partition, exact sums (D273 per month): the lines add up to E."""
+    """One window month's partition, exact sums (D273 per month): the lines add up to E, the
+    one-offs beside them (D308)."""
 
     month: YearMonth
     income: Money  # E
     need: Money
     want: Money
-    one_off: Money
+    one_off: Money  # beside the partition: the month's one-off spending
     uncategorized: Money
-    saving: Money  # S = E − A
+    saving: Money  # E − the regular spending (D308)
 
     @model_validator(mode="after")
     def _identity(self) -> Self:
-        if self.need + self.want + self.one_off + self.uncategorized + self.saving != self.income:
+        if self.need + self.want + self.uncategorized + self.saving != self.income:
             raise ValueError(f"{self.month}: the lines must add up to the income")
         return self
 
@@ -223,6 +228,9 @@ class BudgetView(Schema):
     months: list[BudgetMonth] = Field(default_factory=list)
     income: BudgetIncome | None = None
     lines: list[BudgetLine] = Field(default_factory=list)
+    # „Einmalig im Zeitraum“ (D308): the window's one-off spending beside the partition, its
+    # codes inside; None when the window holds none
+    one_off: BudgetLine | None = None
     housing: BudgetHousing | None = None
     targets: BudgetTargets = Field(default_factory=BudgetTargets)
     no_shares: str | None = None
@@ -236,8 +244,12 @@ class BudgetView(Schema):
         keys = [line.key for line in self.lines]
         if keys != sorted(keys, key=list(BudgetLineKey).index) or len(keys) != len(set(keys)):
             raise ValueError("each line once, in BudgetLineKey's order")
+        if BudgetLineKey.ONE_OFF in keys:
+            raise ValueError("the one-offs stand beside the partition (D308)")
+        if self.one_off is not None and self.one_off.key is not BudgetLineKey.ONE_OFF:
+            raise ValueError("the one-off figure is the one-off line")
         if self.income is None:
-            if self.lines or self.months or self.housing is not None:
+            if self.lines or self.months or self.housing is not None or self.one_off is not None:
                 raise ValueError("no figure without an income")
             return self
         if sum((line.monthly for line in self.lines), Decimal("0.00")) != self.income.monthly:

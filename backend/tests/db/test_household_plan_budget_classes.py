@@ -55,7 +55,10 @@ def test_an_override_carried_from_the_default_or_the_row_previewed_is_not_refuse
     monkeypatch.setattr(
         budget_rules,
         "movable",
-        lambda code: code not in (C.HH_RESTAURANT, C.HH_SUPERMARKET) and movable(code),
+        # D307: movable takes the codes one-off in force as well
+        lambda code, *codes: (
+            code not in (C.HH_RESTAURANT, C.HH_SUPERMARKET) and movable(code, *codes)
+        ),
     )
 
     # A save: the default's override copied into a new scenario is carried; one the default

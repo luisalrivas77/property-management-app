@@ -31,6 +31,7 @@ from pydantic import Field, model_validator
 
 from hausbuch.rules.health.month import cashflow_rows, household_month, rental_month
 from hausbuch.rules.household.cashflow import month_cashflow
+from hausbuch.rules.household.taxonomy import ONE_OFF, one_off_codes
 from hausbuch.rules.recurring import SpendingLine
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.budget import (
@@ -70,11 +71,18 @@ class MonthInput(Schema):
     private: list[Booking] = Field(default_factory=list)
     saved_links: Money = ZERO
     rental: list[Booking] = Field(default_factory=list)
+    # the private lines, by position, a person marked one-off (D297; one_off_switches.yaml)
+    marked: list[int] = Field(default_factory=list)
 
 
-def household(month: MonthInput, case_id: str) -> tuple[HouseholdMonth, list[MonthLine]]:
+def household(
+    month: MonthInput,
+    case_id: str,
+    one_off_codes: frozenset[AllocationCategory] = ONE_OFF,
+) -> tuple[HouseholdMonth, list[MonthLine]]:
     """Phase 9's household month of one input month (over phase 6's cashflow of its private
-    lines, as services.health reads it) and those private lines."""
+    lines, as services.health reads it) and those private lines; `one_off_codes` the codes in
+    force (D307), the month's `marked` lines its one-off marks (D297)."""
 
     def lines(rows: list[Booking], side: str) -> list[MonthLine]:
         return [
@@ -91,7 +99,11 @@ def household(month: MonthInput, case_id: str) -> tuple[HouseholdMonth, list[Mon
     blocks = (
         [rental_month(month.month, PROPERTY, lines(month.rental, "rental"))] if month.rental else []
     )
-    return household_month(cashflow, blocks, lines=private), private
+    marked = frozenset(private[i].allocation_id for i in month.marked)
+    hm = household_month(
+        cashflow, blocks, lines=private, one_off_ids=marked, one_off_codes=one_off_codes
+    )
+    return hm, private
 
 
 # --- Expectations ------------------------------------------------------------------------
@@ -152,17 +164,26 @@ class BudgetExpect(Schema):
     months: list[BudgetMonth] = Field(default_factory=list)
     income: IncomeExpect | None = None
     lines: list[LineExpect] = Field(default_factory=list)
+    # D308 (amended 25 Nov 2026): „Einmalig im Zeitraum“ beside the partition, not a line of it
+    one_off: LineExpect | None = None
     housing: HousingExpect | None = None
-    savings_rate: Dec | None = None  # rules.health.figures.savings_rate(months).rate
+    savings_rate: Dec | None = None  # the regular saving ÷ ΣE (D308)
     no_shares: bool = False
     todos: list[HealthTodoCode] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _partition(self) -> Self:
         if self.income is None:
-            if self.lines or self.months:
+            if self.lines or self.months or self.one_off is not None:
                 raise ValueError("no figure without an income")
             return self
+        if any(li.key is BudgetLineKey.ONE_OFF for li in self.lines):
+            raise ValueError("the one-offs stand beside the partition (D308)")
+        if self.one_off is not None and self.one_off.key is not BudgetLineKey.ONE_OFF:
+            raise ValueError("the one-off figure is the one-off line")
+        one_off = sum((m.one_off for m in self.months), ZERO)
+        if one_off != (self.one_off.total if self.one_off else ZERO):
+            raise ValueError("the one-off figure is the months' one-offs")
         if sum((li.total for li in self.lines), ZERO) != self.income.total:
             raise ValueError("the lines do not add up to the income (D273)")
         if sum((li.monthly for li in self.lines), ZERO) != self.income.monthly:
@@ -173,11 +194,38 @@ class BudgetExpect(Schema):
         return self
 
 
+class ScenarioRow(Schema):
+    """A default-scenario row's one-off switches and when it was stored (D308: a stored month
+    reads the switches of the row in force when it was stored)."""
+
+    created_at: str  # ISO instant, UTC
+    one_off_overrides: dict[AllocationCategory, bool] = Field(default_factory=dict)
+
+
 class BudgetCase(Lenient):
     months: list[MonthInput]
     overrides: dict[AllocationCategory, BudgetClass] = Field(default_factory=dict)
     targets: BudgetTargets = Field(default_factory=BudgetTargets)
+    # D307: the household's switches (HouseholdLevers.one_off_overrides), or the scenario rows
+    # and the instant the month was stored (one_off_switches.yaml's stored_month_reads_its_day)
+    one_off_overrides: dict[AllocationCategory, bool] = Field(default_factory=dict)
+    scenarios: list[ScenarioRow] = Field(default_factory=list)
+    stored_at: str | None = None
     expect: BudgetExpect
+
+    def switches(self) -> dict[AllocationCategory, bool]:
+        """The switches in force: the case's own, or those of the newest scenario row stored
+        on or before `stored_at`."""
+        if not self.scenarios:
+            return self.one_off_overrides
+        rows = sorted(
+            (r for r in self.scenarios if self.stored_at and r.created_at <= self.stored_at),
+            key=lambda r: r.created_at,
+        )
+        return rows[-1].one_off_overrides if rows else {}
+
+    def codes(self) -> frozenset[AllocationCategory]:
+        return one_off_codes(self.switches())
 
 
 class BudgetFixture(Schema):
@@ -309,7 +357,6 @@ class OneOffMonthExpect(Schema):
 
 
 class OneOffExpect(Schema):
-    candidates: list[str]
     months: list[OneOffMonthExpect] = Field(default_factory=list)
     mean_regular_spending: Money | None = None
     code_means: dict[AllocationCategory, Money] = Field(default_factory=dict)
@@ -423,6 +470,7 @@ MODELS: dict[str, type[Schema]] = {
     "budget_partition": BudgetFixture,
     "budget_overrides": BudgetFixture,
     "budget_marks": BudgetFixture,
+    "one_off_switches": BudgetFixture,
     "budget_references": ReferencesFixture,
     "recurring": RecurringFixture,
     "one_off_marks": OneOffFixture,

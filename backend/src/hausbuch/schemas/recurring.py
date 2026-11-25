@@ -14,7 +14,7 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from .common import Money, NonNegativeMoney, Schema
-from .health import GroupPayment, Window, YearMonth
+from .health import GroupPayment, YearMonth
 
 
 class RecurringInterval(StrEnum):
@@ -88,28 +88,6 @@ class RecurringPayments(Schema):
     yearly_total: NonNegativeMoney
     series: list[RecurringSeries] = Field(default_factory=list)
     hidden: list[RecurringSeries] = Field(default_factory=list)
-
-
-class OneOffCandidate(Schema):
-    """One payment that may be one-off (D297): its line, what was paid (`payment.amount`,
-    positive), its code's median month over the window, and the newest answer when it has
-    one (None for a candidate)."""
-
-    payment: GroupPayment
-    code_median: Money  # negative only for a code whose refunds outweigh it most months
-    answer: SpendingMarkAnswer | None = None
-
-
-class OneOffCandidates(Schema):
-    """GET /household/one-off-candidates (§7.9 (c) 1): the payments not answered yet that
-    may be one-off, and the window's payments a person answered, with their newest answer,
-    so an answer can be changed. Nothing while the window has fewer than three closed
-    months."""
-
-    as_of: date
-    window: Window
-    candidates: list[OneOffCandidate] = Field(default_factory=list)
-    answered: list[OneOffCandidate] = Field(default_factory=list)
 
 
 class OneOffMarkRequest(Schema):

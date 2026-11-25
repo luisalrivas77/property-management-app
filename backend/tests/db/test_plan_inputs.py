@@ -272,3 +272,31 @@ def test_two_workspaces_never_share_a_part(app_engine, fresh_workspaces):
         assert len(plan_inputs.STORE) == 2
     finally:
         plan_inputs.clear()
+
+
+def test_a_changed_one_off_switch_after_a_warm_read_gives_the_uncached_answer(world):
+    """Phase 10 D307: the one-off switches are levers the rules apply to the kept month
+    inputs, never kept themselves. After a warm GET /household-plan (Elektronik one-off, the
+    taxonomy's default), a preview that switches Elektronik to regular, and one that switches
+    the restaurant to one-off, each equal the store bypassed and differ from the unswitched
+    answer; the unswitched preview still equals its own uncached answer afterwards."""
+    levers, private = _projected(world)
+    line = private.line(date(2027, 2, 11), "-900.00", name="Elektromarkt Muster")
+    _book(world, line, "-900.00", C.HH_ELECTRONICS)
+    world.query(plan.household_plan, TODAY)  # warm: the month inputs kept
+    base = levers.model_dump(mode="json")
+    switched = {
+        "regular": HouseholdLevers.model_validate(
+            base | {"one_off_overrides": {"hh_electronics": False}}
+        ),
+        "one_off": HouseholdLevers.model_validate(
+            base | {"one_off_overrides": {"hh_restaurant": True}}
+        ),
+    }
+    plain = _json(world, plan.preview_plan, levers)
+    assert plain == _uncached(world, plan.preview_plan, levers)
+    for name, lv in switched.items():
+        warm = _json(world, plan.preview_plan, lv)
+        assert warm == _uncached(world, plan.preview_plan, lv), name
+        assert warm != plain, name
+    assert _json(world, plan.preview_plan, levers) == plain

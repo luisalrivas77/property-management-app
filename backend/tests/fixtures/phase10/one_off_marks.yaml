@@ -9,21 +9,20 @@
 # ignored). The closed window is Jan-Oct 2026 (D231) unless a case says otherwise. No rental
 # account, no transfer links.
 #
+# Amended 25 Nov 2026 (phase 10 §7.12 (b), D307): the candidate search („Vielleicht
+# einmalig?“) is gone, so every `candidates` expectation and the candidates-only case
+# too_few_closed_months are dropped; the marks and what they change are unchanged.
+# hh_electronics is one-off by its code (D307), so the former yearly_switch_not_a_candidate
+# case now pins that a purchase in a one-off code is one-off spending without a mark
+# (electronics_one_off_by_code).
+#
 # Rules this file pins:
-# - Candidate: a spending line whose code is not one-off (D236), not part of a recurring
-#   series (rules/recurring, §7.9 (b); the quarterly insurance here is one), not answered yet,
-#   amount >= 250 EUR and >= 3 x its code's median month, the median over the window's closed
-#   months with a month without that code counting 0. Fewer than three closed months: none.
 # - A line whose newest mark is `one_off` moves from regular to one-off spending in
 #   rules/health/month.household_month (private_spending, saved and income unchanged), out of
 #   its code's mean in rules/plan's spending (the per-code monthly mean spending in play uses,
 #   D263), and into the Budget's one-off line (rules/budget). With no marks every phase 9 and
 #   phase 10 fixture holds unchanged.
-# - A payment outside its payee's series amount band (the 480 doctor's bill among 40s) is not
-#   part of the series and can be a candidate. `candidates` are compared as a set.
-# - The yearly payment of a switch from monthly to yearly (recurring.yaml, D296 amended 24 Nov
-#   2026) is a payment of its series, so never a candidate (case yearly_switch_not_a_candidate).
-#   A line's `account` defaults to `giro`.
+# - A line's `account` defaults to `giro`.
 # - mean_regular_spending: Σ regular_spending ÷ the window's months, to the cent.
 #
 # Worked by hand: regular spending per month without marks is Jan 900, Feb 600, Mar 600 (the
@@ -83,7 +82,6 @@ cases:
   - {id: CAR_10, date: '2026-10-12', payee: 'Kfz-Werkstatt Muster', category: hh_car_service, amount: '-870.00'}
   marks: []
   expect:
-    candidates: [CAR_10, HEA_04]
     months:
     - {month: '2026-03', private_spending: '9100.00', one_off_spending: '8500.00', regular_spending: '600.00'}
     - {month: '2026-04', private_spending: '1340.00', one_off_spending: '0.00', regular_spending: '1340.00'}
@@ -145,7 +143,6 @@ cases:
   marks:
   - {allocation: CAR_10, answer: one_off}
   expect:
-    candidates: [HEA_04]
     months:
     - {month: '2026-03', private_spending: '9100.00', one_off_spending: '8500.00', regular_spending: '600.00'}
     - {month: '2026-04', private_spending: '1340.00', one_off_spending: '0.00', regular_spending: '1340.00'}
@@ -208,7 +205,6 @@ cases:
   - {allocation: CAR_10, answer: one_off}
   - {allocation: HEA_04, answer: one_off}
   expect:
-    candidates: []
     months:
     - {month: '2026-03', private_spending: '9100.00', one_off_spending: '8500.00', regular_spending: '600.00'}
     - {month: '2026-04', private_spending: '1340.00', one_off_spending: '480.00', regular_spending: '860.00'}
@@ -271,7 +267,6 @@ cases:
   - {allocation: CAR_10, answer: one_off}
   - {allocation: CAR_10, answer: regular}
   expect:
-    candidates: [HEA_04]
     months:
     - {month: '2026-03', private_spending: '9100.00', one_off_spending: '8500.00', regular_spending: '600.00'}
     - {month: '2026-04', private_spending: '1340.00', one_off_spending: '0.00', regular_spending: '1340.00'}
@@ -333,7 +328,6 @@ cases:
   marks:
   - {allocation: CAR_10, answer: one_off}
   expect:
-    candidates: [CAR_10_NEW, HEA_04]
     months:
     - {month: '2026-03', private_spending: '9100.00', one_off_spending: '8500.00', regular_spending: '600.00'}
     - {month: '2026-04', private_spending: '1340.00', one_off_spending: '0.00', regular_spending: '1340.00'}
@@ -341,19 +335,8 @@ cases:
     mean_regular_spending: '871.00'
     code_means: {hh_car_service: '87.00', hh_health: '84.00'}
     budget_one_off: {'2026-03': '8500.00', '2026-04': '0.00', '2026-10': '0.00'}
-- id: too_few_closed_months
-  description: "only January and February are closed on 10 March, so nothing is a candidate yet"
-  today: '2026-03-10'
-  lines:
-  - {id: SAL_01, date: '2026-01-28', payee: 'Arbeitgeber A GmbH', category: hh_salary, amount: '4000.00'}
-  - {id: HEA_01, date: '2026-01-03', payee: 'Praxis Dr. Muster', category: hh_health, amount: '-40.00'}
-  - {id: SAL_02, date: '2026-02-28', payee: 'Arbeitgeber A GmbH', category: hh_salary, amount: '4000.00'}
-  - {id: HEA_02, date: '2026-02-03', payee: 'Praxis Dr. Muster', category: hh_health, amount: '-900.00'}
-  marks: []
-  expect:
-    candidates: []
-- id: yearly_switch_not_a_candidate
-  description: "D296 amended (2): the 299.99 paid on 5 Oct after a monthly 29.99 is the switch's yearly payment, so no candidate (without the switch it would be: 299.99 >= 250 and >= 3 x the code's median month 29.99); the 600 electronics purchase is one (median 0)"
+- id: electronics_one_off_by_code
+  description: "phase 10 D307 (amended 25 Nov 2026, was yearly_switch_not_a_candidate): hh_electronics is one-off by its code, so the 600 purchase in June is one-off spending without a mark; the yearly 299.99 after a monthly 29.99 stays regular"
   today: '2026-11-24'
   lines:
   - {id: 'SPK_01', date: '2026-01-02', payee: 'Sprachkurs Online GmbH', category: 'hh_subscriptions', amount: '-29.99'}
@@ -368,5 +351,13 @@ cases:
   - {id: SPK_Y1, date: '2026-10-05', payee: 'Sprachkurs Online GmbH', category: hh_subscriptions, amount: '-299.99', account: karte}
   - {id: ELE_06, date: '2026-06-10', payee: 'Elektromarkt Muster', category: hh_electronics, amount: '-600.00'}
   marks: []
+  # June 29.99 + 600.00 = 629.99, of which 600.00 one-off by its code (D307); Jan-Sep 9 x 29.99
+  # = 269.91 regular, Oct 299.99 regular: Σ regular 569.90 over 10 months = 56.99 (also
+  # hh_subscriptions' mean, the only regular code); hh_electronics has no regular mean.
   expect:
-    candidates: [ELE_06]
+    months:
+    - {month: '2026-06', private_spending: '629.99', one_off_spending: '600.00', regular_spending: '29.99'}
+    - {month: '2026-10', private_spending: '299.99', one_off_spending: '0.00', regular_spending: '299.99'}
+    mean_regular_spending: '56.99'
+    code_means: {hh_subscriptions: '56.99', hh_electronics: '0.00'}
+    budget_one_off: {'2026-06': '600.00', '2026-10': '0.00'}

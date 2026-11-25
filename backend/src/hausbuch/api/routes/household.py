@@ -29,12 +29,11 @@
   the confirmed private line paid them (D161 (1), D143's rule). 404 as above.
 - GET /household/recurring (phase 10 §7.9 (b), D296): the recurring payments as of today
   (Berlin), the shown ones and those marked „kein Abo“.
-- GET /household/one-off-candidates (§7.9 (c), D297): the payments over the closed months'
-  window that may be one-off, and those a person answered.
-- POST /household/one-off-marks {allocation_id, answer}: „Ja, einmalig“ (`one_off`) or
-  „Nein, normal“ (`regular`) on a payment GET /household/one-off-candidates lists today (a
-  candidate or an answered one); 201 with the stored answer; 404 for any other allocation.
-  The newest answer counts.
+- POST /household/one-off-marks {allocation_id, answer}: „Als einmalig markieren“
+  (`one_off`) or „Doch normal zählen“ (`regular`) on a payment's detail panel (phase 10
+  §7.12 (b), D307; the candidate search of D297 and GET /household/one-off-candidates are
+  gone): a confirmed private payment counted as spending, booked up to today; 201 with the
+  stored answer; 404 for any other allocation. The newest answer counts.
 - POST /household/recurring-marks {key, interval, answer}: „kein Abo“ (`hidden`) or „Wieder
   anzeigen“ (`shown`) on a series; 201 with the stored answer.
 """
@@ -56,7 +55,6 @@ from hausbuch.schemas.household import (
     TransferUnlinkBody,
 )
 from hausbuch.schemas.recurring import (
-    OneOffCandidates,
     OneOffMarkRequest,
     RecurringPayments,
     SeriesMarkRequest,
@@ -135,11 +133,6 @@ def household_cashflow(month: Month, cmd: Cmd) -> HouseholdCashflow:
 @router.get("/household/recurring")
 def household_recurring(cmd: Cmd) -> RecurringPayments:
     return cmd.read(recurring.recurring_payments, datetime.now(LOCAL_TIME_ZONE).date())
-
-
-@router.get("/household/one-off-candidates")
-def household_one_off_candidates(cmd: Cmd) -> OneOffCandidates:
-    return cmd.read(recurring.one_off_candidates, datetime.now(LOCAL_TIME_ZONE).date())
 
 
 @router.post("/household/one-off-marks", status_code=201)

@@ -6747,34 +6747,6 @@
         }
       }
     },
-    "/api/household/one-off-candidates": {
-      "get": {
-        "summary": "Household One Off Candidates",
-        "operationId": "household_one_off_candidates_api_household_one_off_candidates_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OneOffCandidates"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/household/one-off-marks": {
       "post": {
         "summary": "Household One Off Mark",
@@ -15833,7 +15805,7 @@
           "saving"
         ],
         "title": "BudgetMonth",
-        "description": "One window month's partition, exact sums (D273 per month): the lines add up to E."
+        "description": "One window month's partition, exact sums (D273 per month): the lines add up to E, the\none-offs beside them (D308)."
       },
       "BudgetReference": {
         "properties": {
@@ -16072,6 +16044,16 @@
             },
             "type": "array",
             "title": "Lines"
+          },
+          "one_off": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BudgetLine"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "housing": {
             "anyOf": [
@@ -23229,6 +23211,18 @@
                 "type": "null"
               }
             ]
+          },
+          "one_offs_left_out_since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "One Offs Left Out Since"
           }
         },
         "additionalProperties": false,
@@ -24177,6 +24171,16 @@
             },
             "type": "object",
             "title": "Budget Class Overrides"
+          },
+          "one_off_overrides": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/AllocationCategory"
+            },
+            "type": "object",
+            "title": "One Off Overrides"
           },
           "goal": {
             "anyOf": [
@@ -28739,70 +28743,6 @@
         ],
         "title": "OneOff",
         "description": "A one-off in `month`. §7.3 amended (PR #434 review D): a one-off in a month at or\nbefore the newest closed month may stay in a scenario row; the plan ignores it, since the\nmeasured months already hold it. Only a month after the horizon's end is refused."
-      },
-      "OneOffCandidate": {
-        "properties": {
-          "payment": {
-            "$ref": "#/components/schemas/GroupPayment"
-          },
-          "code_median": {
-            "type": "string",
-            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
-            "title": "Code Median"
-          },
-          "answer": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SpendingMarkAnswer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "payment",
-          "code_median"
-        ],
-        "title": "OneOffCandidate",
-        "description": "One payment that may be one-off (D297): its line, what was paid (`payment.amount`,\npositive), its code's median month over the window, and the newest answer when it has\none (None for a candidate)."
-      },
-      "OneOffCandidates": {
-        "properties": {
-          "as_of": {
-            "type": "string",
-            "format": "date",
-            "title": "As Of"
-          },
-          "window": {
-            "$ref": "#/components/schemas/Window"
-          },
-          "candidates": {
-            "items": {
-              "$ref": "#/components/schemas/OneOffCandidate"
-            },
-            "type": "array",
-            "title": "Candidates"
-          },
-          "answered": {
-            "items": {
-              "$ref": "#/components/schemas/OneOffCandidate"
-            },
-            "type": "array",
-            "title": "Answered"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "as_of",
-          "window"
-        ],
-        "title": "OneOffCandidates",
-        "description": "GET /household/one-off-candidates (§7.9 (c) 1): the payments not answered yet that\nmay be one-off, and the window's payments a person answered, with their newest answer,\nso an answer can be changed. Nothing while the window has fewer than three closed\nmonths."
       },
       "OneOffMarkRequest": {
         "properties": {
@@ -36163,6 +36103,11 @@
             },
             "type": "array",
             "title": "Months"
+          },
+          "one_offs_left_out": {
+            "type": "boolean",
+            "title": "One Offs Left Out",
+            "default": false
           }
         },
         "additionalProperties": false,

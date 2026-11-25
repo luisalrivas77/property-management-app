@@ -215,6 +215,35 @@ def test_codes_and_groups():
     assert S.refused_code(C.RENT_COLD) is not None
 
 
+def test_one_off_codes_in_force_follow_the_switches():
+    """Phase 10 D307: a group's change covers a code a switch made regular, never one that is
+    one-off in force; a car purchase change stands only beside its switch to regular, while a
+    change of a code D307 made one-off still reads (a row stored before it), refused on save
+    (services.household_scenarios.check_levers)."""
+    regular = frozenset(S.ONE_OFF) - {C.HH_CAR_PURCHASE}
+    assert C.HH_CAR_PURCHASE in S.members(C.HH_MOBILITY, regular)
+    assert C.HH_CAR_PURCHASE in S.members(C.HH_MOBILITY, frozenset())
+    assert S.members(C.HH_ELECTRONICS, regular) == {C.HH_ELECTRONICS}
+    car = {"code": "hh_car_purchase", "monthly": "0.00", "from_month": "2027-06"}
+    HouseholdLevers.model_validate(
+        {"one_off_overrides": {"hh_car_purchase": False}, "spending_changes": [car]}
+    )
+    with pytest.raises(ValueError, match="hh_car_purchase is a one-off code"):
+        HouseholdLevers.model_validate({"spending_changes": [car]})
+    with pytest.raises(ValueError, match="hh_car_purchase is a one-off code"):
+        HouseholdLevers.model_validate(
+            {"one_off_overrides": {"hh_car_purchase": True}, "spending_changes": [car]}
+        )
+    electronics = {"code": "hh_electronics", "monthly": "50.00", "from_month": "2027-06"}
+    HouseholdLevers.model_validate({"spending_changes": [electronics]})
+    assert (
+        S.in_play(
+            HouseholdLevers.model_validate({"spending_changes": [electronics]}).spending_changes
+        )
+        == []
+    )
+
+
 def test_month_spending_sums_to_the_household_months_regular_spending():
     """The codes per month come from phase 6's cashflow, D234 and the one-off codes applied,
     and sum to rules.health.month's regular spending of the same month."""

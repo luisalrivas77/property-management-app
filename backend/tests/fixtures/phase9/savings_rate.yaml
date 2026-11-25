@@ -5,6 +5,13 @@
 #
 # Step 0 recomputes every `expect` on load (tests/fixture_models_phase9.py). Amounts are
 # invented, except `three_months`, which is §15.2's window.
+#
+# Amended 25 Nov 2026 (phase 10 §7.12 (c), D308: the key figures count one-offs as the Budget
+# does). Over the window, one-off spending is left out of the saving: `saved` = Σ (S + one-off)
+# = Σ E − Σ regular spending, `rate` = saved ÷ Σ E, `rate_without_principal` = (saved −
+# principal) ÷ Σ E, `one_off_spending` shown beside it, `rate_regular` null (it is `rate` now),
+# `one_offs_left_out: true` (a stored row from before has false and the old meaning, D242).
+# A month's own rate (`months`) stays S ÷ E: the Monat tile is unchanged in meaning.
 cases:
   - id: three_months
     description: §15.2
@@ -12,9 +19,12 @@ cases:
       - {month: "2027-03", saved: "1490.00", income: "5390.00", one_off_spending: "0.00", principal: "310.00"}
       - {month: "2027-04", saved: "1241.00", income: "5391.00", one_off_spending: "0.00", principal: "311.00"}
       - {month: "2027-05", saved: "-10458.00", income: "5842.00", one_off_spending: "12000.00", principal: "312.00"}
-    expect: {saved: "-7727.00", income: "16623.00", one_off_spending: "12000.00",
-      principal: "933.00", rate: "-0.4648", rate_regular: "0.2571",
-      rate_without_principal: "-0.5210",
+    # saved 1490 + 1241 + (−10458 + 12000) = 4273.00 (was −7727.00); rate 4273 ÷ 16623 =
+    # 0.25705… → 0.2571 (was −0.4648, the old rate_regular); without principal (4273 − 933) ÷
+    # 16623 = 3340 ÷ 16623 = 0.20093… → 0.2009 (was −0.5210)
+    expect: {saved: "4273.00", income: "16623.00", one_off_spending: "12000.00",
+      principal: "933.00", rate: "0.2571", rate_regular: null,
+      rate_without_principal: "0.2009", one_offs_left_out: true,
       months: {"2027-03": "0.2764", "2027-04": "0.2302", "2027-05": "-1.7901"}}
 
   - id: with_one_off
@@ -22,9 +32,11 @@ cases:
       - {month: "2027-01", saved: "800.00", income: "5000.00", one_off_spending: "0.00", principal: "300.00"}
       - {month: "2027-02", saved: "-1200.00", income: "5000.00", one_off_spending: "2500.00", principal: "300.00"}
       - {month: "2027-03", saved: "900.00", income: "5100.00", one_off_spending: "0.00", principal: "300.00"}
-    expect: {saved: "500.00", income: "15100.00", one_off_spending: "2500.00",
-      principal: "900.00", rate: "0.0331", rate_regular: "0.1987",
-      rate_without_principal: "-0.0265",
+    # saved 800 + (−1200 + 2500) + 900 = 3000.00 (was 500.00); rate 3000 ÷ 15100 = 0.19867… →
+    # 0.1987 (was 0.0331); without principal (3000 − 900) ÷ 15100 = 0.13907… → 0.1391 (was −0.0265)
+    expect: {saved: "3000.00", income: "15100.00", one_off_spending: "2500.00",
+      principal: "900.00", rate: "0.1987", rate_regular: null,
+      rate_without_principal: "0.1391", one_offs_left_out: true,
       months: {"2027-01": "0.1600", "2027-02": "-0.2400", "2027-03": "0.1765"}}
 
   - id: rate_without_principal
@@ -34,8 +46,9 @@ cases:
       - {month: "2027-04", saved: "1000.00", income: "4000.00", one_off_spending: "0.00", principal: "1500.00"}
       - {month: "2027-05", saved: "1000.00", income: "4000.00", one_off_spending: "0.00", principal: "1500.00"}
     expect: {saved: "3000.00", income: "12000.00", one_off_spending: "0.00",
-      principal: "4500.00", rate: "0.2500", rate_regular: "0.2500",
-      rate_without_principal: "-0.1250",
+      # no one-off: saved and both rates unchanged; rate_regular null (it is rate now)
+      principal: "4500.00", rate: "0.2500", rate_regular: null,
+      rate_without_principal: "-0.1250", one_offs_left_out: true,
       months: {"2027-03": "0.2500", "2027-04": "0.2500", "2027-05": "0.2500"}}
 
   - id: income_zero
@@ -46,6 +59,7 @@ cases:
       - {month: "2027-05", saved: "-300.00", income: "0.00", one_off_spending: "0.00", principal: "0.00"}
     expect: {saved: "-1200.00", income: "-100.00", one_off_spending: "0.00",
       principal: "0.00", rate: null, rate_regular: null, rate_without_principal: null,
+      one_offs_left_out: true,
       months: {"2027-03": "-2.5000", "2027-04": null, "2027-05": null}}
 
   - id: twelve_months
@@ -63,8 +77,9 @@ cases:
       - {month: "2027-04", saved: "900.00", income: "5000.00", one_off_spending: "0.00", principal: "310.00"}
       - {month: "2027-05", saved: "950.00", income: "5000.00", one_off_spending: "0.00", principal: "310.00"}
     expect: {saved: "8100.00", income: "60000.00", one_off_spending: "0.00",
-      principal: "3720.00", rate: "0.1350", rate_regular: "0.1350",
-      rate_without_principal: "0.0730",
+      # no one-off: unchanged; rate_regular null (it is rate now)
+      principal: "3720.00", rate: "0.1350", rate_regular: null,
+      rate_without_principal: "0.0730", one_offs_left_out: true,
       months: {"2026-06": "0.0800", "2026-07": "0.0900", "2026-08": "0.1000",
         "2026-09": "0.1100", "2026-10": "0.1200", "2026-11": "0.1300", "2026-12": "0.1400",
         "2027-01": "0.1500", "2027-02": "0.1600", "2027-03": "0.1700", "2027-04": "0.1800",

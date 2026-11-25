@@ -1,8 +1,8 @@
-"""GET /api/household/recurring, GET /api/household/one-off-candidates, POST
-/api/household/one-off-marks and POST /api/household/recurring-marks (docs/phases/
-phase-10.md §7.9 (b), (c); D296, D297) over HTTP: status codes, the read shapes, validation
-and workspace isolation. What a mark changes is tests/db/test_services_recurring.py; the
-arithmetic is the phase 10 fixtures."""
+"""GET /api/household/recurring, POST /api/household/one-off-marks and POST
+/api/household/recurring-marks (docs/phases/phase-10.md §7.9 (b), (c), §7.12 (b); D296, D297,
+D307) over HTTP: status codes, the read shapes, validation and workspace isolation. GET
+/api/household/one-off-candidates went with D307. What a mark changes is
+tests/db/test_services_recurring.py; the arithmetic is the phase 10 fixtures."""
 
 from uuid import uuid4
 
@@ -38,9 +38,7 @@ def test_the_reads_of_an_empty_household(client_a, sessions):
     assert got["history_start"] == "2026-01-01" and got["as_of"]
     assert (got["count"], got["series"], got["hidden"]) == (0, [], [])
     assert got["yearly_total"] == "0.00"
-    got = ok(client_a.get(CANDIDATES))
-    assert set(got["window"]) >= {"months", "enough"}  # no account: every ended month closed
-    assert (got["candidates"], got["answered"]) == ([], [])
+    assert client_a.get(CANDIDATES).status_code == 404  # removed by D307
 
 
 def test_a_series_answer_is_stored(client_a, client_b, sessions):

@@ -63,7 +63,6 @@ export const healthFigures = defineMessages({
     appliedBy: (who: string | null, date: string) => `, übernommen${who ? ` von ${who}` : ""} am ${date}`,
     aMember: "einem Mitglied",
     annualised: (months: number) => `; hochgerechnet aus ${months} Monaten`,
-    withoutOneOffs: "ohne Einmalausgaben",
     ofWhichPrincipal: "davon Tilgung",
     withoutPrincipal: "ohne Tilgung",
     savingsExplained: (range: string) =>
@@ -149,7 +148,6 @@ export const healthFigures = defineMessages({
     appliedBy: (who: string | null, date: string) => `, applied${who ? ` by ${who}` : ""} on ${date}`,
     aMember: "a member",
     annualised: (months: number) => `; projected from ${months} months`,
-    withoutOneOffs: "without one-off spending",
     ofWhichPrincipal: "of which loan repayment",
     withoutPrincipal: "without loan repayment",
     savingsExplained: (range: string) =>

@@ -140,8 +140,12 @@ bases:
         regular_spending: "4300.00", rental_result: "-308.00", rental_cash: "-620.00", income: "5842.00",
         spending: "16300.00", saved: "-10458.00", principal: "312.00", interest: "638.00",
         free_cash: "1230.00", savings_rate: "-1.7901", invested: "550.00"}
-    savings_rate: {saved: "-7727.00", income: "16623.00", one_off_spending: "12000.00",
-      principal: "933.00", rate: "-0.4648", rate_regular: "0.2571", rate_without_principal: "-0.5210"}
+    # phase 10 D308 (amended 25 Nov 2026): the May car purchase (12,000) is left out of the
+    # window's saving, as savings_rate.yaml three_months: saved 4273.00, rate 4273 ÷ 16623 →
+    # 0.2571, without principal 3340 ÷ 16623 → 0.2009; rate_regular gone (it is rate now)
+    savings_rate: {saved: "4273.00", income: "16623.00", one_off_spending: "12000.00",
+      principal: "933.00", rate: "0.2571", rate_regular: null, rate_without_principal: "0.2009",
+      one_offs_left_out: true}
     reserve: {counted: [a_current, b_current, savings, card], amount: "16830.00", need: "4470.00",
       months: "3.8", target: "26820.00", gap: "9990.00", state: below}
     net_worth: {gross: "365600.00", liabilities: "237220.00", total: "128380.00"}
@@ -154,7 +158,8 @@ bases:
       - {month_end: "2027-05-31", total: "128380.00", change: "-11770.00", saved: "-10458.00", other: "-1312.00"}
     lights:
       reserve: {colour: amber, sentences: [reserve.amber]}
-      savings_rate: {colour: red, sentences: [savings_rate.red, savings_rate.red_regular]}
+      # 0.2571 is not below the only limit (red 0) and there is no green limit: no colour (D308)
+      savings_rate: {colour: null, sentences: []}
       ltv: {colour: amber, sentences: [ltv.intro, ltv.amber]}
       debt_service_ratio: {colour: green, sentences: [debt_service_ratio.intro, debt_service_ratio.green]}
       debt_ratio: {colour: null, sentences: []}

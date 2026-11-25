@@ -29,6 +29,7 @@ Readings of the spec (named in the fixture's header too):
   every other code (phases 2-4), bank_fees and uncategorized included.
 """
 
+from collections.abc import Mapping
 from types import MappingProxyType
 
 from hausbuch.schemas.allocation import AllocationCategory as C
@@ -102,13 +103,13 @@ TAXONOMY = MappingProxyType(
             _code(C.HH_CLOTHING, G.CLOTHING, R.SPENDING, budget_class=W),
             _code(C.HH_DINING, G.DINING, R.SPENDING, budget_class=W),
             _code(C.HH_HOME, G.HOME, R.SPENDING, budget_class=W),
-            _code(C.HH_ELECTRONICS, G.ELECTRONICS, R.SPENDING, budget_class=W),
+            _code(C.HH_ELECTRONICS, G.ELECTRONICS, R.SPENDING, one_off=True, budget_class=W),
             _code(C.HH_ONLINE_SHOPPING, G.ONLINE_SHOPPING, R.SPENDING, budget_class=W),
             _code(C.HH_FEES, G.FEES, R.SPENDING, budget_class=N),
             _code(C.HH_GIFTS, G.GIFTS, R.SPENDING, budget_class=W),
             _code(C.HH_FAMILY_TRANSFERS, G.FAMILY_TRANSFERS, R.SPENDING, budget_class=N),
             _code(C.HH_TELECOM, G.TELECOM, R.SPENDING, budget_class=N),
-            _code(C.HH_WORK_EDUCATION, G.WORK_EDUCATION, R.SPENDING, budget_class=N),
+            _code(C.HH_WORK_EDUCATION, G.WORK_EDUCATION, R.SPENDING, one_off=True, budget_class=N),
             _code(C.HH_SPORT, G.SPORT, R.SPENDING, budget_class=W),
             _code(C.HH_TRAVEL, G.TRAVEL, R.SPENDING, budget_class=W),
             _code(
@@ -147,14 +148,14 @@ TAXONOMY = MappingProxyType(
             _code(C.HH_RENT, G.HOUSING, R.SPENDING, budget_class=N),
             _code(C.HH_ENERGY, G.HOUSING, R.SPENDING, budget_class=N),
             _code(C.HH_BROADCAST_FEE, G.HOUSING, R.SPENDING, budget_class=N),
-            _code(C.HH_FLAT_SEARCH, G.HOUSING, R.SPENDING, budget_class=N),
+            _code(C.HH_FLAT_SEARCH, G.HOUSING, R.SPENDING, one_off=True, budget_class=N),
             _code(C.HH_INS_CAR, G.INSURANCE, R.SPENDING, budget_class=N),
             _code(C.HH_INS_LIABILITY_CONTENTS, G.INSURANCE, R.SPENDING, budget_class=N),
             _code(C.HH_INS_HEALTH, G.INSURANCE, R.SPENDING, budget_class=N),
             _code(C.HH_INS_LIFE, G.INSURANCE, R.SPENDING, budget_class=N),
             _code(C.HH_PHARMACY, G.HEALTH, R.SPENDING, budget_class=N),
             _code(C.HH_DOCTOR, G.HEALTH, R.SPENDING, budget_class=N),
-            _code(C.HH_DENTAL_OPTICAL, G.HEALTH, R.SPENDING, budget_class=N),
+            _code(C.HH_DENTAL_OPTICAL, G.HEALTH, R.SPENDING, one_off=True, budget_class=N),
             _code(C.HH_OUTINGS, G.LEISURE_TRAVEL, R.SPENDING, budget_class=W),
             _code(C.HH_BOOKS_MEDIA, G.LEISURE_TRAVEL, R.SPENDING, budget_class=W),
             _code(C.HH_HOBBIES, G.LEISURE_TRAVEL, R.SPENDING, budget_class=W),
@@ -162,7 +163,7 @@ TAXONOMY = MappingProxyType(
             _code(C.HH_FLIGHTS, G.TRAVEL, R.SPENDING, budget_class=W),
             _code(C.HH_KIDS_GEAR, G.FAMILY_CHILD, R.SPENDING, budget_class=N),
             _code(C.HH_TOYS, G.FAMILY_CHILD, R.SPENDING, budget_class=W),
-            _code(C.HH_PREGNANCY_BIRTH, G.FAMILY_CHILD, R.SPENDING, budget_class=N),
+            _code(C.HH_PREGNANCY_BIRTH, G.FAMILY_CHILD, R.SPENDING, one_off=True, budget_class=N),
             _code(C.HH_MOBILE_PHONE, G.TELECOM, R.SPENDING, budget_class=N),
             _code(C.HH_INTERNET, G.TELECOM, R.SPENDING, budget_class=N),
             _code(C.HH_POSTAGE, G.OTHER, R.SPENDING, budget_class=N),
@@ -217,11 +218,38 @@ if set(TAXONOMY) != PRIVATE_ONLY:  # pragma: no cover - a code without its row
     raise RuntimeError("every household, transfer and depot code needs a taxonomy row")
 
 # Phase 9 D236: the codes whose spending is one-off, left out of a month's regular spending
-# (the reserve's monthly need, the free cash) and still counted in the savings rate. Every
-# row carries the field; a one-off code must be spending, since only spending is regular.
+# (the reserve's monthly need, the free cash). Every row carries the field; a one-off code
+# must be spending, since only spending is regular. Phase 10 §7.12 (D307, D308, 25 Nov 2026):
+# six codes are one-off by default (the car purchase, the flat search and move, pregnancy and
+# birth, electronics, work and education, dentist and glasses), each switchable by the
+# household (`one_off_codes`), and one-off spending is left out of the savings rate too.
 ONE_OFF = frozenset(c for c, row in TAXONOMY.items() if row.one_off)
 if any(TAXONOMY[c].relevance is not R.SPENDING for c in ONE_OFF):  # pragma: no cover
     raise RuntimeError("a one-off code must count as spending")
+
+# D307: the codes the household may switch to one-off or back: every spending code, that is
+# every code the household month counts as spending (rules.health.month._role): relevance
+# spending or tax outside the Geldanlage group (a tax payment, a donation, childcare, a
+# craftsman's bill paid privately, the depot's capital-income tax). The defaults stay
+# relevance spending (ONE_OFF above). bank_fees and uncategorized, outside this table, are
+# not switchable: they have no row to carry a default (review of §7.12).
+SWITCHABLE = frozenset(
+    c
+    for c, row in TAXONOMY.items()
+    if row.relevance in (R.SPENDING, R.TAX) and row.group is not G.INVESTMENT
+)
+
+
+def one_off_codes(switches: Mapping[C, bool] | None = None) -> frozenset[C]:
+    """D307: the codes counted as one-off: the taxonomy's default, then the household's switch
+    per code (`HouseholdLevers.one_off_overrides`). A switch on a code that is not a spending
+    code is ignored here (a stored row still reads) and refused when a scenario is saved."""
+    if not switches:
+        return ONE_OFF
+    on = {c for c, v in switches.items() if v and c in SWITCHABLE}
+    off = {c for c, v in switches.items() if not v}
+    return frozenset((ONE_OFF - off) | on)
+
 
 # Phase 10 D272: every code the household month counts as spending (relevance spending or
 # tax) has a budget class, and no other code has one; the two private codes outside this

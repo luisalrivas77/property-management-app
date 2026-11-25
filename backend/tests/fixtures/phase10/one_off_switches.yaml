@@ -1,0 +1,291 @@
+# Phase 10 §7.12 (b), (c), D307, D308 (written 25 Nov 2026): the household's one-off switches
+# (HouseholdLevers.one_off_overrides, a code to true or false). The codes counted as one-off are
+# the taxonomy's default (hh_car_purchase, hh_flat_search, hh_pregnancy_birth, hh_electronics,
+# hh_work_education, hh_dental_optical), then the household's switch per spending code; a
+# payment marked one-off (D297, `marked`: the month's private lines by position) is one-off
+# whatever its code's switch, and counted once. The regular spending is the month's spending
+# less the one-off spending; Sparen and the Sparquote are the income less the regular spending
+# (D308). `scenarios` + `stored_at`: a stored month (health_snapshot) is recomputed by
+# `hausbuch health-check` with the switches of the default-scenario row in force when it was
+# stored (the newest row created on or before `stored_at`), never with today's.
+#
+# Same input shape and arithmetic as budget_partition.yaml (its amendment of 25 Nov 2026).
+# Computed by tests/fixture_gen_phase10.py for invented owners A and B and worked by hand below;
+# never regenerated to fit the rule.
+#
+# Worked by hand (ΣE = 3 x 4000 = 12000 in every case):
+# - default_switched_off ({hh_electronics: false}): one-off only the March dentist, 380.00;
+#   regular Jan 1200 + 600 + 900 + 250 = 2950, Feb 1200 + 610 + 40 + 1800 = 3650, Mar 1200 +
+#   590 + 250 = 2040, Σ 8640; Sparen 12000 − 8640 = 3360, Sparquote 0.2800. The electronics
+#   (940.00) count in Wünsche, their taxonomy class.
+# - want_switched_on ({hh_travel: true}): one-off Jan 900 + 250 = 1150, Feb 40 + 1800 = 1840,
+#   Mar 250 + 380 = 630, Σ 3620; regular Jan 1800, Feb 1810, Mar 1790, Σ 5400; Sparen 6600,
+#   Sparquote 0.5500; Wünsche 0.00 (travel was its only want).
+# - switch_and_mark_same_payment ({hh_electronics: false, hh_travel: true}, the January
+#   electronics and the February travel marked one-off): the marked 900 electronics are one-off
+#   though their code is switched off; the marked 1800 travel is one-off by its code and the
+#   mark, counted once. One-off Jan 900 + 250 = 1150, Feb 1800, Mar 250 + 380 = 630, Σ 3580;
+#   regular Jan 1800, Feb 1200 + 610 + 40 = 1850, Mar 1790, Σ 5440; Sparen 6560, Sparquote
+#   6560 ÷ 12000 = 0.54667 → 0.5467; Wünsche the February electronics, 40.00.
+# - stored_month_reads_its_day: rows of 15 Mar ({hh_dental_optical: false}) and 10 Apr 2027
+#   ({}, back to the defaults); the months were stored on 1 Apr 2027 08:30 UTC, so the 15 Mar
+#   row is in force: one-off Jan 900, Feb 40, Mar 0, Σ 940; regular Jan 2050, Feb 3610, Mar
+#   1200 + 590 + 250 + 380 = 2420, Σ 8080; Sparen 3920, Sparquote 3920 ÷ 12000 = 0.32667 →
+#   0.3267 (today's row would give the defaults: one-off 1320, Sparen 4300, 0.3583).
+cases:
+- id: default_switched_off
+  description: 'electronics, one-off by default, switched to regular: a want again'
+  months: &id001
+  - month: 2027-01
+    private: &id002
+    - {category: hh_salary, amount: '4000.00'}
+    - {category: hh_rent, amount: '-1200.00'}
+    - {category: hh_groceries, amount: '-600.00'}
+    - {category: hh_electronics, amount: '-900.00'}
+    - {category: hh_travel, amount: '-250.00'}
+    saved_links: '0.00'
+    rental: &id003 []
+  - month: 2027-02
+    private: &id004
+    - {category: hh_salary, amount: '4000.00'}
+    - {category: hh_rent, amount: '-1200.00'}
+    - {category: hh_groceries, amount: '-610.00'}
+    - {category: hh_electronics, amount: '-40.00'}
+    - {category: hh_travel, amount: '-1800.00'}
+    saved_links: '0.00'
+    rental: &id005 []
+  - month: 2027-03
+    private: &id006
+    - {category: hh_salary, amount: '4000.00'}
+    - {category: hh_rent, amount: '-1200.00'}
+    - {category: hh_groceries, amount: '-590.00'}
+    - {category: hh_travel, amount: '-250.00'}
+    - {category: hh_dental_optical, amount: '-380.00'}
+    saved_links: '0.00'
+    rental: &id007 []
+  one_off_overrides: {hh_electronics: false}
+  expect:
+    window: [2027-01, 2027-02, 2027-03]
+    enough: true
+    months:
+    - {month: 2027-01, income: '4000.00', need: '1800.00', want: '1150.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '1050.00'}
+    - {month: 2027-02, income: '4000.00', need: '1810.00', want: '1840.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '350.00'}
+    - {month: 2027-03, income: '4000.00', need: '1790.00', want: '250.00', one_off: '380.00', uncategorized: '0.00',
+      saving: '1960.00'}
+    income: {monthly: '4000.00', total: '12000.00', rental_monthly: '0.00', private_monthly: '4000.00'}
+    lines:
+    - key: need
+      monthly: '1800.00'
+      total: '5400.00'
+      share: '0.4500'
+      codes:
+        hh_groceries: {monthly: '600.00', total: '1800.00', budget_class: need, overridden: false}
+        hh_rent: {monthly: '1200.00', total: '3600.00', budget_class: need, overridden: false}
+      target: null
+      mark: null
+    - key: want
+      monthly: '1080.00'
+      total: '3240.00'
+      share: '0.2700'
+      codes:
+        hh_electronics: {monthly: '313.33', total: '940.00', budget_class: want, overridden: false}
+        hh_travel: {monthly: '766.67', total: '2300.00', budget_class: want, overridden: false}
+      target: null
+      mark: null
+    - {key: saving, monthly: '1120.00', total: '3360.00', share: '0.2800', target: null, mark: null}
+    one_off:
+      key: one_off
+      monthly: '126.67'
+      total: '380.00'
+      share: '0.0317'
+      codes:
+        hh_dental_optical: {monthly: '126.67', total: '380.00', budget_class: null, overridden: false}
+    housing:
+      monthly: '1200.00'
+      total: '3600.00'
+      share: '0.3000'
+      codes: [hh_rent]
+      target: null
+      mark: null
+    savings_rate: '0.2800'
+    no_shares: false
+    todos: []
+- id: want_switched_on
+  description: 'travel, a want, switched to one-off: it leaves Wünsche and the Sparquote'
+  months: *id001
+  one_off_overrides: {hh_travel: true}
+  expect:
+    window: [2027-01, 2027-02, 2027-03]
+    enough: true
+    months:
+    - {month: 2027-01, income: '4000.00', need: '1800.00', want: '0.00', one_off: '1150.00', uncategorized: '0.00',
+      saving: '2200.00'}
+    - {month: 2027-02, income: '4000.00', need: '1810.00', want: '0.00', one_off: '1840.00', uncategorized: '0.00',
+      saving: '2190.00'}
+    - {month: 2027-03, income: '4000.00', need: '1790.00', want: '0.00', one_off: '630.00', uncategorized: '0.00',
+      saving: '2210.00'}
+    income: {monthly: '4000.00', total: '12000.00', rental_monthly: '0.00', private_monthly: '4000.00'}
+    lines:
+    - key: need
+      monthly: '1800.00'
+      total: '5400.00'
+      share: '0.4500'
+      codes:
+        hh_groceries: {monthly: '600.00', total: '1800.00', budget_class: need, overridden: false}
+        hh_rent: {monthly: '1200.00', total: '3600.00', budget_class: need, overridden: false}
+      target: null
+      mark: null
+    - key: want
+      monthly: '0.00'
+      total: '0.00'
+      share: '0.0000'
+      codes: {}
+      target: null
+      mark: null
+    - {key: saving, monthly: '2200.00', total: '6600.00', share: '0.5500', target: null, mark: null}
+    one_off:
+      key: one_off
+      monthly: '1206.67'
+      total: '3620.00'
+      share: '0.3017'
+      codes:
+        hh_dental_optical: {monthly: '126.67', total: '380.00', budget_class: null, overridden: false}
+        hh_electronics: {monthly: '313.33', total: '940.00', budget_class: null, overridden: false}
+        hh_travel: {monthly: '766.67', total: '2300.00', budget_class: null, overridden: false}
+    housing:
+      monthly: '1200.00'
+      total: '3600.00'
+      share: '0.3000'
+      codes: [hh_rent]
+      target: null
+      mark: null
+    savings_rate: '0.5500'
+    no_shares: false
+    todos: []
+- id: switch_and_mark_same_payment
+  description: a mark wins over a code switched off, and a marked payment in a code switched on counts
+    once
+  months:
+  - month: 2027-01
+    private: *id002
+    saved_links: '0.00'
+    rental: *id003
+    marked: [3]
+  - month: 2027-02
+    private: *id004
+    saved_links: '0.00'
+    rental: *id005
+    marked: [4]
+  - month: 2027-03
+    private: *id006
+    saved_links: '0.00'
+    rental: *id007
+  one_off_overrides: {hh_electronics: false, hh_travel: true}
+  expect:
+    window: [2027-01, 2027-02, 2027-03]
+    enough: true
+    months:
+    - {month: 2027-01, income: '4000.00', need: '1800.00', want: '0.00', one_off: '1150.00', uncategorized: '0.00',
+      saving: '2200.00'}
+    - {month: 2027-02, income: '4000.00', need: '1810.00', want: '40.00', one_off: '1800.00', uncategorized: '0.00',
+      saving: '2150.00'}
+    - {month: 2027-03, income: '4000.00', need: '1790.00', want: '0.00', one_off: '630.00', uncategorized: '0.00',
+      saving: '2210.00'}
+    income: {monthly: '4000.00', total: '12000.00', rental_monthly: '0.00', private_monthly: '4000.00'}
+    lines:
+    - key: need
+      monthly: '1800.00'
+      total: '5400.00'
+      share: '0.4500'
+      codes:
+        hh_groceries: {monthly: '600.00', total: '1800.00', budget_class: need, overridden: false}
+        hh_rent: {monthly: '1200.00', total: '3600.00', budget_class: need, overridden: false}
+      target: null
+      mark: null
+    - key: want
+      monthly: '13.33'
+      total: '40.00'
+      share: '0.0033'
+      codes:
+        hh_electronics: {monthly: '13.33', total: '40.00', budget_class: want, overridden: false}
+      target: null
+      mark: null
+    - {key: saving, monthly: '2186.67', total: '6560.00', share: '0.5467', target: null, mark: null}
+    one_off:
+      key: one_off
+      monthly: '1193.33'
+      total: '3580.00'
+      share: '0.2983'
+      codes:
+        hh_dental_optical: {monthly: '126.67', total: '380.00', budget_class: null, overridden: false}
+        hh_electronics: {monthly: '300.00', total: '900.00', budget_class: null, overridden: false}
+        hh_travel: {monthly: '766.66', total: '2300.00', budget_class: null, overridden: false}
+    housing:
+      monthly: '1200.00'
+      total: '3600.00'
+      share: '0.3000'
+      codes: [hh_rent]
+      target: null
+      mark: null
+    savings_rate: '0.5467'
+    no_shares: false
+    todos: []
+- id: stored_month_reads_its_day
+  description: a stored month reads the switches of the row in force when it was stored
+  months: *id001
+  scenarios:
+  - created_at: '2027-03-15T09:00:00Z'
+    one_off_overrides: {hh_dental_optical: false}
+  - created_at: '2027-04-10T09:00:00Z'
+    one_off_overrides: {}
+  stored_at: '2027-04-01T08:30:00Z'
+  expect:
+    window: [2027-01, 2027-02, 2027-03]
+    enough: true
+    months:
+    - {month: 2027-01, income: '4000.00', need: '1800.00', want: '250.00', one_off: '900.00', uncategorized: '0.00',
+      saving: '1950.00'}
+    - {month: 2027-02, income: '4000.00', need: '1810.00', want: '1800.00', one_off: '40.00', uncategorized: '0.00',
+      saving: '390.00'}
+    - {month: 2027-03, income: '4000.00', need: '2170.00', want: '250.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '1580.00'}
+    income: {monthly: '4000.00', total: '12000.00', rental_monthly: '0.00', private_monthly: '4000.00'}
+    lines:
+    - key: need
+      monthly: '1926.67'
+      total: '5780.00'
+      share: '0.4817'
+      codes:
+        hh_dental_optical: {monthly: '126.67', total: '380.00', budget_class: need, overridden: false}
+        hh_groceries: {monthly: '600.00', total: '1800.00', budget_class: need, overridden: false}
+        hh_rent: {monthly: '1200.00', total: '3600.00', budget_class: need, overridden: false}
+      target: null
+      mark: null
+    - key: want
+      monthly: '766.67'
+      total: '2300.00'
+      share: '0.1917'
+      codes:
+        hh_travel: {monthly: '766.67', total: '2300.00', budget_class: want, overridden: false}
+      target: null
+      mark: null
+    - {key: saving, monthly: '1306.66', total: '3920.00', share: '0.3267', target: null, mark: null}
+    one_off:
+      key: one_off
+      monthly: '313.33'
+      total: '940.00'
+      share: '0.0783'
+      codes:
+        hh_electronics: {monthly: '313.33', total: '940.00', budget_class: null, overridden: false}
+    housing:
+      monthly: '1200.00'
+      total: '3600.00'
+      share: '0.3000'
+      codes: [hh_rent]
+      target: null
+      mark: null
+    savings_rate: '0.3267'
+    no_shares: false
+    todos: []

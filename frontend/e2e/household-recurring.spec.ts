@@ -1,17 +1,15 @@
-// The recurring payments on Haushalt › Monat and the one-off check on Haushalt › Budget (phase 10
-// §7.9 (b), (c); D296, D297; mockup 19c panels 4 to 7). GET /household/recurring and GET
-// /household/one-off-candidates and their two writes are mocked, since a series needs months of
-// bookings and a candidate a window of three closed months; Budget's reads of phase 9 (GET
-// /health, /health/months, /household-plan, /household-budget) are mocked for the same reason.
+// The recurring payments on Haushalt › Monat (phase 10 §7.9 (b); D296; mockup 19c panels 4 and 5)
+// and „Einmalig im Zeitraum“ beside the Budget's split (§7.12 (c), D308). GET /household/recurring
+// and its write are mocked, since a series needs months of bookings; Budget's reads of phases 9
+// and 10 (GET /health, /health/months, /household-plan, /household-budget) are mocked since they
+// need a window of three closed months.
 // Every other read is the real API of a fresh workspace. Invented payees and figures only.
 //
 // - The card shows the server's count and yearly total, the price changes first, how many may
 //   have ended and from when yearly payments can be found; a tapped payment opens its payments in
 //   the detail panel; „Kein Abo, ausblenden“ hides it, „Wieder anzeigen“ brings it back, and
 //   neither changes a figure.
-// - The Budget's line names the payments to check; an answer is stored and the plan, the Budget
-//   and the key figures are read again, so „Anlegbar“ and the Budget move at once; an answer can be
-//   changed; a payment that left the window (404) reloads the list with a plain sentence.
+// - The Budget shows the window's one-offs beside its split, not in it, and opens their panel.
 // - Nothing is shown when nothing is listed, never an error card.
 // - Phone width, light and dark: no sideways scroll; a screenshot of each new panel.
 import type { Page, Route } from "@playwright/test";
@@ -23,8 +21,6 @@ type RecurringPayments = components["schemas"]["RecurringPayments"];
 type RecurringSeries = components["schemas"]["RecurringSeries"];
 type GroupPayment = components["schemas"]["GroupPayment"];
 type AllocationCategory = components["schemas"]["AllocationCategory"];
-type OneOffCandidates = components["schemas"]["OneOffCandidates"];
-type OneOffCandidate = components["schemas"]["OneOffCandidate"];
 type Health = components["schemas"]["Health"];
 type HealthMonthView = components["schemas"]["HealthMonthView"];
 type HouseholdMonth = components["schemas"]["HouseholdMonth"];
@@ -279,7 +275,9 @@ test("the recurring panels at phone width, light and dark", async ({ page, signe
   });
 });
 
-// --- (c) the one-off check on Budget ------------------------------------------------------------
+// --- „Einmalig im Zeitraum“ beside the Budget's split (§7.12 (c), D308) ---------------------------
+// The one-off check of §7.9 (c) is gone (D307): a category is one-off by default or by its switch.
+// The Budget shows the window's one-offs beside need + want + saving = income, never in it.
 
 /** YYYY-MM, `back` months before the current one. */
 function monthsBack(back: number): string {
@@ -314,19 +312,20 @@ function monthView(month: string, closed: boolean): HealthMonthView {
   return { month, household: householdMonth(month), closed: { month, closed, todos: [] } };
 }
 
-function health(marked: boolean): Health {
+function health(): Health {
   return {
     as_of: "2026-11-24",
     window: { months: WINDOW, enough: true },
     savings_rate: {
-      saved: "3900.00",
+      saved: "4380.00",
       income: "15600.00",
-      one_off_spending: marked ? "480.00" : "0.00",
+      one_off_spending: "480.00",
       principal: "0.00",
-      rate: "0.2500",
-      rate_regular: marked ? "0.2808" : "0.2500",
-      rate_without_principal: "0.2500",
-      months: WINDOW.map((month) => ({ month, rate: "0.2500" })),
+      rate: "0.2808",
+      rate_regular: "0.2808",
+      rate_without_principal: "0.2808",
+      months: WINDOW.map((month) => ({ month, rate: "0.2808" })),
+      one_offs_left_out: true,
     },
     reserve: null,
     debt: null,
@@ -336,8 +335,7 @@ function health(marked: boolean): Health {
   };
 }
 
-function plan(marked: boolean): HouseholdPlan {
-  const investable = marked ? "1314.00" : "1170.00";
+function plan(): HouseholdPlan {
   return {
     as_of: "2026-11-24",
     scenario_id: null,
@@ -353,10 +351,10 @@ function plan(marked: boolean): HouseholdPlan {
     surplus: {
       rows: [
         { key: "mean_income", amount: "5200.00" },
-        { key: "mean_regular_spending", amount: marked ? "-3740.00" : "-3900.00" },
-        { key: "free_cash", amount: marked ? "1460.00" : "1300.00" },
-        { key: "buffer", amount: marked ? "146.00" : "130.00" },
-        { key: "investable", amount: investable },
+        { key: "mean_regular_spending", amount: "-3740.00" },
+        { key: "free_cash", amount: "1460.00" },
+        { key: "buffer", amount: "146.00" },
+        { key: "investable", amount: "1314.00" },
       ],
     },
     months: [],
@@ -366,21 +364,21 @@ function plan(marked: boolean): HouseholdPlan {
   };
 }
 
-function budget(marked: boolean): BudgetView {
-  const need = marked ? "2440.00" : "2600.00";
+function budget(withOneOff: boolean): BudgetView {
   return {
     as_of: "2026-11-24",
     scenario_id: null,
     window: { months: WINDOW, enough: true },
     months: [],
     income: { monthly: "5200.00", total: "15600.00", rental_monthly: "0.00", private_monthly: "5200.00" },
+    // need + want + uncategorized + saving = income; the one-offs beside them (D308).
     lines: [
-      { key: "need", monthly: need, total: (Number(need) * 3).toFixed(2), share: marked ? "0.4692" : "0.5000", codes: [] },
+      { key: "need", monthly: "2440.00", total: "7320.00", share: "0.4692", codes: [] },
       { key: "want", monthly: "1300.00", total: "3900.00", share: "0.2500", codes: [] },
-      { key: "one_off", monthly: marked ? "160.00" : "0.00", total: marked ? "480.00" : "0.00", share: marked ? "0.0308" : "0.0000", codes: [] },
       { key: "uncategorized", monthly: "0.00", total: "0.00", share: "0.0000", codes: [] },
-      { key: "saving", monthly: "1300.00", total: "3900.00", share: "0.2500" },
+      { key: "saving", monthly: "1460.00", total: "4380.00", share: "0.2808" },
     ],
+    one_off: withOneOff ? { key: "one_off", monthly: "160.00", total: "480.00", share: "0.0308", codes: [] } : null,
     housing: null,
     targets: {},
     references: [],
@@ -388,15 +386,9 @@ function budget(marked: boolean): BudgetView {
   };
 }
 
-const DOCTOR = payment(`${WINDOW[1]}-14`, "480.00", "hh_doctor", "Praxis Muster");
-const GARAGE = payment(`${WINDOW[2]}-12`, "870.00", "hh_car_service", "Kfz-Werkstatt Muster");
-const GONE = payment(`${WINDOW[0]}-09`, "350.00", "hh_home", "Möbelhaus Muster");
-
-/** Budget's mocked reads, the candidates and their writes; an answer marks the figures moved. */
-async function oneOffApi(page: Page, initial: OneOffCandidate[]) {
-  const state = { candidates: [...initial], answered: [] as OneOffCandidate[], marked: false };
-  const posted: { allocation_id: string; answer: string }[] = [];
-  await serve(page, "/api/health", () => health(state.marked));
+/** Budget's mocked reads of phases 9 and 10. */
+async function budgetApi(page: Page, withOneOff: boolean) {
+  await serve(page, "/api/health", () => health());
   await serve(page, "/api/health/net-worth-series", () => []);
   await serve(page, "/api/health/months", (url) => {
     const from = url.searchParams.get("from") ?? "";
@@ -405,115 +397,41 @@ async function oneOffApi(page: Page, initial: OneOffCandidate[]) {
       .filter((month) => month >= from && month <= to)
       .map((month) => monthView(month, WINDOW.includes(month)));
   });
-  await serve(page, "/api/household-plan", () => plan(state.marked));
-  await serve(page, "/api/household-budget", () => budget(state.marked));
-  await serve(
-    page,
-    "/api/household/one-off-candidates",
-    (): OneOffCandidates => ({
-      as_of: "2026-11-24",
-      window: { months: WINDOW, enough: true },
-      candidates: state.candidates,
-      answered: state.answered,
-    }),
-  );
-  await page.route(
-    (url) => url.pathname === "/api/household/one-off-marks",
-    (route: Route) => {
-      const body = route.request().postDataJSON() as { allocation_id: string; answer: "one_off" | "regular" };
-      posted.push(body);
-      const all = [...state.candidates, ...state.answered];
-      const found = all.find((c) => c.payment.allocation_id === body.allocation_id);
-      if (!found || body.allocation_id === GONE.allocation_id) {
-        // The payment left the window since the list was read.
-        state.candidates = state.candidates.filter((c) => c.payment.allocation_id !== body.allocation_id);
-        return route.fulfill({ status: 404, json: { error: "not_found", message: "Nicht gefunden." } });
-      }
-      state.candidates = state.candidates.filter((c) => c !== found);
-      state.answered = [...state.answered.filter((c) => c.payment.allocation_id !== body.allocation_id), { ...found, answer: body.answer }];
-      state.marked = state.answered.some((c) => c.answer === "one_off");
-      return route.fulfill({ status: 201, json: { id: "00000000-0000-4000-8000-000000000c98", created_at: "2026-11-24T09:00:00Z" } });
-    },
-  );
-  return { posted };
+  await serve(page, "/api/household-plan", () => plan());
+  await serve(page, "/api/household-budget", () => budget(withOneOff));
 }
 
-test("a payment answered „einmalig“ moves the Budget and „Anlegbar“ at once, and the answer can be changed", async ({
-  page,
-  signedIn,
-}) => {
+test("the one-offs stand beside the Budget's split as „Einmalig im Zeitraum“ and open their panel", async ({ page, signedIn }) => {
   void signedIn;
-  const { posted } = await oneOffApi(page, [
-    { payment: DOCTOR, code_median: "40.00" },
-    { payment: GARAGE, code_median: "60.00" },
-  ]);
+  await budgetApi(page, true);
   await page.goto("/household?tab=budget");
 
-  const investable = page.getByTestId("rest-investable");
-  await expect(investable).toContainText("1.170");
-  await expect(page.locator('a.budget-line[data-key="need"]')).toContainText("2.600");
-  const line = page.getByRole("region", { name: "2 Zahlungen vielleicht einmalig" });
-  await expect(line).toContainText("Praxis Muster 480,00 €");
-  await expect(line).toContainText("Kfz-Werkstatt Muster 870,00 €");
-  await line.getByRole("link").click();
-
-  const panel = detail(page, "Vielleicht einmalig?");
-  await expect(panel).toContainText("Diese Zahlungen sind viel größer als sonst in ihrer Kategorie.");
-  await expect(panel).toContainText("sonst 60,00 € im Monat");
-  const doctor = panel.getByRole("group", { name: "Einmalig? Praxis Muster" });
-  await doctor.getByRole("button", { name: "Ja, einmalig" }).click();
-  await expect.poll(() => posted.length).toBe(1);
-  expect(posted[0]).toEqual({ allocation_id: DOCTOR.allocation_id, answer: "one_off" });
-
-  // The plan, the Budget and the key figures were read again.
-  await expect(investable).toContainText("1.314");
-  await expect(page.locator('a.budget-line[data-key="need"]')).toContainText("2.440");
-  await expect(doctor.getByRole("button", { name: "Ja, einmalig" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("region", { name: "1 Zahlung vielleicht einmalig" })).toBeVisible();
-
-  // The answer can be changed.
-  await doctor.getByRole("button", { name: "Nein, normal" }).click();
-  await expect.poll(() => posted.length).toBe(2);
-  expect(posted[1]).toEqual({ allocation_id: DOCTOR.allocation_id, answer: "regular" });
-  await expect(doctor.getByRole("button", { name: "Nein, normal" })).toHaveAttribute("aria-pressed", "true");
-  await expect(investable).toContainText("1.170");
+  const beside = page.getByRole("list", { name: "Einmalig im Zeitraum" });
+  const oneOff = beside.locator('a.budget-line[data-key="one_off"]');
+  await expect(oneOff).toContainText("160");
+  await expect(oneOff).toContainText("neben der Aufteilung, nicht im Schnitt");
+  // Once, beside the split, not among its lines.
+  await expect(page.locator('a.budget-line[data-key="one_off"]')).toHaveCount(1);
+  await oneOff.click();
+  const panel = detail(page, "Einmalig im Zeitraum");
+  await expect(panel).toContainText("stehen neben der Aufteilung");
 });
 
-test("a payment that left the window reloads the list with a plain sentence", async ({ page, signedIn }) => {
+test("no one-off line while the window holds none", async ({ page, signedIn }) => {
   void signedIn;
-  const { posted } = await oneOffApi(page, [
-    { payment: GONE, code_median: "30.00" },
-    { payment: GARAGE, code_median: "60.00" },
-  ]);
-  await page.goto("/household?tab=budget#d-einmalig-pruefen");
-  const panel = detail(page, "Vielleicht einmalig?");
-  await panel.getByRole("group", { name: "Einmalig? Möbelhaus Muster" }).getByRole("button", { name: "Ja, einmalig" }).click();
-  await expect.poll(() => posted.length).toBe(1);
-  await expect(panel).toContainText("Eine Zahlung steht nicht mehr zur Prüfung");
-  await expect(panel).not.toContainText("Möbelhaus Muster");
-  await expect(panel).toContainText("Kfz-Werkstatt Muster");
-  // A 404 is no error card.
-  await expect(panel.getByRole("alert")).toHaveCount(0);
-});
-
-test("no one-off line while nothing is to check", async ({ page, signedIn }) => {
-  void signedIn;
-  await oneOffApi(page, []);
+  await budgetApi(page, false);
   await page.goto("/household?tab=budget");
-  await expect(page.getByTestId("rest-investable")).toBeVisible();
-  await expect(page.getByText(/vielleicht einmalig/)).toHaveCount(0);
+  await expect(page.locator('a.budget-line[data-key="need"]')).toBeVisible();
+  await expect(page.locator('a.budget-line[data-key="one_off"]')).toHaveCount(0);
 });
 
 test("the one-off panel at phone width, light and dark", async ({ page, signedIn }) => {
   void signedIn;
-  await oneOffApi(page, [
-    { payment: DOCTOR, code_median: "40.00" },
-    { payment: GARAGE, code_median: "60.00" },
-  ]);
+  await budgetApi(page, true);
   await phoneScreens(page, "one-off", async () => {
-    await page.goto("/household?tab=budget#d-einmalig-pruefen");
-    const sheet = page.getByRole("dialog", { name: "Vielleicht einmalig?" });
+    await page.goto("/household?tab=budget#d-budget-one_off");
+    const sheet = page.getByRole("dialog", { name: "Einmalig im Zeitraum" });
     await expect(sheet).toBeVisible();
-    await expect(sheet.getByRole("button", { name: "Ja, einmalig" })).toHaveCount(2);
+    await expect(sheet).toContainText("stehen neben der Aufteilung");
   });
 });

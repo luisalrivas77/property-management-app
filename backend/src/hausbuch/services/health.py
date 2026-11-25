@@ -33,7 +33,7 @@ hands the rules plain facts.
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from functools import cache
 from hashlib import sha256
@@ -67,6 +67,8 @@ from hausbuch.rules.health.bands import bands_todos, lights, proposals, with_tex
 from hausbuch.rules.health.figures import debt, reserve, savings_rate, series, split
 from hausbuch.rules.health.month import cashflow_rows, household_month, rental_month
 from hausbuch.rules.health.window import closed, window, window_todos
+from hausbuch.rules.household.taxonomy import ONE_OFF
+from hausbuch.rules.household.taxonomy import one_off_codes as switched_one_off_codes
 from hausbuch.rules.net_worth import FIRST_MONTH_END
 from hausbuch.rules.performance.year_figures import (
     INTEREST,
@@ -494,6 +496,9 @@ class MonthRead:
     # The allocations a person marked one-off (phase 10 §7.9 (c) 2): the household month
     # counts them as one-off spending, and every reader of the private lines passes them on.
     one_off_ids: frozenset[UUID] = field(default_factory=frozenset)
+    # The codes counted as one-off (phase 10 D307: the taxonomy's, then the switches of the
+    # scenario read), the household month built with them; every reader passes them on.
+    one_off_codes: frozenset[AllocationCategory] = ONE_OFF
 
 
 @dataclass(frozen=True)
@@ -519,19 +524,32 @@ def read_month_inputs(conn: Connection, months: Sequence[str], today: date) -> M
     return MonthInputs(marked=marked, private=private, rental=rental, facts=facts)
 
 
-def read_months(conn: Connection, months: Sequence[str], today: date) -> dict[str, MonthRead]:
+def read_months(
+    conn: Connection,
+    months: Sequence[str],
+    today: date,
+    one_off_codes: frozenset[AllocationCategory] | None = None,
+) -> dict[str, MonthRead]:
     """`months` (consecutive, oldest first) on read: rules.health.month.household_month over
     the private accounts' month (services.household.private_months, the Haushalt screen's
     own read) and the rental blocks (rental_months), and rules.health.window.closed over
     the month's facts. The payments a person marked one-off (services.spending_marks, phase 10
-    §7.9 (c) 2) are read once here and carried on every MonthRead."""
+    §7.9 (c) 2) are read once here and carried on every MonthRead. `one_off_codes`: the codes
+    counted as one-off (phase 10 D307, `levers_one_off_codes` of the levers read); None reads
+    the switches of the default household scenario in force."""
     if not months:
         return {}
-    return months_from_inputs(months, read_month_inputs(conn, months, today))
+    if one_off_codes is None:
+        one_off_codes = levers_one_off_codes(household_levers(conn))
+    return months_from_inputs(months, read_month_inputs(conn, months, today), one_off_codes)
 
 
-def months_from_inputs(months: Sequence[str], inputs: MonthInputs) -> dict[str, MonthRead]:
-    """read_months' rules over its reads (read_month_inputs): nothing is read here."""
+def months_from_inputs(
+    months: Sequence[str], inputs: MonthInputs, one_off_codes: frozenset[AllocationCategory]
+) -> dict[str, MonthRead]:
+    """read_months' rules over its reads (read_month_inputs): nothing is read here. The
+    codes counted as one-off (phase 10 D307) are a lever, applied here by the rules, never
+    kept with the inputs."""
     marked, private, rental, facts = inputs.marked, inputs.private, inputs.rental, inputs.facts
     out = {}
     for month in months:
@@ -539,14 +557,26 @@ def months_from_inputs(months: Sequence[str], inputs: MonthInputs) -> dict[str, 
         blocks = rental.months.get(month, [])
         out[month] = MonthRead(
             household=household_month(
-                p.cashflow, blocks, lines=p.lines, link_sources=p.link_sources, one_off_ids=marked
+                p.cashflow,
+                blocks,
+                lines=p.lines,
+                link_sources=p.link_sources,
+                one_off_ids=marked,
+                one_off_codes=one_off_codes,
             ),
             rental=blocks,
             closed=closed(facts[month]),
             private=p,
             one_off_ids=marked,
+            one_off_codes=one_off_codes,
         )
     return out
+
+
+def levers_one_off_codes(levers: HouseholdLevers) -> frozenset[AllocationCategory]:
+    """Phase 10 D307: the codes counted as one-off under `levers`: the taxonomy's, then the
+    household's switches."""
+    return switched_one_off_codes(levers.one_off_overrides)
 
 
 def ended_months(today: date) -> list[str]:
@@ -759,7 +789,7 @@ def health(conn: Connection, today: date, scenario_id: UUID | None = None) -> He
     read of the months."""
     levers = household_levers(conn, scenario_id)
     ended = ended_months(today)
-    reads = read_months(conn, ended, today)
+    reads = read_months(conn, ended, today, levers_one_off_codes(levers))
     win = _window(reads)
     now = net_worth(conn, today)
     stored = _newest_run_figures(conn)  # the debt figure's month-end and the series
@@ -790,6 +820,7 @@ def health(conn: Connection, today: date, scenario_id: UUID | None = None) -> He
         todos=todos,
         last_ended=reads[ended[-1]].household if ended else None,
         differences=month_differences(conn, reads, newest),
+        one_offs_left_out_since=_one_offs_left_out_since(conn),
     )
     return out.model_copy(
         update={
@@ -812,14 +843,20 @@ def month_differences(
         return None
     baseline = _window(reads, up_to=_previous(newest)).months
     spending = {
-        m: compared_by_group(compared_rows(reads[m].private.lines, reads[m].one_off_ids))
+        m: compared_by_group(
+            compared_rows(reads[m].private.lines, reads[m].one_off_ids), reads[m].one_off_codes
+        )
         for m in [*baseline, newest]
     }
     named = differences(spending[newest], [spending[m] for m in baseline])
     if named is None:
         return None
     payments = _group_payments(
-        conn, reads[newest].private.lines, {d.group for d in named}, reads[newest].one_off_ids
+        conn,
+        reads[newest].private.lines,
+        {d.group for d in named},
+        reads[newest].one_off_ids,
+        reads[newest].one_off_codes,
     )
     return MonthDifferences(
         month=newest,
@@ -833,6 +870,7 @@ def _group_payments(
     lines: Sequence[MonthLine],
     groups: set[HouseholdGroup],
     one_off_ids: frozenset[UUID] = frozenset(),
+    one_off_codes: frozenset[AllocationCategory] = ONE_OFF,
 ) -> dict[HouseholdGroup, list[GroupPayment]]:
     """The month's private allocations counted under `groups` (D234's recode applied, as
     month_cashflow counts them), oldest booking first, each signed as the group's spending;
@@ -841,7 +879,7 @@ def _group_payments(
     for line, (category, amount) in zip(lines, cashflow_rows(lines), strict=True):
         if line.allocation_id in one_off_ids and line.amount < 0:
             continue
-        group = compared_group(category)
+        group = compared_group(category, one_off_codes)
         if group is not None and group in groups:
             wanted[line.allocation_id] = (group, category, -amount)
     if not wanted:
@@ -910,7 +948,7 @@ def health_months(conn: Connection, first: str, last: str, today: date) -> list[
         held = None
         if snapshot is not None:
             held = snapshot.figures.month
-            if held == read.household.model_copy(update={"sources": {}}):
+            if _same_shown(held, read.household):
                 held = None
         end = month_bounds(month)[1]
         todo = None
@@ -931,6 +969,17 @@ def health_months(conn: Connection, first: str, last: str, today: date) -> list[
             )
         )
     return out
+
+
+# What „seit dem Abschluss geändert“ compares: the month's own figures the panel shows, whose
+# meaning no one-off switch changes (phase 10 D307, D308). The one-off and regular spending and
+# the free cash move with the codes counted as one-off, which a household may switch after a
+# month was stored; health-check compares those under the switches of their day.
+_SHOWN = ("income", "spending", "saved", "savings_rate")
+
+
+def _same_shown(stored: HouseholdMonth, read: HouseholdMonth) -> bool:
+    return all(getattr(stored, name) == getattr(read, name) for name in _SHOWN)
 
 
 def _month_end_todo(end: date) -> HealthTodo:
@@ -1218,8 +1267,9 @@ def store_snapshot(ctx: CommandContext, month: str) -> HealthSnapshotResult:
     _lock(ctx)
     today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
     months = months_between(FIRST_MONTH, month) if month >= FIRST_MONTH else []
-    reads = read_months(ctx.conn, months, today)
-    return _store(ctx, reads, month, household_levers(ctx.conn), today)
+    levers = household_levers(ctx.conn)
+    reads = read_months(ctx.conn, months, today, levers_one_off_codes(levers))
+    return _store(ctx, reads, month, levers, today)
 
 
 def store_missing_snapshots(ctx: CommandContext) -> list[HealthSnapshotResult]:
@@ -1232,9 +1282,9 @@ def store_missing_snapshots(ctx: CommandContext) -> list[HealthSnapshotResult]:
     to-do on GET /health/months. Idempotent: a second run the same day stores nothing."""
     _lock(ctx)
     today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
-    reads = read_months(ctx.conn, ended_months(today), today)
-    held = _newest_snapshots(ctx.conn, list(reads))
     levers = household_levers(ctx.conn)
+    reads = read_months(ctx.conn, ended_months(today), today, levers_one_off_codes(levers))
+    held = _newest_snapshots(ctx.conn, list(reads))
     start = _first_history_month(ctx.conn)
     out = []
     for month, read in reads.items():
@@ -1325,6 +1375,52 @@ def recapture_months(ctx: CommandContext, first: str, last: str) -> list[MonthRe
 EURO = Decimal("1")
 POINT = Decimal("0.001")  # 0.1 percentage points of a ratio
 TENTH = Decimal("0.1")
+
+
+def levers_in_force_at(conn: Connection, at: datetime) -> HouseholdLevers:
+    """The levers of the default household scenario in force at the instant `at` (phase 10
+    D307: what a stored month's recomputation reads): created at or before it, not withdrawn,
+    not superseded by a row created at or before it, the newest first (then the id, as
+    household_levers orders it); the defaults when none was."""
+    hs = household_scenario_table.c
+    later = household_scenario_table.alias("later")
+    row = conn.execute(
+        select(hs.levers)
+        .where(
+            hs.is_default.is_(True),
+            hs.withdrawn.is_(False),
+            hs.created_at <= at,
+            ~exists().where(later.c.supersedes_id == hs.id, later.c.created_at <= at),
+        )
+        .order_by(hs.created_at.desc(), hs.id)
+        .limit(1)
+    ).one_or_none()
+    return HouseholdLevers() if row is None else HouseholdLevers.model_validate(row.levers)
+
+
+def _one_offs_left_out_since(conn: Connection) -> str | None:
+    """Phase 10 D308: the first month of the newest unbroken run of stored months whose key
+    figures leave the one-offs out of the savings rate („Seit <Monat>: Einmaliges nicht im
+    Schnitt“), from the newest row of each month, so a month stored again under D308 before
+    one that kept its old figures (`recapture-months`) never names a start that months with
+    one-offs follow; None while the newest stored month does not leave them out. The months
+    stored before keep their figures (D242)."""
+    h = health_snapshot_table.c
+    rows = conn.execute(
+        select(h.month_end, h.figures).order_by(h.month_end, h.created_at.desc(), h.id)
+    )
+    seen: set[date] = set()
+    since: str | None = None
+    for row in rows:
+        if row.month_end in seen:
+            continue
+        seen.add(row.month_end)
+        rate = (row.figures or {}).get("savings_rate") or {}
+        if not rate.get("one_offs_left_out"):
+            since = None
+        elif since is None:
+            since = month_of(row.month_end)
+    return since
 
 
 def _stored_levers(figures: HealthSnapshotFigures) -> HouseholdLevers:
@@ -1466,7 +1562,8 @@ def health_check(conn: Connection, first: str, last: str, today: date) -> Health
             [HEALTH_MONTH_END_MISSING],
             f"the months between have no snapshot: {', '.join(gaps)} („Kennzahlen festhalten“)",
         )
-    reads = read_months(conn, months_between(FIRST_MONTH, checked[-1]), today)
+    span = months_between(FIRST_MONTH, checked[-1])
+    by_codes: dict[frozenset[AllocationCategory], dict[str, MonthRead]] = {}
     rows: list[HealthCheckRow] = []
     inputs: list[HealthCheckInput] = []
     for month in checked:
@@ -1474,6 +1571,11 @@ def health_check(conn: Connection, first: str, last: str, today: date) -> Health
         run = stored_run(conn, snapshot.net_worth_run_id)
         if run is None:  # unreachable: runs are append-only
             raise RuleViolationError([HEALTH_MONTH_END_MISSING], f"{month}: its run is gone")
+        # Phase 10 D307: the switches of the default scenario in force when it was stored
+        codes = levers_one_off_codes(levers_in_force_at(conn, snapshot.created_at))
+        if codes not in by_codes:
+            by_codes[codes] = read_months(conn, span, today, codes)
+        reads = by_codes[codes]
         again = net_worth(conn, run.on)
         recomputed = snapshot_figures(conn, reads, month, run, _stored_levers(snapshot.figures))
         held = _compared(snapshot.figures, run.total)

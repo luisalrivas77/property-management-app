@@ -1,5 +1,6 @@
 """rules/recurring against tests/fixtures/phase10/recurring.yaml and one_off_marks.yaml
-(docs/phases/phase-10.md §7.9 (b), (c); D296, D297)."""
+(docs/phases/phase-10.md §7.9 (b), (c); D296, D297). The candidate search of D297 went with
+§7.12 (b), D307; what a mark changes is still tested here."""
 
 from datetime import date
 from decimal import Decimal
@@ -16,7 +17,6 @@ from hausbuch.rules.plan import spending as SP
 from hausbuch.rules.plan.surplus import mean_cent
 from hausbuch.rules.recurring import (
     SeriesMark,
-    candidates,
     newest_allocation_marks,
     one_off_ids,
     recurring,
@@ -189,17 +189,6 @@ def _window(today: date) -> list[str]:
     """The fixture's closed window: every ended month of 2026 before today's, at most 12."""
     months = [f"2026-{m:02d}" for m in range(1, today.month)] if today.year == 2026 else []
     return months[-12:]
-
-
-@pytest.mark.parametrize("case", ONE_OFF, ids=lambda c: c.id)
-def test_one_off_candidates(case: phase10.OneOffCase):
-    lines = phase10.spending_lines(case.lines, case.id)
-    answers = newest_allocation_marks(
-        (phase10.fixture_id(m.allocation), m.answer) for m in case.marks
-    )
-    found = candidates(lines, _window(case.today), answers, today=case.today)
-    by_id = {phase10.fixture_id(row.id): row.id for row in case.lines}
-    assert sorted(by_id[c.line.allocation_id] for c in found) == sorted(case.expect.candidates)
 
 
 def test_newest_answer_counts():

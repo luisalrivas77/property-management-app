@@ -25,23 +25,33 @@ sys.path.insert(0, str(Path(__file__).parent))
 import fixture_models_phase10 as phase10  # noqa: E402
 
 from hausbuch.rules.health.bands import format_money, format_multiple, format_percent  # noqa: E402
-from hausbuch.rules.health.figures import savings_rate  # noqa: E402
 from hausbuch.rules.health.month import cashflow_rows  # noqa: E402
 from hausbuch.rules.household.taxonomy import ONE_OFF, TAXONOMY  # noqa: E402
 from hausbuch.schemas.allocation import AllocationCategory as C  # noqa: E402
 from hausbuch.schemas.household import HouseholdGroup, Relevance  # noqa: E402
 
-KEYS = ["need", "want", "one_off", "uncategorized", "saving"]
+# D308 (phase 10 §7.12 (c), amended 25 Nov 2026): need + want + uncategorized + saving = income,
+# the one-offs beside the partition, not in it.
+KEYS = ["need", "want", "uncategorized", "saving"]
 LABELS = {"need": "Notwendiges", "want": "Wünsche", "saving": "Sparen"}
 
 
-def m(month: str, private: list, rental: list = (), saved_links: str = "0.00") -> dict:
-    return {
+def m(
+    month: str,
+    private: list,
+    rental: list = (),
+    saved_links: str = "0.00",
+    marked: list[int] = (),
+) -> dict:
+    out = {
         "month": month,
         "private": [{"category": c, "amount": a} for c, a in private],
         "saved_links": saved_links,
         "rental": [{"category": c, "amount": a} for c, a in rental],
     }
+    if marked:  # the private lines (by position) a person marked one-off (D297)
+        out["marked"] = list(marked)
+    return out
 
 
 # --- The households ----------------------------------------------------------------------
@@ -206,24 +216,43 @@ def dec(value: Decimal) -> str:
     return f"{value:.2f}"
 
 
-def klass(code: C, overrides: dict) -> str | None:
+def one_off_codes(switches: dict) -> frozenset[C]:
+    """D307: the taxonomy's one-off codes, then the household's switch per spending code."""
+    on = {C(k) for k, v in switches.items() if v}
+    off = {C(k) for k, v in switches.items() if not v}
+    return frozenset((ONE_OFF - off) | on)
+
+
+def klass(code: C, overrides: dict, one_off: frozenset[C] = ONE_OFF) -> str | None:
     row = TAXONOMY.get(code)
     default = (
         "need"
         if code is C.BANK_FEES
         else (row.budget_class.value if row and row.budget_class else None)
     )
-    if default is None or code in ONE_OFF:
+    if default is None or code in one_off:
         return default
     return overrides.get(code.value, default)
 
 
-def line_of(code: C, overrides: dict) -> str:
-    if code in ONE_OFF:
+def line_of(code: C, overrides: dict, one_off: frozenset[C] = ONE_OFF) -> str:
+    if code in one_off:
         return "one_off"
     if code is C.UNCATEGORIZED:
         return "uncategorized"
-    return klass(code, overrides)
+    return klass(code, overrides, one_off)
+
+
+def switches_of(case: dict) -> dict:
+    """The switches in force: the case's own, or those of the newest scenario row created on
+    or before the stored month's `stored_at` (D308: a stored month reads the switches of the
+    default-scenario row in force when it was stored)."""
+    if "scenarios" not in case:
+        return case.get("one_off_overrides", {})
+    stored = case["stored_at"]
+    rows = [r for r in case["scenarios"] if r["created_at"] <= stored]
+    rows.sort(key=lambda r: r["created_at"])
+    return rows[-1]["one_off_overrides"] if rows else {}
 
 
 def mark(label: str, share: Decimal | None, monthly: Decimal, income: Decimal, target, minimum):
@@ -261,7 +290,8 @@ def mark(label: str, share: Decimal | None, monthly: Decimal, income: Decimal, t
 
 def expect(case: dict) -> dict:
     inputs = [phase10.MonthInput.model_validate(x) for x in case["months"]]
-    built = [phase10.household(x, case["id"]) for x in inputs]
+    codes = one_off_codes(switches_of(case))
+    built = [phase10.household(x, case["id"], codes) for x in inputs]
     months = [b[0] for b in built]
     window = [x.month for x in inputs]
     out: dict = {"window": window, "enough": len(window) >= 3}
@@ -270,16 +300,18 @@ def expect(case: dict) -> dict:
         return out
     overrides = case.get("overrides", {})
     targets = case.get("targets", {})
+    one_off = one_off_codes(switches_of(case))
     n = len(months)
-    totals: dict[C, Fraction] = {}
+    totals: dict[tuple[str, C], Fraction] = {}
     out["months"] = []
     uncategorized_lines = 0
-    for hm, lines in built:
-        sums = dict.fromkeys(KEYS, Fraction(0))
+    for x, (hm, lines) in zip(case["months"], built, strict=True):
+        marked = set(x.get("marked", []))
+        sums = dict.fromkeys([*KEYS, "one_off"], Fraction(0))
         spent = Fraction(0)
         # Each code from the month's private lines, so a group netting to 0 keeps its codes
         # (PR #490 review); spending as month_cashflow counts it.
-        for code, signed in cashflow_rows(lines):
+        for i, (code, signed) in enumerate(cashflow_rows(lines)):
             uncategorized_lines += code is C.UNCATEGORIZED
             row = TAXONOMY.get(code)
             if row is not None and (
@@ -288,22 +320,34 @@ def expect(case: dict) -> dict:
             ):
                 continue
             amount = -signed
-            sums[line_of(code, overrides)] += frac(amount)
-            totals[code] = totals.get(code, Fraction(0)) + frac(amount)
+            key = line_of(code, overrides, one_off)
+            # D297: a marked payment (money out) moves to the one-offs; in a code that is
+            # one-off already it is counted there once, never twice.
+            if i in marked and signed < 0:
+                key = "one_off"
+            sums[key] += frac(amount)
+            totals[(key, code)] = totals.get((key, code), Fraction(0)) + frac(amount)
             spent += frac(amount)
         assert spent == frac(hm.spending)
-        sums["saving"] = frac(hm.income) - spent
+        assert sums["one_off"] == frac(hm.one_off_spending)
+        # D308: the saving is the income less the regular spending; the one-offs stand beside
+        # the partition, so need + want + uncategorized + saving = income
+        sums["saving"] = frac(hm.income) - (spent - sums["one_off"])
         out["months"].append(
             {"month": hm.month, "income": dec(hm.income)}
-            | {k: dec(Decimal(sums[k].numerator) / sums[k].denominator) for k in KEYS}
+            | {
+                k: dec(Decimal(sums[k].numerator) / sums[k].denominator)
+                for k in ["need", "want", "one_off", "uncategorized", "saving"]
+            }
         )
     income_total = sum((frac(hm.income) for hm in months), Fraction(0))
-    line_codes: dict[str, dict[C, Fraction]] = {k: {} for k in KEYS}
-    for code, total in totals.items():
+    line_codes: dict[str, dict[C, Fraction]] = {k: {} for k in [*KEYS, "one_off"]}
+    for (key, code), total in totals.items():
         if total:
-            line_codes[line_of(code, overrides)][code] = total
+            line_codes[key][code] = total
     line_totals = {k: sum(v.values(), Fraction(0)) for k, v in line_codes.items()}
-    line_totals["saving"] = income_total - sum(totals.values(), Fraction(0))
+    regular_total = sum((v for (key, _), v in totals.items() if key != "one_off"), Fraction(0))
+    line_totals["saving"] = income_total - regular_total
     shown = [k for k in KEYS if k in ("need", "want", "saving") or line_totals[k]]
     income_cents = cents(income_total / n)
     line_cents = largest_remainder({k: line_totals[k] * 100 / n for k in shown}, income_cents, KEYS)
@@ -323,7 +367,12 @@ def expect(case: dict) -> dict:
     target_of = {"need": "needs_max", "want": "wants_max", "saving": "saving_min"}
     out["lines"] = []
     code_monthly: dict[C, int] = {}
-    for key in shown:
+    # D308: „Einmalig im Zeitraum“ beside the partition: its own monthly mean half-up, its
+    # codes by largest remainder within it; no class, no target, no mark.
+    one_off_shown = bool(line_totals["one_off"])
+    if one_off_shown:
+        line_cents["one_off"] = cents(line_totals["one_off"] / n)
+    for key in [*shown, *(["one_off"] if one_off_shown else [])]:
         codes = line_codes[key]
         order = sorted(codes, key=lambda c: c.value)
         per_code = (
@@ -331,7 +380,8 @@ def expect(case: dict) -> dict:
             if key == "saving"
             else largest_remainder({c: codes[c] * 100 / n for c in order}, line_cents[key], order)
         )
-        code_monthly |= per_code
+        for c, v in per_code.items():
+            code_monthly[c] = code_monthly.get(c, 0) + v
         row: dict = {
             "key": key,
             "monthly": money(line_cents[key]),
@@ -341,14 +391,19 @@ def expect(case: dict) -> dict:
         if key != "saving":
             row["codes"] = {}
             for c in order:
-                default = klass(c, {})
-                shown_class = None if key in ("one_off", "uncategorized") else klass(c, overrides)
+                default = klass(c, {}, one_off)
+                shown_class = (
+                    None if key in ("one_off", "uncategorized") else klass(c, overrides, one_off)
+                )
                 row["codes"][c.value] = {
                     "monthly": money(per_code[c]),
                     "total": dec(Decimal(codes[c].numerator) / codes[c].denominator),
                     "budget_class": shown_class,
                     "overridden": shown_class is not None and shown_class != default,
                 }
+        if key == "one_off":
+            out["one_off"] = row
+            continue
         target = targets.get(target_of.get(key, ""))
         row["target"] = target
         row["mark"] = mark(
@@ -368,7 +423,7 @@ def expect(case: dict) -> dict:
         ),
         key=lambda c: c.value,
     )
-    housing_total = sum((totals[c] for c in housing), Fraction(0))
+    housing_total = sum((v for (_, c), v in totals.items() if c in housing), Fraction(0))
     housing_monthly = Decimal(money(sum(code_monthly[c] for c in housing)))
     out["housing"] = {
         "monthly": dec(housing_monthly),
@@ -385,8 +440,11 @@ def expect(case: dict) -> dict:
             False,
         ),
     }
-    rate = savings_rate(months).rate
-    out["savings_rate"] = None if rate is None else f"{rate:.4f}"
+    # D308: the window's Sparquote is the regular saving ÷ Σ E, worked here independently of
+    # rules.health.figures, so Sparen's share must equal it
+    out["savings_rate"] = share(line_totals["saving"])
+    if not one_off_shown:
+        out["one_off"] = None
     out["no_shares"] = not shares
     out["todos"] = ["uncategorized_lines"] if uncategorized_lines else []
     return out
@@ -409,13 +467,27 @@ PARTITION = {
 # account's confirmed allocations. tests/fixture_models_phase10.household turns them into
 # phase 9's HouseholdMonth with the production functions.
 #
-# expect: per month the exact partition (need + want + one_off + uncategorized + saving =
-# income, D273); over the window E's monthly mean half-up, the lines' means by largest remainder
-# (ties in the order need, want, one_off, uncategorized, saving) and each line's codes the same
-# way (ties by the code's value); shares of Σ E to four places half-up; savings_rate is
-# rules.health.figures.savings_rate(months).rate, which saving's share must equal.
+# expect: per month the exact partition (need + want + uncategorized + saving = income, D273,
+# D308); over the window E's monthly mean half-up, the lines' means by largest remainder
+# (ties in the order need, want, uncategorized, saving) and each line's codes the same
+# way (ties by the code's value); shares of Σ E to four places half-up; savings_rate is the
+# regular saving ÷ ΣE, which saving's share must equal.
 # Computed by tests/fixture_gen_phase10.py for invented owners A and B; never regenerated to
-# fit the rule.
+# fit the rule (a change goes through a spec PR).
+#
+# Amended 25 Nov 2026 (phase 10 §7.12 (c), D308): the one-offs stand beside the partition, not
+# in it. Per month need + want + uncategorized + saving = income, saving = the income less the
+# regular spending (the one-offs left out), and `one_off` is the month's one-off spending
+# beside it; over the window the four lines add up to E and `one_off` („Einmalig im
+# Zeitraum“) is its own figure: its monthly mean half-up, its codes by largest remainder within
+# it. savings_rate is the regular saving ÷ ΣE, worked in the generator (no longer
+# rules.health.figures.savings_rate), and saving's share equals it. D307: hh_car_purchase,
+# hh_flat_search, hh_pregnancy_birth, hh_electronics, hh_work_education and hh_dental_optical
+# are one-off by default.
+#
+# Worked by hand for the amendment: the window's only one-off is the car purchase, 8500.00 in
+# 2027-04; its monthly mean 8500 ÷ 3 = 2833.333 → 2833.33 now stands beside the lines, and
+# Sparen grows by the same 8500.00 over the window (2833.33 a month after the apportioning).
 """,
     "cases": [
         {
@@ -437,6 +509,20 @@ OVERRIDES = {
 #
 # Same input shape and arithmetic as budget_partition.yaml. Computed by
 # tests/fixture_gen_phase10.py for invented owners A and B.
+#
+# Amended 25 Nov 2026 (phase 10 §7.12 (c), D308): the one-offs stand beside the partition, not
+# in it. Per month need + want + uncategorized + saving = income, saving = the income less the
+# regular spending (the one-offs left out), and `one_off` is the month's one-off spending
+# beside it; over the window the four lines add up to E and `one_off` („Einmalig im
+# Zeitraum“) is its own figure: its monthly mean half-up, its codes by largest remainder within
+# it. savings_rate is the regular saving ÷ ΣE, worked in the generator (no longer
+# rules.health.figures.savings_rate), and saving's share equals it. D307: hh_car_purchase,
+# hh_flat_search, hh_pregnancy_birth, hh_electronics, hh_work_education and hh_dental_optical
+# are one-off by default.
+#
+# Worked by hand for the amendment: as in budget_partition.yaml, the car purchase's 8500.00
+# leaves the lines for the one-off figure beside them and Sparen grows by it; a class move of
+# hh_car_purchase is still ignored (stale_moves_ignored), since it is one-off in force.
 """,
     "cases": [
         {
@@ -471,6 +557,18 @@ MARKS = {
 #
 # Same input shape and arithmetic as budget_partition.yaml. Computed by
 # tests/fixture_gen_phase10.py for invented owners A and B.
+#
+# Amended 25 Nov 2026 (phase 10 §7.12 (c), D308): the one-offs stand beside the partition, not
+# in it. Per month need + want + uncategorized + saving = income, saving = the income less the
+# regular spending (the one-offs left out), and `one_off` is the month's one-off spending
+# beside it; over the window the four lines add up to E and `one_off` („Einmalig im
+# Zeitraum“) is its own figure: its monthly mean half-up, its codes by largest remainder within
+# it. savings_rate is the regular saving ÷ ΣE, worked in the generator (no longer
+# rules.health.figures.savings_rate), and saving's share equals it. D307: hh_car_purchase,
+# hh_flat_search, hh_pregnancy_birth, hh_electronics, hh_work_education and hh_dental_optical
+# are one-off by default.
+#
+# These windows hold no one-off code, so the amendment changes no figure here.
 """,
     "cases": [
         {
@@ -520,6 +618,126 @@ MARKS = {
             "id": "too_few_months",
             "months": STEADY[:2],
             "targets": {"needs_max": "50.0"},
+        },
+    ],
+}
+
+# §7.12 (b), D307: the household's one-off switches. Three months, invented: each a salary of
+# 4000, rent 1200 and groceries, with electronics (one-off by default, a want otherwise), travel
+# (a want) and in March dentist and glasses (one-off by default).
+SWITCH_MONTHS = [
+    m(
+        "2027-01",
+        [
+            ("hh_salary", "4000.00"),
+            ("hh_rent", "-1200.00"),
+            ("hh_groceries", "-600.00"),
+            ("hh_electronics", "-900.00"),
+            ("hh_travel", "-250.00"),
+        ],
+    ),
+    m(
+        "2027-02",
+        [
+            ("hh_salary", "4000.00"),
+            ("hh_rent", "-1200.00"),
+            ("hh_groceries", "-610.00"),
+            ("hh_electronics", "-40.00"),
+            ("hh_travel", "-1800.00"),
+        ],
+    ),
+    m(
+        "2027-03",
+        [
+            ("hh_salary", "4000.00"),
+            ("hh_rent", "-1200.00"),
+            ("hh_groceries", "-590.00"),
+            ("hh_travel", "-250.00"),
+            ("hh_dental_optical", "-380.00"),
+        ],
+    ),
+]
+
+
+def marked(months: list[dict], marks: dict[str, list[int]]) -> list[dict]:
+    return [x | ({"marked": marks[x["month"]]} if x["month"] in marks else {}) for x in months]
+
+
+SWITCHES = {
+    "header": """\
+# Phase 10 §7.12 (b), (c), D307, D308 (written 25 Nov 2026): the household's one-off switches
+# (HouseholdLevers.one_off_overrides, a code to true or false). The codes counted as one-off are
+# the taxonomy's default (hh_car_purchase, hh_flat_search, hh_pregnancy_birth, hh_electronics,
+# hh_work_education, hh_dental_optical), then the household's switch per spending code; a
+# payment marked one-off (D297, `marked`: the month's private lines by position) is one-off
+# whatever its code's switch, and counted once. The regular spending is the month's spending
+# less the one-off spending; Sparen and the Sparquote are the income less the regular spending
+# (D308). `scenarios` + `stored_at`: a stored month (health_snapshot) is recomputed by
+# `hausbuch health-check` with the switches of the default-scenario row in force when it was
+# stored (the newest row created on or before `stored_at`), never with today's.
+#
+# Same input shape and arithmetic as budget_partition.yaml (its amendment of 25 Nov 2026).
+# Computed by tests/fixture_gen_phase10.py for invented owners A and B and worked by hand below;
+# never regenerated to fit the rule.
+#
+# Worked by hand (ΣE = 3 x 4000 = 12000 in every case):
+# - default_switched_off ({hh_electronics: false}): one-off only the March dentist, 380.00;
+#   regular Jan 1200 + 600 + 900 + 250 = 2950, Feb 1200 + 610 + 40 + 1800 = 3650, Mar 1200 +
+#   590 + 250 = 2040, Σ 8640; Sparen 12000 − 8640 = 3360, Sparquote 0.2800. The electronics
+#   (940.00) count in Wünsche, their taxonomy class.
+# - want_switched_on ({hh_travel: true}): one-off Jan 900 + 250 = 1150, Feb 40 + 1800 = 1840,
+#   Mar 250 + 380 = 630, Σ 3620; regular Jan 1800, Feb 1810, Mar 1790, Σ 5400; Sparen 6600,
+#   Sparquote 0.5500; Wünsche 0.00 (travel was its only want).
+# - switch_and_mark_same_payment ({hh_electronics: false, hh_travel: true}, the January
+#   electronics and the February travel marked one-off): the marked 900 electronics are one-off
+#   though their code is switched off; the marked 1800 travel is one-off by its code and the
+#   mark, counted once. One-off Jan 900 + 250 = 1150, Feb 1800, Mar 250 + 380 = 630, Σ 3580;
+#   regular Jan 1800, Feb 1200 + 610 + 40 = 1850, Mar 1790, Σ 5440; Sparen 6560, Sparquote
+#   6560 ÷ 12000 = 0.54667 → 0.5467; Wünsche the February electronics, 40.00.
+# - stored_month_reads_its_day: rows of 15 Mar ({hh_dental_optical: false}) and 10 Apr 2027
+#   ({}, back to the defaults); the months were stored on 1 Apr 2027 08:30 UTC, so the 15 Mar
+#   row is in force: one-off Jan 900, Feb 40, Mar 0, Σ 940; regular Jan 2050, Feb 3610, Mar
+#   1200 + 590 + 250 + 380 = 2420, Σ 8080; Sparen 3920, Sparquote 3920 ÷ 12000 = 0.32667 →
+#   0.3267 (today's row would give the defaults: one-off 1320, Sparen 4300, 0.3583).
+""",
+    "cases": [
+        {
+            "id": "default_switched_off",
+            "description": "electronics, one-off by default, switched to regular: a want again",
+            "months": SWITCH_MONTHS,
+            "one_off_overrides": {"hh_electronics": False},
+        },
+        {
+            "id": "want_switched_on",
+            "description": (
+                "travel, a want, switched to one-off: it leaves Wünsche and the Sparquote"
+            ),
+            "months": SWITCH_MONTHS,
+            "one_off_overrides": {"hh_travel": True},
+        },
+        {
+            "id": "switch_and_mark_same_payment",
+            "description": (
+                "a mark wins over a code switched off, and a marked payment in a code switched"
+                " on counts once"
+            ),
+            "months": marked(SWITCH_MONTHS, {"2027-01": [3], "2027-02": [4]}),
+            "one_off_overrides": {"hh_electronics": False, "hh_travel": True},
+        },
+        {
+            "id": "stored_month_reads_its_day",
+            "description": (
+                "a stored month reads the switches of the row in force when it was stored"
+            ),
+            "months": SWITCH_MONTHS,
+            "scenarios": [
+                {
+                    "created_at": "2027-03-15T09:00:00Z",
+                    "one_off_overrides": {"hh_dental_optical": False},
+                },
+                {"created_at": "2027-04-10T09:00:00Z", "one_off_overrides": {}},
+            ],
+            "stored_at": "2027-04-01T08:30:00Z",
         },
     ],
 }
@@ -575,6 +793,7 @@ def main() -> None:
     write("budget_partition", PARTITION)
     write("budget_overrides", OVERRIDES)
     write("budget_marks", MARKS)
+    write("one_off_switches", SWITCHES)
     (phase10.FIXTURES / "budget_references.yaml").write_text(REFERENCES, encoding="utf-8")
 
 

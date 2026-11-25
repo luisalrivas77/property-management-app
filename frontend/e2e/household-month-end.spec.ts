@@ -107,6 +107,7 @@ function health(captured: boolean): Health {
           rate: "0.2500",
           rate_regular: "0.2500",
           rate_without_principal: "0.2500",
+          one_offs_left_out: true,
           months: window.map((month) => ({ month, rate: "0.2500" })),
         }
       : null,
