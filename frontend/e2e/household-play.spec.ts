@@ -535,9 +535,12 @@ test("on the phone, Durchspielen scrolls no page sideways, light and dark", asyn
     await page.emulateMedia({ colorScheme: scheme });
     await page.goto("/household?tab=durchspielen");
     await page.getByLabel("Netto im Monat: angenommen").fill("5500");
+    // An end on the income, so „Was das bewirkt“ shows two lines per row on the phone too.
+    await page.getByLabel("Netto im Monat: bis").selectOption(HORIZON[2] ?? "");
     await page.getByRole("button", { name: "Wünsche" }).click();
     await page.getByLabel("Geplant pro Monat: Restaurant").fill("100");
     await expect(effect(page, "investable").getByRole("cell").nth(1)).toHaveText("1.530 €");
+    await expect(effect(page, "investable").getByRole("row")).toHaveCount(2);
     for (const field of [page.getByLabel("Netto im Monat: angenommen"), page.getByLabel("Geplant pro Monat: Restaurant")]) {
       await field.scrollIntoViewIfNeeded();
       const box = await field.boundingBox();
