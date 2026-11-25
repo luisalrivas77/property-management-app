@@ -8,7 +8,9 @@
 # both purposes carry. A code without all six fails here before any rule exists.
 #
 # Phase 9 (D236, step 0, 17 Nov 2026) adds `one_off` (default false), checked against the
-# taxonomy's field; only hh_car_purchase is one-off.
+# taxonomy's field; only hh_car_purchase is one-off. Amended 25 Nov 2026 (phase 10 §7.12 (b),
+# D307): hh_flat_search, hh_pregnancy_birth, hh_electronics, hh_work_education and
+# hh_dental_optical are one-off by default too, each switchable by the household.
 #
 # Written from D159's text, not from the tables. Labels are given only where D159 names one.
 #
@@ -74,13 +76,13 @@ codes:
   - {category: hh_clothing, label: "Kleidung & Schuhe", group: clothing, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_dining, label: "Sonstiges Essen gehen", group: dining, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_home, label: "Haushalt & Einrichtung", group: home, relevance: spending, treatment: private, threshold: "0.900"}
-  - {category: hh_electronics, label: "Elektronik & Technik", group: electronics, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_electronics, label: "Elektronik & Technik", group: electronics, relevance: spending, treatment: private, threshold: "0.900", one_off: true}
   - {category: hh_online_shopping, label: "Online-Einkäufe", group: online_shopping, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_fees, label: "Behörden & Gebühren", group: fees, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_gifts, label: "Geschenke & Feiern", group: gifts, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_family_transfers, label: "Geld an Familie / ins Ausland", group: family_transfers, relevance: spending, treatment: private, threshold: null}
   - {category: hh_telecom, label: "Sonstiges Telefon & Internet", group: telecom, relevance: spending, treatment: private, threshold: "0.900"}
-  - {category: hh_work_education, label: "Arbeitsmittel & Fortbildung", group: work_education, relevance: spending, treatment: private, threshold: null}
+  - {category: hh_work_education, label: "Arbeitsmittel & Fortbildung", group: work_education, relevance: spending, treatment: private, threshold: null, one_off: true}
   - {category: hh_sport, label: "Sport & Fitness", group: sport, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_travel, label: "Sonstiges Reisen", group: travel, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_investment, label: "Sonstige Geldanlage", group: investment, relevance: transfer, treatment: private, threshold: null}
@@ -124,14 +126,14 @@ codes:
   - {category: hh_rent, label: "Miete", group: housing, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_energy, label: "Strom, Gas & Heizung", group: housing, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_broadcast_fee, label: "Rundfunkbeitrag", group: housing, relevance: spending, treatment: private, threshold: "0.900"}
-  - {category: hh_flat_search, label: "Wohnungssuche & Umzug", group: housing, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_flat_search, label: "Wohnungssuche & Umzug", group: housing, relevance: spending, treatment: private, threshold: "0.900", one_off: true}
   - {category: hh_ins_car, label: "Kfz-Versicherung", group: insurance, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_ins_liability_contents, label: "Haftpflicht & Hausrat", group: insurance, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_ins_health, label: "Kranken & Pflege", group: insurance, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_ins_life, label: "Leben, Berufsunfähigkeit & Rente", group: insurance, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_pharmacy, label: "Apotheke", group: health, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_doctor, label: "Arzt & Labor", group: health, relevance: spending, treatment: private, threshold: "0.900"}
-  - {category: hh_dental_optical, label: "Zahnarzt & Brille", group: health, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_dental_optical, label: "Zahnarzt & Brille", group: health, relevance: spending, treatment: private, threshold: "0.900", one_off: true}
   - {category: hh_outings, label: "Ausflüge & Kultur", group: leisure_travel, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_books_media, label: "Bücher & Medien", group: leisure_travel, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_hobbies, label: "Hobbys", group: leisure_travel, relevance: spending, treatment: private, threshold: "0.900"}
@@ -139,7 +141,7 @@ codes:
   - {category: hh_flights, label: "Flüge", group: travel, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_kids_gear, label: "Baby- & Kinderausstattung", group: family_child, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_toys, label: "Spielzeug", group: family_child, relevance: spending, treatment: private, threshold: "0.900"}
-  - {category: hh_pregnancy_birth, label: "Schwangerschaft & Geburt", group: family_child, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_pregnancy_birth, label: "Schwangerschaft & Geburt", group: family_child, relevance: spending, treatment: private, threshold: "0.900", one_off: true}
   - {category: hh_mobile_phone, label: "Mobilfunk", group: telecom, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_internet, label: "Internet & Festnetz", group: telecom, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_postage, label: "Porto & Versand", group: other, relevance: spending, treatment: private, threshold: "0.900"}

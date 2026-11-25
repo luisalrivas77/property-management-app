@@ -7,6 +7,20 @@
 #
 # Same input shape and arithmetic as budget_partition.yaml. Computed by
 # tests/fixture_gen_phase10.py for invented owners A and B.
+#
+# Amended 25 Nov 2026 (phase 10 §7.12 (c), D308): the one-offs stand beside the partition, not
+# in it. Per month need + want + uncategorized + saving = income, saving = the income less the
+# regular spending (the one-offs left out), and `one_off` is the month's one-off spending
+# beside it; over the window the four lines add up to E and `one_off` („Einmalig im
+# Zeitraum“) is its own figure: its monthly mean half-up, its codes by largest remainder within
+# it. savings_rate is the regular saving ÷ ΣE, worked in the generator (no longer
+# rules.health.figures.savings_rate), and saving's share equals it. D307: hh_car_purchase,
+# hh_flat_search, hh_pregnancy_birth, hh_electronics, hh_work_education and hh_dental_optical
+# are one-off by default.
+#
+# Worked by hand for the amendment: as in budget_partition.yaml, the car purchase's 8500.00
+# leaves the lines for the one-off figure beside them and Sparen grows by it; a class move of
+# hh_car_purchase is still ignored (stale_moves_ignored), since it is one-off in force.
 cases:
 - id: defaults
   description: the taxonomy's classes
@@ -84,7 +98,7 @@ cases:
     - {month: 2027-03, income: '4647.00', need: '2251.00', want: '506.69', one_off: '0.00', uncategorized: '27.99',
       saving: '1861.32'}
     - {month: 2027-04, income: '3797.90', need: '1938.45', want: '364.64', one_off: '8500.00', uncategorized: '12.00',
-      saving: '-7017.19'}
+      saving: '1482.81'}
     - {month: 2027-05, income: '4798.80', need: '2075.38', want: '420.86', one_off: '0.00', uncategorized: '0.00',
       saving: '2302.56'}
     income: {monthly: '4414.57', total: '13243.70', rental_monthly: '-90.43', private_monthly: '4505.00'}
@@ -116,14 +130,6 @@ cases:
         hh_streaming: {monthly: '4.33', total: '12.99', budget_class: want, overridden: false}
       target: null
       mark: null
-    - key: one_off
-      monthly: '2833.33'
-      total: '8500.00'
-      share: '0.6418'
-      codes:
-        hh_car_purchase: {monthly: '2833.33', total: '8500.00', budget_class: null, overridden: false}
-      target: null
-      mark: null
     - key: uncategorized
       monthly: '13.33'
       total: '39.99'
@@ -132,7 +138,14 @@ cases:
         uncategorized: {monthly: '13.33', total: '39.99', budget_class: null, overridden: false}
       target: null
       mark: null
-    - {key: saving, monthly: '-951.10', total: '-2853.31', share: '-0.2154', target: null, mark: null}
+    - {key: saving, monthly: '1882.23', total: '5646.69', share: '0.4264', target: null, mark: null}
+    one_off:
+      key: one_off
+      monthly: '2833.33'
+      total: '8500.00'
+      share: '0.6418'
+      codes:
+        hh_car_purchase: {monthly: '2833.33', total: '8500.00', budget_class: null, overridden: false}
     housing:
       monthly: '1213.76'
       total: '3641.28'
@@ -140,7 +153,7 @@ cases:
       codes: [hh_broadcast_fee, hh_energy, hh_rent]
       target: null
       mark: null
-    savings_rate: '-0.2154'
+    savings_rate: '0.4264'
     no_shares: false
     todos: [uncategorized_lines]
 - id: moved
@@ -154,7 +167,7 @@ cases:
     - {month: 2027-03, income: '4647.00', need: '2240.10', want: '517.59', one_off: '0.00', uncategorized: '27.99',
       saving: '1861.32'}
     - {month: 2027-04, income: '3797.90', need: '1904.25', want: '398.84', one_off: '8500.00', uncategorized: '12.00',
-      saving: '-7017.19'}
+      saving: '1482.81'}
     - {month: 2027-05, income: '4798.80', need: '2077.78', want: '418.46', one_off: '0.00', uncategorized: '0.00',
       saving: '2302.56'}
     income: {monthly: '4414.57', total: '13243.70', rental_monthly: '-90.43', private_monthly: '4505.00'}
@@ -186,14 +199,6 @@ cases:
         hh_streaming: {monthly: '4.33', total: '12.99', budget_class: want, overridden: false}
       target: null
       mark: null
-    - key: one_off
-      monthly: '2833.33'
-      total: '8500.00'
-      share: '0.6418'
-      codes:
-        hh_car_purchase: {monthly: '2833.33', total: '8500.00', budget_class: null, overridden: false}
-      target: null
-      mark: null
     - key: uncategorized
       monthly: '13.33'
       total: '39.99'
@@ -202,7 +207,14 @@ cases:
         uncategorized: {monthly: '13.33', total: '39.99', budget_class: null, overridden: false}
       target: null
       mark: null
-    - {key: saving, monthly: '-951.10', total: '-2853.31', share: '-0.2154', target: null, mark: null}
+    - {key: saving, monthly: '1882.23', total: '5646.69', share: '0.4264', target: null, mark: null}
+    one_off:
+      key: one_off
+      monthly: '2833.33'
+      total: '8500.00'
+      share: '0.6418'
+      codes:
+        hh_car_purchase: {monthly: '2833.33', total: '8500.00', budget_class: null, overridden: false}
     housing:
       monthly: '1213.76'
       total: '3641.28'
@@ -210,7 +222,7 @@ cases:
       codes: [hh_broadcast_fee, hh_energy, hh_rent]
       target: null
       mark: null
-    savings_rate: '-0.2154'
+    savings_rate: '0.4264'
     no_shares: false
     todos: [uncategorized_lines]
 - id: stale_moves_ignored
@@ -224,7 +236,7 @@ cases:
     - {month: 2027-03, income: '4647.00', need: '2251.00', want: '506.69', one_off: '0.00', uncategorized: '27.99',
       saving: '1861.32'}
     - {month: 2027-04, income: '3797.90', need: '1938.45', want: '364.64', one_off: '8500.00', uncategorized: '12.00',
-      saving: '-7017.19'}
+      saving: '1482.81'}
     - {month: 2027-05, income: '4798.80', need: '2075.38', want: '420.86', one_off: '0.00', uncategorized: '0.00',
       saving: '2302.56'}
     income: {monthly: '4414.57', total: '13243.70', rental_monthly: '-90.43', private_monthly: '4505.00'}
@@ -256,14 +268,6 @@ cases:
         hh_streaming: {monthly: '4.33', total: '12.99', budget_class: want, overridden: false}
       target: null
       mark: null
-    - key: one_off
-      monthly: '2833.33'
-      total: '8500.00'
-      share: '0.6418'
-      codes:
-        hh_car_purchase: {monthly: '2833.33', total: '8500.00', budget_class: null, overridden: false}
-      target: null
-      mark: null
     - key: uncategorized
       monthly: '13.33'
       total: '39.99'
@@ -272,7 +276,14 @@ cases:
         uncategorized: {monthly: '13.33', total: '39.99', budget_class: null, overridden: false}
       target: null
       mark: null
-    - {key: saving, monthly: '-951.10', total: '-2853.31', share: '-0.2154', target: null, mark: null}
+    - {key: saving, monthly: '1882.23', total: '5646.69', share: '0.4264', target: null, mark: null}
+    one_off:
+      key: one_off
+      monthly: '2833.33'
+      total: '8500.00'
+      share: '0.6418'
+      codes:
+        hh_car_purchase: {monthly: '2833.33', total: '8500.00', budget_class: null, overridden: false}
     housing:
       monthly: '1213.76'
       total: '3641.28'
@@ -280,6 +291,6 @@ cases:
       codes: [hh_broadcast_fee, hh_energy, hh_rent]
       target: null
       mark: null
-    savings_rate: '-0.2154'
+    savings_rate: '0.4264'
     no_shares: false
     todos: [uncategorized_lines]

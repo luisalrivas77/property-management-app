@@ -78,14 +78,12 @@ from hausbuch.schemas.health import (
     HealthTodoCode,
     LightColour,
     MarkedFigure,
-    MonthRate,
     Multiple,
     Reserve,
     ReserveAccount,
     ReserveMonths,
     ReserveOrigin,
     ReserveState,
-    SavingsRate,
     Share,
     TargetMonths,
     YearMonth,
@@ -441,27 +439,28 @@ class SrExpect(Schema):
     rate: Ratio | None
     rate_regular: Ratio | None
     rate_without_principal: Ratio | None
+    one_offs_left_out: bool
     months: dict[YearMonth, Ratio | None]
 
 
 def savings_rate(months: list[SrMonth]) -> SrExpect:
-    saved = sum((m.saved for m in months), ZERO)
+    """Phase 10 D308 (§7.12 (c)): over the window the one-offs are left out of the saving,
+    so `saved` is the regular saving Σ (S + one-off) and `rate_regular` is gone (it is `rate`).
+    A month's own rate stays S ÷ E."""
+    saved = sum((m.saved + m.one_off_spending for m in months), ZERO)
     income = sum((m.income for m in months), ZERO)
     one_off = sum((m.one_off_spending for m in months), ZERO)
     principal = sum((m.principal for m in months), ZERO)
-    figure = SavingsRate(
+    return SrExpect(
         saved=saved,
         income=income,
         one_off_spending=one_off,
         principal=principal,
         rate=ratio4(saved, income),
-        rate_regular=ratio4(saved + one_off, income),
+        rate_regular=None,
         rate_without_principal=ratio4(saved - principal, income),
-        months=[MonthRate(month=m.month, rate=ratio4(m.saved, m.income)) for m in months],
-    )
-    return SrExpect(
-        **figure.model_dump(exclude={"months"}),
-        months={m.month: m.rate for m in figure.months},
+        one_offs_left_out=True,
+        months={m.month: ratio4(m.saved, m.income) for m in months},
     )
 
 
@@ -1731,6 +1730,7 @@ class HwSavingsRate(Schema):
     rate: Ratio | None
     rate_regular: Ratio | None
     rate_without_principal: Ratio | None
+    one_offs_left_out: bool = False
 
 
 class HwPlan(Schema):

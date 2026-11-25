@@ -8,6 +8,18 @@
 #
 # Same input shape and arithmetic as budget_partition.yaml. Computed by
 # tests/fixture_gen_phase10.py for invented owners A and B.
+#
+# Amended 25 Nov 2026 (phase 10 §7.12 (c), D308): the one-offs stand beside the partition, not
+# in it. Per month need + want + uncategorized + saving = income, saving = the income less the
+# regular spending (the one-offs left out), and `one_off` is the month's one-off spending
+# beside it; over the window the four lines add up to E and `one_off` („Einmalig im
+# Zeitraum“) is its own figure: its monthly mean half-up, its codes by largest remainder within
+# it. savings_rate is the regular saving ÷ ΣE, worked in the generator (no longer
+# rules.health.figures.savings_rate), and saving's share equals it. D307: hh_car_purchase,
+# hh_flat_search, hh_pregnancy_birth, hh_electronics, hh_work_education and hh_dental_optical
+# are one-off by default.
+#
+# These windows hold no one-off code, so the amendment changes no figure here.
 cases:
 - id: targets_met
   months: &id001
@@ -93,6 +105,7 @@ cases:
       mark: {colour: green, gap_points: '-3.0', gap_monthly: '-120.00', text: 'Wohnen: 32,0 % eures Einkommens,
           3,0 Prozentpunkte unter eurem Ziel von höchstens 35,0 % (120 € im Monat Luft).'}
     savings_rate: '0.4300'
+    one_off: null
     no_shares: false
     todos: []
 - id: targets_missed
@@ -148,6 +161,7 @@ cases:
       mark: {colour: amber, gap_points: '2.0', gap_monthly: '80.00', text: 'Wohnen: 32,0 % eures Einkommens,
           2,0 Prozentpunkte über eurem Ziel von höchstens 30,0 %; das sind 80 € im Monat zu viel.'}
     savings_rate: '0.4300'
+    one_off: null
     no_shares: false
     todos: []
 - id: targets_exactly_met
@@ -233,6 +247,7 @@ cases:
       mark: {colour: green, gap_points: '0.0', gap_monthly: '0.00', text: 'Wohnen: 31,6 % eures Einkommens,
           genau auf eurem Ziel von höchstens 31,6 %.'}
     savings_rate: '0.4240'
+    one_off: null
     no_shares: false
     todos: []
 - id: targets_empty
@@ -280,6 +295,7 @@ cases:
       mark: {colour: amber, gap_points: '2.0', gap_monthly: '80.00', text: 'Wohnen: 32,0 % eures Einkommens,
           2,0 Prozentpunkte über eurem Ziel von höchstens 30,0 %; das sind 80 € im Monat zu viel.'}
     savings_rate: '0.4300'
+    one_off: null
     no_shares: false
     todos: []
 - id: income_not_positive
@@ -352,6 +368,7 @@ cases:
       target: '30.0'
       mark: null
     savings_rate: null
+    one_off: null
     no_shares: true
     todos: []
 - id: too_few_months
