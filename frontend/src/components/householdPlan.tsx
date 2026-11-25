@@ -61,6 +61,7 @@ import { percentInput, toSignedMoneyString } from "./input";
 import { ALLOCATION_CATEGORY } from "./labels";
 import { type GoalView, useGoalView } from "./householdGoal";
 import { PlanExplanationPanel } from "./planExplanation";
+import { applyPlay, NO_PLAY, type PlayChanges } from "./playDraft";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
 import { BudgetClassPanel, BudgetSection, type BudgetView, GoalsPanel, PlanError } from "./planningBudget";
 import { type PlanPreview, SpendingPlaySection, stretch, usePlanPreview } from "./spendingPlay";
@@ -79,7 +80,7 @@ type ProjectionPoint = components["schemas"]["ProjectionPoint"];
 type AdviceMode = components["schemas"]["AdviceMode"];
 type AllocationCategory = components["schemas"]["AllocationCategory"];
 
-interface PlanData {
+export interface PlanData {
   plan: HouseholdPlan;
   health: Health;
   budget: BudgetView;
@@ -125,6 +126,9 @@ function resolveDraft(state: DraftState | null, plan: HouseholdPlan | undefined)
 }
 
 type T = PlanningText;
+
+/** The levers „Als Plan behalten“ writes (§7.10 (a) 3) and the goal's choice it may switch. */
+const PLAY_KEYS = ["spending_changes", "income_changes", "one_offs", "goal_choice"] as const;
 
 /** The spending changes as the household set them (code, amount or percent, months), in one
  * order and one number format, so a save that leaves them as they are (the server's
@@ -197,8 +201,29 @@ export type SetDraft = (update: (previous: HouseholdLevers) => HouseholdLevers) 
 
 // --- the plan's state, shared by the places that show it ------------------------------------
 
+/** Haushalt › Durchspielen's draft (§7.10 (a), D299): changes on top of the saved levers, kept
+ * apart from the draft above, so no other place moves before „Als Plan behalten“. It lives in the
+ * provider, so it survives a switch to Budget, Reserve or Ziel and back. */
+export interface PlayState {
+  changes: PlayChanges;
+  set: (update: (previous: PlayChanges) => PlayChanges) => void;
+  /** Stores the saved levers (read again) with the changes as the new default. */
+  keep: () => Promise<void>;
+  reset: () => void;
+  busy: boolean;
+  error: unknown;
+  /** Moves when the draft is replaced as a whole (reset, kept, „Für alle übernehmen“), so the
+   * fields read it again. */
+  round: number;
+  bump: () => void;
+}
+
+/** Stores the saved levers (read again) with `keys` taken from `levers`, as the new default: a
+ * lever saved from its place (§7.10 (a) 7), never with either draft. */
+export type SaveLevers = (keys: readonly (keyof HouseholdLevers)[], levers: HouseholdLevers) => Promise<void>;
+
 /** The plan once at least three months are closed (12c otherwise). */
-interface PlanReady {
+export interface PlanReady {
   /** The saved plan and what was read with it. */
   data: PlanData;
   /** The same with the draft's plan from the preview: what a place shows. */
@@ -213,6 +238,8 @@ interface PlanReady {
   epoch: number;
   current: HouseholdScenario | null;
   onChanged: () => void;
+  play: PlayState;
+  saveLevers: SaveLevers;
 }
 
 interface PlanState {
@@ -227,7 +254,7 @@ interface PlanState {
 
 const PlanContext = createContext<PlanState | null>(null);
 
-function usePlan(): PlanState {
+export function usePlan(): PlanState {
   const value = useContext(PlanContext);
   if (!value) throw new Error("PlanProvider missing");
   return value;
@@ -266,6 +293,10 @@ export function PlanProvider({
   const [spendingInvalid, setSpendingInvalid] = useState(false);
   // A discard or a save remounts the fields, so none keeps a text the draft no longer holds.
   const [epoch, setEpoch] = useState(0);
+  const [play, setPlay] = useState<PlayChanges>(NO_PLAY);
+  const [playBusy, setPlayBusy] = useState(false);
+  const [playError, setPlayError] = useState<unknown>(null);
+  const [playRound, setPlayRound] = useState(0);
   const annahmen = useDetail(ASSUMPTIONS);
   const goals = useDetail("goals");
   const budgetClass = useDetail("budget");
@@ -363,6 +394,62 @@ export function PlanProvider({
       </div>
     );
 
+    /** The levers just stored also become the draft's, so a later save of the draft (the
+     * Budget's class panel) never writes the old value back; with no other change the draft
+     * follows the new row once it is read. */
+    const adopt = (levers: HouseholdLevers, keys: readonly (keyof HouseholdLevers)[], row: HouseholdScenario) => {
+      setDraftState((previous) => {
+        if (previous === null) return null;
+        const merged: HouseholdLevers = { ...resolveDraft(previous, data.plan) };
+        for (const key of keys) Object.assign(merged, { [key]: levers[key] });
+        return { levers: merged, ...(dirty ? {} : { resetOn: row.id }) };
+      });
+    };
+
+    /** The default scenario as stored now, read again, so a lever saved in another tab since the
+     * page was read is kept. */
+    const storedDefault = async () => {
+      const row = currentDefault(await loadScenarioHistory());
+      return { row, levers: fillLevers(row?.levers) };
+    };
+
+    const saveLevers: SaveLevers = async (keys, levers) => {
+      const stored = await storedDefault();
+      const posted: HouseholdLevers = { ...stored.levers };
+      for (const key of keys) Object.assign(posted, { [key]: levers[key] });
+      const row = await saveDefaultScenario(posted, stored.row);
+      adopt(levers, keys, row);
+      state.reload();
+    };
+
+    const keep = async () => {
+      setPlayBusy(true);
+      setPlayError(null);
+      try {
+        const stored = await storedDefault();
+        const posted = applyPlay(stored.levers, play, surplusRow(data.plan, "mean_income")?.amount ?? null);
+        const choice = stored.levers.goal_choice ?? null;
+        const spendingMoved = spendingKey(posted.spending_changes) !== spendingKey(stored.levers.spending_changes);
+        // As the save above: spending saved over an adopted scenario's is the household's own.
+        const levers: HouseholdLevers = {
+          ...posted,
+          goal_choice:
+            choice?.spending && choice.spending !== "own" && spendingMoved
+              ? { ...choice, spending: "own" as const, spending_chosen_on: todayIso() }
+              : choice,
+        };
+        const row = await saveDefaultScenario(levers, stored.row);
+        setPlay(NO_PLAY);
+        setPlayRound((n) => n + 1);
+        adopt(levers, PLAY_KEYS, row);
+        state.reload();
+      } catch (caught) {
+        setPlayError(caught);
+      } finally {
+        setPlayBusy(false);
+      }
+    };
+
     ready = {
       data,
       shown: dirty ? { ...data, plan: preview.withChanges } : data,
@@ -375,6 +462,21 @@ export function PlanProvider({
       epoch,
       current,
       onChanged: state.reload,
+      play: {
+        changes: play,
+        set: setPlay,
+        keep,
+        reset: () => {
+          setPlay(NO_PLAY);
+          setPlayRound((n) => n + 1);
+          setPlayError(null);
+        },
+        busy: playBusy,
+        round: playRound,
+        bump: () => setPlayRound((n) => n + 1),
+        error: playError,
+      },
+      saveLevers,
     };
 
     if (annahmen.id !== null) {
@@ -741,7 +843,7 @@ function RestCard({ ready }: { ready: PlanReady }) {
 
 // --- 12c: fewer than three closed months ---------------------------------------------------
 
-function TooFewMonths({ data, onChanged }: { data: PlanData; onChanged: () => void }) {
+export function TooFewMonths({ data, onChanged }: { data: PlanData; onChanged: () => void }) {
   const closed = data.health.window.months ?? [];
   const count = closed.length;
   const last = closed[count - 1];
@@ -779,7 +881,7 @@ function nextMonth(month: string): string {
 
 // --- the figures --------------------------------------------------------------------------------
 
-function surplusRow(plan: HouseholdPlan, key: SurplusKey) {
+export function surplusRow(plan: HouseholdPlan, key: SurplusKey) {
   return plan.surplus?.rows.find((row) => row.key === key) ?? null;
 }
 
@@ -1031,7 +1133,7 @@ function estimateYear(source: string | undefined): number | null {
   return (source ?? "").startsWith(`${RETURN_ESTIMATE}:`) ? Number(source!.slice(RETURN_ESTIMATE.length + 1)) : null;
 }
 
-function OneOffs({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLevers; setDraft: SetDraft }) {
+export function OneOffs({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLevers; setDraft: SetDraft }) {
   const t = useT(planning);
   const f = usePlanFormat();
   const ids = useId();

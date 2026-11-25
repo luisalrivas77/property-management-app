@@ -6,12 +6,13 @@ import { defineMessages } from "./core";
 const de = {
   title: "Haushalt",
   subtitle: "Wohin das Geld geht",
-  // the four tabs (phase 10 §7.9 (a), D288)
+  // the five tabs (phase 10 §7.9 (a), D288; Durchspielen §7.10 (a), D299)
   tabs: "Bereiche",
   tabMonth: "Monat",
   tabBudget: "Budget",
   tabGoal: "Ziel",
   tabReserve: "Reserve",
+  tabPlay: "Durchspielen",
   month: "Monat",
   running: " (läuft noch)",
   changed: "seit dem Abschluss geändert",
@@ -108,6 +109,7 @@ const en: Messages = {
   tabBudget: "Budget",
   tabGoal: "Goal",
   tabReserve: "Reserve",
+  tabPlay: "What if",
   month: "Month",
   running: " (still running)",
   changed: "changed since closing",

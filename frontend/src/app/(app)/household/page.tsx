@@ -78,6 +78,7 @@ import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { todayIso } from "@/components/format";
 import { HealthTodoList, HouseholdHealthSection } from "@/components/healthFigures";
 import { HouseholdGoalTab, HouseholdPlanTab, PlanProvider } from "@/components/householdPlan";
+import { HouseholdPlayTab } from "@/components/householdPlay";
 import { useRecurringPayments } from "@/components/householdRecurring";
 import { ALLOCATION_CATEGORY, HOUSEHOLD_GROUP, HOUSEHOLD_SPENDING_GROUPS } from "@/components/labels";
 import { usePlanFormat } from "@/components/planFormat";
@@ -228,11 +229,12 @@ function Household() {
     { key: "budget", label: t.tabBudget },
     { key: "ziel", label: t.tabGoal },
     { key: "reserve", label: t.tabReserve },
+    { key: "durchspielen", label: t.tabPlay },
   ];
   // Monat keeps the chosen month; the other tabs run over the closed months, so a link back to
   // Monat lands on the month that was shown.
   const tabHref = (key: HouseholdTab) => (key === "monat" ? `${pathname}?monat=${month}` : `${pathname}?tab=${key}`);
-  const planTab = tab === "budget" || tab === "ziel" || tab === "reserve" ? tab : null;
+  const planTab = tab === "monat" ? null : tab;
 
   return (
     <section>
@@ -273,18 +275,25 @@ function Household() {
           </div>
         </>
       ) : null}
-      {/* Budget, Ziel and Reserve share one plan and one draft (one element in one place), so an
-          unsaved change survives a switch between them (§7.9 (a)); Ziel reads the goal too. */}
+      {/* Budget, Ziel, Reserve and Durchspielen share one plan and one draft (one element in one
+          place), so an unsaved change survives a switch between them (§7.9 (a), §7.10 (a)); Ziel
+          reads the goal too. */}
       {planTab ? (
         <PlanProvider page={`${pathname}?tab=${planTab}`} backLabel={t.title} goal={planTab === "ziel"}>
-          {planTab === "ziel" ? <HouseholdGoalTab /> : <HouseholdPlanTab tab={planTab} />}
+          {planTab === "ziel" ? (
+            <HouseholdGoalTab />
+          ) : planTab === "durchspielen" ? (
+            <HouseholdPlayTab />
+          ) : (
+            <HouseholdPlanTab tab={planTab} />
+          )}
         </PlanProvider>
       ) : null}
     </section>
   );
 }
 
-/** ?tab=budget|ziel|reserve, else Monat (D288). */
+/** ?tab=budget|ziel|reserve|durchspielen, else Monat (D288, D299). */
 function householdTab(raw: string | null): HouseholdTab {
   return raw !== null && (HOUSEHOLD_TABS as readonly string[]).includes(raw) ? (raw as HouseholdTab) : "monat";
 }

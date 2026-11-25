@@ -21,12 +21,15 @@ export function isAssumptionGroup(value: string | null): value is AssumptionGrou
   return value !== null && (ASSUMPTION_GROUPS as readonly string[]).includes(value);
 }
 
-/** The Haushalt tabs (D288). */
-export const HOUSEHOLD_TABS = ["monat", "budget", "ziel", "reserve"] as const;
+/** The Haushalt tabs (D288; Durchspielen since §7.10 (a), D299). */
+export const HOUSEHOLD_TABS = ["monat", "budget", "ziel", "reserve", "durchspielen"] as const;
 export type HouseholdTab = (typeof HOUSEHOLD_TABS)[number];
 
 export const HOUSEHOLD_BUDGET = "/household?tab=budget";
 export const HOUSEHOLD_RESERVE = "/household?tab=reserve";
+export const HOUSEHOLD_GOAL = "/household?tab=ziel";
+/** Haushalt › Durchspielen, the what-if (§7.10 (a), D299). */
+export const HOUSEHOLD_PLAY = "/household?tab=durchspielen";
 /** The foot of Haushalt › Budget, what was Planung › Anlegen. */
 export const REST_ANCHOR = "was-mit-dem-rest";
 /** The net worth on typed rates on Anlagen › Übersicht, what was Planung › Vermögen. */

@@ -32,7 +32,7 @@
 .planning-chips a[aria-current="page"] {
   background: var(--accent-tint);
   border-color: var(--accent);
-  color: var(--accent-text);
+  color: var(--accent-strong);
 }
 
 .planning-scenario-row {
