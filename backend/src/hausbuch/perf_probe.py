@@ -502,8 +502,10 @@ class PageRun:
         digest: bool = False,
         kept: Any = None,
         ids: dict[str, UUID | None] | None = None,
+        plan: bool = False,
     ) -> None:
         self.client = client
+        self.plan = plan
         self.kept = kept
         self.ids = ids
         self.digest = digest
@@ -514,6 +516,19 @@ class PageRun:
         self.result = Pass()
 
     async def get(self, path: str, label: str, query: dict[str, Any] | None = None) -> Any:
+        return await self._send("GET", path, label, query)
+
+    async def post(self, path: str, label: str, body: Any) -> Any:
+        return await self._send("POST", path, label, None, body)
+
+    async def _send(
+        self,
+        method: str,
+        path: str,
+        label: str,
+        query: dict[str, Any] | None = None,
+        body: Any = None,
+    ) -> Any:
         url = path + (f"?{urlencode(query)}" if query else "")
         shown = label + (f"?{urlencode(query)}" if query else "")
         profiler = cProfile.Profile() if any(x in shown for x in self.profile) else None
@@ -523,8 +538,11 @@ class PageRun:
         if profiler is not None:
             profiler.enable()
         try:
-            response = await self.client.get(url)
-            body = response.content
+            if method == "POST":
+                response = await self.client.post(url, json=body)
+            else:
+                response = await self.client.get(url)
+            content = response.content
         finally:
             if profiler is not None:
                 profiler.disable()
@@ -541,10 +559,10 @@ class PageRun:
             statements=sql.statements,
             sql_ms=sql.sql_s * 1000,
             transactions=sql.transactions,
-            size=len(body),
+            size=len(content),
             error=error,
             profiled=profiler is not None,
-            digest=body_digest(body) if self.digest else None,
+            digest=body_digest(content) if self.digest else None,
             hit=self.kept is not None and self.kept.counters.hits > hits,
         )
         self.result.timings.append(timing)
@@ -611,7 +629,48 @@ class PageRun:
             await self.get(path, f"/api/owners/{{{o}}}/anlage-n", {"tax_year": year})
         if self.kept is not None and self.ids is not None:
             await self.sections()
+        if self.plan:
+            await self.plan_reads()
         return self.result
+
+    async def plan_reads(self) -> None:
+        """--plan (phase 10 §7.10 (b)): Haushalt's plan reads and the what-if preview, so a
+        speed-up of the preview is digest-proven like the page. The preview bodies are fixed:
+        the default scenario's levers unchanged, then with one income change, one spending
+        change and one one-off, each from the month after the newest closed month. Timed after
+        the page's own requests, in `timings`."""
+        plan = await self.get("/api/household-plan", "/api/household-plan")
+        await self.get("/api/household-budget", "/api/household-budget")
+        await self.get("/api/household-goal", "/api/household-goal")
+        if plan is None or plan.get("newest_closed") is None:
+            return
+        levers = plan["levers"]
+        year, month = (int(x) for x in plan["newest_closed"].split("-"))
+        start = f"{year + month // 12:04d}-{month % 12 + 1:02d}"
+        bodies = {
+            "unchanged": levers,
+            "income": {
+                **levers,
+                "income_changes": [
+                    *levers["income_changes"],
+                    {"monthly_net": "-500.00", "from_month": start},
+                ],
+            },
+            "spending": {
+                **levers,
+                "spending_changes": [
+                    *levers["spending_changes"],
+                    {"code": "hh_restaurant", "monthly": "50.00", "from_month": start},
+                ],
+            },
+            "one_off": {
+                **levers,
+                "one_offs": [*levers["one_offs"], {"month": start, "amount": "-2000.00"}],
+            },
+        }
+        for name, body in bodies.items():
+            label = f"POST /api/household-plan/preview [{name}]"
+            await self.post("/api/household-plan/preview", label, {"levers": body})
 
     async def sections(self) -> None:
         """--check-kept: every kept route the page does not fire (the other sections' reads,
@@ -706,6 +765,7 @@ async def _passes(
     profile: Sequence[str] = (),
     digest: bool = False,
     ids: dict[str, UUID | None] | None = None,
+    plan: bool = False,
 ) -> list[Pass]:
     """`repeat` passes; the last one (a warm one when repeat >= 2) profiles the requests
     whose route contains one of `profile`, and digests every body when `digest`."""
@@ -720,7 +780,15 @@ async def _passes(
             today = datetime.now(LOCAL_TIME_ZONE).date()
             last = number == repeat
             run = PageRun(
-                client, counter, today, labels, profile if last else (), digest and last, kept, ids
+                client,
+                counter,
+                today,
+                labels,
+                profile if last else (),
+                digest and last,
+                kept,
+                ids,
+                plan,
             )
             passes.append(await run.run())
     return passes
@@ -734,6 +802,7 @@ def run_probe(
     profile: Sequence[str] = (),
     digest: bool = False,
     check_kept: bool = False,
+    plan: bool = False,
     out: Callable[[str], None] = print,
 ) -> list[Pass]:
     """Time the page `repeat` times on `engine` (read-only: read_only_engine or
@@ -742,6 +811,8 @@ def run_probe(
     `digest`: the last pass prints each body's digest (body_digest).
     `check_kept`: kept answers on, then each compared with a recomputation (ProbeError on a
     difference, after the report).
+    `plan`: Haushalt's plan reads and four fixed what-if previews after the page
+    (PageRun.plan_reads).
     The engine is the caller's to dispose."""
     if profile and repeat < 2:
         raise ProbeError("--profile needs --repeat 2 or more: it profiles the warm pass")
@@ -757,7 +828,7 @@ def run_probe(
         app = build_app(engine, member, Path(blobs) / "blobs", kept=check_kept)
         ids = section_ids(engine, workspace_id) if check_kept else None
         counter.reset()
-        passes = asyncio.run(_passes(app, counter, repeat, profile, digest, ids))
+        passes = asyncio.run(_passes(app, counter, repeat, profile, digest, ids, plan))
         outcomes = asyncio.run(app.state.kept_answers.compare_all()) if check_kept else None
     report(passes, rtt=rtt, empty_tx=empty_tx, connect_ms=connect_ms, member=member, out=out)
     if outcomes is not None:

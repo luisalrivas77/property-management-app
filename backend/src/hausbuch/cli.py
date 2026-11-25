@@ -614,6 +614,7 @@ def perf_overview(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
             profile=args.profile,
             digest=args.digest,
             check_kept=args.check_kept,
+            plan=args.plan,
         )
     except ProbeError as exc:
         raise CliError(str(exc)) from None
@@ -1512,6 +1513,12 @@ def _parser() -> argparse.ArgumentParser:
         help="switch the kept answers on (phase 10 §7.4), mark the requests of the later "
         "passes served from them, then compare every kept answer with a recomputation and fail "
         "on any difference",
+    )
+    perf.add_argument(
+        "--plan",
+        action="store_true",
+        help="also time Haushalt's plan, budget and goal reads and four fixed what-if previews "
+        "(unchanged levers, an income change, a spending change, a one-off; phase 10 §7.10 (b))",
     )
     perf.set_defaults(command=perf_overview, command_name="perf-overview")
 
