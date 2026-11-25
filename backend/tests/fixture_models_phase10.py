@@ -428,7 +428,9 @@ class GoalUnreachableExpect(Schema):
 
 
 class GoalExpect(Schema):
-    word: Literal["none", "on_track", "behind", "unreachable"]
+    # D303 (phase 10 §7.11 (c)): „Auf Kurs“, „Machbar“, „Ehrgeizig“ (route 3, not built),
+    # „Kaum erreichbar“; „Dahinter“ and „So nicht erreichbar“ until then.
+    word: Literal["none", "on_track", "feasible", "ambitious", "hardly"]
     target: Money | None = None
     value_today: Money | None = None
     percent: Money | None = None
@@ -466,6 +468,96 @@ class GoalCase(Lenient):
 class GoalFixture(Schema):
     bases: dict[str, Any] = Field(default_factory=dict)  # YAML anchors only
     cases: list[GoalCase]
+
+
+# --- goal_routes.yaml and reserve_above.yaml (§7.11 (a)–(d), D301–D303) --------------------
+
+
+class RouteStartIn(GoalStartIn):
+    reserve_depot: Money = Decimal("0.00")  # D304: the ticked depots' part of `depot`
+
+
+class RouteFlatIn(Schema):
+    """phase 9's NpFlat: a property's default scenario (sale year, its projected years'
+    value and loan balance, the sale's net proceeds; its cash 0 in these cases), or with
+    `sale_year` null one kept without a scenario (its value today, its loans per 31 Dec)."""
+
+    sale_year: int | None = None
+    years: dict[int, tuple[Money, Money]] = Field(default_factory=dict)  # (value, loan)
+    net_proceeds: Money = Decimal("0.00")
+    kept_value: Money | None = None
+    kept_loans: dict[int, Money] = Field(default_factory=dict)
+
+
+class RouteScenarioExpect(Schema):
+    closes: bool
+    cut: Money
+
+
+class BalancedExpect(Schema):
+    cuts: dict[AllocationCategory, Money]  # per want code, a month
+    cut: Money
+    saving_extra: Money  # whole euros
+    moved_to_saving: Money
+    closes: bool
+
+
+class MoreSavingExpect(Schema):
+    extra: Money
+    noetig: Money | None
+
+
+class MoreReturnExpect(Schema):
+    available: Literal[False]
+    reason: Literal["not_built", "generic_mode"]
+
+
+class RouteExpect(Schema):
+    word: Literal["none", "on_track", "feasible", "ambitious", "hardly"] | None
+    issue: Literal["no_projection"] | None = None
+    todos: list[HealthTodoCode] = Field(default_factory=list)
+    projected: Money | None = None
+    reached: YearMonth | None = None
+    noetig: Money | None = None
+    more_saving: MoreSavingExpect | None = None
+    more_return: MoreReturnExpect | None = None
+    balanced: BalancedExpect | None = None
+    scenarios: dict[Literal["wants_only", "all_equal"], RouteScenarioExpect] = Field(
+        default_factory=dict
+    )
+    assumption: str | None = None
+    # reserve_above.yaml: the reserve above its target today (§7.11 (d)), the reserve row and
+    # the net worth at the end of named months of the walk
+    above_target: Money | None = None
+    reserve_at: dict[YearMonth, Money] = Field(default_factory=dict)
+    net_worth_at: dict[YearMonth, Money] = Field(default_factory=dict)
+
+
+class RouteCase(Lenient):
+    today: date
+    newest_closed: YearMonth
+    month: GoalMonthIn
+    start: RouteStartIn
+    reserve: GoalReserveIn
+    saved_mean: Money
+    value_today: GoalTodayIn
+    means: dict[AllocationCategory, Money]
+    levers: HouseholdLevers
+    split: dict[PlanClass, Money] | None = None  # the effective split; None: nothing moves
+    flats: dict[str, RouteFlatIn] = Field(default_factory=dict)
+    mode: AdviceMode = AdviceMode.OWN_USE
+    expect: RouteExpect
+
+    @model_validator(mode="after")
+    def _regular(self) -> Self:
+        if sum(self.means.values(), Decimal(0)) != self.month.mean_regular_spending:
+            raise ValueError(f"{self.id}: the codes' means must add up to the regular spending")
+        return self
+
+
+class RouteFixture(Schema):
+    bases: dict[str, Any] = Field(default_factory=dict)  # YAML anchors only
+    cases: list[RouteCase]
 
 
 # --- budget_fixed.yaml (§7.10 (c), D300) ----------------------------------------------------
@@ -657,6 +749,8 @@ MODELS: dict[str, type[Schema]] = {
     "recurring": RecurringFixture,
     "one_off_marks": OneOffFixture,
     "goal": GoalFixture,
+    "goal_routes": RouteFixture,
+    "reserve_above": RouteFixture,
     "investment_split": InvestmentSplitFixture,
 }
 

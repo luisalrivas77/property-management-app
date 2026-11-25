@@ -19,8 +19,9 @@ export const goalText = defineMessages({
     targetReserve: (months: string, month: string) => `Reserve für ${months} Monate bis ${month}`,
     // the word
     onTrack: "Auf Kurs",
-    behind: "Dahinter",
-    unreachable: "So nicht erreichbar",
+    feasible: "Machbar",
+    ambitious: "Ehrgeizig",
+    hardly: "Kaum erreichbar",
     // the word's place while the goal has none yet (the issue says why)
     issueWord: (issue: string) =>
       (
@@ -49,7 +50,7 @@ export const goalText = defineMessages({
     notReachedAsIs: "Ohne Änderung erreicht ihr das Ziel innerhalb der Rechnung nicht.",
     reachedWithBudget: (name: string, month: string) => `Mit eurem Budget „${name}“ erreicht ihr es im ${month}.`,
     notReachedWithBudget: (name: string) => `Mit eurem Budget „${name}“ reicht es in der Rechnung noch nicht.`,
-    unreachableTitle: "So nicht erreichbar",
+    unreachableTitle: "Kaum erreichbar",
     unreachableByDue: (month: string, value: string) => `Bis ${month} kommt ihr ohne Änderung auf ${value}.`,
     unreachableLater: (month: string) => `Das Ziel selbst erreicht ihr ohne Änderung erst im ${month}.`,
     unreachableNever: "Das Ziel selbst erreicht ihr ohne Änderung innerhalb der Rechnung nicht.",
@@ -59,8 +60,7 @@ export const goalText = defineMessages({
       "Ob ihr auf Kurs seid, rechnet Hausbuch aus, sobald es die kommenden Monate rechnen kann. Dafür fehlt noch, was unten steht; danach steht hier euer Weg zum Ziel.",
     issueDuePassed: "Der Monat eures Ziels ist da oder vorbei. Setzt einen späteren Monat oder ein neues Ziel.",
     issueBeyond:
-      "Euer Monat liegt nach dem letzten Monat, den Hausbuch vorausrechnet: Die Rechnung endet im Dezember vor dem geplanten Verkauf der Wohnung (im Szenario unter Anlagen › Immobilie), ohne Wohnung nach 40 Jahren. Setzt einen früheren Monat oder ein späteres Verkaufsjahr.",
-    issueBeyondAction: "Szenario der Wohnung öffnen",
+      "Euer Monat liegt nach dem letzten Monat, den Hausbuch vorausrechnet: 40 Jahre nach dem letzten abgeschlossenen Monat. Setzt einen früheren Monat.",
     issueUsedUp: (month: string) =>
       `Ohne Änderung ist eure Reserve im ${month} aufgebraucht, vor dem Monat eures Ziels. Unter Haushalt › Reserve seht ihr, woran das liegt.`,
     issueUsedUpAction: "Zur Reserve",
@@ -140,8 +140,9 @@ export const goalText = defineMessages({
     targetSaved: (amount, month) => `${amount} saved by ${month}`,
     targetReserve: (months, month) => `Reserve for ${months} months by ${month}`,
     onTrack: "On track",
-    behind: "Behind",
-    unreachable: "Not reachable like this",
+    feasible: "Feasible",
+    ambitious: "Ambitious",
+    hardly: "Hardly reachable",
     issueWord: (issue) =>
       (
         {
@@ -169,7 +170,7 @@ export const goalText = defineMessages({
     notReachedAsIs: "Without a change you do not reach the goal within the projection.",
     reachedWithBudget: (name, month) => `With your budget “${name}” you reach it in ${month}.`,
     notReachedWithBudget: (name) => `With your budget “${name}” it is not yet enough within the projection.`,
-    unreachableTitle: "Not reachable like this",
+    unreachableTitle: "Hardly reachable",
     unreachableByDue: (month, value) => `By ${month} you get to ${value} without a change.`,
     unreachableLater: (month) => `The goal itself you reach without a change only in ${month}.`,
     unreachableNever: "The goal itself you do not reach without a change within the projection.",
@@ -178,8 +179,7 @@ export const goalText = defineMessages({
       "Whether you are on track, Hausbuch works out as soon as it can project the coming months. What it still needs for that is listed below; then your path to the goal appears here.",
     issueDuePassed: "Your goal's month has come or passed. Set a later month or a new goal.",
     issueBeyond:
-      "Your month lies after the last month Hausbuch projects: the projection ends in the December before the flat's planned sale (in its scenario under Assets › Property), without a flat after 40 years. Set an earlier month or a later sale year.",
-    issueBeyondAction: "Open the flat's scenario",
+      "Your month lies after the last month Hausbuch projects: 40 years after the last closed month. Set an earlier month.",
     issueUsedUp: (month) =>
       `Without a change your reserve runs out in ${month}, before your goal's month. Household › Reserve shows why.`,
     issueUsedUpAction: "To the reserve",

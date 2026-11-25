@@ -223,11 +223,29 @@ def test_a_projected_years_flat_cash_is_phase_4s(world):
     assert [t.code for t in got.todos] == []
 
 
+def _spending_need(world: World, private: Private, *, groceries: str, salary: str | None) -> None:
+    """A need for the reserve (phase 10 D305: need-class spending only) and, if given, the pay
+    that meets it: in January to March 2027 a market's bill and a salary on the private
+    account. Since phase 10 D301 (a) 1 the reserve's target (months × this need) is the line
+    above which the walk invests, so a world with a need of 0 invests every euro at once."""
+    for month in (1, 2, 3):
+        line = private.line(date(2027, month, 8), f"-{groceries}", name="Markt Muster")
+        _book(world, line, f"-{groceries}", C.HH_GROCERIES)
+        if salary is not None:
+            line = private.line(date(2027, month, 27), salary, name="Arbeitgeber Muster")
+            _book(world, line, salary, C.HH_SALARY)
+
+
 def test_the_projections_bank_row_is_the_as_is_path(world):
-    """Done check of step 2 (§7.5 (4)): from the stored run at the newest closed month-end,
-    bank(k) − bank(0) equals the as_is path's reserve(k) − reserve(0); with a horizon ending on
-    December 2028 the first point's bank row and the path's reserve at the horizon agree."""
-    _savings_history(world)
+    """Done check of step 2 (§7.5 (4)), while the reserve stays below its target: from the
+    stored run at the newest closed month-end, bank(k) − bank(0) equals the as_is path's
+    reserve(k) − reserve(0); with a horizon ending on December 2028 the first point's bank row
+    and the path's reserve at the horizon agree. Phase 10 D301 (a) 1 moves only what lies
+    above the target, so the world's target (24 months × a need of 600 €) stays above the
+    reserve: the pay meets the need, and the reserve grows 1,836 € in 2027 and falls 1,500 €
+    in 2028 (the flat's −50 € a month and the savings plans), never reaching 14,400 €."""
+    private, _ = _savings_history(world)
+    _spending_need(world, private, groceries="600.00", salary="600.00")
     _bought_in_2026(world)
     _flat_scenario(world, None, NOW)
     world.cmd(net_worth.capture_month_end, date(2027, 3, 31))
@@ -235,9 +253,11 @@ def test_the_projections_bank_row_is_the_as_is_path(world):
         world,
         horizon_months=21,
         net_worth_years=1,
+        reserve_target_months=Decimal("24"),
         value_change={"depot": Decimal("0.030")},
     )
     got = _plan(world)
+    assert got.reserve.target == Decimal("14400.00") and got.above_target == Decimal("0.00")
     assert got.months[-1].month == "2028-12"
     projection = got.projection
     assert projection is not None and projection.todos == [], projection.todos
@@ -250,6 +270,65 @@ def test_the_projections_bank_row_is_the_as_is_path(world):
     assert point.bank != projection.start.bank
     kinds = [(a.kind.value, a.value) for a in projection.assumptions]
     assert kinds == [("depot_rate", Decimal("0.030")), ("flat_growth", Decimal("0.02"))]
+
+
+def test_money_above_the_target_moves_once_into_the_depot(world):
+    """Phase 10 D301 (a) 1, 3 (trap: counted once): the reserve above its target today (the
+    plan's `above_target`, „Anlegbar jetzt“) moves into the household's split in the first
+    month together with that month's saving, and nothing below the target moves. The bank row
+    is the as_is path less what moved; the depot's paid-in is what moved plus the savings
+    plans, so the moved money is on one row only and the sum of both rows changes as the
+    as_is path plus the plans (rate 3 %, its growth apart)."""
+    private, _ = _savings_history(world)
+    _spending_need(world, private, groceries="300.00", salary=None)
+    _bought_in_2026(world)
+    _flat_scenario(world, None, NOW)
+    world.cmd(net_worth.capture_month_end, date(2027, 3, 31))
+    _household(
+        world,
+        horizon_months=21,
+        net_worth_years=1,
+        reserve_target_months=Decimal("24"),
+        value_change={"depot": Decimal("0.030")},
+    )
+    got = _plan(world)
+    reserve = got.reserve
+    assert (reserve.need, reserve.target) == (Decimal("300.00"), Decimal("7200.00"))
+    assert got.above_target == reserve.amount - reserve.target > 0
+    as_is = next(p for p in got.paths if p.key == "as_is")
+    first = as_is.to_reserve_first_month
+    plans = got.months[0].investable - first  # the savings plans' monthly amount
+    assert first < 0  # this month's saving is below the plans: the reserve gives a little
+    moved = got.above_target + first  # month 1: R(0) + first − target
+    [point] = got.projection.points
+    start = got.projection.start
+    assert point.on == date(2028, 12, 31) and got.projection.used_up is None
+    assert point.bank - start.bank == as_is.reserve_at_horizon - reserve.amount - moved
+    assert point.change is not None
+    assert point.change.paid_in == moved + 21 * plans
+    growth = point.change.from_assumptions
+    assert (point.bank + point.depot) - (start.bank + start.depot) - growth == (
+        as_is.reserve_at_horizon - reserve.amount + 21 * plans
+    )
+
+
+def test_with_a_need_of_0_every_euro_is_invested_and_a_negative_month_uses_it_up(world):
+    """Phase 10 D301 (a) 1: a household whose need is 0 has a reserve target of 0, so the walk
+    invests the whole reserve in its first month and never sells; the flat's −50 € a month from
+    2028 then takes the reserve row below 0 in its first month, which ends the walk (`used_up`)
+    before the first point. A consequence of the rule, pinned here."""
+    _savings_history(world)
+    _bought_in_2026(world)
+    _flat_scenario(world, None, NOW)
+    world.cmd(net_worth.capture_month_end, date(2027, 3, 31))
+    _household(
+        world, horizon_months=21, net_worth_years=1, value_change={"depot": Decimal("0.030")}
+    )
+    got = _plan(world)
+    assert (got.reserve.need, got.reserve.target) == (Decimal("0.00"), Decimal("0.00"))
+    assert got.above_target == got.reserve.amount
+    assert got.projection.todos == [] and got.projection.points == []
+    assert got.projection.used_up == "2028-01"
 
 
 def test_without_a_run_or_a_scenario_the_projection_is_a_to_do(world):
@@ -266,10 +345,10 @@ def test_without_a_run_or_a_scenario_the_projection_is_a_to_do(world):
     assert HealthTodoCode.NO_DEFAULT_SCENARIO in [t.code for t in got.todos]
     _household(world)
     got = _plan(world)
-    assert [t.code for t in got.projection.todos] == [
-        HealthTodoCode.MONTH_END_MISSING,
-        HealthTodoCode.NO_DEFAULT_SCENARIO,
-    ]
+    # Phase 10 D301 (a) 5: a property without a scenario is kept and no longer a to-do of the
+    # projection; „Szenario für die Wohnung anlegen“ stays the plan's, once (the screens send
+    # it to the property, Anlagen › Immobilie).
+    assert [t.code for t in got.projection.todos] == [HealthTodoCode.MONTH_END_MISSING]
     assert [t.code for t in got.todos].count(HealthTodoCode.NO_DEFAULT_SCENARIO) == 1
     # Without a default scenario the flat keeps its measured mean in every month.
     assert {m.flat for m in got.months} == {Decimal("310.00")}
@@ -452,5 +531,8 @@ def test_an_incomplete_stored_month_end_is_no_start(world):
     captured = world.cmd(net_worth.capture_month_end, date(2027, 3, 31), now=later)
     assert captured.unvalued_positions == 0
     got = _plan(world)
-    assert got.projection.todos == [] and got.projection.points
+    # The projection starts now. The world's need is 0, so its reserve target is 0 and the
+    # walk invests the whole reserve at once; the flat's first negative month (January 2028)
+    # then ends it before its first point (phase 10 D301 (a) 1, the test above).
+    assert got.projection.todos == [] and got.projection.used_up == "2028-01"
     assert got.projection.start.crypto == Decimal("80000.00")

@@ -42,6 +42,11 @@ ONE_OFF_RULE_VERSION = "19e42b2973de12a8fc88b5186f811b2939d19bab14168566651054e8
 # placed by rules/budget.need_spending; D304: a depot the lever adds counts in the reserve).
 # rules/budget is outside the hash, so a change of the placement alone would not move it.
 NEED_RULE_VERSION = "2b975321a70b2f6db315190b54d89f696e96b793c6f4093ac5363cadd26e9ed0"
+# §7.11 (a), (d) changes it once more (D301: the one month walk moved into
+# rules/plan/projection, the money above the reserve target invested, the walk past each sale;
+# above_target). No stored figure reads the projection: health_snapshot stores the key figures
+# only, so the new version marks the months stored from now on.
+WALK_RULE_VERSION = "5f75a9856b0a2a7e0d14cc596036e57a561920b9e08355d5e01eb4cb3c407d0a"
 
 
 def _view(case: phase10.BudgetCase):
@@ -221,10 +226,17 @@ def test_fill(case) -> None:
 def test_references_do_not_touch_the_rule_version() -> None:
     """D271, D275: the Budget adds no file under rules/health or rules/plan; the hash moved
     only with wave 3's one-off marks (§7.9 (c) 2), §7.12's one-offs by category (D307,
-    D308) and §7.11 (g)'s need from needs (D305), pinned so any other change shows."""
-    assert rule_version() == NEED_RULE_VERSION
-    versions = {NEED_RULE_VERSION, ONE_OFF_RULE_VERSION, WAVE3_RULE_VERSION, MAIN_RULE_VERSION}
-    assert len(versions) == 4
+    D308), §7.11 (g)'s need from needs (D305) and §7.11 (a)'s walk (D301), pinned so any
+    other change shows."""
+    assert rule_version() == WALK_RULE_VERSION
+    versions = {
+        WALK_RULE_VERSION,
+        NEED_RULE_VERSION,
+        ONE_OFF_RULE_VERSION,
+        WAVE3_RULE_VERSION,
+        MAIN_RULE_VERSION,
+    }
+    assert len(versions) == 5
     root = Path(B.__file__).resolve().parents[1]
     assert not list((root / "health").glob("*budget*"))
     assert not list((root / "plan").glob("*budget*"))

@@ -8,8 +8,11 @@ phase 9's plan is computed once (services.plan.plan_parts) and rules/goal reads 
 half-up), the value today the net worth today (a net-worth goal) or the reserve accounts
 today (D237), the monthly need the reserve's (D238), the codes' classes the Budget's (D272,
 the household's moves included). A goal set while the plan has to-dos (below three closed
-months, no stored month-end, a property without a scenario, a rate not typed) gets no word:
-`issue` no_projection with those to-dos.
+months, no stored month-end, a property's scenario phase 4 refuses, a rate not typed) gets
+no word: `issue` no_projection with those to-dos; a property without a scenario is kept
+(D301 (a) 5) and the answer names that assumption. The mode (D251) says why route 3 is not
+offered; the window's mean income bounds „Nötig“ (D302) and the wants target limits the
+balanced route.
 
 Saving a goal and „Als Budget übernehmen“ use the household scenarios' own create endpoint
 (POST /household-scenarios, superseding the default): the goal is `levers.goal`, and adopting
@@ -27,10 +30,10 @@ from hausbuch.rules.goal import GoalInputs, current_month, household_goal, none_
 from hausbuch.rules.plan import spending as SP
 from hausbuch.rules.plan.surplus import mean_cent
 from hausbuch.schemas.goal import GoalIssue, HouseholdGoal
-from hausbuch.schemas.plan import GoalKind, HouseholdLevers, HouseholdScenario
+from hausbuch.schemas.plan import GoalKind, HouseholdLevers, HouseholdScenario, SurplusKey
 
 from .health import MonthRead, _reserve_balances, _window, key_figures, levers_one_off_codes
-from .plan import _net_worth, _scenario, plan_parts, previewed
+from .plan import _net_worth, _scenario, advice_mode, plan_parts, previewed
 from .plan_inputs import PlanInputs
 
 
@@ -117,5 +120,8 @@ def _goal(
             household_changes=tuple(SP.in_play(levers.spending_changes, codes)),
             projection=parts.projection,
             todos=tuple(todos),
+            mean_income=plan.surplus.amount(SurplusKey.MEAN_INCOME),
+            wants_max=levers.budget_targets.wants_max,
+            mode=inputs.part(("advice_mode",), advice_mode),
         )
     )

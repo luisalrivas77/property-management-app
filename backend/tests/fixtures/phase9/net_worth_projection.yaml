@@ -1,12 +1,28 @@
-# Phase 9 (docs/phases/phase-9.md §7.5, D247 amended, §15.1, §15.2):
-# `rules/plan/projection.project_net_worth`. Start: the stored run at the newest closed
-# month-end. Bank, month by month: bank(k) = bank(k−1) + investable(k) − every plan (the month
-# function of §7.1, plan_levers.yaml). Funds and crypto per class with its typed rate r, over a
-# stretch of m months ending on a 31 December: V × (1 + r·m/12) + Σ_j c_j × (1 + r·(m − j)/12),
-# exact fractions, rounded half-up to the cent only in the output. The flat's value and loan
-# from the default scenario's YearFigures; other liabilities (a card) kept at the start value.
-# Points: 31 December of each year every property's scenario projects, at most net_worth_years,
-# never a sale year; the projection ends early when the as_is reserve falls below 0.
+# Phase 9 (docs/phases/phase-9.md §7.5, D247 amended, §15.1, §15.2), amended by phase 10
+# §7.11 (a), D301 (25 Nov 2026): `rules/plan/projection.project_net_worth`, one month walk
+# that Anlagen's 31-December points, the goal and Durchspielen all read. Start: the stored run
+# at the newest closed month-end. The reserve row R, month by month, in this order:
+#   1. R earns the typed reserve rate for one month, R × r ÷ 12 to the cent half-up (while R > 0; none
+#      typed: nothing; reserve_above.yaml in phase 10 has the rate's cases);
+#   2. R += investable(k) − every plan (the month function of §7.1, plan_levers.yaml);
+#   3. in December of a property's sale year, R += the sale's net proceeds (phase 4's
+#      SaleResult.net_proceeds), once;
+#   4. R < 0: the walk ends, `used_up` = that month, no point from that month on;
+#   5. what lies above the reserve target (months × need) moves out of R into funds and crypto
+#      in the effective investment split's shares (no split: nothing moves; nothing moves
+#      back, the walk never sells to refill the reserve);
+#   6. a class's payment that month = its plans + its share of what moved.
+# Bank row = start bank + (R − R at the start). Funds and crypto per class with its typed rate
+# r, over a stretch of m months ending on a 31 December: V × (1 + r·m/12) + Σ_j c_j ×
+# (1 + r·(m − j)/12), exact fractions, rounded half-up to the cent only in the output; money
+# moved in December earns nothing that year. The property's value and loan from the default
+# scenario's YearFigures until its sale year, 0 from that 31 December on (its proceeds are on
+# the bank row) and its cash 0 from the January after; a property kept without a scenario at
+# its value today with its loans along their schedule and the measured rental mean (the
+# assumption line names it; no to-do any more). Other liabilities (a card) kept at the start
+# value. Points: 31 December of each year after the newest closed month's year,
+# `net_worth_years` of them, past any sale (until 25 Nov 2026 the points stopped before the
+# earliest sale year, `ends_before_sale_year`, and a property without a scenario was a to-do).
 #
 # The rates in these cases are test inputs, deliberately uneven; no screen, default,
 # placeholder or mockup may show them (§15.2). Step 0 recomputes every point on load and
@@ -15,11 +31,17 @@
 #
 # Step 0's readings, recorded in docs/phases/phase-9.md §15.1:
 # - a point's total is the sum of its rounded classes less its rounded liabilities (so
-#   31 Dec 2031 is 233,068.74 and 31 Dec 2032 257,747.90, as §15.2's table prints them);
-# - "used up inside the projection" keeps the points before the month the as_is reserve falls
+#   31 Dec 2031 is 233,068.74 and 31 Dec 2032 257,747.90 in the cases where nothing moves);
+# - "used up inside the projection" keeps the points before the month the reserve row falls
 #   below 0 and drops every point from that month on;
-# - a class needs a typed rate when it has a value at the start or a plan pays into it; a class
-#   with neither stays 0 and needs none.
+# - a class needs a typed rate when it has a value at the start, a plan pays into it, or the
+#   split moves money into it; a class with none of these stays 0 and needs none.
+#
+# The household's reserve target is phase 9's honest one, 6 × the need 3,853.33 = 23,119.98
+# (health_worked.yaml). Only the cases that name a `split` move money above it; the others
+# have no split (services: EffectiveSplit source none), so nothing moves and they keep the
+# values phase 9 gave them. The split 72.7 / 27.3 is the one the savings plans give
+# (400 ÷ 550 = 72.7 %, rules/investment_split.shares).
 bases:
   month: &month {mean_income: "5583.33", mean_regular_spending: "4116.67", mean_rental_cash: "-353.33", buffer_percent: "10"}
   start: &start {month_end: "2027-05-31", run: run-2027-05, bank: "19950.00", depot: "21500.00",
@@ -28,6 +50,7 @@ bases:
   plans: &plans [{key: depot, asset_class: depot, monthly: "400.00"}, {key: exchange, asset_class: crypto, monthly: "150.00"}]
   flat: &flat
     sale_year: 2035
+    net_proceeds: "154000.00"
     years:
       2028: {value: "324800.00", loan_balance: "230350.00", net_cash: "-1512.00", tax_effect: "-900.00"}
       2029: {value: "329672.00", loan_balance: "226420.00", net_cash: "-1512.00", tax_effect: "-900.00"}
@@ -36,19 +59,49 @@ bases:
       2032: {value: "344730.88", loan_balance: "214090.00", net_cash: "-1512.00", tax_effect: "-900.00"}
       2033: {value: "349901.84", loan_balance: "209790.00", net_cash: "-1512.00", tax_effect: "-900.00"}
       2034: {value: "355150.37", loan_balance: "205390.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+      2035: {value: "360477.63", loan_balance: "200890.00", net_cash: "-1512.00", tax_effect: "-900.00"}
   worked_rates: &worked_rates {depot: "0.037", crypto: "-0.015"}
+  split: &split {depot: "72.7", crypto: "27.3"}
   household: &household
     newest_closed: "2027-05"
     closed_months: 3
     month: *month
     start: *start
     reserve: *reserve
+    target: "23119.98"
     plans: *plans
     flats: {p1: *flat}
 
 cases:
   - id: worked
-    description: §15.2
+    description: >-
+      §15.2 with phase 10 D301: the money above the reserve target is invested in the split.
+      Each month of 2027 R gains investable 1,002.00 (free 1,113.33 less the 10 % buffer
+      111.33) − 550 plans = 452.00: 16,830 + 7 × 452 = 19,994.00 < 23,119.98, nothing moves,
+      so 31 Dec 2027 is phase 9's. From 2028 the flat's year replaces the mean (−201.00 a
+      month): free 1,265.66, buffer 126.57, investable 1,139.09, R gains 589.09 a month and
+      passes the target in June 2028 (May 19,994 + 5 × 589.09 = 22,939.45 < 23,119.98; June
+      19,994 + 6 × 589.09 = 23,528.54, of which 408.56 moves).
+      From then R stays at 23,119.98, so the bank row stays at 19,950 + (23,119.98 − 16,830) =
+      26,239.98, and 589.09 a month moves into funds (72.7 %) and crypto (27.3 %). Paid in by
+      2032: the plans 36,850.00 + moved 38,509.40 (phase 9's saving to 2032) − 6,289.98 (the
+      gap the reserve kept) = 69,069.42.
+    <<: *household
+    split: *split
+    levers: {value_change: *worked_rates, net_worth_years: 5}
+    expect:
+      end_of_2027: {bank: "23114.00", depot: "24789.94", crypto: "5159.75"}
+      points:
+        - {"on": "2028-12-31", bank: "26239.98", depot: "33480.51", crypto: "7942.59", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161293.08"}
+        - {"on": "2029-12-31", bank: "26239.98", depot: "44827.06", crypto: "11527.67", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "185026.71"}
+        - {"on": "2030-12-31", bank: "26239.98", depot: "56593.43", crypto: "15058.97", property: "334617.08", loans: "222400.00", other_liabilities: "820.00", total: "209289.46"}
+        - {"on": "2031-12-31", bank: "26239.98", depot: "68795.16", crypto: "18537.30", property: "339636.34", loans: "218290.00", other_liabilities: "820.00", total: "234098.78"}
+        - {"on": "2032-12-31", bank: "26239.98", depot: "81448.36", crypto: "21963.46", property: "344730.88", loans: "214090.00", other_liabilities: "820.00", total: "259472.68"}
+      used_up: null
+      todos: []
+
+  - id: nothing_moves_without_a_split
+    description: §15.2 as phase 9 computed it; with no split the reserve keeps everything
     <<: *household
     levers: {value_change: *worked_rates, net_worth_years: 5}
     expect:
@@ -59,12 +112,20 @@ cases:
         - {"on": "2030-12-31", bank: "44321.24", depot: "42837.41", crypto: "10213.86", property: "334617.08", loans: "222400.00", other_liabilities: "820.00", total: "208769.59"}
         - {"on": "2031-12-31", bank: "51390.32", depot: "49303.80", crypto: "11848.28", property: "339636.34", loans: "218290.00", other_liabilities: "820.00", total: "233068.74"}
         - {"on": "2032-12-31", bank: "58459.40", depot: "56009.44", crypto: "13458.18", property: "344730.88", loans: "214090.00", other_liabilities: "820.00", total: "257747.90"}
-      ends_before_sale_year: null
       used_up: null
       todos: []
 
   - id: bank_equals_as_is_path
-    description: bank(k) − bank(0) = reserve_as_is(k) − reserve(0) for every month (§7.5 (4))
+    description: >-
+      bank(k) − bank(0) = R(k) − R(0) for every month (§7.5 (4)); with the split R stops at
+      the target, so the difference is the gap 23,119.98 − 16,830.00 = 6,289.98
+    <<: *household
+    split: *split
+    levers: {value_change: *worked_rates, net_worth_years: 5}
+    expect: {as_is_reserve: {"2032-12": "23119.98"}, bank: {"2032-12-31": "26239.98"}, difference: "6289.98"}
+
+  - id: bank_equals_as_is_path_without_split
+    description: phase 9's case; nothing moves, so R grows like the bank row
     <<: *household
     levers: {value_change: *worked_rates, net_worth_years: 5}
     expect: {as_is_reserve: {"2032-12": "55339.40"}, bank: {"2032-12-31": "58459.40"}, difference: "38509.40"}
@@ -72,6 +133,19 @@ cases:
   - id: rate_missing_no_projection
     <<: *household
     levers: {value_change: {depot: "0.037"}, net_worth_years: 5}
+    expect: {points: [], todos: [rate_missing]}
+
+  - id: split_into_a_class_without_rate
+    description: >-
+      no crypto held and no plan into it, but the split moves money into crypto: its rate is
+      needed (services never pass such a split, rules/investment_split leaves the class out;
+      the rule still refuses it)
+    <<: *household
+    start: {month_end: "2027-05-31", run: run-2027-05, bank: "19950.00", depot: "21500.00",
+      crypto: "0.00", property: "320000.00", loans: "236400.00", other_liabilities: "820.00"}
+    plans: [{key: depot, asset_class: depot, monthly: "400.00"}]
+    split: *split
+    levers: {value_change: {depot: "0.037"}, net_worth_years: 2}
     expect: {points: [], todos: [rate_missing]}
 
   - id: zero_typed_is_a_rate
@@ -122,11 +196,29 @@ cases:
     stretch: {value: "10000.00", rate: "0.05", monthly: "100.00", months: 12}
     expect: {value: "11727.50"}
 
-  - id: no_default_scenario_todo
+  - id: property_kept_without_scenario
+    description: >-
+      phase 10 D301 (it was the to-do no_default_scenario and no point until 25 Nov 2026): the
+      property is kept at its value today, 320,000.00, its loan along its schedule (the
+      balances below, invented), and the measured rental mean −353.33 stays the flat's cash in
+      every month, so R gains 452.00 a month throughout: 31 Dec 2028 = 19,950 + 19 × 452 =
+      28,538.00, each later year + 12 × 452 = 5,424.00. Funds and crypto as phase 9's.
     <<: *household
-    flats: {p1: null}
+    flats:
+      p1: {sale_year: null, kept_value: "320000.00", kept_loans: {2028: "230350.00", 2029: "226420.00",
+        2030: "222400.00", 2031: "218290.00", 2032: "214090.00"}}
     levers: {value_change: *worked_rates, net_worth_years: 5}
-    expect: {points: [], todos: [no_default_scenario]}
+    expect:
+      points:
+        - {"on": "2028-12-31", bank: "28538.00", depot: "30588.57", crypto: "6869.98", property: "320000.00", loans: "230350.00", other_liabilities: "820.00", total: "154826.55"}
+        - {"on": "2029-12-31", bank: "33962.00", depot: "36601.75", crypto: "8554.55", property: "320000.00", loans: "226420.00", other_liabilities: "820.00", total: "171878.30"}
+        - {"on": "2030-12-31", bank: "39386.00", depot: "42837.41", crypto: "10213.86", property: "320000.00", loans: "222400.00", other_liabilities: "820.00", total: "189217.27"}
+        - {"on": "2031-12-31", bank: "44810.00", depot: "49303.80", crypto: "11848.28", property: "320000.00", loans: "218290.00", other_liabilities: "820.00", total: "206852.08"}
+        - {"on": "2032-12-31", bank: "50234.00", depot: "56009.44", crypto: "13458.18", property: "320000.00", loans: "214090.00", other_liabilities: "820.00", total: "224791.62"}
+      change: {on_accounts: "30284.00", paid_in: "36850.00", from_assumptions: "6967.62",
+        from_assumptions_by_class: {depot: "7709.44", crypto: "-741.82"},
+        flat_value: "0.00", loan_repaid: "22310.00", total: "96411.62"}
+      todos: []
 
   - id: no_run_todo
     description: no stored run at 31 May 2027 („Monatsabschluss festhalten“)
@@ -135,25 +227,76 @@ cases:
     levers: {value_change: *worked_rates, net_worth_years: 5}
     expect: {points: [], todos: [month_end_missing]}
 
-  - id: ends_before_sale_year
+  - id: sale_before_the_last_point
+    description: >-
+      the flat sold on 31 Dec 2030 for net proceeds of 102,000.00 (invented; phase 4's value
+      less selling costs, sale tax and the loan). No split: the proceeds land on the bank row
+      once, 44,321.24 + 102,000.00 = 146,321.24; the property and its loan are 0 from that day.
+      From January 2031 the flat's cash is 0: free 5,583.33 − 4,116.67 = 1,466.66, buffer
+      146.67, investable 1,319.99, R gains 769.99 a month, 9,239.88 a year: 155,561.12 and
+      164,801.00. The points run on past the sale (phase 9 stopped before it, so this case
+      was `ends_before_sale_year: 2030` with two points).
     <<: *household
     flats:
       p1:
         sale_year: 2030
+        net_proceeds: "102000.00"
         years:
           2028: {value: "324800.00", loan_balance: "230350.00", net_cash: "-1512.00", tax_effect: "-900.00"}
           2029: {value: "329672.00", loan_balance: "226420.00", net_cash: "-1512.00", tax_effect: "-900.00"}
-          2030: {value: "334617.08", loan_balance: "0.00", net_cash: "-1512.00", tax_effect: "-900.00"}
-    levers: {value_change: *worked_rates, net_worth_years: 10}
+          2030: {value: "334617.08", loan_balance: "222400.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+    levers: {value_change: *worked_rates, net_worth_years: 5}
     expect:
       points:
         - {"on": "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161271.63"}
         - {"on": "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "184840.46"}
-      ends_before_sale_year: 2030
+        - {"on": "2030-12-31", bank: "146321.24", depot: "42837.41", crypto: "10213.86", property: "0.00", loans: "0.00", other_liabilities: "820.00", total: "198552.51"}
+        - {"on": "2031-12-31", bank: "155561.12", depot: "49303.80", crypto: "11848.28", property: "0.00", loans: "0.00", other_liabilities: "820.00", total: "215893.20"}
+        - {"on": "2032-12-31", bank: "164801.00", depot: "56009.44", crypto: "13458.18", property: "0.00", loans: "0.00", other_liabilities: "820.00", total: "233448.62"}
+      change: {on_accounts: "144851.00", paid_in: "36850.00", from_assumptions: "6967.62",
+        from_assumptions_by_class: {depot: "7709.44", crypto: "-741.82"},
+        flat_value: "-320000.00", loan_repaid: "236400.00", total: "105068.62"}
+      used_up: null
       todos: []
 
-  - id: two_properties_earliest_sale_year
-    description: a second, invented property whose scenario sells in 2030; its cash is 0
+  - id: sale_proceeds_invested_above_target
+    description: >-
+      the same sale with the split: R sits at the target from June 2028 (case worked), so in
+      December 2030 all 102,000.00 of the proceeds plus that month's 589.09 move, counted once:
+      the bank row stays 26,239.98 and the funds receive 72.7 % and crypto 27.3 % of
+      102,589.09 that month, growing from January 2031 (money moved in December earns nothing
+      that year). From 2031 769.99 a month moves.
+    <<: *household
+    split: *split
+    flats:
+      p1:
+        sale_year: 2030
+        net_proceeds: "102000.00"
+        years:
+          2028: {value: "324800.00", loan_balance: "230350.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+          2029: {value: "329672.00", loan_balance: "226420.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+          2030: {value: "334617.08", loan_balance: "222400.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+    levers: {value_change: *worked_rates, net_worth_years: 5}
+    expect:
+      as_is_reserve: {"2030-11": "23119.98", "2030-12": "23119.98"}
+      points:
+        - {"on": "2028-12-31", bank: "26239.98", depot: "33480.51", crypto: "7942.59", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161293.08"}
+        - {"on": "2029-12-31", bank: "26239.98", depot: "44827.06", crypto: "11527.67", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "185026.71"}
+        - {"on": "2030-12-31", bank: "26239.98", depot: "130747.43", crypto: "42904.97", property: "0.00", loans: "0.00", other_liabilities: "820.00", total: "199072.38"}
+        - {"on": "2031-12-31", bank: "26239.98", depot: "147297.80", crypto: "46554.17", property: "0.00", loans: "0.00", other_liabilities: "820.00", total: "219271.95"}
+        - {"on": "2032-12-31", bank: "26239.98", depot: "164460.52", crypto: "50148.62", property: "0.00", loans: "0.00", other_liabilities: "820.00", total: "240029.12"}
+      change: {on_accounts: "6289.98", paid_in: "175411.02", from_assumptions: "13548.12",
+        from_assumptions_by_class: {depot: "15426.66", crypto: "-1878.54"},
+        flat_value: "-320000.00", loan_repaid: "236400.00", total: "111649.12"}
+      todos: []
+
+  - id: two_properties_one_sold
+    description: >-
+      a second, invented property whose scenario sells on 31 Dec 2030 for net proceeds of
+      60,000.00; its cash is 0. The first keeps its scenario to 2035. 31 Dec 2030: bank
+      44,321.24 + 60,000.00 = 104,321.24, the second property's 154,000.00 and 86,000.00 gone;
+      the first's cash stays −201.00 a month, so the bank row gains 7,069.08 a year as before.
+      (Phase 9 stopped at the earliest sale year: two points, `ends_before_sale_year: 2030`.)
     <<: *household
     start: {month_end: "2027-05-31", run: run-2027-05, bank: "19950.00", depot: "21500.00",
       crypto: "4150.00", property: "470000.00", loans: "328400.00", other_liabilities: "820.00"}
@@ -161,16 +304,19 @@ cases:
       p1: *flat
       p2:
         sale_year: 2030
+        net_proceeds: "60000.00"
         years:
           2028: {value: "150000.00", loan_balance: "90000.00", net_cash: "0.00", tax_effect: "0.00"}
           2029: {value: "152000.00", loan_balance: "88000.00", net_cash: "0.00", tax_effect: "0.00"}
-          2030: {value: "154000.00", loan_balance: "0.00", net_cash: "0.00", tax_effect: "0.00"}
-    levers: {value_change: *worked_rates, net_worth_years: 10}
+          2030: {value: "154000.00", loan_balance: "86000.00", net_cash: "0.00", tax_effect: "0.00"}
+    levers: {value_change: *worked_rates, net_worth_years: 5}
     expect:
       points:
         - {"on": "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "474800.00", loans: "320350.00", other_liabilities: "820.00", total: "221271.63"}
         - {"on": "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "481672.00", loans: "314420.00", other_liabilities: "820.00", total: "248840.46"}
-      ends_before_sale_year: 2030
+        - {"on": "2030-12-31", bank: "104321.24", depot: "42837.41", crypto: "10213.86", property: "334617.08", loans: "222400.00", other_liabilities: "820.00", total: "268769.59"}
+        - {"on": "2031-12-31", bank: "111390.32", depot: "49303.80", crypto: "11848.28", property: "339636.34", loans: "218290.00", other_liabilities: "820.00", total: "293068.74"}
+        - {"on": "2032-12-31", bank: "118459.40", depot: "56009.44", crypto: "13458.18", property: "344730.88", loans: "214090.00", other_liabilities: "820.00", total: "317747.90"}
       todos: []
 
   - id: years_capped_by_lever
@@ -180,11 +326,10 @@ cases:
       points:
         - {"on": "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161271.63"}
         - {"on": "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "184840.46"}
-      ends_before_sale_year: null
       todos: []
 
   - id: reserve_used_up_ends_early
-    description: −1,500.00 a month from September 2027; the as_is reserve is used up in July 2029
+    description: −1,500.00 a month from September 2027; the reserve row is used up in July 2029
     <<: *household
     levers: {value_change: *worked_rates, net_worth_years: 5,
       income_changes: [{monthly_net: "-1500.00", from_month: "2027-09"}]}
@@ -206,7 +351,19 @@ cases:
       todos: []
 
   - id: change_rows_sum
-    description: §15.2's change to 31 December 2032 in its five rows
+    description: >-
+      the change to 31 December 2032 in its five rows, with the split (case worked): the bank
+      row rose only by the gap 6,289.98, the money moved is paid in
+    <<: *household
+    split: *split
+    levers: {value_change: *worked_rates, net_worth_years: 5}
+    expect:
+      change: {on_accounts: "6289.98", paid_in: "69069.42", from_assumptions: "8692.40",
+        from_assumptions_by_class: {depot: "9724.84", crypto: "-1032.44"},
+        flat_value: "24730.88", loan_repaid: "22310.00", total: "131092.68"}
+
+  - id: change_rows_sum_without_split
+    description: §15.2's change to 31 December 2032 in its five rows, nothing moved
     <<: *household
     levers: {value_change: *worked_rates, net_worth_years: 5}
     expect:

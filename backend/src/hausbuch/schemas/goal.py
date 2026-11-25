@@ -24,12 +24,17 @@ GoalPercent = Annotated[
 
 
 class GoalWord(StrEnum):
-    """The one word Übersicht shows beside the financial-health verdict (§7.9 (d) 5)."""
+    """The one word Übersicht shows beside the financial-health verdict (§7.9 (d) 5; D303
+    since 25 Nov 2026, „Dahinter“ and „So nicht erreichbar“ until then). Computed on read,
+    never stored."""
 
     NONE = "none"  # no goal set: „Ziel festlegen“
-    ON_TRACK = "on_track"  # „Auf Kurs“
-    BEHIND = "behind"  # „Dahinter“
-    UNREACHABLE = "unreachable"  # „So nicht erreichbar“
+    ON_TRACK = "on_track"  # „Auf Kurs“: the walk without change reaches it
+    FEASIBLE = "feasible"  # „Machbar“: a spending scenario (route 4) closes the gap
+    # „Ehrgeizig“: only through route 3 (more return against the history), not built yet,
+    # never in `generic` mode
+    AMBITIOUS = "ambitious"
+    HARDLY = "hardly"  # „Kaum erreichbar“
 
 
 class GoalIssue(StrEnum):
@@ -67,6 +72,52 @@ class GoalScenario(Schema):
     spending_changes: list[SpendingChange] = Field(default_factory=list)
 
 
+class GoalMoreSaving(Schema):
+    """Route 2 „Mehr anlegen“ (D302): the smallest whole-euro `extra` a month from next month
+    to the due month that reaches the target on the walk; `noetig` = Heute + extra, None when
+    the extra is above the mean income. It never decides the word."""
+
+    extra: NonNegativeMoney
+    noetig: Money | None
+
+
+class GoalRouteReason(StrEnum):
+    NOT_BUILT = "not_built"  # route 3 waits for the reference series (D310)
+    GENERIC_MODE = "generic_mode"  # never offered in `generic` mode (D289)
+
+
+class GoalMoreReturn(Schema):
+    """Route 3 „Mehr Rendite“: not available yet; `reason` says why."""
+
+    available: bool = False
+    reason: GoalRouteReason
+
+
+class GoalBalanced(Schema):
+    """„Ausgewogener Weg“ (D302), shown first whenever the walk without change misses: half
+    of the extra cut from the wants by their means, each want at most to half its mean or, with
+    the household's wants target, to that share of the income; `saving_extra` the smallest
+    whole euro a month that with these cuts reaches the target (None above the mean income);
+    `moved_to_saving` what the limit left open and the saving takes on."""
+
+    budgets: list[GoalBudget] = Field(default_factory=list)  # the want codes cut
+    cut: NonNegativeMoney
+    saving_extra: NonNegativeMoney | None
+    moved_to_saving: NonNegativeMoney
+    saving: Money | None  # Heute + saving_extra
+    closes: bool
+    spending_changes: list[SpendingChange] = Field(default_factory=list)
+
+
+class GoalAssumption(Schema):
+    """An assumption the walk makes that the household can replace (D301 (a) 5): a property
+    without a default scenario is kept at today's value."""
+
+    text: str
+    action: str
+    href: str
+
+
 class GoalUnreachable(Schema):
     """§7.9 (d) 4: what the household reaches instead. `later` is the month the goal is
     reached without change (None beyond the projection); `reaches_by_due` the value at the due
@@ -93,6 +144,10 @@ class HouseholdGoal(Schema):
     reached: YearMonth | None = None  # without change; None when not within the projection
     reached_with_budget: YearMonth | None = None  # with the adopted budget
     used_up: YearMonth | None = None
-    scenarios: list[GoalScenario] = Field(default_factory=list)
+    scenarios: list[GoalScenario] = Field(default_factory=list)  # route 4
+    more_saving: GoalMoreSaving | None = None  # route 2
+    more_return: GoalMoreReturn | None = None  # route 3, not available yet
+    balanced: GoalBalanced | None = None  # „Ausgewogener Weg“, while route 1 misses
     unreachable: GoalUnreachable | None = None
+    assumptions: list[GoalAssumption] = Field(default_factory=list)
     todos: list[HealthTodo] = Field(default_factory=list)
