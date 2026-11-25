@@ -11,7 +11,10 @@ Also `hausbuch relink-chain` (phase 7 D184, step 5), `hausbuch survey-solana` (p
 17 Nov 2026), `hausbuch repair-solana-lamports` (phase 7 D186 (2) amended 18 Nov 2026),
 `hausbuch health-check` (phase 9 D259 amended 17 Nov 2026), `hausbuch recapture-months`
 (phase 6 D265 (5), 20 Nov 2026), `hausbuch perf-overview` (21 Nov 2026) and
-`hausbuch book-statement-trades` (phase 6 D292, 22 Nov 2026), described below.
+`hausbuch book-statement-trades` (phase 6 D292, 22 Nov 2026) and `hausbuch
+fetch-reference-returns` (phase 10 §7.11 (c) 3, 25 Nov 2026: route 3's funds series downloaded
+now for one workspace, with the owner URL; the file is asked from this computer), described
+below.
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -1192,6 +1195,42 @@ def repair_periods(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
     return EXIT_OK
 
 
+# --- fetch-reference-returns ----------------------------------------------------------
+
+
+def fetch_reference_returns(
+    args: argparse.Namespace, environ: Mapping[str, str], fetch=None
+) -> int:
+    """Route 3's funds series downloaded once for a workspace (phase 10 §7.11 (c) 3, point 8,
+    D310 amended), due or not, from this computer: Kenneth French's annual file stored as the
+    workspace's newest download. A failed or refused file stores nothing and names its
+    exception class and HTTP status only. `fetch` is for tests."""
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.services import reference_returns as R
+    from hausbuch.services.documents import LOCAL_TIME_ZONE
+    from hausbuch.services.prices.http import SourceError, urllib_fetch
+
+    try:
+        rows = R.download(fetch or urllib_fetch)
+    except SourceError as exc:
+        status = "" if exc.status is None else f", HTTP {exc.status}"
+        raise CliError(f"the file could not be read ({exc.kind}{status}); nothing stored") from None
+    engine = owner_engine(environ)
+    try:
+        with workspace_transaction(engine, args.workspace) as conn:
+            R.store(conn, args.workspace, rows, datetime.now(LOCAL_TIME_ZONE).date())
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    print(f"stored the funds series {min(rows)}–{max(rows)} ({len(rows)} years)")
+    return EXIT_OK
+
+
 # --- follow-accounts ------------------------------------------------------------------
 
 
@@ -1558,6 +1597,14 @@ def _parser() -> argparse.ArgumentParser:
     report_prices.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     report_prices.add_argument("--dry-run", action="store_true", help="count only, change nothing")
     report_prices.set_defaults(command=store_report_prices, command_name="store-report-prices")
+
+    reference = commands.add_parser(
+        "fetch-reference-returns",
+        help="download route 3's funds series (Kenneth French's annual Developed market file) "
+        "for a workspace now, as the daily task does when one is due (phase 10 §7.11 (c) 3)",
+    )
+    reference.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    reference.set_defaults(command=fetch_reference_returns, command_name="fetch-reference-returns")
 
     statement_trades = commands.add_parser(
         "book-statement-trades",

@@ -11,13 +11,16 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from db.test_cli_evals_report import _owner_url
 from db.test_jobs_refresh_crypto import _deps
 from test_reference_returns_parse import GOOD, MONTHLY, annual, zipped
 
+from hausbuch import cli
 from hausbuch.api.kept_answers import read_data_version
 from hausbuch.jobs import fetch_reference_returns as job
 from hausbuch.rules.goal.series import FUNDS_URL
 from hausbuch.services import reference_returns as R
+from hausbuch.services.prices import http
 from hausbuch.services.prices.http import SourceError
 
 pytestmark = pytest.mark.db
@@ -122,3 +125,22 @@ def test_the_refresh_stores_due_or_not_and_raises_when_the_file_fails(
     with pytest.raises(SourceError):
         job.run_refresh_reference_returns(deps, workspace_id=ws, fetch=Fake((500, b"")))
     assert max(read(ws, R.newest).rows) == 1996  # the newest good download keeps counting
+
+
+def test_the_command_stores_a_download_and_names_only_the_years(
+    dbname, read, fresh_workspaces, monkeypatch, capsys
+):
+    ws, other = fresh_workspaces
+    environ = {"HAUSBUCH_ADMIN_DATABASE_URL": _owner_url(dbname)}
+    argv = ["fetch-reference-returns", "--workspace", str(ws)]
+    monkeypatch.setattr(http, "urllib_fetch", Fake((503, b"")))
+    assert cli.main(argv, environ) != cli.EXIT_OK
+    assert "HTTPError, HTTP 503" in capsys.readouterr().err
+    assert read(ws, R.newest) is None
+
+    monkeypatch.setattr(http, "urllib_fetch", Fake())
+    assert cli.main(argv, environ) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert "1991–1995 (5 years)" in out and "postgresql" not in out
+    assert sorted(read(ws, R.newest).rows) == [1991, 1992, 1993, 1994, 1995]
+    assert read(other, R.newest) is None
