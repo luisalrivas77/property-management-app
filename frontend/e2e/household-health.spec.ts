@@ -651,6 +651,41 @@ test("every figure opens what it is made of, and a month opens Haushalt with its
   await expect(chip.getByRole("row", { name: /Einnahmen mit der Wohnung/ })).toContainText("5.200");
 });
 
+test("on the phone, Haushalt › Monat's tiles and a figure's side panel fit, light and dark", async ({ page, signedIn }) => {
+  void signedIn;
+  const window = [monthsBack(4), monthsBack(3), monthsBack(2)];
+  await scenarios(page);
+  await serve(page, "/api/health", () => health(window));
+  await serve(page, "/api/health/net-worth-series", () => []);
+  await monthsOf(page, (from, to) => window.filter((month) => month >= from && month <= to).map((month) => monthView(month, true)));
+  // The Budget tile's real read computes the plan; a failed read leaves the tile out.
+  await page.route(
+    (url) => url.pathname === "/api/household-budget",
+    (route: Route) => route.fulfill({ status: 404, json: { detail: "not mocked" } }),
+  );
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const backgrounds: string[] = [];
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.goto("about:blank");
+    await page.goto(`/household?monat=${monthsBack(2)}`);
+    await expect(page.getByRole("group", { name: "Einnahmen" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Finanzielle Gesundheit" }).locator("a.health-mini")).toHaveCount(3);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await page.screenshot({ path: test.info().outputPath(`monat-${scheme}.png`), fullPage: true });
+
+    // A small card's panel slides in as a dialog and fits too.
+    await page.getByRole("region", { name: "Finanzielle Gesundheit" }).locator("a.health-mini", { hasText: "Reserve" }).click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet.locator(".health-ranges li")).toHaveCount(3);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    backgrounds.push(await page.evaluate(() => getComputedStyle(document.body).backgroundColor));
+    await page.screenshot({ path: test.info().outputPath(`monat-reserve-${scheme}.png`) });
+  }
+  expect(backgrounds[0]).not.toEqual(backgrounds[1]);
+});
+
 test("the month-end card, the split and the net worth over time are on Anlagen, and an old link lands there", async ({
   page,
   signedIn,

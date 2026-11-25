@@ -28,6 +28,8 @@ type HouseholdPlan = components["schemas"]["HouseholdPlan"];
 type BudgetView = components["schemas"]["BudgetView"];
 type BudgetFixedPayment = components["schemas"]["BudgetFixedPayment"];
 type BudgetCode = components["schemas"]["BudgetCode"];
+type OneOffCodes = components["schemas"]["OneOffCodes"];
+type HouseholdScenarioCreate = components["schemas"]["HouseholdScenarioCreate"];
 
 // The KI panel beside the plan reads its explanation: served as the app's template with no text,
 // so these tests never read a real explanation of a mocked plan.
@@ -407,6 +409,79 @@ test("the one-off panel at phone width, light and dark", async ({ page, signedIn
     const sheet = page.getByRole("dialog", { name: "Einmalig im Zeitraum" });
     await expect(sheet).toBeVisible();
     await expect(sheet).toContainText("stehen neben der Aufteilung");
+  });
+});
+
+// --- „Was als einmalig zählt“ (§7.12 (a), D307; mockup 19h frame 3) --------------------------------
+
+/** GET /household/one-off-codes and the scenario writes its switches make; each POST answers as
+ * the server would, with the levers it was sent. */
+async function oneOffCodesApi(page: Page) {
+  const codes: OneOffCodes = {
+    year: 2026,
+    codes: [
+      { category: "hh_electronics", default: true, one_off: true, year_total: "499.00" },
+      { category: "hh_clothing", default: false, one_off: false, year_total: "0.00" },
+    ],
+  };
+  await serve(page, "/api/household/one-off-codes", () => codes);
+  const posted: HouseholdScenarioCreate[] = [];
+  await page.route(
+    (url) => url.pathname === "/api/household-scenarios",
+    (route: Route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as HouseholdScenarioCreate;
+      posted.push(body);
+      return route.fulfill({
+        status: 201,
+        json: {
+          ...body,
+          id: `00000000-0000-4000-8000-0000000005${String(posted.length).padStart(2, "0")}`,
+          workspace_id: "00000000-0000-4000-8000-000000000001",
+          created_at: "2026-11-25T09:00:00Z",
+        },
+      });
+    },
+  );
+  return { posted };
+}
+
+test("„Was als einmalig zählt“ lists each category with its year and stores a switch on the default", async ({ page, signedIn }) => {
+  void signedIn;
+  await budgetApi(page, false);
+  const { posted } = await oneOffCodesApi(page);
+  await page.goto("/household?tab=budget");
+  await page.getByRole("link", { name: "Was als einmalig zählt ›" }).click();
+  const sheet = detail(page, "Was als einmalig zählt");
+
+  const electronics = sheet.getByRole("switch", { name: "Elektronik & Technik als einmalig zählen" });
+  const clothing = sheet.getByRole("switch", { name: "Kleidung & Schuhe als einmalig zählen" });
+  await expect(electronics).toBeChecked();
+  await expect(clothing).not.toBeChecked();
+  await expect(sheet).toContainText("2026: 499");
+  await expect(sheet).toContainText("2026: nichts");
+
+  // Clothing switched on: a new default row whose overrides hold it, and the default is named.
+  await clothing.check();
+  await expect.poll(() => posted.length).toBe(1);
+  expect(posted[0]?.is_default).toBe(true);
+  expect(posted[0]?.levers?.one_off_overrides).toEqual({ hh_clothing: true });
+  await expect(sheet).toContainText("Standard: im Budget");
+  // Back to its default: the override goes, on top of the row just stored.
+  await clothing.uncheck();
+  await expect.poll(() => posted.length).toBe(2);
+  expect(posted[1]?.levers?.one_off_overrides).toEqual({});
+  expect(posted[1]?.supersedes_id).toBe("00000000-0000-4000-8000-000000000501");
+});
+
+test("„Was als einmalig zählt“ at phone width, light and dark", async ({ page, signedIn }) => {
+  void signedIn;
+  await budgetApi(page, false);
+  await oneOffCodesApi(page);
+  await phoneScreens(page, "one-off-codes", async () => {
+    await page.goto("/household?tab=budget#d-goals-einmalig");
+    const sheet = page.getByRole("dialog", { name: "Was als einmalig zählt" });
+    await expect(sheet.getByRole("switch")).toHaveCount(2);
   });
 });
 
