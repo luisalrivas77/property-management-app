@@ -12,8 +12,8 @@ preview with new levers runs the rules only.
 What is kept: rows and facts read from the database, never a figure computed with levers
 (no mean, no household month, no reserve, no plan). The household month, the window, the
 codes' means and everything after them are recomputed on each call from the kept inputs
-(services.health.months_from_inputs), so a lever that later reaches the household month (phase
-10 §7.12's one-off categories) never meets a stale figure.
+(services.health.months_from_inputs), so a lever that reaches the household month (phase 10
+§7.12's one-off switches, D307: `one_off_codes` below) never meets a stale figure.
 
 When a part is kept, and for how long:
 - the key is the workspace, its data version, the day the caller passes (`today`, Berlin)
@@ -44,6 +44,8 @@ from typing import Any, TypeVar
 from uuid import UUID
 
 from sqlalchemy import Connection, text
+
+from hausbuch.schemas.allocation import AllocationCategory
 
 from .health import MonthInputs, MonthRead, months_from_inputs, read_month_inputs
 
@@ -172,12 +174,16 @@ class PlanInputs:
             ("months", tuple(months)), lambda c: read_month_inputs(c, months, self.today)
         )
 
-    def reads(self, months: Sequence[str]) -> dict[str, MonthRead]:
-        """services.health.read_months(conn, months, today), its rules run on every call."""
+    def reads(
+        self, months: Sequence[str], one_off_codes: frozenset[AllocationCategory]
+    ) -> dict[str, MonthRead]:
+        """services.health.read_months(conn, months, today, one_off_codes), its rules run on
+        every call: the codes counted as one-off (phase 10 D307, the levers' switches) are
+        applied by the rules here, never kept."""
         inputs = self.month_inputs(months)
-        return {} if inputs is None else months_from_inputs(months, inputs)
+        return {} if inputs is None else months_from_inputs(months, inputs, one_off_codes)
 
-    def ended_reads(self) -> dict[str, MonthRead]:
+    def ended_reads(self, one_off_codes: frozenset[AllocationCategory]) -> dict[str, MonthRead]:
         from .health import ended_months
 
-        return self.reads(ended_months(self.today))
+        return self.reads(ended_months(self.today), one_off_codes)

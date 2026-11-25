@@ -733,15 +733,18 @@ def health_of(figures) -> Health:
     """A Health whose figures are the case's values (rates exact over an income of 10,000)."""
     rate = None
     if figures.savings_rate is not None:
-        assert figures.savings_rate_regular is not None, "no case gives a rate without it"
+        # Phase 10 D308: a case without savings_rate_regular is a rate that leaves the
+        # one-offs out already (rate_regular gone); one with it is a row stored before
+        regular = figures.savings_rate_regular
         rate = SavingsRate(
             saved=figures.savings_rate * INCOME,
             income=INCOME,
-            one_off_spending=(figures.savings_rate_regular - figures.savings_rate) * INCOME,
+            one_off_spending=ZERO if regular is None else (regular - figures.savings_rate) * INCOME,
             principal=ZERO,
             rate=figures.savings_rate,
-            rate_regular=figures.savings_rate_regular,
+            rate_regular=regular,
             rate_without_principal=figures.savings_rate,
+            one_offs_left_out=regular is None,
         )
     reserve = None
     if figures.reserve is not None:
@@ -893,10 +896,8 @@ WORKED_TEXTS = {
         MarkedFigure.RESERVE: [
             "Eure Reserve reicht für 3,8 Monate. Bis zu eurem eigenen Ziel fehlen 9.990 €."
         ],
-        MarkedFigure.SAVINGS_RATE: [
-            "In diesem Zeitraum habt ihr mehr ausgegeben als eingenommen.",
-            "Ohne die Einmalausgaben läge die Sparquote bei 25,7 %.",
-        ],
+        # Phase 10 D308: the Sparquote leaves the one-offs out (0.2571), no colour
+        MarkedFigure.SAVINGS_RATE: [],
         MarkedFigure.LTV: [
             *_INTROS[MarkedFigure.LTV],
             "Das liegt zwischen euren Grenzen von 60,0 % und 100,0 %.",

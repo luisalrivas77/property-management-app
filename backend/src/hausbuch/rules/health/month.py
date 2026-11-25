@@ -100,11 +100,17 @@ def _role(category: AllocationCategory) -> str | None:
     return None
 
 
-def _marked(line: MonthLine, one_off_ids: Collection[UUID]) -> bool:
+def _marked(
+    line: MonthLine,
+    one_off_ids: Collection[UUID],
+    one_off_codes: Collection[AllocationCategory] = ONE_OFF,
+) -> bool:
     """A spending line a person marked one-off (D297) that a one-off code does not already
     count: a payment (money out) in a code that is not one-off."""
     return (
-        line.allocation_id in one_off_ids and line.amount < 0 and _counted_as(line) not in ONE_OFF
+        line.allocation_id in one_off_ids
+        and line.amount < 0
+        and _counted_as(line) not in one_off_codes
     )
 
 
@@ -119,6 +125,7 @@ def household_month(
     lines: Sequence[MonthLine] = (),
     link_sources: Sequence[UUID] = (),
     one_off_ids: Collection[UUID] = frozenset(),
+    one_off_codes: Collection[AllocationCategory] = ONE_OFF,
 ) -> HouseholdMonth:
     """§4.2: the private accounts' cashflow plus the rental accounts' cash, counted once, in
     the calendar month of each line's booking date (D230, D232, D233).
@@ -132,7 +139,9 @@ def household_month(
     allocations a person marked one-off (phase 10 §7.9 (c) 2, D297; empty by default): such a
     line moves from regular to one-off spending as a one-off code's does; a marked line that
     is no payment of spending (money in, a purchase cost, a one-off code already) moves
-    nothing."""
+    nothing. `one_off_codes`: the codes counted as one-off, the taxonomy's by default, else
+    rules.household.taxonomy.one_off_codes with the household's switches (phase 10 §7.12 (b),
+    D307)."""
     for block in rental:
         if block.month != private.month:
             raise ValueError(f"a rental block of {block.month} in {private.month}")
@@ -159,11 +168,11 @@ def household_month(
             v
             for codes in private.spending_by_category.values()
             for c, v in codes.items()
-            if c in ONE_OFF
+            if c in one_off_codes
         ),
         ZERO,
     )
-    marked = [li for li in roles.get("spending", []) if _marked(li, one_off_ids)]
+    marked = [li for li in roles.get("spending", []) if _marked(li, one_off_ids, one_off_codes)]
     one_off += -sum((li.amount for li in marked), ZERO)
     result = sum((block.result for block in rental), ZERO)
     principal = total("principal")
@@ -178,7 +187,7 @@ def household_month(
     one_off_sources = [
         li.allocation_id
         for li in roles.get("spending", [])
-        if _counted_as(li) in ONE_OFF or _marked(li, one_off_ids)
+        if _counted_as(li) in one_off_codes or _marked(li, one_off_ids, one_off_codes)
     ]
     regular_ids = [i for i in spending_ids if i not in set(one_off_sources)]
     income_ids = [li.allocation_id for li in roles.get("income", [])]

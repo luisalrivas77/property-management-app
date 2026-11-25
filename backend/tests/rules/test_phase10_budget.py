@@ -21,7 +21,7 @@ from hausbuch.schemas.plan import HouseholdLevers
 from hausbuch.services.health import rule_version
 
 AS_OF = date(2027, 6, 15)
-BUDGET_FILES = ("budget_partition", "budget_overrides", "budget_marks")
+BUDGET_FILES = ("budget_partition", "budget_overrides", "budget_marks", "one_off_switches")
 CASES = [(name, case) for name in BUDGET_FILES for case in phase10.load(name).cases]
 
 # rule_version(): the hash of rules/health and rules/plan, stored on every health_snapshot.
@@ -29,20 +29,39 @@ CASES = [(name, case) for name in BUDGET_FILES for case in phase10.load(name).ca
 # 1a81f628...f9784; D271, D275). Wave 3 changes it once, on purpose (§7.9 (c) 2, Q-O183 (a)):
 # a payment marked one-off moves to one-off spending in rules/health/month and
 # rules/plan/spending. A snapshot already stored keeps its old version and is never rewritten
-# (D242); only a month stored from now on carries this one.
+# (D242); only a month stored from now on carries this one. §7.12 (b), (c) changes it once
+# more (D307, D308: the one-off codes per household and the Sparquote without them).
 MAIN_RULE_VERSION = "1a81f62877cf958eca3c22b40e99c3ba14a5862844d95ed1e0fe983fe1cf9784"
 WAVE3_RULE_VERSION = "3d24e195585146a011f8ec677ef054a8d19cccd92998db4b178c357317f4551d"
+ONE_OFF_RULE_VERSION = "5547fda12de35578842aabc3d7adcb0d775fe93dec63dc82880c29cc3d828efd"
 
 
 def _view(case: phase10.BudgetCase):
-    built = [phase10.household(m, case.id) for m in case.months]
+    codes = case.codes()  # D307: the taxonomy's one-off codes, then the case's switches
+    built = [phase10.household(m, case.id, codes) for m in case.months]
+    marked = frozenset(
+        b[1][i].allocation_id for m, b in zip(case.months, built, strict=True) for i in m.marked
+    )
     return B.budget(
         [b[0] for b in built],
         [b[1] for b in built],
         case.overrides,
         case.targets,
         as_of=AS_OF,
+        one_off_ids=marked,
+        one_off_codes=codes,
     ), [b[0] for b in built]
+
+
+def _same_line(got, want) -> None:
+    assert (got.monthly, got.total, got.share) == (want.monthly, want.total, want.share)
+    assert got.target == want.target
+    assert {c.category: c for c in got.codes}.keys() == want.codes.keys()
+    for code in got.codes:
+        w = want.codes[code.category]
+        assert (code.monthly, code.total) == (w.monthly, w.total), code.category
+        assert code.budget_class == w.budget_class, code.category
+        assert code.overridden is w.overridden, code.category
 
 
 @pytest.mark.parametrize(("name", "case"), CASES, ids=[f"{n}:{c.id}" for n, c in CASES])
@@ -63,15 +82,13 @@ def test_budget_fixture(name: str, case: phase10.BudgetCase) -> None:
     assert view.income.private_monthly == exp.income.private_monthly
     assert (view.no_shares is not None) is exp.no_shares
     assert [li.key for li in view.lines] == [li.key for li in exp.lines]
+    # D308: „Einmalig im Zeitraum“ beside the partition, no target and no mark
+    assert (view.one_off is None) is (exp.one_off is None)
+    if view.one_off is not None:
+        _same_line(view.one_off, exp.one_off)
+        assert view.one_off.mark is None
     for got, want in zip(view.lines, exp.lines, strict=True):
-        assert (got.monthly, got.total, got.share) == (want.monthly, want.total, want.share)
-        assert got.target == want.target
-        assert {c.category: c for c in got.codes}.keys() == want.codes.keys()
-        for code in got.codes:
-            w = want.codes[code.category]
-            assert (code.monthly, code.total) == (w.monthly, w.total), code.category
-            assert code.budget_class == w.budget_class, code.category
-            assert code.overridden is w.overridden, code.category
+        _same_line(got, want)
         if want.mark is None:
             assert got.mark is None
         else:
@@ -85,12 +102,13 @@ def test_budget_fixture(name: str, case: phase10.BudgetCase) -> None:
     assert h is not None and wh is not None
     assert (h.monthly, h.total, h.share, h.target) == (wh.monthly, wh.total, wh.share, wh.target)
     assert [c.category for c in h.codes] == wh.codes
-    in_lines = {c.category: c for li in view.lines for c in li.codes}
-    for code in h.codes:  # the same mean as in its class's line (D276)
-        assert (code.monthly, code.total) == (
-            in_lines[code.category].monthly,
-            in_lines[code.category].total,
-        )
+    in_lines: dict = {}
+    for li in [*view.lines, *([view.one_off] if view.one_off else [])]:
+        for c in li.codes:  # a code on two lines (a marked payment) counts once, summed
+            m, t = in_lines.get(c.category, (Decimal("0.00"), Decimal("0.00")))
+            in_lines[c.category] = (m + c.monthly, t + c.total)
+    for code in h.codes:  # the same mean as in its lines (D276)
+        assert (code.monthly, code.total) == in_lines[code.category]
     assert (h.mark is None) is (wh.mark is None)
     if h.mark is not None:
         assert (h.mark.colour, h.mark.gap_points, h.mark.gap_monthly, h.mark.text) == (
@@ -99,7 +117,7 @@ def test_budget_fixture(name: str, case: phase10.BudgetCase) -> None:
             wh.mark.gap_monthly,
             wh.mark.text,
         )
-    # D273: Sparen ÷ E is phase 9's Sparquote, to the last digit.
+    # D273, D308: Sparen ÷ E is phase 9's Sparquote, to the last digit, one-offs left out.
     saving = next(li for li in view.lines if li.key is L.SAVING)
     assert saving.share == savings_rate(months).rate == exp.savings_rate
 
@@ -120,8 +138,9 @@ def test_no_mark_without_a_target() -> None:
 
 @pytest.mark.parametrize("case", phase10.load("budget_partition").cases, ids=lambda c: c.id)
 def test_identity_per_month_matches_phase9(case: phase10.BudgetCase) -> None:
-    """Per month: need + want + one-off + uncategorized = phase 9's spending A, and saving is
-    phase 9's saved (E − A), whatever the class overrides."""
+    """Per month: need + want + one-off + uncategorized = phase 9's spending A, one-off is
+    phase 9's one-off spending and saving is E − the regular spending (D308), whatever the
+    class overrides."""
     built = [phase10.household(m, case.id) for m in case.months]
     for overrides in ({}, {C.HH_RESTAURANT: BudgetClass.NEED, C.HH_ENERGY: BudgetClass.WANT}):
         view = B.budget(
@@ -129,7 +148,9 @@ def test_identity_per_month_matches_phase9(case: phase10.BudgetCase) -> None:
         )
         for row, (month, _) in zip(view.months, built, strict=True):
             assert row.need + row.want + row.one_off + row.uncategorized == month.spending
-            assert row.saving == month.saved == month.income - month.spending
+            assert row.one_off == month.one_off_spending
+            assert row.saving == month.saved + month.one_off_spending
+            assert row.saving == month.income - month.regular_spending
 
 
 def test_too_few_months_still_checks_the_lines() -> None:
@@ -191,8 +212,10 @@ def test_fill(case) -> None:
 
 def test_references_do_not_touch_the_rule_version() -> None:
     """D271, D275: the Budget adds no file under rules/health or rules/plan; the hash moved
-    only with wave 3's one-off marks (§7.9 (c) 2), pinned so any other change shows."""
-    assert rule_version() == WAVE3_RULE_VERSION != MAIN_RULE_VERSION
+    only with wave 3's one-off marks (§7.9 (c) 2) and §7.12's one-offs by category (D307,
+    D308), pinned so any other change shows."""
+    assert rule_version() == ONE_OFF_RULE_VERSION
+    assert len({ONE_OFF_RULE_VERSION, WAVE3_RULE_VERSION, MAIN_RULE_VERSION}) == 3
     root = Path(B.__file__).resolve().parents[1]
     assert not list((root / "health").glob("*budget*"))
     assert not list((root / "plan").glob("*budget*"))
@@ -233,7 +256,7 @@ def test_an_override_carried_unaltered_is_not_refused(monkeypatch) -> None:
     from hausbuch.services import household_scenarios as HS
     from hausbuch.services.errors import RuleViolationError
 
-    def pretend(overrides):  # HH_RESTAURANT can no longer move
+    def pretend(overrides, *_):  # HH_RESTAURANT can no longer move
         return [c for c in overrides if c is C.HH_RESTAURANT]
 
     monkeypatch.setattr(HS, "refused_overrides", pretend)

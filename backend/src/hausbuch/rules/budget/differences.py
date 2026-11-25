@@ -52,12 +52,14 @@ def spending_group(category: AllocationCategory) -> HouseholdGroup | None:
     return None
 
 
-def compared_group(category: AllocationCategory) -> HouseholdGroup | None:
+def compared_group(
+    category: AllocationCategory, one_off_codes: Collection[AllocationCategory] = ONE_OFF
+) -> HouseholdGroup | None:
     """The group a line of `category` is compared under, else None: `spending_group` less the
-    one-off codes (D236; a large one-off purchase would make every later month read as
-    „weniger als üblich“) and refunds (they lower spending, nothing the household spends on),
-    so the comparison is of the regular month."""
-    if category in ONE_OFF:
+    one-off codes in force (D236, phase 10 D307; a large one-off purchase would make every
+    later month read as „weniger als üblich“) and refunds (they lower spending, nothing the
+    household spends on), so the comparison is of the regular month."""
+    if category in one_off_codes:
         return None
     group = spending_group(category)
     return None if group is HouseholdGroup.REFUND else group
@@ -65,12 +67,13 @@ def compared_group(category: AllocationCategory) -> HouseholdGroup | None:
 
 def compared_by_group(
     rows: Iterable[tuple[AllocationCategory, Decimal]],
+    one_off_codes: Collection[AllocationCategory] = ONE_OFF,
 ) -> dict[HouseholdGroup, Decimal]:
     """One month's regular spending per compared group from month_cashflow's rows (an
     outflow is negative there, so spending is its negation)."""
     out: dict[HouseholdGroup, Decimal] = {}
     for category, amount in rows:
-        group = compared_group(category)
+        group = compared_group(category, one_off_codes)
         if group is not None:
             out[group] = out.get(group, _ZERO) - amount
     return out

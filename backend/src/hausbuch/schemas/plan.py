@@ -203,7 +203,9 @@ class SpendingChange(Schema):
             raise ValueError(f"{LEVER_INVALID}: a change is a planned amount or a percent")
         if self.to_month is not None and self.to_month < self.from_month:
             raise ValueError(f"{LEVER_INVALID}: a change ends on or after its start")
-        reason = refused_code(self.code)
+        # Phase 10 D307: a one-off code is refused on save (its switch can change), so a stored
+        # change of a code switched to one-off since still reads.
+        reason = refused_code(self.code, frozenset())
         if reason is not None:
             raise ValueError(f"{LEVER_INVALID}: {self.code.value} {reason}")
         return self
@@ -296,6 +298,13 @@ class HouseholdLevers(Schema):
     # taxonomy no longer allows, so a later taxonomy change never breaks a stored row's read.
     budget_targets: BudgetTargets = Field(default_factory=BudgetTargets)
     budget_class_overrides: dict[AllocationCategory, BudgetClass] = Field(default_factory=dict)
+    # Phase 10 D307 (§7.12 (b)): the household's switch per spending code, true counted as
+    # one-off, false as regular, beside the taxonomy's default
+    # (rules.household.taxonomy.one_off_codes). Empty by default and then left out of the
+    # dump, so every row stored before stays byte for byte what it was. Only the shape is
+    # checked here; a non-spending code is refused when a scenario is saved
+    # (services.household_scenarios.check_levers) and ignored on read.
+    one_off_overrides: dict[AllocationCategory, bool] = Field(default_factory=dict)
     # Phase 10 §7.9 (d): the household's goal and what it chose for it, None when unset. A
     # None is left out of the dump, so a row stored without a goal stays byte for byte what it
     # was, and every answer that shows levers is unchanged (_without_unset_goal).
@@ -310,13 +319,17 @@ class HouseholdLevers(Schema):
             for key in ("goal", "goal_choice"):
                 if data.get(key) is None:
                     data.pop(key, None)
+            if not data.get("one_off_overrides"):
+                data.pop("one_off_overrides", None)
         return data
 
     @model_validator(mode="after")
     def _unique(self) -> Self:
-        from hausbuch.rules.plan.spending import refused_together
+        from hausbuch.rules.plan.spending import refused_one_off, refused_together
 
-        reason = refused_together(self.spending_changes)
+        reason = refused_together(self.spending_changes) or refused_one_off(
+            self.spending_changes, self.one_off_overrides
+        )
         if reason is not None:
             raise ValueError(f"{LEVER_INVALID}: {reason}")
         keys = [o.plan_key for o in self.plan_overrides]

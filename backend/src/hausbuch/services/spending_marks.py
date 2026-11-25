@@ -5,14 +5,15 @@
   counts (rules/recurring). `one_off_marked` is what services.health.read_months passes to the
   household month, so every reader of the household month (the key figures, the plan, the
   Budget, Haushalt's differences, the daily step, `health-check`) sees the same marks.
-- **Writes**: POST /household/one-off-marks answers `one_off` or `regular` on exactly a
-  payment GET /household/one-off-candidates lists as of the same day: a candidate or an
-  answered payment, over the same window and the lines up to today. Anything else is a 404,
-  as an id of another workspace is: a payment under the limits, in a code the candidates
-  leave out (`hh_cash`, a one-off code), in a recurring series, dated after today or outside
-  the window, a proposed, rejected or superseded allocation, a rental line, money in, a
-  privately paid purchase cost (D234), and every payment while the window has fewer than
-  three closed months (review of PR #590).
+- **Writes**: POST /household/one-off-marks answers `one_off` or `regular` on a payment's
+  detail panel (phase 10 §7.12 (b), D307: „Als einmalig markieren“, „Doch normal zählen“;
+  the candidate search of D297 went): a confirmed private payment booked from HISTORY_START
+  to the same day that the household month counts as spending (rules.recurring.series.
+  counted: money out, D234's recode applied, `hh_cash` left out). Anything else is a 404,
+  as an id of another workspace is: a payment dated after today, a proposed, rejected or
+  superseded allocation, a rental line, money in, a cash withdrawal, a privately paid
+  purchase cost (D234). A payment in a code one-off in force may be marked; the mark counts
+  only while a switch makes the code regular.
   POST /household/recurring-marks answers a series by its payee key and interval `hidden`
   or `shown`; it is not checked against today's series: an answer naming no series is
   stored and ignored by the rule, as one whose payee's recognition changed later is (D296
@@ -32,6 +33,7 @@ from sqlalchemy import Connection, func, insert, select
 
 from hausbuch.db.tables import spending_mark as mark_table
 from hausbuch.rules.recurring import SeriesMark, newest_allocation_marks, one_off_ids
+from hausbuch.rules.recurring.series import counted
 from hausbuch.schemas.events import EventType, SpendingMarkRecordedEvent
 from hausbuch.schemas.recurring import (
     OneOffMarkRequest,
@@ -84,14 +86,15 @@ def series_marks(conn: Connection) -> list[SeriesMark]:
 # --- Writes ------------------------------------------------------------------------------
 
 
-def _markable(conn: Connection, today: date) -> set[UUID]:
-    """The payments GET /household/one-off-candidates lists as of `today`: its candidates and
-    its answered payments, both over the closed months' window and the lines up to `today`
-    (empty while the window has fewer than three closed months)."""
-    from .recurring import one_off_candidates  # it imports this module's reads
+def _markable(conn: Connection, today: date, allocation_id: UUID) -> bool:
+    """Whether `allocation_id` is a payment that may be marked as of `today` (see the
+    module)."""
+    from .recurring import spending_lines  # it imports this module's reads
 
-    listed = one_off_candidates(conn, today)
-    return {c.payment.allocation_id for c in (*listed.candidates, *listed.answered)}
+    return any(
+        line.allocation_id == allocation_id and counted(line)
+        for line in spending_lines(conn, today)
+    )
 
 
 def _insert(ctx: CommandContext, **values: object) -> SpendingMarkRecorded:
@@ -114,7 +117,7 @@ def record_one_off(
     ctx: CommandContext, data: OneOffMarkRequest, today: date
 ) -> SpendingMarkRecorded:
     """POST /household/one-off-marks (see the module); `today` the Berlin day the GET reads."""
-    if data.allocation_id not in _markable(ctx.conn, today):
+    if not _markable(ctx.conn, today, data.allocation_id):
         raise NotFoundError("allocation", data.allocation_id)
     recorded = _insert(ctx, allocation_id=data.allocation_id, answer=data.answer.value)
     append_event(

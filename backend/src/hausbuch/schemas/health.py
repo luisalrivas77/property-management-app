@@ -297,15 +297,23 @@ class SavingsRate(Schema):
     one_off_spending: Money
     principal: Money  # „davon Tilgung“
     rate: Ratio | None = None
-    rate_regular: Ratio | None = None  # „ohne Einmalausgaben“
+    rate_regular: Ratio | None = None  # „ohne Einmalausgaben“; None since phase 10 D308
     rate_without_principal: Ratio | None = None  # „ohne Tilgung“
-    months: list[MonthRate] = Field(default_factory=list)
+    months: list[MonthRate] = Field(default_factory=list)  # each month's own S ÷ E
+    # Phase 10 D308 (§7.12 (c), 25 Nov 2026): the one-offs are left out of the saving over the
+    # window, as the Budget counts them: `saved` is Σ income − Σ regular spending, `rate` its
+    # share of the income, `one_off_spending` shown beside it („Einmalig im Zeitraum“) and
+    # `rate_regular` None (it is `rate`). A row stored before (health_snapshot, D242) has it
+    # false and keeps its meaning: `saved` = Σ income − Σ spending, `rate_regular` without them.
+    one_offs_left_out: bool = False
 
     @model_validator(mode="after")
     def _ratios(self) -> Self:
         want = (
             ratio(self.saved, self.income),
-            ratio(self.saved + self.one_off_spending, self.income),
+            None
+            if self.one_offs_left_out
+            else ratio(self.saved + self.one_off_spending, self.income),
             ratio(self.saved - self.principal, self.income),
         )
         got = (self.rate, self.rate_regular, self.rate_without_principal)
@@ -782,6 +790,10 @@ class Health(Schema):
     # Phase 10 §7.6 Haushalt (3): the newest closed month's spending groups that differ most
     # from their mean over the closed months before it; None below three such months.
     differences: MonthDifferences | None = None
+    # Phase 10 D308: the first month whose stored key figures leave the one-offs out of the
+    # savings rate, for „Seit <Monat>: Einmaliges nicht im Schnitt“; None while none does
+    # (the months stored before keep their figures, D242).
+    one_offs_left_out_since: YearMonth | None = None
 
 
 class HealthSnapshotFigures(Schema):

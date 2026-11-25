@@ -105,6 +105,7 @@ from .health import (
     _run_figure,
     _window,
     key_figures,
+    levers_one_off_codes,
     read_months,
 )
 from .household import month_bounds
@@ -582,7 +583,7 @@ def preview_plan(
     from .household_scenarios import carried_overrides, check_levers
 
     inputs = PlanInputs(conn, today)
-    reads = inputs.ended_reads()
+    reads = inputs.ended_reads(levers_one_off_codes(levers))  # phase 10 D307
     row = _scenario(conn, scenario_id, inputs)
     previous = [] if row is None else row.levers.spending_changes
     check_levers(
@@ -606,7 +607,12 @@ def window_spending(
     """§7.6 (2): each window month's regular spending per code, from the private accounts'
     cashflow (D234, the one-off codes and the payments marked one-off left out)."""
     return [
-        SP.month_spending(reads[m].private.cashflow, reads[m].private.lines, reads[m].one_off_ids)
+        SP.month_spending(
+            reads[m].private.cashflow,
+            reads[m].private.lines,
+            reads[m].one_off_ids,
+            reads[m].one_off_codes,
+        )
         for m in months
     ]
 
@@ -646,11 +652,13 @@ def plan_parts(
     """The plan and, from three closed months on, the parts the goal reads (PlanParts).
     `inputs`: the call's reads, kept for a data version (services.plan_inputs); a new
     PlanInputs on `today` when the caller has none. `reads`: today's months, read through
-    `inputs` when not given."""
+    `inputs` with the levers' one-off switches (phase 10 D307) when not given."""
     if inputs is None:
         inputs = PlanInputs(conn, today)
+    codes = levers_one_off_codes(levers)  # phase 10 D307
     if reads is None:
-        reads = inputs.ended_reads()
+        reads = inputs.ended_reads(codes)
+    changes = SP.in_play(levers.spending_changes, codes)
     win = _window(reads)
     newest = win.months[-1] if win.months else None
     todos = list(window_todos(win))
@@ -709,7 +717,7 @@ def plan_parts(
         mean_regular_spending=sur.amount(SurplusKey.MEAN_REGULAR_SPENDING),
         mean_rental_cash=sur.amount(SurplusKey.MEAN_RENTAL_CASH),
         buffer_percent=levers.buffer_percent,
-        spending_changes=tuple(levers.spending_changes),
+        spending_changes=tuple(changes),
         code_means=means,
     )
     plan_months = L.months(
@@ -774,7 +782,7 @@ def plan_parts(
             "spending_play": SP.play(
                 months,
                 spending,
-                levers.spending_changes,
+                changes,
                 levers.income_changes,
                 levers.horizon_months,
                 lambda ym: (
@@ -782,6 +790,7 @@ def plan_parts(
                         basis, L.months_after(newest, ym), None, levers.income_changes
                     ).investable
                 ),
+                one_off_codes=codes,
             ),
             "proposed_one_offs": proposed_refund(conn, today, levers, inputs),
             "projection": projection,
@@ -799,9 +808,11 @@ def spending_comparison(conn: Connection, today: date, month: str) -> SpendingCo
     force in the month; no rows without such a scenario. Final only for a closed month that
     has ended; otherwise „bisher“ with the month's lines still waiting in Zu prüfen. Reads
     the month as the Haushalt screen does (services.health.read_months)."""
-    read = read_months(conn, [month], today)[month]
     when = SP.as_of(month, today)
     scenario = SP.in_force_on(list_scenarios(conn, include_history=True), when.day)
+    # phase 10 D307: the switches of the scenario compared against
+    codes = levers_one_off_codes(HouseholdLevers() if scenario is None else scenario.levers)
+    read = read_months(conn, [month], today, codes)[month]
     return SP.comparison(
         month,
         today,
@@ -811,6 +822,7 @@ def spending_comparison(conn: Connection, today: date, month: str) -> SpendingCo
         changes=[] if scenario is None else scenario.levers.spending_changes,
         lines=read.private.lines,
         one_off_ids=read.one_off_ids,
+        one_off_codes=codes,
     )
 
 

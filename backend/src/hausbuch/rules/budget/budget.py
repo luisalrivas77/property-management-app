@@ -13,18 +13,23 @@ behind each month). Pure: no I/O, nothing stored.
   it drops a group whose month totals 0, and its codes with it, while the other lines of the
   month still count (a −5 € fee and a +5 € credit in Sonstiges would leave the fee out).
 
-- **Lines** (D272). Every spending code goes to exactly one line: a one-off code
-  (`hh_car_purchase`) to „Einmalige Ausgaben“, `uncategorized` to „Ohne Einordnung“, every
-  other code to Notwendiges or Wünsche by its class: the household's override, else the
-  taxonomy's (`bank_fees`, outside the taxonomy, is a need here). An override of a code that
-  may not move (a one-off code, uncategorized, a code without a class) is ignored, so a row
-  stored before a taxonomy change still reads; saving one is refused by
+- **Lines** (D272). Every spending code goes to exactly one line: a one-off code in force
+  (`one_off_codes`: the taxonomy's, `hh_car_purchase` and five more since D307, then the
+  household's switches, rules.household.taxonomy.one_off_codes) to „Einmalig im Zeitraum“,
+  `uncategorized` to „Ohne Einordnung“, every other code to Notwendiges or Wünsche by its
+  class: the household's override, else the taxonomy's (`bank_fees`, outside the taxonomy,
+  is a need here). An override of a code that may not move (a one-off code in force,
+  uncategorized, a code without a class) is ignored, so a row stored before a taxonomy or a
+  switch change still reads; saving one is refused by
   services.household_scenarios.check_levers. A refund (`hh_refund`) is a negative amount in
   its class's line.
-- **The identity** (D273), checked per month and over the window: need + want + one-off +
-  uncategorized = A (the month's spending, ValueError when the codes do not add up to it),
-  and saving = E − A, so the lines add up to E and saving ÷ E is rules.health.figures'
-  savings rate to the last digit (both are rules.health's `ratio` of the same sums).
+- **The identity** (D273, amended by D308 on 25 Nov 2026), checked per month and over the
+  window: need + want + one-off + uncategorized = A (the month's spending, ValueError when
+  the codes do not add up to it); saving = E − (A − one-off), the income less the regular
+  spending, so need + want + uncategorized + saving = E and saving ÷ E is
+  rules.health.figures' savings rate to the last digit (both are rules.health's `ratio` of
+  the same sums). The one-offs stand beside the partition (`BudgetView.one_off`, „Einmalig
+  im Zeitraum“): their own monthly mean half-up, their codes apportioned within it.
 - **Monthly amounts.** The window's mean of E, to the cent half-up, is apportioned to the
   lines by largest remainder of their exact means (ties in the lines' order), then each line's
   cents to its codes the same way (ties by the code's value), so the shown codes add up to the
@@ -112,31 +117,37 @@ def default_class(code: C) -> BudgetClass | None:
     return OUTSIDE.get(code) if row is None else row.budget_class
 
 
-def movable(code: C) -> bool:
+def movable(code: C, one_off_codes: Collection[C] = ONE_OFF) -> bool:
     """A code a household may move to the other class (D272 (1)): it has a class and is not
-    one-off (D272 (2))."""
-    return default_class(code) is not None and code not in ONE_OFF
+    one-off in force (D272 (2); `one_off_codes`, D307)."""
+    return default_class(code) is not None and code not in one_off_codes
 
 
-def refused_overrides(overrides: Mapping[C, BudgetClass]) -> list[C]:
+def refused_overrides(
+    overrides: Mapping[C, BudgetClass], one_off_codes: Collection[C] = ONE_OFF
+) -> list[C]:
     """The overrides a scenario may not be saved with, sorted by code."""
-    return sorted((c for c in overrides if not movable(c)), key=lambda c: c.value)
+    return sorted((c for c in overrides if not movable(c, one_off_codes)), key=lambda c: c.value)
 
 
-def class_of(code: C, overrides: Mapping[C, BudgetClass]) -> BudgetClass | None:
+def class_of(
+    code: C, overrides: Mapping[C, BudgetClass], one_off_codes: Collection[C] = ONE_OFF
+) -> BudgetClass | None:
     """The class shown: the override for a movable code, else the default."""
     default = default_class(code)
-    if movable(code):
+    if movable(code, one_off_codes):
         return overrides.get(code, default)
     return default
 
 
-def line_of(code: C, overrides: Mapping[C, BudgetClass]) -> BudgetLineKey:
-    if code in ONE_OFF:
+def line_of(
+    code: C, overrides: Mapping[C, BudgetClass], one_off_codes: Collection[C] = ONE_OFF
+) -> BudgetLineKey:
+    if code in one_off_codes:
         return L.ONE_OFF
     if code is C.UNCATEGORIZED:
         return L.UNCATEGORIZED
-    budget_class = class_of(code, overrides)
+    budget_class = class_of(code, overrides, one_off_codes)
     if budget_class is None:
         raise ValueError(f"{code} is not spending the Budget can place")
     return L.NEED if budget_class is BudgetClass.NEED else L.WANT
@@ -279,10 +290,14 @@ def _uncategorized_todo(count: int, total: Decimal) -> HealthTodo:
     )
 
 
-def marked_one_off(rows: Sequence[MonthLine], one_off_ids: Collection[UUID]) -> dict[C, Decimal]:
+def marked_one_off(
+    rows: Sequence[MonthLine],
+    one_off_ids: Collection[UUID],
+    one_off_codes: Collection[C] = ONE_OFF,
+) -> dict[C, Decimal]:
     """What the payments marked one-off (D297) moved per code in one month, positive: a
-    payment (money out) in a spending code that is not one-off, D234's recode applied, the
-    same test as rules.health.month's."""
+    payment (money out) in a spending code that is not one-off in force, D234's recode
+    applied, the same test as rules.health.month's."""
     moved: dict[C, Decimal] = {}
     if not one_off_ids:
         return moved
@@ -290,13 +305,13 @@ def marked_one_off(rows: Sequence[MonthLine], one_off_ids: Collection[UUID]) -> 
         if line.allocation_id not in one_off_ids or line.amount >= 0:
             continue
         code = cashflow_rows([line])[0][0]
-        if is_spending(code) and code not in ONE_OFF:
+        if is_spending(code) and code not in one_off_codes:
             moved[code] = moved.get(code, ZERO) - line.amount
     return moved
 
 
 def _joined(seen: BudgetCode | None, row: BudgetCode) -> BudgetCode:
-    """A code shown on two lines (its marked payments on „Einmalige Ausgaben“) counts once
+    """A code shown on two lines (its marked payments on „Einmalig im Zeitraum“) counts once
     in the housing share: its two rows summed, the class of the line it belongs to."""
     if seen is None:
         return row
@@ -316,13 +331,16 @@ def budget(
     scenario_id: UUID | None = None,
     references: Sequence[BudgetReference] = (),
     one_off_ids: Collection[UUID] = frozenset(),
+    one_off_codes: Collection[C] = ONE_OFF,
 ) -> BudgetView:
     """The Budget over the window `months` (consecutive, oldest first; the closed months
     phase 9's key figures use, D231), `lines` each month's private lines. `one_off_ids`: the
     payments a person marked one-off (phase 10 §7.9 (c) 2, D297; empty by default); each
-    moves from its code's line to „Einmalige Ausgaben“, its code then shown on both lines,
-    as rules.health.month moves it from regular to one-off spending. The housing share
-    keeps it (D276: the Wohnen group's spending, whatever line a payment sits on)."""
+    moves from its code's line to „Einmalig im Zeitraum“, its code then shown on both, as
+    rules.health.month moves it from regular to one-off spending. `one_off_codes`: the codes
+    counted as one-off (D307; the taxonomy's by default), the same the months were built
+    with. The housing share keeps the one-offs (D276: the Wohnen group's spending, whatever
+    line a payment sits on)."""
     win = Window(months=[m.month for m in months], enough=len(months) >= MIN_MONTHS)
     base = {
         "as_of": as_of,
@@ -346,14 +364,19 @@ def budget(
     totals: dict[tuple[BudgetLineKey, C], Decimal] = {}
     for m, codes, rows in zip(months, per_month, lines, strict=True):
         sums = dict.fromkeys(L, ZERO)
-        placed = {(line_of(code, overrides), code): amount for code, amount in codes.items()}
-        for code, amount in marked_one_off(rows, one_off_ids).items():
-            regular = (line_of(code, overrides), code)
+        placed = {
+            (line_of(code, overrides, one_off_codes), code): amount
+            for code, amount in codes.items()
+        }
+        for code, amount in marked_one_off(rows, one_off_ids, one_off_codes).items():
+            regular = (line_of(code, overrides, one_off_codes), code)
             placed[regular] = placed[regular] - amount
             placed[(L.ONE_OFF, code)] = placed.get((L.ONE_OFF, code), ZERO) + amount
         for (key, code), amount in placed.items():
             sums[key] += amount
             totals[(key, code)] = totals.get((key, code), ZERO) + amount
+        if sums[L.ONE_OFF] != m.one_off_spending:
+            raise ValueError(f"{m.month}: the one-offs do not match the month's (D308)")
         month_rows.append(
             BudgetMonth(
                 month=m.month,
@@ -362,20 +385,25 @@ def budget(
                 want=sums[L.WANT],
                 one_off=sums[L.ONE_OFF],
                 uncategorized=sums[L.UNCATEGORIZED],
-                saving=m.saved,
+                saving=m.saved + m.one_off_spending,  # D308: E − the regular spending
             )
         )
     income_total = sum((m.income for m in months), ZERO)
-    saved_total = sum((m.saved for m in months), ZERO)
+    saved_total = sum((m.saved + m.one_off_spending for m in months), ZERO)
     by_line: dict[BudgetLineKey, dict[C, Decimal]] = {key: {} for key in L}
     for (key, code), total in totals.items():
         if total:
             by_line[key][code] = total
     line_totals = {key: sum(codes.values(), ZERO) for key, codes in by_line.items()}
     line_totals[L.SAVING] = saved_total
-    if sum(line_totals.values(), ZERO) != income_total:  # pragma: no cover - checked per month
+    partition = sum((v for k, v in line_totals.items() if k is not L.ONE_OFF), ZERO)
+    if partition != income_total:  # pragma: no cover - checked per month
         raise ValueError("the lines do not add up to the income")
-    shown = [key for key in L if key in (L.NEED, L.WANT, L.SAVING) or line_totals[key] != 0]
+    shown = [
+        key
+        for key in L
+        if key in (L.NEED, L.WANT, L.SAVING) or (key is L.UNCATEGORIZED and line_totals[key])
+    ]
 
     # Monthly means: E's mean to the cent, apportioned to the lines, then to their codes.
     income_cents = _half_up_cents(Fraction(income_total) * 100 / n)
@@ -384,6 +412,10 @@ def budget(
         income_cents,
         {key: i for i, key in enumerate(L)},
     )
+    # D308: „Einmalig im Zeitraum“ beside the partition, its own mean to the cent half-up
+    one_off_shown = line_totals[L.ONE_OFF] != 0
+    if one_off_shown:
+        line_cents[L.ONE_OFF] = _half_up_cents(Fraction(line_totals[L.ONE_OFF]) * 100 / n)
     rental_monthly = _mean(sum((m.rental_result for m in months), ZERO), n)
     income = BudgetIncome(
         monthly=_euros(income_cents),
@@ -395,8 +427,9 @@ def budget(
     line_targets = {L.NEED: targets.needs_max, L.WANT: targets.wants_max}
     line_targets[L.SAVING] = targets.saving_min
     budget_lines: list[BudgetLine] = []
+    one_off_line: BudgetLine | None = None
     all_codes: dict[C, BudgetCode] = {}
-    for key in shown:
+    for key in [*shown, *([L.ONE_OFF] if one_off_shown else [])]:
         codes = by_line[key]
         code_cents = (
             {}
@@ -410,7 +443,11 @@ def budget(
         rows = []
         for code in sorted(codes, key=lambda c: c.value):
             default = default_class(code)
-            shown_class = None if key in (L.ONE_OFF, L.UNCATEGORIZED) else class_of(code, overrides)
+            shown_class = (
+                None
+                if key in (L.ONE_OFF, L.UNCATEGORIZED)
+                else class_of(code, overrides, one_off_codes)
+            )
             row = BudgetCode(
                 category=code,
                 group=_group(code),
@@ -425,6 +462,11 @@ def budget(
         share = ratio(line_totals[key], income_total) if shares_ok else None
         target = line_targets.get(key)
         monthly = _euros(line_cents[key])
+        if key is L.ONE_OFF:  # beside the partition: no target, no mark
+            one_off_line = BudgetLine(
+                key=key, monthly=monthly, total=line_totals[key], share=share, codes=rows
+            )
+            continue
         budget_lines.append(
             BudgetLine(
                 key=key,
@@ -463,6 +505,7 @@ def budget(
         months=month_rows,
         income=income,
         lines=budget_lines,
+        one_off=one_off_line,
         housing=housing,
         no_shares=None if shares_ok else NO_SHARES,
         todos=todos,

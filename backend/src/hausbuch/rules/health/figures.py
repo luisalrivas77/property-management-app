@@ -68,9 +68,12 @@ def _german(day: date) -> str:
 
 
 def savings_rate(window_months: Sequence[HouseholdMonth]) -> SavingsRate:
-    """Σ saved ÷ Σ income over the window, with and without one-offs and principal (D235);
-    every ratio None when Σ income ≤ 0, and a month's own rate None when its income ≤ 0."""
-    saved = sum((m.saved for m in window_months), ZERO)
+    """The regular saving ÷ Σ income over the window, with and without principal (D235). Phase
+    10 D308: the one-offs are left out of the saving, as the Budget counts them (Σ income −
+    Σ regular spending), and shown beside it; `rate_regular` is None, being `rate`. Every
+    ratio None when Σ income ≤ 0; a month's own rate (S ÷ E, one-offs in, the Monat tile's)
+    None when its income ≤ 0."""
+    saved = sum((m.saved + m.one_off_spending for m in window_months), ZERO)
     income = sum((m.income for m in window_months), ZERO)
     one_off = sum((m.one_off_spending for m in window_months), ZERO)
     principal = sum((m.principal for m in window_months), ZERO)
@@ -80,9 +83,10 @@ def savings_rate(window_months: Sequence[HouseholdMonth]) -> SavingsRate:
         one_off_spending=one_off,
         principal=principal,
         rate=ratio(saved, income),
-        rate_regular=ratio(saved + one_off, income),
+        rate_regular=None,
         rate_without_principal=ratio(saved - principal, income),
         months=[MonthRate(month=m.month, rate=m.savings_rate) for m in window_months],
+        one_offs_left_out=True,
     )
 
 

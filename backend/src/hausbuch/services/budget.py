@@ -19,7 +19,7 @@ from hausbuch.rules.budget.references import references
 from hausbuch.schemas.budget import BudgetView
 from hausbuch.schemas.plan import HouseholdLevers
 
-from .health import _window
+from .health import _window, levers_one_off_codes
 from .plan import _scenario
 from .plan_inputs import PlanInputs
 
@@ -29,7 +29,8 @@ def household_budget(conn: Connection, today: date, scenario_id: UUID | None = N
     inputs = PlanInputs(conn, today)  # the months' reads, kept (phase 10 §7.10 (b))
     row = _scenario(conn, scenario_id, inputs)
     levers = HouseholdLevers() if row is None else row.levers
-    reads = inputs.ended_reads()
+    codes = levers_one_off_codes(levers)  # phase 10 D307
+    reads = inputs.ended_reads(codes)
     win = _window(reads)
     window_reads = [reads[m] for m in win.months]
     return budget(
@@ -41,4 +42,5 @@ def household_budget(conn: Connection, today: date, scenario_id: UUID | None = N
         scenario_id=None if row is None else row.id,
         references=references()[1],
         one_off_ids=reads[win.months[-1]].one_off_ids if win.months else frozenset(),
+        one_off_codes=codes,
     )

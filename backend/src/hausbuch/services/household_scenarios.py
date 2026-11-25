@@ -37,8 +37,14 @@ beyond HouseholdScenarioCreate's own validator (HouseholdLevers checks the range
   carried unaltered keeps its stored `mean_at_save`; a new or altered one gets the code's
   mean over today's window (0 without three closed months), whatever the request carried.
 - budget class overrides (phase 10 D272 (2)): a code that cannot move between Notwendiges and
-  Wünsche (a one-off code, `uncategorized`, a code without a class;
+  Wünsche (a one-off code in force, `uncategorized`, a code without a class;
   `household_scenario.budget_class_invalid`). rules/budget ignores such a stored override.
+- one-off switches (phase 10 D307): a switch on a code that is not a household spending code
+  (`household_scenario.one_off_code_invalid`; rules.household.taxonomy.one_off_codes ignores
+  such a stored switch). A spending change, new or altered against the row being
+  superseded, of a code that is one-off in force with the levers' own switches
+  (`household_scenario.spending_invalid`); a change carried unaltered is kept and counts for
+  nothing on read (rules.plan.spending.in_play).
 - a goal (phase 10 §7.9 (d), D289 (1)), new or altered against the row being superseded,
   due in the current month (Berlin) or before it (`household_scenario.goal_invalid`); its
   target above 0 and a reserve goal's months (up to 24, in half months) are Goal's own
@@ -72,10 +78,12 @@ from hausbuch.rules.errors import (
     HOUSEHOLD_SCENARIO_BUDGET_CLASS_INVALID,
     HOUSEHOLD_SCENARIO_GOAL_INVALID,
     HOUSEHOLD_SCENARIO_NOT_CURRENT,
+    HOUSEHOLD_SCENARIO_ONE_OFF_CODE_INVALID,
     HOUSEHOLD_SCENARIO_ONE_OFF_OUTSIDE,
     HOUSEHOLD_SCENARIO_SPENDING_INVALID,
     HOUSEHOLD_SCENARIO_WITHDRAWAL_INVALID,
 )
+from hausbuch.rules.household.taxonomy import SWITCHABLE, one_off_codes
 from hausbuch.rules.plan import spending as SP
 from hausbuch.rules.plan.levers import add_months, one_offs_outside
 from hausbuch.schemas.allocation import AllocationCategory
@@ -221,10 +229,13 @@ def check_levers(
     _check_accounts(conn, levers, account_kinds)
     _check_goal(levers, today, previous_goal)
     _check_budget_classes(levers, previous_overrides or {})
+    _check_one_off_switches(levers, previous)
     if not levers.one_offs and not levers.spending_changes:
         return {}
     if reads is None:
-        reads = read_months(conn, ended_months(today), today)
+        reads = read_months(
+            conn, ended_months(today), today, one_off_codes(levers.one_off_overrides)
+        )
     _check_one_offs(levers, today, reads)
     if not levers.spending_changes:
         return {}
@@ -250,6 +261,30 @@ def _check_goal(levers: HouseholdLevers, today: date, previous: Goal | None) -> 
         )
 
 
+def _check_one_off_switches(levers: HouseholdLevers, previous: Sequence[SpendingChange]) -> None:
+    """Phase 10 D307: every switch names a household spending code (one the taxonomy may count
+    as one-off); a spending change new or altered against `previous` may not name a code that
+    is one-off in force with these levers' switches (rules.plan.spending.refused_code)."""
+    wrong = sorted(
+        (c for c in levers.one_off_overrides if c not in SWITCHABLE), key=lambda c: c.value
+    )
+    if wrong:
+        raise RuleViolationError(
+            [HOUSEHOLD_SCENARIO_ONE_OFF_CODE_INVALID],
+            "a one-off switch for "
+            + ", ".join(f"{c.value} ({CATEGORY_LABEL[c]})" for c in wrong)
+            + ", which is not a household spending code",
+        )
+    codes = one_off_codes(levers.one_off_overrides)
+    for change in SP.typed_now(levers.spending_changes, previous):
+        if change.code in codes:
+            raise RuleViolationError(
+                [HOUSEHOLD_SCENARIO_SPENDING_INVALID],
+                f"a spending change of {change.code.value} ({CATEGORY_LABEL[change.code]}), "
+                "which counts as one-off",
+            )
+
+
 def _check_budget_classes(
     levers: HouseholdLevers, previous: Mapping[AllocationCategory, BudgetClass]
 ) -> None:
@@ -263,7 +298,7 @@ def _check_budget_classes(
         for code, cls in levers.budget_class_overrides.items()
         if previous.get(code) is not cls
     }
-    refused = refused_overrides(added)
+    refused = refused_overrides(added, one_off_codes(levers.one_off_overrides))
     if refused:
         raise RuleViolationError(
             [HOUSEHOLD_SCENARIO_BUDGET_CLASS_INVALID],
@@ -280,7 +315,7 @@ def window_means(reads: dict[str, MonthRead]) -> dict[AllocationCategory, Decima
         return {}
     return SP.code_means(
         [
-            SP.month_spending(r.private.cashflow, r.private.lines, r.one_off_ids)
+            SP.month_spending(r.private.cashflow, r.private.lines, r.one_off_ids, r.one_off_codes)
             for r in (reads[m] for m in win.months)
         ]
     )

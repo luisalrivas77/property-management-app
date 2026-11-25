@@ -15,10 +15,11 @@ from hausbuch.services.health import rule_version
 
 GOAL = phase10.load("goal").cases
 
-# services.health.rule_version() on main after PR #590 (§7.9 (c) changed rules/health and
-# rules/plan once). rules/goal lies outside the hashed folders, so §7.9 (d) leaves it as it was;
-# a change of rules/health or rules/plan must update this value on purpose (D242).
-RULE_VERSION = "3d24e195585146a011f8ec677ef054a8d19cccd92998db4b178c357317f4551d"
+# services.health.rule_version() after phase 10 §7.12 (b), (c) (D307, D308: the one-offs by
+# category and left out of the Sparquote changed rules/health and rules/plan once; it was
+# 3d24e195... after PR #590). rules/goal lies outside the hashed folders, so §7.9 (d) leaves it
+# as it was; a change of rules/health or rules/plan must update this value on purpose (D242).
+RULE_VERSION = "5547fda12de35578842aabc3d7adcb0d775fe93dec63dc82880c29cc3d828efd"
 
 
 def _projection(case) -> Projection:

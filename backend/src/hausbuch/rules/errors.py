@@ -256,6 +256,8 @@ HOUSEHOLD_SCENARIO_SPENDING_INVALID = "household_scenario.spending_invalid"
 # Phase 10 D272 (2): a budget class override of a code that may not move (one-off,
 # uncategorized, a code without a class)
 HOUSEHOLD_SCENARIO_BUDGET_CLASS_INVALID = "household_scenario.budget_class_invalid"
+# Phase 10 D307: a one-off switch on a code that is not a household spending code
+HOUSEHOLD_SCENARIO_ONE_OFF_CODE_INVALID = "household_scenario.one_off_code_invalid"
 # Phase 10 §7.9 (d): a goal, new or altered against the superseded row, due in the current
 # month or before it (D289 (1): the household types the due month; the app proposes none)
 HOUSEHOLD_SCENARIO_GOAL_INVALID = "household_scenario.goal_invalid"

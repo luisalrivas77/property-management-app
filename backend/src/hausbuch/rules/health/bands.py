@@ -244,8 +244,10 @@ def _slots(health: Health, mark: Light, value: Decimal) -> dict[str, str]:
         format_multiple if figure is MarkedFigure.DEBT_TO_INCOME else format_percent
     )
     out = {figure.value: fmt(value)}
-    if figure is MarkedFigure.SAVINGS_RATE and health.savings_rate is not None:
-        out["savings_rate_regular"] = fmt(health.savings_rate.rate_regular)
+    rate = health.savings_rate
+    # None since phase 10 D308 (the rate leaves the one-offs out); a stored row keeps it
+    if figure is MarkedFigure.SAVINGS_RATE and rate is not None and rate.rate_regular is not None:
+        out["savings_rate_regular"] = fmt(rate.rate_regular)
     band = _BAND_SLOT[figure]
     if mark.green is not None:
         out[f"{band}_green"] = fmt(mark.green)

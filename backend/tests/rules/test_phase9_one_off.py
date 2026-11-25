@@ -1,4 +1,5 @@
-"""Phase 9 D236: `one_off` is a field of the household taxonomy, not a judgement at run time.
+"""Phase 9 D236, phase 10 D307: `one_off` is a field of the household taxonomy, not a judgement
+at run time.
 
 The completeness check runs at import (rules/household/taxonomy.py) and against phase 6's
 fixture household_categories.yaml, whose rows carry the field (fixture_models_phase6)."""
@@ -10,8 +11,16 @@ from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.household import Relevance
 
 
-def test_only_the_car_purchase_is_one_off():
-    assert {C.HH_CAR_PURCHASE} == ONE_OFF
+def test_the_six_one_off_codes():
+    """D236's car purchase and the five of phase 10 D307 (§7.12 (b))."""
+    assert {
+        C.HH_CAR_PURCHASE,
+        C.HH_FLAT_SEARCH,
+        C.HH_PREGNANCY_BIRTH,
+        C.HH_ELECTRONICS,
+        C.HH_WORK_EDUCATION,
+        C.HH_DENTAL_OPTICAL,
+    } == ONE_OFF
 
 
 def test_every_row_carries_the_field_and_one_off_is_spending():

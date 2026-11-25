@@ -4,10 +4,13 @@ D263). Fixtures: tests/fixtures/phase9/spending_play.yaml, spending_comparison.y
 - **Codes.** The codes counted in a month's regular spending are those the Haushalt screen
   counts as spending (phase 6's `month_cashflow`: spending and tax relevance, and a code
   outside the taxonomy such as bank fees or an uncategorised line under „Sonstiges“), less
-  the one-off codes. A change may name a counted code of the taxonomy except a refund (its
-  mean is negative, a member does not plan refunds) and a one-off code (§7.6 (1)). A group's
-  fallback code stands for the whole group, bank fees and uncategorised lines included for
-  „Sonstiges“; any other code for itself.
+  the one-off codes in force (`one_off_codes`: the taxonomy's, then the household's switches,
+  phase 10 D307; the taxonomy's by default). A change may name a counted code of the
+  taxonomy except a refund (its mean is negative, a member does not plan refunds) and a
+  one-off code (§7.6 (1)); the schema refuses only what no switch can change, the save
+  refuses a one-off code in force, and a stored change of a code a switch has made one-off
+  since counts for nothing (`in_play`). A group's fallback code stands for the whole group,
+  bank fees and uncategorised lines included for „Sonstiges“; any other code for itself.
 - **Means** (§7.6 (2)). Each code's window sum ÷ n to the cent, the cents apportioned by
   largest remainder (ties: the code's value, ascending), so the means sum to
   `mean_regular_spending` exactly; a group code's mean is Σ over its codes.
@@ -15,7 +18,7 @@ D263). Fixtures: tests/fixtures/phase9/spending_play.yaml, spending_comparison.y
   force in month k; rules.plan.levers.month_at subtracts it from free(k).
 - **The rate with the changes** (§7.6 (4)) on the window's exact sums:
   (ΣE + n·inc(k) − ΣA − n·Δ(k)) ÷ (ΣE + n·inc(k)), four places half-up, so with no change in
-  force it is §5.1's `rate_regular` to the last digit.
+  force it is §5.1's `rate` to the last digit (phase 10 D308: the one-offs left out).
 - **The comparison** (§7.7). The default scenario in force on a Berlin day, the planned
   amount from the change's `mean_at_save`, the month's confirmed lines on the code.
 
@@ -32,6 +35,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from hausbuch.rules.household.taxonomy import FALLBACK, FALLBACK_CODES, ONE_OFF, TAXONOMY
+from hausbuch.rules.household.taxonomy import one_off_codes as switched_one_off_codes
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.health import HouseholdMonth, MonthLine, ratio
 from hausbuch.schemas.household import HouseholdCashflow, HouseholdGroup, Relevance
@@ -67,23 +71,45 @@ def group_of(code: AllocationCategory) -> HouseholdGroup:
 
 
 def counted(code: AllocationCategory) -> bool:
-    """Counted in a month's regular spending (rules.health.month._role's spending, less the
-    one-off codes)."""
+    """Counted in a month's spending (rules.health.month._role's spending); the one-off codes
+    in force are left out where it is used (phase 10 D307: a household's switch moves a code
+    in or out, so this test cannot know them)."""
     row = TAXONOMY.get(code)
     if row is None:
         return True
-    return row.relevance in _SPENT and not row.one_off
+    return row.relevance in _SPENT
 
 
-def playable(code: AllocationCategory) -> bool:
-    """A change may name the code (§7.6 (1))."""
-    return code in TAXONOMY and counted(code) and code not in _NEVER_PLAYED
+def playable(
+    code: AllocationCategory, one_off_codes: Collection[AllocationCategory] = ONE_OFF
+) -> bool:
+    """A change may name the code (§7.6 (1)): counted, in the taxonomy, not a refund and not
+    one-off in force."""
+    return (
+        code in TAXONOMY
+        and counted(code)
+        and code not in _NEVER_PLAYED
+        and code not in one_off_codes
+    )
 
 
-def members(code: AllocationCategory) -> frozenset[AllocationCategory]:
+def in_play(
+    changes: Iterable[SpendingChange], one_off_codes: Collection[AllocationCategory] = ONE_OFF
+) -> list[SpendingChange]:
+    """The changes that count (phase 10 D307): a stored change of a code a switch or the
+    taxonomy has made one-off since it was saved counts for nothing, as its code has no
+    regular spending to plan; the save refuses a new one (refused_code)."""
+    return [c for c in changes if c.code not in one_off_codes]
+
+
+def members(
+    code: AllocationCategory, one_off_codes: Collection[AllocationCategory] = ONE_OFF
+) -> frozenset[AllocationCategory]:
     """The codes a change of `code` covers: a group's fallback code the whole group (every
-    counted code shown in it), any other code itself."""
-    return _members(code)
+    counted code shown in it, the codes one-off in force left out, phase 10 D307), any other
+    code itself."""
+    found = _members(code)
+    return found - frozenset(one_off_codes) if code in FALLBACK_CODES else found
 
 
 _MEMBERS: dict[AllocationCategory, frozenset[AllocationCategory]] = {}
@@ -110,13 +136,36 @@ def group_code(group: HouseholdGroup) -> AllocationCategory | None:
     return None
 
 
-def refused_code(code: AllocationCategory) -> str | None:
-    """Why a change may not name `code` (§7.6 (1)); None when it may."""
-    if code in ONE_OFF:
+# Phase 10 D307: the codes that were one-off before D307 (phase 9 D236's car purchase). A change
+# of one was refused from the first spending change on (phase 9 step 3b, PR #436), so no stored
+# row holds one, and HouseholdLevers still refuses it unless the same levers switch the code
+# to regular. The five codes D307 made one-off are refused on save only: a row stored before
+# may name one and must still read (rules.plan.spending.in_play leaves it out).
+ONE_OFF_BEFORE_D307 = frozenset({AllocationCategory.HH_CAR_PURCHASE})
+
+
+def refused_one_off(
+    changes: Iterable[SpendingChange], overrides: Mapping[AllocationCategory, bool]
+) -> str | None:
+    """Why `changes` may not stand in levers with these one-off switches (ONE_OFF_BEFORE_D307);
+    None when they may."""
+    for change in changes:
+        if change.code in ONE_OFF_BEFORE_D307 and change.code in switched_one_off_codes(overrides):
+            return f"{change.code.value} is a one-off code"
+    return None
+
+
+def refused_code(
+    code: AllocationCategory, one_off_codes: Collection[AllocationCategory] = ONE_OFF
+) -> str | None:
+    """Why a change may not name `code` (§7.6 (1)); None when it may. `one_off_codes`: the
+    codes one-off in force; SpendingChange's own check passes none (a household's switch can
+    change them, so a stored row must still read), the save passes those in force."""
+    if code in one_off_codes:
         return "is a one-off code"
     if code not in TAXONOMY:
         return "is not a household spending code"
-    if not playable(code):
+    if not playable(code, one_off_codes):
         return "is not a household spending code that can be planned"
     return None
 
@@ -132,7 +181,7 @@ def refused_together(changes: Sequence[SpendingChange]) -> str | None:
                     return f"two changes of {a.code.value} overlap"
                 continue
             for x, y in ((a, b), (b, a)):
-                if x.code in FALLBACK_CODES and y.code in members(x.code):
+                if x.code in FALLBACK_CODES and y.code in members(x.code, frozenset()):
                     return f"{x.code.value} stands for its group beside {y.code.value}"
     return None
 
@@ -144,19 +193,21 @@ def month_spending(
     cashflow: HouseholdCashflow,
     lines: Sequence[MonthLine] = (),
     one_off_ids: Collection[UUID] = frozenset(),
+    one_off_codes: Collection[AllocationCategory] = ONE_OFF,
 ) -> dict[AllocationCategory, Decimal]:
     """A month's regular spending per code: the Haushalt screen's spending by category, less
-    the one-off codes and less the payments a person marked one-off (phase 10 §7.9 (c) 2,
-    D297; `lines` the month's private lines, `one_off_ids` the marked allocations, both empty
-    by default). Σ = HouseholdMonth.regular_spending of the same month, also when a marked
-    payment's code nets to 0 in it."""
+    the one-off codes in force (`one_off_codes`, phase 10 D307) and less the payments a person
+    marked one-off (phase 10 §7.9 (c) 2, D297; `lines` the month's private lines,
+    `one_off_ids` the marked allocations, both empty by default). Σ =
+    HouseholdMonth.regular_spending of the same month built with the same codes, also when a
+    marked payment's code nets to 0 in it."""
     out: dict[AllocationCategory, Decimal] = {}
     for codes in cashflow.spending_by_category.values():
         for code, value in codes.items():
-            if code not in ONE_OFF:
+            if code not in one_off_codes:
                 out[code] = out.get(code, ZERO) + value
     for line in lines:
-        if marked_one_off(line, one_off_ids):
+        if marked_one_off(line, one_off_ids, one_off_codes):
             # month_cashflow drops a code (or a group) that nets to 0 in the month, a purchase
             # and its refund; the marked payment still leaves it, the refund staying behind.
             code = counted_as(line)
@@ -164,10 +215,17 @@ def month_spending(
     return out
 
 
-def marked_one_off(line: MonthLine, one_off_ids: Collection[UUID]) -> bool:
+def marked_one_off(
+    line: MonthLine,
+    one_off_ids: Collection[UUID],
+    one_off_codes: Collection[AllocationCategory] = ONE_OFF,
+) -> bool:
     """A payment a person marked one-off (D297) in a code counted as regular spending; the
     same test as rules.health.month's, so the means add up to its regular spending."""
-    return line.allocation_id in one_off_ids and line.amount < 0 and counted(counted_as(line))
+    if line.allocation_id not in one_off_ids or line.amount >= 0:
+        return False
+    code = counted_as(line)
+    return counted(code) and code not in one_off_codes
 
 
 def code_means(
@@ -196,8 +254,9 @@ def code_means(
 
 
 def mean_of(code: AllocationCategory, means: Mapping[AllocationCategory, Decimal]) -> Decimal:
-    """A code's mean; a group code's the Σ over its codes."""
-    return sum((means.get(c, ZERO) for c in members(code)), ZERO)
+    """A code's mean; a group code's the Σ over its codes (`means` holds no code one-off in
+    force, so a code a switch made regular counts here, phase 10 D307)."""
+    return sum((means.get(c, ZERO) for c in members(code, frozenset())), ZERO)
 
 
 def planned(change: SpendingChange, mean: Decimal) -> Decimal:
@@ -352,9 +411,11 @@ def play(
     income_changes: Sequence[IncomeChange],
     horizon_months: int,
     investable_of: Callable[[str], Decimal] | None = None,
+    one_off_codes: Collection[AllocationCategory] = ONE_OFF,
 ) -> SpendingPlay:
     """§7.6 (5) over the window's household months and their spending per code
-    (`month_spending`, one mapping per month, in the same order)."""
+    (`month_spending`, one mapping per month, in the same order, built with the same
+    `one_off_codes`). `changes` are those in play (`in_play`)."""
     if not window or len(window) != len(spending):
         raise ValueError("the play is taken over the window's months, one spending per month")
     for m, by_code in zip(window, spending, strict=True):
@@ -388,7 +449,7 @@ def play(
                     mean=mean,
                     planned_first=mean + change_first,
                     change_first=change_first,
-                    playable=own and playable(code),
+                    playable=own and playable(code, one_off_codes),
                     changes=played,
                 )
             )
@@ -421,7 +482,7 @@ def play(
         mean_regular_spending=mean_regular,
         rate_regular_now=ratio(sum_e - sum_a, sum_e),
         rates=rate_segments(window, changes, means, income_changes, horizon_months, investable_of),
-        addable=addable(means, changes, shown),
+        addable=addable(means, changes, shown, one_off_codes),
     )
 
 
@@ -429,6 +490,7 @@ def addable(
     means: Mapping[AllocationCategory, Decimal],
     changes: Sequence[SpendingChange],
     shown: set[HouseholdGroup],
+    one_off_codes: Collection[AllocationCategory] = ONE_OFF,
 ) -> list[AllocationCategory]:
     """„Neue Ausgabe“: every code a change may name that has no mean (or a mean of 0.00: its
     lines cancel out, and the screen shows no row for it) and no change, in the taxonomy's
@@ -438,7 +500,7 @@ def addable(
     return [
         code
         for code in TAXONOMY
-        if playable(code)
+        if playable(code, one_off_codes)
         and means.get(code, ZERO) == 0
         and code not in named
         and not (code in FALLBACK_CODES and group_of(code) in shown)
@@ -470,20 +532,24 @@ def compare_rows(
     changes: Sequence[SpendingChange],
     lines: Sequence[MonthLine],
     one_off_ids: Collection[UUID] = frozenset(),
+    one_off_codes: Collection[AllocationCategory] = ONE_OFF,
 ) -> list[SpendingComparisonRow]:
     """One row per change in force in `month`, in the scenario's order; `lines` are the
     month's confirmed private lines (signed as booked, spending negative); a payment marked
-    one-off (`one_off_ids`, D297) is no regular spending and is left out."""
+    one-off (`one_off_ids`, D297) and a one-off code in force (`one_off_codes`, D307) are no
+    regular spending and are left out; a change of a code one-off in force has no row."""
     rows = []
-    for change in changes:
+    for change in in_play(changes, one_off_codes):
         if not change.in_force(month):
             continue
         if change.mean_at_save is None:
             raise ValueError(f"{change.code.value}: a stored change carries its mean_at_save")
         amount = planned(change, change.mean_at_save)
-        covered = members(change.code) - ONE_OFF
+        covered = members(change.code, one_off_codes)
         mine = [
-            li for li in lines if counted_as(li) in covered and not marked_one_off(li, one_off_ids)
+            li
+            for li in lines
+            if counted_as(li) in covered and not marked_one_off(li, one_off_ids, one_off_codes)
         ]
         actual = -sum((li.amount for li in mine), ZERO)
         actual = actual + ZERO  # never „-0.00“
@@ -557,6 +623,7 @@ def comparison(
     changes: Sequence[SpendingChange],
     lines: Sequence[MonthLine],
     one_off_ids: Collection[UUID] = frozenset(),
+    one_off_codes: Collection[AllocationCategory] = ONE_OFF,
 ) -> SpendingComparison:
     """§7.7 for `month`: final only for a closed month that has ended."""
     when = as_of(month, today)
@@ -566,5 +633,9 @@ def comparison(
         open_lines=open_lines,
         scenario_id=None if scenario is None else scenario.id,
         scenario_created_at=None if scenario is None else scenario.created_at,
-        rows=compare_rows(month, changes, lines, one_off_ids) if scenario is not None else [],
+        rows=(
+            compare_rows(month, changes, lines, one_off_ids, one_off_codes)
+            if scenario is not None
+            else []
+        ),
     )
