@@ -5966,6 +5966,36 @@ export interface components {
             total: string;
         };
         /**
+         * BudgetFixedPayment
+         * @description One fixed payment inside Notwendiges or Wünsche (§7.10 (c), D300): a recurring series
+         *     of D296 that GET /household/recurring lists (active or maybe ended, not hidden as „kein
+         *     Abo“) whose newest payment's code the Budget places in the class. `key` is the id of the
+         *     series' oldest payment, the opaque id the recurring panel uses (never the payee's words);
+         *     `monthly` the expected monthly amount (the yearly total ÷ 12, to the cent half-up); `mean`
+         *     the series' payments the Budget counts in the class inside the window, ÷ the window's
+         *     months, to the cent half-up.
+         */
+        BudgetFixedPayment: {
+            /**
+             * Key
+             * Format: uuid
+             */
+            key: string;
+            /** Label */
+            label: string;
+            category: components["schemas"]["AllocationCategory"];
+            interval: components["schemas"]["RecurringInterval"];
+            state: components["schemas"]["RecurringState"];
+            /** Monthly */
+            monthly: string;
+            /** Mean */
+            mean: string;
+            /** Change */
+            change?: string | null;
+            /** Since */
+            since?: string | null;
+        };
+        /**
          * BudgetHousing
          * @description D276: the window's spending in the Wohnen group ÷ E; an override does not move it.
          */
@@ -6010,6 +6040,10 @@ export interface components {
             /** Target */
             target?: string | null;
             mark?: components["schemas"]["BudgetMark"] | null;
+            /** Fixed */
+            fixed?: components["schemas"]["BudgetFixedPayment"][] | null;
+            /** Variable */
+            variable?: string | null;
         };
         /**
          * BudgetLineKey
