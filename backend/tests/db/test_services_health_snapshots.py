@@ -566,6 +566,31 @@ def test_health_check_reads_the_switches_in_force_when_each_month_was_stored(wor
     assert result.match, [r for r in result.rows if not r.equal]
 
 
+def _stored_again(world: World, month: str, *, d308: bool, at: datetime) -> None:
+    """A newer row of `month` (the newest counts), a copy of its newest one with the savings
+    rate as a row stored before D308 holds it (`d308` False: `rate_regular` set, the flag
+    off) or as one stored under it; for a row whose window holds no one-off spending."""
+    h = health_snapshot_table.c
+    with workspace_transaction(world.engine, world.ws) as conn:
+        row = conn.execute(
+            select(health_snapshot_table)
+            .where(h.month_end == ENDS[month])
+            .order_by(h.created_at.desc())
+            .limit(1)
+        ).one()
+        figures = dict(row.figures)
+        rate = dict(figures["savings_rate"])
+        assert Decimal(rate["one_off_spending"]) == 0
+        rate["one_offs_left_out"] = d308
+        rate["rate_regular"] = None if d308 else rate["rate"]
+        figures["savings_rate"] = rate
+        conn.execute(
+            insert(health_snapshot_table).values(
+                {**row._mapping, "id": uuid4(), "figures": figures, "created_at": at}
+            )
+        )
+
+
 def test_one_offs_left_out_since_names_the_newest_unbroken_run(world):
     """Phase 10 D308: „Seit <Monat>“ names the first month of the newest unbroken run of
     months whose newest row is stored under D308: a month whose newest row is stored before
@@ -575,33 +600,40 @@ def test_one_offs_left_out_since_names_the_newest_unbroken_run(world):
     for month in ("2027-01", "2027-02", "2027-03"):
         world.cmd(health.store_snapshot, month)
 
-    def stored_again(month: str, *, d308: bool, at: datetime) -> None:
-        # a newer row of the month (the newest counts), its savings rate as a row stored
-        # before D308 holds it (`d308` False) or as one stored under it; nothing one-off here
-        h = health_snapshot_table.c
-        with workspace_transaction(world.engine, world.ws) as conn:
-            row = conn.execute(
-                select(health_snapshot_table)
-                .where(h.month_end == ENDS[month])
-                .order_by(h.created_at.desc())
-                .limit(1)
-            ).one()
-            figures = dict(row.figures)
-            rate = dict(figures["savings_rate"])
-            rate["one_offs_left_out"] = d308
-            rate["rate_regular"] = None if d308 else rate["rate"]
-            figures["savings_rate"] = rate
-            conn.execute(
-                insert(health_snapshot_table).values(
-                    {**row._mapping, "id": uuid4(), "figures": figures, "created_at": at}
-                )
-            )
-
     assert world.query(health.health, TODAY).one_offs_left_out_since == "2027-01"
-    stored_again("2027-02", d308=False, at=NOW + timedelta(hours=1))
+    _stored_again(world, "2027-02", d308=False, at=NOW + timedelta(hours=1))
     assert world.query(health.health, TODAY).one_offs_left_out_since == "2027-03"
-    stored_again("2027-03", d308=False, at=NOW + timedelta(hours=1))
+    _stored_again(world, "2027-03", d308=False, at=NOW + timedelta(hours=1))
     assert world.query(health.health, TODAY).one_offs_left_out_since is None
-    stored_again("2027-02", d308=True, at=NOW + timedelta(hours=2))
-    stored_again("2027-03", d308=True, at=NOW + timedelta(hours=2))
+    _stored_again(world, "2027-02", d308=True, at=NOW + timedelta(hours=2))
+    _stored_again(world, "2027-03", d308=True, at=NOW + timedelta(hours=2))
     assert world.query(health.health, TODAY).one_offs_left_out_since == "2027-01"
+
+
+def test_health_check_over_months_stored_before_d308_names_the_expected_figures(world):
+    """Phase 10 §7.12 (c): a month stored before D308 is recomputed under it and reported
+    unequal where the spec expects it, never refused. Simulated: the months stored while a
+    default scenario counted Elektronik as regular (as every code but the car purchase was
+    before D307) with their savings rate as before D308, stored again after the scenario was
+    withdrawn, so their recomputation reads the taxonomy's switches (Elektronik one-off)."""
+    _electronics_in_january(world)
+    world.now = NOW + timedelta(days=1)
+    row = world.cmd(
+        household_scenarios.create_scenario,
+        HouseholdScenarioCreate(
+            name="Basis",
+            is_default=True,
+            levers=HouseholdLevers(one_off_overrides={C.HH_ELECTRONICS: False}),
+        ),
+    )
+    for month in ("2027-01", "2027-02", "2027-03"):
+        world.cmd(health.store_snapshot, month)
+    world.now = NOW + timedelta(days=2)
+    world.cmd(household_scenarios.withdraw_scenario, row.id)
+    for month in ("2027-01", "2027-02", "2027-03"):
+        _stored_again(world, month, d308=False, at=NOW + timedelta(days=3))
+    assert world.query(health.health, TODAY).one_offs_left_out_since is None
+    result = world.query(health.health_check, "2027-01", "2027-03", TODAY)
+    moved = {(r.month, r.figure) for r in result.rows if not r.equal}
+    print("MOVED", sorted(moved))
+    assert all(i.agrees for i in result.inputs)
