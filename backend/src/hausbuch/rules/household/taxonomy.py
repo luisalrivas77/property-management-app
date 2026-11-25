@@ -227,8 +227,17 @@ ONE_OFF = frozenset(c for c, row in TAXONOMY.items() if row.one_off)
 if any(TAXONOMY[c].relevance is not R.SPENDING for c in ONE_OFF):  # pragma: no cover
     raise RuntimeError("a one-off code must count as spending")
 
-# D307: the codes the household may switch to one-off or back: every spending code.
-SWITCHABLE = frozenset(c for c, row in TAXONOMY.items() if row.relevance is R.SPENDING)
+# D307: the codes the household may switch to one-off or back: every spending code, that is
+# every code the household month counts as spending (rules.health.month._role): relevance
+# spending or tax outside the Geldanlage group (a tax payment, a donation, childcare, a
+# craftsman's bill paid privately, the depot's capital-income tax). The defaults stay
+# relevance spending (ONE_OFF above). bank_fees and uncategorized, outside this table, are
+# not switchable: they have no row to carry a default (review of §7.12).
+SWITCHABLE = frozenset(
+    c
+    for c, row in TAXONOMY.items()
+    if row.relevance in (R.SPENDING, R.TAX) and row.group is not G.INVESTMENT
+)
 
 
 def one_off_codes(switches: Mapping[C, bool] | None = None) -> frozenset[C]:

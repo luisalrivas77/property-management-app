@@ -13,7 +13,7 @@ from hausbuch.rules.budget.references import fill, reference, references
 from hausbuch.rules.health.figures import savings_rate
 from hausbuch.rules.health.month import cashflow_rows
 from hausbuch.rules.household.cashflow import month_cashflow
-from hausbuch.rules.household.taxonomy import ONE_OFF, TAXONOMY, one_off_codes
+from hausbuch.rules.household.taxonomy import ONE_OFF, SWITCHABLE, TAXONOMY, one_off_codes
 from hausbuch.rules.plan import spending as SP
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.budget import BudgetLineKey as L
@@ -398,6 +398,47 @@ def test_a_one_off_payment_whose_group_nets_to_zero(
     per_code = SP.month_spending(_cashflow(feb, lines[1]), lines[1], frozenset(), codes)
     assert per_code == {C.HH_RENT: Decimal("1000.00"), refund_code: -paid}
     assert sum(per_code.values()) == feb.regular_spending
+
+
+def test_every_code_the_month_counts_as_spending_is_switchable() -> None:
+    """D307 (review of §7.12): a household may switch any code the household month counts as
+    spending, the tax codes too (hh_tax_payment, hh_donation, capital_income_tax, ...), and
+    no other taxonomy code; the defaults stay spending codes."""
+    from hausbuch.rules.health.month import _role
+
+    assert {c for c in TAXONOMY if _role(c) == "spending"} == SWITCHABLE
+    assert {C.HH_TAX_PAYMENT, C.HH_DONATION, C.CAPITAL_INCOME_TAX} <= SWITCHABLE
+    assert ONE_OFF <= SWITCHABLE and C.HH_SALARY not in SWITCHABLE
+    assert C.HH_TAX_PAYMENT in one_off_codes({C.HH_TAX_PAYMENT: True})
+    assert C.HH_SALARY not in one_off_codes({C.HH_SALARY: True})
+
+
+def test_a_switched_on_tax_payment_counts_once_as_one_off() -> None:
+    """A tax code switched on (an Einkommensteuer back-payment): one-off in the month, in
+    „Einmalig im Zeitraum“ and out of the Sparquote, counted once."""
+    hms, lines, view, codes = _netting_one_off(
+        [(C.HH_TAX_PAYMENT, "-500.00")], {C.HH_TAX_PAYMENT: True}
+    )
+    feb = hms[1]
+    assert C.HH_TAX_PAYMENT in codes
+    assert feb.spending == Decimal("1500.00")
+    assert feb.one_off_spending == Decimal("500.00")
+    assert feb.regular_spending == Decimal("1000.00")
+    assert view.one_off is not None and view.one_off.total == Decimal("500.00")
+    assert {c.category: c.total for c in view.one_off.codes} == {
+        C.HH_TAX_PAYMENT: Decimal("500.00")
+    }
+    placed = [c.category for li in view.lines for c in li.codes]
+    assert C.HH_TAX_PAYMENT not in placed  # not in Notwendiges as well
+    saving = next(li for li in view.lines if li.key is L.SAVING)
+    assert saving.total == Decimal("6000.00")
+    assert saving.share == savings_rate(hms).rate == Decimal("0.6667")
+    per_code = SP.month_spending(_cashflow(feb, lines[1]), lines[1], frozenset(), codes)
+    assert per_code == {C.HH_RENT: Decimal("1000.00")}
+    # switched off (the default), the same payment is a need and in the Sparquote
+    hms, _, view, _ = _netting_one_off([(C.HH_TAX_PAYMENT, "-500.00")])
+    assert hms[1].one_off_spending == 0 and view.one_off is None
+    assert next(li for li in view.lines if li.key is L.SAVING).total == Decimal("5500.00")
 
 
 def _cashflow(month, lines):

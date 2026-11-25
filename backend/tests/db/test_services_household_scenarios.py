@@ -321,6 +321,14 @@ def test_one_off_switches_are_stored_and_checked(app_engine, fresh_workspaces):
             _body(name="Lohn", levers={"one_off_overrides": {"hh_salary": True}}),
         )
     assert _codes(exc) == [HOUSEHOLD_SCENARIO_ONE_OFF_CODE_INVALID]
+    # a tax code the month counts as spending may be switched too (review of §7.12)
+    taxed = _cmd(
+        app_engine,
+        ws,
+        svc.create_scenario,
+        _body(name="Steuer", levers={"one_off_overrides": {"hh_tax_payment": True}}),
+    )
+    assert taxed.levers.one_off_overrides == {C.HH_TAX_PAYMENT: True}
     with pytest.raises(RuleViolationError) as exc:  # a new change of a code one-off in force
         _cmd(
             app_engine,
