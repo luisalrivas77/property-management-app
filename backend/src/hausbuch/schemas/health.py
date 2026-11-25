@@ -324,13 +324,22 @@ class SavingsRate(Schema):
 
 class ReserveOrigin(StrEnum):
     DEFAULT = "default"  # a private current or savings account, or a card (D237)
-    ADDED = "added"  # by the lever
+    ADDED = "added"  # by the lever; a depot only so, „Zählt zur Reserve“ (phase 10 D304)
     REMOVED = "removed"  # by the lever: shown, not counted
 
 
 class ReserveState(StrEnum):
     BELOW = "below"
     REACHED = "reached"
+
+
+class ReserveNeedBasis(StrEnum):
+    """What the reserve's monthly need is taken from (phase 10 D305)."""
+
+    # Every regular spending, needs and wants (phase 9 D237): a row stored before D305.
+    REGULAR = "regular"
+    # Need-class spending only, the Budget's Notwendiges with the household's overrides.
+    NEEDS = "needs"
 
 
 class ReserveAccount(Schema):
@@ -365,7 +374,14 @@ class Reserve(Schema):
 
     accounts: list[ReserveAccount] = Field(default_factory=list)
     amount: Money
-    need: Money  # mean regular spending + max(0, −mean C), each mean to the cent
+    # Mean need-class spending + max(0, −mean C), each mean to the cent (phase 10 D305; mean
+    # regular spending in a row stored before it, `need_basis` regular).
+    need: Money
+    # Phase 10 D305: the need-class mean per code, the categories counted (they add up to the
+    # need less the flat's shortfall); empty in a row stored before it.
+    need_codes: dict[AllocationCategory, Money] = Field(default_factory=dict)
+    need_basis: ReserveNeedBasis = ReserveNeedBasis.REGULAR
+    need_basis_from: YearMonth | None = None  # „Seit <Monat>: Bedarf nur aus notwendigen …“
     months: ReserveMonths | None = None  # None when the need is 0
     target_months: TargetMonths
     target: Money  # target months × need

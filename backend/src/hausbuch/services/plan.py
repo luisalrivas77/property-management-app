@@ -115,7 +115,7 @@ from .health import (
 )
 from .household import month_bounds
 from .household_scenarios import (
-    RESERVE_KINDS,
+    ADDABLE_KINDS,
     default_scenario,
     get_scenario,
     list_scenarios,
@@ -292,7 +292,7 @@ def scenario_todos(
                 for r in conn.execute(select(acc.id, acc.kind).where(acc.id.in_(named)))
             }
         gone = [i for i in named if i not in kinds]
-        wrong = [i for i in levers.reserve_accounts.added if kinds.get(i) not in RESERVE_KINDS]
+        wrong = [i for i in levers.reserve_accounts.added if kinds.get(i) not in ADDABLE_KINDS]
         wrong = [i for i in wrong if i not in gone]
         if gone:
             todos.append(
@@ -304,8 +304,8 @@ def scenario_todos(
         if wrong:
             todos.append(
                 _scenario_check(
-                    "Das Szenario zählt ein Konto zur Reserve, das kein Giro-, Spar- oder "
-                    "Kreditkartenkonto ist; es zählt nicht mit."
+                    "Das Szenario zählt ein Konto zur Reserve, das kein Giro-, Spar-, "
+                    "Kreditkarten- oder Depotkonto ist; es zählt nicht mit."
                 )
             )
     keys = {p.key for p in detected}

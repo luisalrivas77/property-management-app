@@ -20,7 +20,9 @@ GOAL = phase10.load("goal").cases
 # 3d24e195... after PR #590; the review's fix, one-off sums from the month's lines, is in this
 # value). rules/goal lies outside the hashed folders, so §7.9 (d) leaves it
 # as it was; a change of rules/health or rules/plan must update this value on purpose (D242).
-RULE_VERSION = "19e42b2973de12a8fc88b5186f811b2939d19bab14168566651054e806ddc9b2"
+# §7.11 (g), (f) 1 (D305, D304: the reserve's need from need-class spending, a depot the
+# lever adds) changed rules/health once more; it was 19e42b29... until then.
+RULE_VERSION = "2b975321a70b2f6db315190b54d89f696e96b793c6f4093ac5363cadd26e9ed0"
 
 
 def _projection(case) -> Projection:

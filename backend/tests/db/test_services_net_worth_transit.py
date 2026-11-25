@@ -351,3 +351,66 @@ def test_the_etf_tab_adds_the_depots_cash_and_money_on_its_way(run, read, fresh_
     assert over.total_eur == sum(a.total_eur for a in over.accounts)
     assert over.by_kind["cash"] >= Decimal("700.00")
     assert over.total_eur == sum(over.by_kind.values(), Decimal(0))
+
+
+def test_a_depot_ticked_as_reserve_counts_at_its_value_once(run, read, fresh_workspaces):
+    """Phase 10 D304: a depot is reserve only when the default scenario ticks it („Zählt zur
+    Reserve“). Its reserve balance is its value on the day as the net worth reads it: the
+    fund at its price, the cash and the money on its way (800 €), dated by the oldest of its
+    days; the Anlagen read marks it; the net worth counts it once either way."""
+    from db.test_services_prices_fetch import _asset, _held
+    from db.test_services_prices_overview import S, _price
+
+    from hausbuch.rules.errors import HOUSEHOLD_SCENARIO_ACCOUNT_INVALID
+    from hausbuch.rules.health.figures import reserve_set
+    from hausbuch.schemas.plan import HouseholdLevers, HouseholdScenarioCreate, ReserveAccounts
+    from hausbuch.services import household_scenarios
+    from hausbuch.services.errors import RuleViolationError
+    from hausbuch.services.prices import overview
+
+    ws, _ = fresh_workspaces
+    current, depot, _ = _world(run, ws)
+
+    def fund(ctx):
+        asset = _asset(ctx, kind="etf", isin="IE000CASH001", name="Ein Fonds")
+        _held(ctx, depot, asset, "4")
+        _price(ctx, asset, ON, "25.00", S.USER)
+
+    run(ws, fund, now=NOW)
+    seen = read(ws, net_worth.net_worth, ON)
+    reserve = {r.account_id: r for r in read(ws, lambda conn: health._reserve_balances(conn, seen))}
+    assert reserve[depot].balance == Decimal("800.00")
+    assert reserve[depot].balance == sum(
+        (line.value_eur for line in seen.lines if line.account_id == depot), Decimal(0)
+    )
+    assert reserve[depot].as_of == date(2026, 10, 20)  # the cash statement's day, before ON
+    assert reserve[current].balance == Decimal("500.00")
+    # never reserve by default
+    kinds = [(r.account_id, r.kind, r.rental) for r in reserve.values()]
+    assert reserve_set(kinds, ReserveAccounts()) == frozenset({current})
+    assert not any(a.counts_to_reserve for a in read(ws, overview.assets_overview, ON).accounts)
+
+    ticked = HouseholdLevers(reserve_accounts=ReserveAccounts(added=[depot]))
+    run(
+        ws,
+        household_scenarios.create_scenario,
+        HouseholdScenarioCreate(name="Basis", is_default=True, levers=ticked),
+        now=NOW,
+    )
+    assert reserve_set(kinds, ticked.reserve_accounts) == frozenset({current, depot})
+    [row] = [a for a in read(ws, overview.assets_overview, ON).accounts if a.account_id == depot]
+    assert row.counts_to_reserve
+    assert read(ws, net_worth.net_worth, ON).total == seen.total
+
+    # a depot can be added, never removed: it is not reserve by default
+    with pytest.raises(RuleViolationError) as refused:
+        run(
+            ws,
+            household_scenarios.create_scenario,
+            HouseholdScenarioCreate(
+                name="Ohne",
+                levers=HouseholdLevers(reserve_accounts=ReserveAccounts(removed=[depot])),
+            ),
+            now=NOW,
+        )
+    assert list(refused.value.codes) == [HOUSEHOLD_SCENARIO_ACCOUNT_INVALID]

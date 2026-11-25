@@ -35,7 +35,13 @@ from hausbuch.schemas.allocation import (
     AllocationSet,
 )
 from hausbuch.schemas.enums import AccountKind
-from hausbuch.schemas.health import ClosedReasonCode, HealthSnapshotOutcome, HealthTodoCode
+from hausbuch.schemas.health import (
+    ClosedReasonCode,
+    HealthSnapshotOutcome,
+    HealthTodoCode,
+    ReserveNeedBasis,
+)
+from hausbuch.schemas.household import BudgetClass
 from hausbuch.schemas.plan import HouseholdLevers, HouseholdScenarioCreate
 from hausbuch.services import allocations, health, household_scenarios, net_worth
 from hausbuch.services.errors import RuleViolationError
@@ -635,10 +641,13 @@ def test_health_check_over_months_stored_before_d308_names_the_expected_figures(
     assert world.query(health.health, TODAY).one_offs_left_out_since is None
     result = world.query(health.health_check, "2027-01", "2027-03", TODAY)
     moved = {(r.month, r.figure) for r in result.rows if not r.equal}
+    # The reserve's need reads need-class spending only since phase 10 D305; Elektronik is a
+    # want, so the switch no longer moves `reserve_months` (it did while the need was every
+    # regular payment).
     assert moved == {
         (month, figure)
         for month in ("2027-01", "2027-02", "2027-03")
-        for figure in ("savings_rate_window", "reserve_months", "free_cash")
+        for figure in ("savings_rate_window", "free_cash")
     }
     assert all(i.agrees for i in result.inputs)
 
@@ -688,3 +697,52 @@ def test_a_one_off_switch_alone_does_not_show_a_stored_month_as_changed(world):
     assert january.stored.spending != january.household.spending or (
         january.stored.rental_result != january.household.rental_result
     )
+
+
+def _groceries_in_2027(world: World) -> None:
+    """_closed_history with a private current account covered from January 2026 to March
+    2027 (its history starting with a line on 2 Jan 2026) and 10 € of groceries on the 5th
+    of January, February and March 2027 (a need by the taxonomy, phase 10 D272)."""
+    _closed_history(world)
+    current = _account(world, "Giro", AccountKind.BANK_CURRENT)
+    first, *groceries = _statement(
+        world,
+        current,
+        date(2026, 1, 1),
+        date(2027, 3, 31),
+        datetime(2027, 4, 9, tzinfo=UTC),
+        closing="-40.00",
+        lines=[date(2026, 1, 2), date(2027, 1, 5), date(2027, 2, 5), date(2027, 3, 5)],
+    )
+    _book(world, first, "-10.00", C.HH_GROCERIES)
+    for line in groceries:
+        _book(world, line, "-10.00", C.HH_GROCERIES)
+
+
+def test_the_reserves_need_is_the_budgets_notwendiges_as_stored(world):
+    """Phase 10 D305: the reserve's need is the window's mean need-class spending (30 € over
+    the twelve months April 2026 to March 2027, 2.50 €; the flat carries itself), named per
+    code with its basis. A default scenario moving groceries to Wünsche takes them out of
+    the need; a month stored under it is recomputed by health-check with that override, so
+    it matches after the scenario is withdrawn while today's need is 2.50 € again."""
+    _groceries_in_2027(world)
+    got = world.query(health.health, TODAY).reserve
+    assert (got.need, got.need_codes) == (Decimal("2.50"), {C.HH_GROCERIES: Decimal("2.50")})
+    assert (got.need_basis, got.need_basis_from) == (ReserveNeedBasis.NEEDS, "2026-11")
+    world.now = NOW + timedelta(days=1)
+    row = world.cmd(
+        household_scenarios.create_scenario,
+        HouseholdScenarioCreate(
+            name="Basis",
+            is_default=True,
+            levers=HouseholdLevers(budget_class_overrides={C.HH_GROCERIES: BudgetClass.WANT}),
+        ),
+    )
+    moved = world.query(health.health, TODAY).reserve
+    assert (moved.need, moved.need_codes, moved.months) == (Decimal("0.00"), {}, None)
+    world.cmd(health.store_snapshot, "2027-03")
+    world.now = NOW + timedelta(days=2)
+    world.cmd(household_scenarios.withdraw_scenario, row.id)
+    assert world.query(health.health, TODAY).reserve.need == Decimal("2.50")
+    result = world.query(health.health_check, "2027-03", "2027-03", TODAY)
+    assert result.match, [r for r in result.rows if not r.equal]

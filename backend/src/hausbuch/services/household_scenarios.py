@@ -86,6 +86,7 @@ from hausbuch.rules.errors import (
     HOUSEHOLD_SCENARIO_SPENDING_INVALID,
     HOUSEHOLD_SCENARIO_WITHDRAWAL_INVALID,
 )
+from hausbuch.rules.health import figures as F
 from hausbuch.rules.household.taxonomy import SWITCHABLE, one_off_codes
 from hausbuch.rules.plan import spending as SP
 from hausbuch.rules.plan.levers import add_months, one_offs_outside
@@ -109,9 +110,10 @@ from .errors import ConflictError, NotFoundError, RuleViolationError, violated_c
 from .events import append_event
 from .health import MonthRead, _window, ended_months, read_months
 
-RESERVE_KINDS = frozenset(
-    {AccountKind.BANK_CURRENT, AccountKind.BANK_SAVINGS, AccountKind.CREDIT_CARD}
-)
+# D237 and phase 10 D304 (rules.health.figures): the lever removes a default kind; it adds
+# one of those or a depot („Zählt zur Reserve“), never another kind.
+RESERVE_KINDS = F.RESERVE_KINDS
+ADDABLE_KINDS = F.ADDABLE_KINDS
 _SUPERSEDED_ONCE = "household_scenario_supersedes_id_key"
 
 
@@ -430,10 +432,18 @@ def _check_accounts(
     for account_id in named:
         if account_id not in kinds:
             raise NotFoundError(EntityType.ACCOUNT, account_id)
+    for account_id in levers.reserve_accounts.added:
+        if kinds[account_id] not in ADDABLE_KINDS:
+            raise RuleViolationError(
+                [HOUSEHOLD_SCENARIO_ACCOUNT_INVALID],
+                f"account {account_id} is a {kinds[account_id].value}: the reserve adds"
+                " current and savings accounts, credit cards and depots only",
+            )
+    for account_id in levers.reserve_accounts.removed:
         if kinds[account_id] not in RESERVE_KINDS:
             raise RuleViolationError(
                 [HOUSEHOLD_SCENARIO_ACCOUNT_INVALID],
-                f"account {account_id} is a {kinds[account_id].value}: the reserve counts"
+                f"account {account_id} is a {kinds[account_id].value}: the reserve removes"
                 " current and savings accounts and credit cards only",
             )
 

@@ -309,8 +309,9 @@ def test_a_named_scenario_is_used_and_an_unknown_one_refused(world):
 
 def test_a_reserve_account_that_no_longer_fits_and_an_income_change_are_named(world):
     """§7.3: a scenario counting an account to the reserve that is no reserve account any
-    more is „Szenario prüfen“; an income change typed in the scenario points to the owners'
-    expected pay (D248) and changes the free cash from its month on."""
+    more (an exchange; a depot may be added since phase 10 D304) is „Szenario prüfen“; an
+    income change typed in the scenario points to the owners' expected pay (D248) and
+    changes the free cash from its month on."""
     _closed_history(world)
     savings = _savings(world)
     _covered(world, savings.import_id)
@@ -339,7 +340,7 @@ def test_a_reserve_account_that_no_longer_fits_and_an_income_change_are_named(wo
         conn.execute(
             update(account_table)
             .where(account_table.c.id == savings.account_id)
-            .values(kind="depot")
+            .values(kind="exchange")
         )
     got = _plan(world)
     assert [t.code for t in got.todos] == [

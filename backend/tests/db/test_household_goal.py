@@ -43,15 +43,19 @@ def world(app_engine, fresh_workspaces) -> World:
     return World(app_engine, fresh_workspaces[0], now=NOW)
 
 
-def _projected_world(world: World):
+def _projected_world(world: World, *, groceries: bool = False):
     """_savings_history (twelve closed months to March 2027, a private account and a depot),
     300 € a month at restaurants in January to March 2027 (a want, D272), the flat bought in
     2026 with its default scenario and the stored month-end of 31 March 2027: phase 9's
-    projection has points and no to-do."""
+    projection has points and no to-do. `groceries` adds 120 € a month at a market in the
+    same months (a need, so the reserve's need is not 0, phase 10 D305)."""
     private, _ = _savings_history(world)
     for month in (1, 2, 3):
         line = private.line(date(2027, month, 18), "-300.00", name="Trattoria Muster")
         _book(world, line, "-300.00", C.HH_RESTAURANT)
+        if groceries:
+            line = private.line(date(2027, month, 8), "-120.00", name="Markt Muster")
+            _book(world, line, "-120.00", C.HH_GROCERIES)
     _bought_in_2026(world)
     _flat_scenario(world, None, NOW)
     world.cmd(net_worth.capture_month_end, date(2027, 3, 31))
@@ -145,14 +149,16 @@ def test_each_word_on_the_plans_own_projection(world):
 
 def test_a_reserve_goal_reads_the_reserve(world):
     """A sum saved is measured on the reserve accounts: its value today is the plan's
-    reserve; a reserve in months is the months × the plan's monthly need."""
-    _projected_world(world)
+    reserve; a reserve in months is the months × the plan's monthly need (phase 10 D305:
+    need-class spending only, so groceries give the world's restaurants-only month a need)."""
+    _projected_world(world, groceries=True)
     row = _save(world, _goal("1.00", kind=GoalKind.SAVED_SUM))
     reserve = _plan(world).reserve
     got = _read(world)
     assert got.value_today == reserve.amount and got.word is GoalWord.ON_TRACK
     _save(world, _goal("6", kind=GoalKind.RESERVE_MONTHS), supersedes=row.id)
     got = _read(world)
+    assert reserve.need == Decimal("120.00")  # the groceries alone, not the restaurants
     assert got.target == (6 * reserve.need).quantize(Decimal("0.01"))
     assert got.word in {GoalWord.ON_TRACK, GoalWord.BEHIND, GoalWord.UNREACHABLE}
 

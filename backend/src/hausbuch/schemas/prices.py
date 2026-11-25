@@ -109,6 +109,9 @@ class OverviewAccount(Schema):
     # (D292), so the account's total equals its lines in the net worth.
     cash: list[NetWorthLine] = Field(default_factory=list)
     total_eur: Money  # value_eur + Σ cash
+    # Phase 10 D304: a depot the household ticked „Zählt zur Reserve“ in its default scenario;
+    # it counts in the reserve and is not money to invest. Set by `assets_overview` only.
+    counts_to_reserve: bool = False
 
 
 class AssetsOverview(Schema):

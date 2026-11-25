@@ -8,7 +8,7 @@ decides staleness is passed in.
 """
 
 import calendar
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from fractions import Fraction
@@ -16,6 +16,7 @@ from uuid import UUID
 
 from hausbuch.rules.net_worth import split as split_by_shares
 from hausbuch.rules.valuation import STALE_AFTER_DAYS
+from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.health import (
     Debt,
@@ -32,6 +33,7 @@ from hausbuch.schemas.health import (
     Reserve,
     ReserveAccount,
     ReserveBalance,
+    ReserveNeedBasis,
     ReserveOrigin,
     ReserveState,
     RunTotals,
@@ -50,6 +52,12 @@ CENT = Decimal("0.01")
 RESERVE_KINDS = frozenset(
     {AccountKind.BANK_CURRENT, AccountKind.BANK_SAVINGS, AccountKind.CREDIT_CARD}
 )
+# Phase 10 D304: what the lever `reserve_accounts.added` may add: the default kinds (a rental
+# account among them) and a depot, only by that explicit choice („Zählt zur Reserve“).
+ADDABLE_KINDS = RESERVE_KINDS | {AccountKind.DEPOT}
+# Phase 10 D305: the first month whose need is taken from need-class spending only; a month
+# stored before keeps its need from every regular spending (D242, nothing rewritten).
+NEED_BASIS_FROM = "2026-11"
 
 
 def _cent(value: Decimal) -> Decimal:
@@ -93,23 +101,70 @@ def savings_rate(window_months: Sequence[HouseholdMonth]) -> SavingsRate:
 # --- 5.2 Reserve (D237, D238) ----------------------------------------------------------
 
 
-def need(window_months: Sequence[HouseholdMonth]) -> Decimal:
-    """The monthly need: mean regular spending + max(0, −mean C), both means to the cent."""
+def need(
+    window_months: Sequence[HouseholdMonth],
+    need_months: Sequence[Mapping[AllocationCategory, Decimal]],
+) -> tuple[Decimal, dict[AllocationCategory, Decimal]]:
+    """The monthly need (phase 10 D305, amending D237): the mean of the months' need-class
+    spending + max(0, −mean C), both means to the cent half-up, and the need-class mean per
+    code. `need_months`, one per window month in order: the month's Notwendiges per code as
+    rules.budget.need_spending places it (the household's overrides applied, one-off codes and
+    marked payments out). Each code's exact monthly mean is apportioned to the need-class mean
+    by largest remainder, ties by the code's value, so the codes add up to it; a code netting
+    to 0 over the window is left out."""
     if not window_months:
         raise ValueError("the need is taken over at least one closed month")
-    regular = _mean([m.regular_spending for m in window_months])
+    if len(need_months) != len(window_months):
+        raise ValueError("one need-class month per window month")
+    n = len(need_months)
+    needs = _mean([sum(m.values(), ZERO) for m in need_months])
     cash = _mean([m.rental_cash for m in window_months])
-    return regular + max(ZERO, -cash)
+    totals: dict[AllocationCategory, Decimal] = {}
+    for month in need_months:
+        for code, amount in month.items():
+            totals[code] = totals.get(code, ZERO) + amount
+    exact = {c: Fraction(t) * 100 / n for c, t in totals.items() if t}
+    floors = {c: v.numerator // v.denominator for c, v in exact.items()}
+    left = int(needs * 100) - sum(floors.values())
+    for code in sorted(exact, key=lambda c: (-(exact[c] - floors[c]), c.value))[:left]:
+        floors[code] += 1
+    codes = {c: (Decimal(v) / 100).quantize(CENT) for c, v in sorted(floors.items())}
+    return needs + max(ZERO, -cash), codes
+
+
+def reserve_origin(
+    account_id: UUID, kind: AccountKind, rental: bool, accounts: ReserveAccounts
+) -> ReserveOrigin | None:
+    """Whether and why one account is a reserve account (D237, phase 10 D304): removed by the
+    lever (listed, not counted), added by it (a default kind or a depot; any other kind the
+    service refuses to save and the rules ignore), or by default (a private current or
+    savings account, or a card; never a depot). None: not a reserve account. The one place
+    that decides the reserve's set; `reserve_set` and `reserve` read it."""
+    if account_id in accounts.removed:
+        return ReserveOrigin.REMOVED
+    if account_id in accounts.added and kind in ADDABLE_KINDS:
+        return ReserveOrigin.ADDED
+    if kind in RESERVE_KINDS and not rental:
+        return ReserveOrigin.DEFAULT
+    return None
+
+
+def reserve_set(
+    accounts: Iterable[tuple[UUID, AccountKind, bool]], lever: ReserveAccounts
+) -> frozenset[UUID]:
+    """The accounts the reserve counts, from (id, kind, rental) per account: the default
+    kinds + the lever's added − its removed (D237, phase 10 D304). A depot in it counts in
+    the reserve and is no investment (D304)."""
+    return frozenset(
+        account_id
+        for account_id, kind, rental in accounts
+        if reserve_origin(account_id, kind, rental, lever)
+        in (ReserveOrigin.DEFAULT, ReserveOrigin.ADDED)
+    )
 
 
 def _origin(balance: ReserveBalance, accounts: ReserveAccounts) -> ReserveOrigin | None:
-    if balance.account_id in accounts.removed:
-        return ReserveOrigin.REMOVED
-    if balance.account_id in accounts.added:
-        return ReserveOrigin.ADDED
-    if balance.kind in RESERVE_KINDS and not balance.rental:
-        return ReserveOrigin.DEFAULT
-    return None
+    return reserve_origin(balance.account_id, balance.kind, balance.rental, accounts)
 
 
 def _stale(balance: ReserveBalance, today: date) -> HealthTodo:
@@ -130,14 +185,18 @@ def _stale(balance: ReserveBalance, today: date) -> HealthTodo:
 def reserve(
     balances: Sequence[ReserveBalance],
     window_months: Sequence[HouseholdMonth],
+    need_months: Sequence[Mapping[AllocationCategory, Decimal]],
     levers: HouseholdLevers,
     *,
     today: date,
 ) -> Reserve:
-    """The reserve in euros and in months of the need, against the target (D237, D238).
+    """The reserve in euros and in months of the need, against the target (D237, D238;
+    the need from need-class spending, phase 10 D305, see `need`).
 
     `balances`: every account's newest balance (the service may pass them all; the kinds
-    and `levers.reserve_accounts` choose); `levers.reserve_target_months` sets the target.
+    and `levers.reserve_accounts` choose; a depot's balance is its value on the day, its
+    positions at the newest price plus its cash, and counts only when the lever adds it,
+    D304); `levers.reserve_target_months` sets the target.
     An account removed by the lever is
     listed, not counted. `by_owner` splits each counted account by its shares with phase 6's
     cent rule; it is empty when a counted account has no shares recorded. Each counted
@@ -168,13 +227,16 @@ def reserve(
             shares = {o: Fraction(s.numerator, s.denominator) for o, s in b.owners.items()}
             for owner, part in split_by_shares(b.balance, shares).items():
                 by_owner[owner] = by_owner.get(owner, ZERO) + part
-    monthly = need(window_months)
+    monthly, codes = need(window_months, need_months)
     target = _cent(target_months * monthly)
     months = None if monthly == 0 else (amount / monthly).quantize(Decimal("0.1"), ROUND_HALF_UP)
     return Reserve(
         accounts=listed,
         amount=amount,
         need=monthly,
+        need_codes=codes,
+        need_basis=ReserveNeedBasis.NEEDS,
+        need_basis_from=NEED_BASIS_FROM,
         months=months,
         target_months=target_months,
         target=target,
