@@ -93,3 +93,26 @@ def test_the_goal_is_a_kept_answer_and_a_save_is_seen_at_once(api_app, client_a,
         {"name": "Basis", "is_default": True, "levers": {"goal": _goal()}},
     )
     assert ok(client_a.get(GOAL))["goal"] == _goal()
+
+
+PREVIEW = "/api/household-goal/preview"
+
+
+def test_the_goal_preview_reads_typed_levers_and_stores_nothing(client_a, client_b, sessions):
+    """Phase 10 §7.10 (a): POST /household-goal/preview answers the goal for typed levers as
+    GET answers the saved one, refuses as the plan's preview does, and stores no scenario;
+    another workspace's preview reads its own rows (none saved: the levers' own goal)."""
+    assert ok(client_a.post(PREVIEW, json={"levers": {}}))["word"] == "none"
+    row = create(
+        client_a, SCENARIOS, {"name": "Basis", "is_default": True, "levers": {"goal": _goal()}}
+    )
+    saved = ok(client_a.get(GOAL))
+    assert ok(client_a.post(PREVIEW, json={"levers": row["levers"]})) == saved
+    assert ok(client_a.post(PREVIEW, json={"levers": {}}))["word"] == "none"
+    other = ok(client_b.post(PREVIEW, json={"levers": {"goal": _goal()}}))
+    assert (other["word"], other["issue"]) == (None, "no_projection")
+    outside = {"goal": _goal(), "one_offs": [{"month": "2099-01", "amount": "-1.00"}]}
+    assert client_a.post(PREVIEW, json={"levers": outside}).status_code == 422
+    response = client_a.post(PREVIEW, json={"levers": {}, "scenario_id": DUE})
+    assert response.status_code == 422 and response.json()["error"] == "validation"
+    assert len(ok(client_a.get(SCENARIOS, params={"include_history": "true"}))) == 1

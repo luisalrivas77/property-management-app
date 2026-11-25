@@ -1,4 +1,5 @@
-"""GET /household-goal (docs/phases/phase-10.md §7.9 (d), D289, D298).
+"""GET /household-goal (docs/phases/phase-10.md §7.9 (d), D289, D298), and
+POST /household-goal/preview for typed levers (§7.10 (a), „Durchspielen“).
 
 The goal is a lever of the default household scenario (schemas.plan.Goal); without a default
 scenario or without a goal in it the answer is the word `none` („Ziel festlegen“). Otherwise
@@ -17,6 +18,7 @@ a scenario writes its `spending_changes` as the levers' spending changes and
 """
 
 from datetime import date
+from uuid import UUID
 
 from sqlalchemy import Connection
 
@@ -25,10 +27,10 @@ from hausbuch.rules.goal import GoalInputs, current_month, household_goal, none_
 from hausbuch.rules.plan import spending as SP
 from hausbuch.rules.plan.surplus import mean_cent
 from hausbuch.schemas.goal import GoalIssue, HouseholdGoal
-from hausbuch.schemas.plan import GoalKind
+from hausbuch.schemas.plan import GoalKind, HouseholdLevers, HouseholdScenario
 
-from .health import _reserve_balances, _window, key_figures, levers_one_off_codes
-from .plan import _net_worth, _scenario, plan_parts
+from .health import MonthRead, _reserve_balances, _window, key_figures, levers_one_off_codes
+from .plan import _net_worth, _scenario, plan_parts, previewed
 from .plan_inputs import PlanInputs
 
 
@@ -38,8 +40,34 @@ def goal(conn: Connection, today: date) -> HouseholdGoal:
     if row is None or row.levers.goal is None:
         return none_set()
     levers = row.levers
+    reads = inputs.ended_reads(levers_one_off_codes(levers))  # phase 10 D307
+    return _goal(conn, today, row, levers, reads, inputs)
+
+
+def preview_goal(
+    conn: Connection, today: date, levers: HouseholdLevers, scenario_id: UUID | None = None
+) -> HouseholdGoal:
+    """POST /household-goal/preview (phase 10 §7.10 (a), „Durchspielen“): the goal for typed
+    levers, as POST /household-plan/preview gives the plan for them: checked the same way, on
+    the same row (`scenario_id`, else the default in force) with its levers replaced. Word
+    `none` when the levers hold no goal. Reads only: no row, no event."""
+    if levers.goal is None:
+        return none_set()
+    inputs = PlanInputs(conn, today)
+    row, reads = previewed(conn, today, levers, scenario_id, inputs)
+    return _goal(conn, today, row, levers, reads, inputs)
+
+
+def _goal(
+    conn: Connection,
+    today: date,
+    row: HouseholdScenario | None,
+    levers: HouseholdLevers,
+    reads: dict[str, MonthRead],
+    inputs: PlanInputs,
+) -> HouseholdGoal:
+    assert levers.goal is not None
     codes = levers_one_off_codes(levers)  # phase 10 D307
-    reads = inputs.ended_reads(codes)
     plan, parts = plan_parts(conn, today, row, levers, reads, inputs)
     if parts is None:  # below three closed months: the plan's to-dos say what is missing
         assert plan.projection is not None
