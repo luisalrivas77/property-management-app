@@ -46,7 +46,7 @@ NEED_RULE_VERSION = "2b975321a70b2f6db315190b54d89f696e96b793c6f4093ac5363cadd26
 # rules/plan/projection, the money above the reserve target invested, the walk past each sale;
 # above_target). No stored figure reads the projection: health_snapshot stores the key figures
 # only, so the new version marks the months stored from now on.
-WALK_RULE_VERSION = "2e15bb62d7a6cdef49b49cb362a57dce84b8bb15f5ac75c058bf0689c1eccde6"
+WALK_RULE_VERSION = "5f75a9856b0a2a7e0d14cc596036e57a561920b9e08355d5e01eb4cb3c407d0a"
 
 
 def _view(case: phase10.BudgetCase):

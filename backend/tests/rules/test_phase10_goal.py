@@ -26,7 +26,7 @@ GOAL = phase10.load("goal").cases
 # lever adds) changed rules/health once more; it was 19e42b29... until then.
 # §7.11 (a) (D301: one month walk in rules/plan/projection, money above the reserve target
 # invested, the walk past each sale) changed rules/plan; it was 2b975321... until then.
-RULE_VERSION = "2e15bb62d7a6cdef49b49cb362a57dce84b8bb15f5ac75c058bf0689c1eccde6"
+RULE_VERSION = "5f75a9856b0a2a7e0d14cc596036e57a561920b9e08355d5e01eb4cb3c407d0a"
 
 
 def _projection(case) -> Projection:
@@ -337,3 +337,62 @@ def test_route_3_is_never_the_word() -> None:
     for case in ROUTES:
         inputs, _, _ = _route_inputs(case)
         assert household_goal(inputs).word is not GoalWord.AMBITIOUS
+
+
+def _kept_at_year_turn(loans_from_year: int) -> N.Projection:
+    """A kept flat at the year turn: today in January 2027, the newest closed month 2026-11, its
+    loan 300,000 € in the stored run, then 295,000 € on 31 Dec 2027 and 5,000 € less a year."""
+    from datetime import date
+
+    zero = Decimal("0.00")
+    years = range(loans_from_year, loans_from_year + N.WALK_YEARS + 2)
+    balance = {2026: Decimal("299500.00")}
+    loans = {y: balance.get(y, max(zero, Decimal("295000.00") - 5000 * (y - 2027))) for y in years}
+    return N.Projection(
+        basis=L.MonthBasis(
+            newest_closed="2026-11",
+            mean_income=Decimal("4000.00"),
+            mean_regular_spending=Decimal("3000.00"),
+            mean_rental_cash=zero,
+            buffer_percent=Decimal("0"),
+        ),
+        start=N.ProjectionStart(
+            month_end=date(2026, 11, 30),
+            bank=Decimal("20000.00"),
+            depot=zero,
+            crypto=zero,
+            property=Decimal("350000.00"),
+            loans=Decimal("300000.00"),
+            other_liabilities=zero,
+        ),
+        reserve_start=Decimal("20000.00"),
+        plans=(),
+        flats={
+            "flat": N.FlatScenario(
+                sale_year=None,
+                kept_value=Decimal("350000.00"),
+                kept_loans=loans,
+                start_value=Decimal("350000.00"),
+                start_loans=Decimal("300000.00"),
+            )
+        },
+        levers=HouseholdLevers(),
+    )
+
+
+def test_kept_flat_missing_december_is_no_anchor_never_a_loan_of_zero():
+    """Review finding of 25 Nov 2026: a kept flat's loan balances began at today's year, so the
+    December of the newest closed month's year read 0 and the net worth jumped by the loan."""
+    without_2026 = N.walk(_kept_at_year_turn(2027), until="2028-01")
+    for month in ("2026-12", "2027-06"):
+        assert without_2026.at(month).net_worth < Decimal("100000.00"), month
+    with_2026 = N.walk(_kept_at_year_turn(2026), until="2028-01")
+    assert with_2026.at("2026-12").net_worth == Decimal("71500.00")
+    assert with_2026.at("2027-12").net_worth == without_2026.at("2027-12").net_worth
+
+
+def test_percent_of_a_tiny_target_stays_inside_the_schema():
+    from hausbuch.rules.goal.goal import PERCENT_CAP, percent
+
+    assert percent(Decimal("307315.00"), Decimal("1.00")) == PERCENT_CAP
+    assert percent(Decimal("51000.00"), Decimal("100000.00")) == Decimal("51.0")

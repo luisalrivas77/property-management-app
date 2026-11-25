@@ -466,7 +466,9 @@ def _property_lines(p: Projection) -> list[_Line]:
             if k <= 0:
                 continue
             if f.kept:
-                value, loans = f.kept_value or ZERO, f.kept_loans.get(year, ZERO)
+                if year not in f.kept_loans:
+                    continue  # no balance known for that December: no anchor, never 0
+                value, loans = f.kept_value or ZERO, f.kept_loans[year]
             elif year <= (f.sale_year or 0) and year in f.years:
                 y = f.years[year]
                 value, loans = y.value or ZERO, y.loan_balance or ZERO

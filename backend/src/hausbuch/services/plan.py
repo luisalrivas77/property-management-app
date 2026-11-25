@@ -492,7 +492,8 @@ def _kept_flat(
     and each loan's balance on every 31 December of the walk by its schedule (as the net worth
     values a loan, services.net_worth); None when a schedule cannot be built."""
     value = estimate_on_day(conn, property_id, purchase_price, today)[0].value
-    years = range(today.year, today.year + N.WALK_YEARS + 2)
+    # from the year before today, so a newest closed month of last year has its December
+    years = range(today.year - 1, today.year + N.WALK_YEARS + 2)
     loans = dict.fromkeys(years, ZERO)
     for loan in list_loans(conn, property_id):
         terms = loan.terms

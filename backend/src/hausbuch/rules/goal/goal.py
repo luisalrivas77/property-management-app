@@ -120,11 +120,15 @@ def value_of(goal: Goal, month) -> Decimal:
     return month.net_worth if goal.kind is GoalKind.NET_WORTH else month.reserve
 
 
+PERCENT_CAP = Decimal("999999.9")
+
+
 def percent(value: Decimal, target: Decimal) -> Decimal:
     if target <= 0:
         return Decimal("0.0")
     share = max(ZERO, value) * 100 / target
-    return share.quantize(TENTH, ROUND_HALF_UP)
+    # a display share: a tiny target (1 €) would pass the schema's 7 integer digits
+    return min(share.quantize(TENTH, ROUND_HALF_UP), PERCENT_CAP)
 
 
 def reached_in(goal: Goal, w: Walk, target: Decimal, until: str | None = None) -> str | None:
