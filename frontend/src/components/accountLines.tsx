@@ -25,6 +25,7 @@ import { AllocationPanel } from "@/components/allocations";
 import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { formatSharePercent, todayIso } from "@/components/format";
 import { ALLOCATION_CATEGORY } from "@/components/labels";
+import { OneOffMark } from "@/components/oneOffMark";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 import { LOCALE_TAG, useFormat, useLocale, useT, type Formatter } from "@/i18n";
@@ -448,6 +449,9 @@ function LinePanel({
 }) {
   const t = useT(catalogue);
   const f = useFormat();
+  // Each save of the booking reads the payment's one-off parts again: a new category can make a
+  // part markable or take its button away (phase 10 §7.12 (b)).
+  const [saves, setSaves] = useState(0);
   const meta = <p className="muted">{t.linePanelMeta(dayHeading(line.booking_date), account.label)}</p>;
   const facts = (
     <dl className="line-facts">
@@ -520,8 +524,13 @@ function LinePanel({
             transactionId={line.id}
             reasoning={asked?.reasoning}
             question={asked?.question}
-            onSaved={onSaved}
+            onSaved={() => {
+              setSaves((n) => n + 1);
+              onSaved();
+            }}
           />
+          {/* Only a private payment can be one-off; the server names its parts (D307). */}
+          {account.purpose === "rental" ? null : <OneOffMark key={`${line.id}-${saves}`} transactionId={line.id} />}
         </div>
       );
   }
