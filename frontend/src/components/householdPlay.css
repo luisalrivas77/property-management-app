@@ -28,6 +28,35 @@
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
 }
 
+/* An effect row with a line per stretch of months: one rule under the whole row, the lines
+   above it close together. */
+.play-effect {
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.play-effect > .play-row {
+  border-bottom: 0;
+  padding: 4px 0;
+}
+
+.play-effect > .play-row:first-child {
+  padding-top: 8px;
+}
+
+.play-effect > .play-row:last-child {
+  padding-bottom: 8px;
+}
+
+.play-effect .play-period {
+  font-size: 0.85rem;
+}
+
+.play-more > :first-child {
+  grid-column: 1 / -1;
+  font-size: 0.85rem;
+}
+
 .play-head {
   font-size: 0.85rem;
   color: var(--muted);

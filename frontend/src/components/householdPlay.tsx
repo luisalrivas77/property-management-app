@@ -28,12 +28,15 @@ import { goalTargetText, type HouseholdGoal, loadGoal } from "./householdGoal";
 import { OneOffs, type PlanReady, surplusRow, TooFewMonths, usePlan } from "./householdPlan";
 import { decimalInput, toMoneyString } from "./input";
 import { ALLOCATION_CATEGORY } from "./labels";
-import { type PlanFormat, usePlanFormat } from "./planFormat";
+import { usePlanFormat } from "./planFormat";
 import {
   applyPlay,
+  type EffectPeriod,
+  effectPeriods,
   fromLevers,
   fromMonthForAll,
   type IncomeRow,
+  mergePeriods,
   moneyDifference,
   monthAfter,
   type PlayChanges,
@@ -502,8 +505,8 @@ function ClassRow({
 
 // --- „Was das bewirkt“ -----------------------------------------------------------------------
 
-/** The month the effect rows read: the latest start among the draft's rows, else the first month
- * after the newest closed one. */
+/** The month the effect rows read when the draft holds no row with months: the latest start
+ * among the draft's rows, else the first month after the newest closed one. */
 function effectMonth(changes: PlayChanges, first: string): string {
   const starts = [
     ...Object.values(changes.spending).flatMap((change) => (change ? [change.from_month] : [])),
@@ -517,6 +520,10 @@ function segmentAt(plan: HouseholdPlan, month: string) {
   return rates.find((segment) => segment.from_month <= month && month <= segment.to_month) ?? rates.at(-1) ?? null;
 }
 
+function segmentStarts(plan: HouseholdPlan): string[] {
+  return (plan.spending_play?.rates ?? []).map((segment) => segment.from_month);
+}
+
 function reserveReached(plan: HouseholdPlan) {
   return (plan.paths ?? []).find((path) => path.key === "as_is")?.reached ?? null;
 }
@@ -528,6 +535,25 @@ function lastTotal(plan: HouseholdPlan) {
 function goalReached(goal: HouseholdGoal | null) {
   if (!goal?.goal) return null;
   return goal.choice?.spending ? (goal.reached_with_budget ?? null) : (goal.reached ?? null);
+}
+
+/** At most this many lines per row; the rest is named as a count. */
+const MAX_EFFECT_LINES = 4;
+
+/** One line of an effect row: its months (none when the row has a single figure), today's
+ * figure and the one with the changes. */
+interface EffectLine {
+  period: string | null;
+  today: string;
+  with: string;
+}
+
+interface EffectRowData {
+  key: string;
+  label: string;
+  href: string;
+  lines: EffectLine[];
+  more: number;
 }
 
 function Effects({
@@ -549,47 +575,60 @@ function Effects({
   const g = useT(goalText);
   const f = usePlanFormat();
   const ids = useId();
-  const month = effectMonth(changes, firstMonth);
   const years = levers.net_worth_years ?? 10;
   const monthOr = (value: string | null) => (value ? f.month(value) : t.notReached);
-  const rows: { key: string; label: string; href: string; today: string; with: string }[] = [
-    {
-      key: "investable",
-      label: t.effectInvestable(f.month(month)),
-      href: `${HOUSEHOLD_BUDGET}#${REST_ANCHOR}`,
-      today: f.euro(segmentAt(saved, month)?.investable),
-      with: f.euro(segmentAt(preview.plan, month)?.investable),
-    },
-    {
-      key: "rate",
-      label: t.effectRate(f.month(month)),
-      href: HOUSEHOLD_BUDGET,
-      today: f.ratio(segmentAt(saved, month)?.rate),
-      with: f.ratio(segmentAt(preview.plan, month)?.rate),
-    },
-    {
-      key: "reserve",
-      label: t.effectReserve,
-      href: HOUSEHOLD_RESERVE,
-      today: monthOr(reserveReached(saved)),
-      with: monthOr(reserveReached(preview.plan)),
-    },
-    {
-      key: "net-worth",
-      label: t.effectNetWorth(years),
-      href: `/assets#${PROJECTION_ANCHOR}`,
-      today: f.euro(lastTotal(saved)),
-      with: f.euro(lastTotal(preview.plan)),
-    },
+  // „Anlegbar pro Monat“ and „Sparquote“ per stretch of months: a line wherever a changed row
+  // starts or ends (or a figure of the server's stretches moves), so an income change that ends
+  // shows the months after it too. Each line reads the server's stretch at its first month.
+  const periods = effectPeriods(changes, firstMonth, saved.spending_play?.rates?.at(-1)?.to_month ?? null, [
+    ...segmentStarts(saved),
+    ...segmentStarts(preview.plan),
+  ]);
+  const month = effectMonth(changes, firstMonth);
+  const periodText = (period: EffectPeriod) =>
+    period.to === null
+      ? t.effectPeriodFrom(f.month(period.from))
+      : period.from === period.to
+        ? f.month(period.from)
+        : f.monthRange([period.from, period.to]);
+  const perPeriod = (
+    key: string,
+    href: string,
+    label: string,
+    labelAt: (month: string) => string,
+    read: (plan: HouseholdPlan, month: string) => string,
+  ): EffectRowData => {
+    if (periods.length === 0) {
+      return { key, href, label: labelAt(f.month(month)), lines: [{ period: null, today: read(saved, month), with: read(preview.plan, month) }], more: 0 };
+    }
+    const merged = mergePeriods(periods, (period) => ({ today: read(saved, period.from), with: read(preview.plan, period.from) }));
+    return {
+      key,
+      href,
+      label,
+      lines: merged.slice(0, MAX_EFFECT_LINES).map(({ period, value }) => ({ period: periodText(period), ...value })),
+      more: Math.max(0, merged.length - MAX_EFFECT_LINES),
+    };
+  };
+  const single = (key: string, label: string, href: string, today: string, withChanges: string): EffectRowData => ({
+    key,
+    label,
+    href,
+    lines: [{ period: null, today, with: withChanges }],
+    more: 0,
+  });
+  const rows: EffectRowData[] = [
+    perPeriod("investable", `${HOUSEHOLD_BUDGET}#${REST_ANCHOR}`, t.effectInvestableLines, t.effectInvestable, (plan, m) =>
+      f.euro(segmentAt(plan, m)?.investable),
+    ),
+    perPeriod("rate", HOUSEHOLD_BUDGET, t.effectRateLines, t.effectRate, (plan, m) => f.ratio(segmentAt(plan, m)?.rate)),
+    single("reserve", t.effectReserve, HOUSEHOLD_RESERVE, monthOr(reserveReached(saved)), monthOr(reserveReached(preview.plan))),
+    single("net-worth", t.effectNetWorth(years), `/assets#${PROJECTION_ANCHOR}`, f.euro(lastTotal(saved)), f.euro(lastTotal(preview.plan))),
   ];
   if (savedGoal?.goal) {
-    rows.push({
-      key: "goal",
-      label: t.effectGoal(goalTargetText(g, f, savedGoal.goal)),
-      href: HOUSEHOLD_GOAL,
-      today: monthOr(goalReached(savedGoal)),
-      with: monthOr(goalReached(preview.goal)),
-    });
+    rows.push(
+      single("goal", t.effectGoal(goalTargetText(g, f, savedGoal.goal)), HOUSEHOLD_GOAL, monthOr(goalReached(savedGoal)), monthOr(goalReached(preview.goal))),
+    );
   }
   return (
     <section className="card stack play-effects" aria-labelledby={`${ids}-effects`} aria-busy={preview.pending}>
@@ -611,7 +650,7 @@ function Effects({
           </span>
         </div>
         {rows.map((row) => (
-          <EffectRow key={row.key} row={row} pending={preview.pending} f={f} />
+          <EffectRow key={row.key} row={row} pending={preview.pending} more={row.more > 0 ? t.effectMorePeriods(row.more) : null} />
         ))}
       </div>
       {preview.error != null ? <ErrorNotice error={preview.error} /> : null}
@@ -619,21 +658,38 @@ function Effects({
   );
 }
 
-function EffectRow({ row, pending }: { row: { key: string; label: string; href: string; today: string; with: string }; pending: boolean; f: PlanFormat }) {
-  const differs = row.today !== row.with;
+/** One effect row: a line per stretch of months (or one line), the row's label on the first. */
+function EffectRow({ row, pending, more }: { row: EffectRowData; pending: boolean; more: string | null }) {
   return (
-    <div className="play-row" role="row" data-effect={row.key}>
-      <span role="rowheader">
-        <Link href={row.href}>
-          {row.label} <span aria-hidden="true">›</span>
-        </Link>
-      </span>
-      <span role="cell" className="num">
-        {row.today}
-      </span>
-      <span role="cell" className={`num${differs ? " play-changed" : ""}${pending ? " play-pending" : ""}`}>
-        {row.with}
-      </span>
+    <div className="play-effect" role="rowgroup" aria-label={row.label} data-effect={row.key}>
+      {row.lines.map((line, index) => {
+        const differs = line.today !== line.with;
+        return (
+          <div key={index} className="play-row" role="row">
+            <span role="rowheader">
+              {index === 0 ? (
+                <Link href={row.href}>
+                  {row.label} <span aria-hidden="true">›</span>
+                </Link>
+              ) : null}
+              {line.period ? <span className="muted play-sub play-period">{line.period}</span> : null}
+            </span>
+            <span role="cell" className="num">
+              {line.today}
+            </span>
+            <span role="cell" className={`num${differs ? " play-changed" : ""}${pending ? " play-pending" : ""}`}>
+              {line.with}
+            </span>
+          </div>
+        );
+      })}
+      {more ? (
+        <div className="play-row play-more" role="row">
+          <span role="cell" className="muted">
+            {more}
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

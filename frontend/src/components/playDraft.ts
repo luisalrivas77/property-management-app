@@ -157,3 +157,70 @@ export function monthAfter(month: string): string {
   const mon = Number(month.slice(5, 7));
   return mon === 12 ? `${year + 1}-01` : `${year}-${String(mon + 1).padStart(2, "0")}`;
 }
+
+/** The month before `month` (YYYY-MM). */
+export function monthBefore(month: string): string {
+  const year = Number(month.slice(0, 4));
+  const mon = Number(month.slice(5, 7));
+  return mon === 1 ? `${year - 1}-12` : `${year}-${String(mon - 1).padStart(2, "0")}`;
+}
+
+/** A stretch of months „Was das bewirkt“ shows as one line: `to` null when it runs on. */
+export interface EffectPeriod {
+  from: string;
+  to: string | null;
+}
+
+/** The stretches „Anlegbar pro Monat“ and „Sparquote“ are shown for (phase 10 §7.10 (a)): a new
+ * line wherever a row of the draft starts and in the month after it ends, so an income change
+ * that ends in Nov shows its own line and the months from Dec beside it. A row that started
+ * before `first` (the first month after the newest closed one) counts from `first`; a row that
+ * ended before it, and a month after `last` (the horizon's last month, the last one the server's
+ * stretches cover), mark nothing. One-offs mark nothing: the figures are „ohne Einmalausgaben“;
+ * nor does a dropped saved change, which has no months of its own here. `extra` are further
+ * months where a figure may change (the server's own stretch starts); they split a line only
+ * from the draft's first change on, so the card starts at the earliest change. An empty list
+ * when the draft holds no row with months. */
+export function effectPeriods(
+  changes: PlayChanges,
+  first: string,
+  last: string | null = null,
+  extra: readonly string[] = [],
+): EffectPeriod[] {
+  const spans: { from: string; to: string | null }[] = [
+    ...Object.values(changes.spending).flatMap((change) => (change ? [{ from: change.from_month, to: change.to_month ?? null }] : [])),
+    ...(changes.incomeRow ? [{ from: changes.incomeRow.from, to: changes.incomeRow.to }] : []),
+  ];
+  const inHorizon = (month: string) => month >= first && (last === null || month <= last);
+  const points = new Set<string>();
+  for (const span of spans) {
+    if (span.to !== null && span.to < first) continue;
+    const start = span.from < first ? first : span.from;
+    if (inHorizon(start)) points.add(start);
+    if (span.to !== null) {
+      const after = monthAfter(span.to);
+      if (inHorizon(after)) points.add(after);
+    }
+  }
+  const earliest = [...points].sort()[0];
+  if (earliest === undefined) return [];
+  for (const month of extra) if (month > earliest && inHorizon(month)) points.add(month);
+  const sorted = [...points].sort();
+  return sorted.map((from, index) => {
+    const next = sorted[index + 1];
+    return { from, to: next === undefined ? null : monthBefore(next) };
+  });
+}
+
+/** Consecutive periods whose shown value is the same, as one period (the first one's start, the
+ * last one's end), so a row never shows two equal lines. */
+export function mergePeriods<V>(periods: readonly EffectPeriod[], valueOf: (period: EffectPeriod) => V): { period: EffectPeriod; value: V }[] {
+  const out: { period: EffectPeriod; value: V }[] = [];
+  for (const period of periods) {
+    const value = valueOf(period);
+    const prev = out.at(-1);
+    if (prev && json(prev.value) === json(value)) prev.period = { from: prev.period.from, to: period.to };
+    else out.push({ period: { ...period }, value });
+  }
+  return out;
+}
