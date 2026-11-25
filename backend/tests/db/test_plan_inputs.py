@@ -93,18 +93,22 @@ def _uncached(world: World, read, *args, today: date = TODAY) -> str:
         return _json(world, read, *args, today=today)
 
 
-def _projected(world: World):
+def _projected(world: World, *, groceries: bool = False):
     """tests/db/test_household_goal._projected_world (twelve closed months to March 2027, the
     flat with its default scenario, the month-end of 31 March 2027) with a default household
     scenario holding a goal; the scenario's levers and the private account. A pay of 500 € a
     month keeps the flat's costs from 2028 above 0 (phase 10 D301 (a) 1: the walk never sells
-    to refill the reserve), so the goal has a word; 500 € less income does not."""
+    to refill the reserve), so the goal has a word; 500 € less income does not. `groceries`
+    adds 100 € a month at a market (a need, D305), so the reserve target is not 0."""
     private, _ = _savings_history(world)
     for month in (1, 2, 3):
         line = private.line(date(2027, month, 18), "-300.00", name="Trattoria Muster")
         _book(world, line, "-300.00", C.HH_RESTAURANT)
         line = private.line(date(2027, month, 27), "500.00", name="Arbeitgeber Muster")
         _book(world, line, "500.00", C.HH_SALARY)
+        if groceries:
+            line = private.line(date(2027, month, 8), "-100.00", name="Markt Muster")
+            _book(world, line, "-100.00", C.HH_GROCERIES)
     _bought_in_2026(world)
     _flat_scenario(world, None, NOW)
     world.cmd(net_worth.capture_month_end, date(2027, 3, 31))
@@ -360,8 +364,10 @@ def test_a_changed_split_or_reserve_rate_after_a_warm_read_gives_the_uncached_an
     accounts' kinds, the rental ids and today's net worth, all lever-free). After a warm
     GET /household-plan, previews with typed rates, two splits, a reserve rate and the plans
     dropped (so today's holdings decide) each equal the store bypassed, warm or not; the
-    split's own answers move with the split."""
-    levers, _ = _projected(world)
+    split's own answers move with the split. Since D301 (a) 1 the reserve target is the line
+    above which the walk invests, so a changed target (24 months) is a lever too, and so is
+    the goal walked over it: each equals its uncached computation."""
+    levers, _ = _projected(world, groceries=True)
     warmed = world.query(plan.household_plan, TODAY)  # warm: the parts kept
     base = levers.model_dump(mode="json")
     rates = {"depot": "0.050", "crypto": "0.080"}
@@ -378,13 +384,17 @@ def test_a_changed_split_or_reserve_rate_after_a_warm_read_gives_the_uncached_an
         },
         "reserve_rate": {"value_change": rates | {"reserve": "0.020"}},
         "plans_dropped": {"value_change": rates, "plan_overrides": dropped},
+        "target_24": {"value_change": rates, "reserve_target_months": "24"},
     }
     previews = {n: HouseholdLevers.model_validate(base | b) for n, b in bodies.items()}
     for name, lv in previews.items():
         warm = _json(world, plan.preview_plan, lv)
         assert warm == _uncached(world, plan.preview_plan, lv), name
         assert _json(world, plan.preview_plan, lv) == warm, name
+        assert _json(world, goal.preview_goal, lv) == _uncached(world, goal.preview_goal, lv), name
     got = {n: world.query(plan.preview_plan, TODAY, lv) for n, lv in previews.items()}
+    assert got["target_24"].reserve.target > got["rates"].reserve.target
+    assert got["target_24"].projection.points != got["rates"].projection.points
     assert got["rates"].investment_split.source == "savings_plans"
     assert got["plans_dropped"].investment_split.source == "holdings"
     assert got["split_70"].investment_split.shares.depot == 70

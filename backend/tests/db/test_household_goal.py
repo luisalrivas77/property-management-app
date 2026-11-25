@@ -17,9 +17,11 @@ from sqlalchemy import func, select
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import household_scenario as scenario_table
 from hausbuch.rules.errors import HOUSEHOLD_SCENARIO_GOAL_INVALID
+from hausbuch.rules.plan import projection as N
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.goal import GoalIssue, GoalSpending, GoalWord
 from hausbuch.schemas.health import HealthTodoCode
+from hausbuch.schemas.performance import Levers, ScenarioCreate
 from hausbuch.schemas.plan import (
     Goal,
     GoalChoice,
@@ -30,6 +32,9 @@ from hausbuch.schemas.plan import (
 from hausbuch.services import goal as goal_service
 from hausbuch.services import household_scenarios, net_worth, plan
 from hausbuch.services.errors import RuleViolationError
+from hausbuch.services.health import levers_one_off_codes
+from hausbuch.services.plan_inputs import PlanInputs
+from hausbuch.services.scenarios import create_scenario, default_scenario_on
 
 pytestmark = pytest.mark.db
 
@@ -214,3 +219,67 @@ def test_spending_changes_without_a_choice_are_not_the_goals_projection(world):
     got = _read(world)
     assert plan_point > without  # the plan counts the changes
     assert got.projected == without and got.reached_with_budget is None
+
+
+def _sold_in_2028(world: World, supersedes) -> None:
+    """The flat's default scenario superseded by one that sells it in 2028, so the walk runs
+    past the sale (phase 10 D301 (a) 4)."""
+    world.cmd(
+        create_scenario,
+        world.property_id,
+        ScenarioCreate(
+            property_id=world.property_id,
+            name="Verkauf 2028",
+            is_default=True,
+            supersedes_id=supersedes,
+            levers=Levers(value_growth=Decimal("0.02"), sale_year=2028, today_value=None),
+        ),
+        now=NOW,
+    )
+
+
+def _walked(world: World) -> N.Walk:
+    """The month walk the goal reads (services.goal), for the months between the points."""
+    with workspace_transaction(world.engine, world.ws) as conn:
+        inputs = PlanInputs(conn, TODAY)
+        row = plan._scenario(conn, None, inputs)
+        assert row is not None
+        reads = inputs.ended_reads(levers_one_off_codes(row.levers))
+        _, parts = plan.plan_parts(conn, TODAY, row, row.levers, reads, inputs)
+        assert parts is not None and parts.projection is not None
+        return N.walk(parts.projection)
+
+
+def test_anlagen_durchspielen_and_the_goal_read_one_walk(world):
+    """Phase 10 §7.11 (a) 7: one walk feeds Anlagen's 31 December points (GET /household-plan),
+    Durchspielen (the preview with the saved levers) and the goal. The newest closed month is
+    March, so the walk starts in April, never on a 1 January; the depot earns 3 % and the money
+    above the reserve target moves into it; the flat is sold in 2028, so the points run past the
+    sale. At each 31 December the three agree to the cent, and a goal due in June 2028 reads the
+    walk's own June, not a December."""
+    _projected_world(world, groceries=True, salary="1000.00")
+    flat = world.query(default_scenario_on, world.property_id, TODAY)
+    _sold_in_2028(world, flat.id)
+    row = _save(world, _goal("10000000.00"), horizon_months=45)
+    got = _plan(world)
+    assert got.above_target is not None and got.above_target > 0  # money moves at once
+    points = got.projection.points
+    assert [p.on for p in points] == [date(y, 12, 31) for y in (2028, 2029, 2030)]
+    preview = world.query(plan.preview_plan, TODAY, row.levers)
+    assert preview.projection.points == points  # Durchspielen with the saved levers
+
+    walked = _walked(world)
+    for point in points:
+        month = f"{point.on.year}-12"
+        at = walked.at(month)
+        assert at is not None and at.net_worth == point.total, month
+        row = _save(world, _goal("10000000.00", due=month), supersedes=row.id, horizon_months=45)
+        assert _read(world).projected == point.total, month
+    sold, after = points[0], points[1]  # 31 Dec 2028, the sale; a year later
+    assert (sold.property, sold.loans) == (Decimal("0.00"), Decimal("0.00"))
+    assert (after.property, after.loans) == (Decimal("0.00"), Decimal("0.00"))
+
+    row = _save(world, _goal("10000000.00", due="2028-06"), supersedes=row.id, horizon_months=45)
+    june = walked.at("2028-06")
+    assert june is not None and _read(world).projected == june.net_worth
+    assert june.net_worth not in {p.total for p in points}
