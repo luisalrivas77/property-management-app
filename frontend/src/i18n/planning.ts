@@ -13,10 +13,6 @@ const de = {
   saved: "gespeichert",
   unsaved: (n: number) => (n === 1 ? "1 Änderung, nicht gespeichert" : `${n} Änderungen, nicht gespeichert`),
   assumptions: "Annahmen",
-  // „Annahmen“, the one panel of every lever (phase 10 §7.9 (a), mockup 19c)
-  annahmenTitle: "Eure Annahmen",
-  annahmenIntro:
-    "Alles, womit Budget, Reserve, Ziel und Vermögensverlauf rechnen. Was ihr hier ändert, ist ein Entwurf, bis ihr das Szenario speichert; die alte Fassung bleibt im Verlauf.",
   change: "Ändern",
   // Haushalt › Budget: „Was mit dem Rest passiert“ (what Planung › Anlegen was)
   restTitle: "Was mit dem Rest passiert",
@@ -42,7 +38,6 @@ const de = {
   discard: "Verwerfen",
   saveScenario: "Szenario speichern",
   saveHint: "Gespeichert als neue Fassung eures Szenarios; die alte bleibt im Verlauf.",
-  fixProjection: "Erst die Eingabe bei der Annahme korrigieren, die rot markiert ist; dann lässt sich das Szenario speichern.",
   fixSpending: "Erst die Eingabe bei „geplant“ korrigieren; dann lässt sich das Szenario speichern.",
   dirtyNotice: "Geändert, noch nicht gespeichert: die Zahlen hier rechnen schon mit euren Änderungen.",
   dirtyNoticeBudget:
@@ -67,7 +62,6 @@ const de = {
   reserveIntro: "Eure Reserve heute, das Ziel in Monaten eures Bedarfs und die Wege dorthin.",
   investIntro: "Was ihr im Monat anlegen könnt, was eure Sparpläne schon anlegen, und wie die Zahl entsteht.",
   netWorthIntro: "Euer Vermögen in einigen Jahren, gerechnet mit den Raten, die ihr selbst eintragt.",
-  openSheet: "Annahmen öffnen",
   // the Budget
   yourMonth: "Euer Monat",
   incomePerMonth: "Einkommen im Monat",
@@ -335,9 +329,6 @@ export const planning = defineMessages({
     saved: "saved",
     unsaved: (n: number) => (n === 1 ? "1 change, not saved" : `${n} changes, not saved`),
     assumptions: "Assumptions",
-    annahmenTitle: "Your assumptions",
-    annahmenIntro:
-      "Everything the budget, the reserve, the goal and the net worth over time are calculated with. What you change here is a draft until you save the scenario; the old version stays in the history.",
     change: "Change",
     restTitle: "What happens to the rest",
     restFree: "Left each month",
@@ -360,7 +351,6 @@ export const planning = defineMessages({
     discard: "Discard",
     saveScenario: "Save scenario",
     saveHint: "Saved as a new version of your scenario; the old one stays in the history.",
-    fixProjection: "First correct the assumption marked in red; then the scenario can be saved.",
     fixSpending: "First correct the “planned” entry; then the scenario can be saved.",
     dirtyNotice: "Changed, not saved yet: the figures here already use your changes.",
     dirtyNoticeBudget:
@@ -384,7 +374,6 @@ export const planning = defineMessages({
     reserveIntro: "Your reserve today, the target in months of your needs, and the paths to it.",
     investIntro: "What you can invest each month, what your savings plans already invest, and how the figure is made.",
     netWorthIntro: "Your net worth in a few years, on the rates you type yourselves.",
-    openSheet: "Open assumptions",
     yourMonth: "Your month",
     incomePerMonth: "Income per month",
     meanOver: (range: string) => `Avg. ${range}`,

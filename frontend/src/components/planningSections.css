@@ -35,33 +35,6 @@
   color: var(--accent-strong);
 }
 
-.planning-scenario-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
-  padding: 8px 12px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius);
-  color: var(--text);
-  text-decoration: none;
-  font-size: 0.9rem;
-}
-
-.planning-scenario-row:hover {
-  border-color: var(--accent);
-}
-
-.planning-scenario-row[data-dirty] .planning-scenario-state {
-  color: var(--warn);
-  font-weight: 700;
-}
-
-.planning-scenario-open {
-  color: var(--accent-text);
-  font-weight: 700;
-}
-
 .planning-change-list {
   margin: 0;
   padding-left: 1.2em;
@@ -251,27 +224,43 @@
   background: transparent;
 }
 
-/* --- the panel „Annahmen“ (mockup 19c) --- */
+/* --- a lever beside its figure (§7.10 (a) 7): the reserve target, the buffer, the rates --- */
 
-.annahmen-group + .annahmen-group,
-.annahmen-save {
-  padding-top: 12px;
-  border-top: 1px solid var(--divider);
+.planning-inline-lever:empty {
+  display: none;
 }
 
-.annahmen-group h3,
-.annahmen-save h3 {
+.planning-lever-form {
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.planning-lever-form h3 {
   margin: 0;
 }
 
-/* Inside the panel the levers' own cards lose their frame, so the groups read as one list. */
-.annahmen .card {
+/* The levers' own cards lose their frame inside the form, so it reads as one block. */
+.planning-lever-form .card {
   padding: 0;
   border: 0;
   box-shadow: none;
   background: none;
 }
 
-.annahmen .table-wrap {
+.planning-lever-form .table-wrap {
   max-width: 100%;
+}
+
+.planning-lever-form .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.planning-planned {
+  margin: 0;
 }

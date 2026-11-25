@@ -28,7 +28,7 @@ import { type Translation, useT } from "@/i18n";
 import { goalText } from "@/i18n/goal";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { detailHref } from "@/lib/detailHash";
-import { ASSUMPTIONS, HOUSEHOLD_RESERVE, propertyPlanningHref } from "@/lib/planningRoutes";
+import { HOUSEHOLD_PLAY, HOUSEHOLD_RESERVE, propertyPlanningHref } from "@/lib/planningRoutes";
 
 import { DetailPanel, useDetail } from "./DetailPanel";
 import { todayIso } from "./format";
@@ -466,7 +466,6 @@ function Scenarios({ data, enough, dirty, write }: { data: GoalData; enough: boo
   const p = usePlanFormat();
   const ids = useId();
   const detail = useDetail(GOAL_DETAIL);
-  const annahmen = useDetail(ASSUMPTIONS);
   const goal = data.goal;
   const chosen = goal.choice?.spending ?? null;
   const scenarios = SCENARIO_ORDER.map((kind) => (goal.scenarios ?? []).find((s) => s.kind === kind)).filter((s): s is GoalScenario => s != null);
@@ -505,9 +504,9 @@ function Scenarios({ data, enough, dirty, write }: { data: GoalData; enough: boo
               <>
                 <p className="muted">{saved.length > 0 ? t.ownMissing : t.ownNoChanges}</p>
                 <p className="row">
-                  <a {...annahmen.linkProps("ausgaben")} className="button-link secondary">
+                  <Link href={HOUSEHOLD_PLAY} className="button-link secondary">
                     {t.own} ›
-                  </a>
+                  </Link>
                 </p>
                 {saved.length > 0 ? (
                   <Adopt

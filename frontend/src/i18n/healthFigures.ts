@@ -50,9 +50,9 @@ export const healthFigures = defineMessages({
     emptyStandard: (limit: string | null) => (limit ? `leer: Standard-Grenze ${limit}` : "leer: Standard-Grenze"),
     reference: "Bezugspunkt",
     scenarioRefusedBefore:
-      "Die Grenzen werden im Standard-Szenario gespeichert, und dessen Annahmen lassen sich so gerade nicht speichern. Bitte das Szenario unter ",
-    planningHousehold: "Haushalt › Annahmen",
-    scenarioRefusedAfter: " prüfen und dort speichern; danach lassen sich die Grenzen hier übernehmen.",
+      "Die Grenzen werden im Standard-Szenario gespeichert, und dessen Fassung lässt sich so gerade nicht speichern. Bitte unter ",
+    planningHousehold: "Haushalt › Reserve",
+    scenarioRefusedAfter: " das Reserveziel prüfen und speichern; danach lassen sich die Grenzen hier übernehmen.",
     savedIn: "Gespeichert in eurem Szenario; ändern könnt ihr sie jederzeit mit „Grenzen ändern“.",
 
     // Kennzahlen
@@ -136,9 +136,9 @@ export const healthFigures = defineMessages({
     emptyStandard: (limit: string | null) => (limit ? `empty: standard limit ${limit}` : "empty: standard limit"),
     reference: "Reference point",
     scenarioRefusedBefore:
-      "The limits are stored in the default scenario, and its assumptions cannot be saved as they stand. Please check the scenario under ",
-    planningHousehold: "Household › Assumptions",
-    scenarioRefusedAfter: " and save it there; then the limits can be applied here.",
+      "The limits are stored in the default scenario, and it cannot be saved as it stands. Please check the reserve target under ",
+    planningHousehold: "Household › Reserve",
+    scenarioRefusedAfter: " and save it; then the limits can be applied here.",
     savedIn: "Stored in your scenario; you can change them at any time with “Change limits”.",
 
     figuresTitle: "Key figures",

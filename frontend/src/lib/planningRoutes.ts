@@ -1,8 +1,11 @@
 // Where Planung's places are since phase 10 wave 3 (a) (§7.9 (a), D288): Planung left the menu;
 // its Budget and Reserve are Haushalt's tabs, „Anlegen“ is the foot of Haushalt › Budget („Was
 // mit dem Rest passiert“), „Vermögen“ (the net worth on typed rates) is on Anlagen › Übersicht,
-// and Immobilie on Anlagen › Immobilie. The scenario's levers are one detail panel „Annahmen“
-// (`#d-annahmen-<group>`), opened from each place at its own group.
+// and Immobilie on Anlagen › Immobilie. Since §7.10 (a) (D299) the panel „Annahmen“ is gone: the
+// spending, income and one-off levers are Haushalt › Durchspielen, and the others sit beside the
+// figure they act on, each saving on its own (the reserve target on Reserve `#reserve-ziel`, the
+// buffer and the savings plans on Budget `#puffer`, the rates on Anlagen `#rendite`). An old
+// `#d-annahmen-<group>` link leads to the group's new place (`assumptionsHref`).
 //
 // Every old link still works: /planning is a redirect page that sends each URL through
 // `planningTarget`, and a to-do whose href the server writes under rules/plan/ (those files feed
@@ -10,12 +13,18 @@
 // `#ausgaben-durchspielen`, and `/planning` for the property's scenario) is mapped by
 // `planTodoTarget` where it is shown.
 
-/** The groups of the „Annahmen“ panel, in their default order. */
+/** The groups of the former „Annahmen“ panel, which old links and to-dos still name. */
 export const ASSUMPTION_GROUPS = ["reserve", "puffer", "einkommen", "zahlungen", "sparplaene", "rendite", "ausgaben"] as const;
 export type AssumptionGroup = (typeof ASSUMPTION_GROUPS)[number];
 
-/** The detail panel's kind for „Annahmen“ (lib/detailHash.ts). */
+/** The detail panel's kind „Annahmen“ had (lib/detailHash.ts): an old `#d-annahmen-<group>`
+ * hash is sent to the group's new place. */
 export const ASSUMPTIONS = "annahmen";
+
+/** The levers beside their figures (§7.10 (a) 7): each an anchor that opens its form. */
+export const RESERVE_LEVER = "reserve-ziel";
+export const BUFFER_LEVER = "puffer";
+export const RATE_LEVER = "rendite";
 
 export function isAssumptionGroup(value: string | null): value is AssumptionGroup {
   return value !== null && (ASSUMPTION_GROUPS as readonly string[]).includes(value);
@@ -35,9 +44,33 @@ export const REST_ANCHOR = "was-mit-dem-rest";
 /** The net worth on typed rates on Anlagen › Übersicht, what was Planung › Vermögen. */
 export const PROJECTION_ANCHOR = "annahme";
 
-/** The panel „Annahmen“ opened at a group, on a page: `<path>#d-annahmen-<group>`. */
-export function assumptionsHref(path: string, group: AssumptionGroup): string {
-  return `${path}#d-${ASSUMPTIONS}-${group}`;
+/** Where a group of the former panel „Annahmen“ is now (§7.10 (a), D299): the spending, income
+ * and one-offs on Haushalt › Durchspielen, the reserve target and its accounts on Reserve, the
+ * buffer and the savings plans on Budget, the rates on Anlagen. `_path` is the page the link was
+ * written for; the place no longer depends on it. */
+export function assumptionsHref(_path: string, group: AssumptionGroup): string {
+  switch (group) {
+    case "reserve":
+      return `${HOUSEHOLD_RESERVE}#${RESERVE_LEVER}`;
+    case "puffer":
+    case "sparplaene":
+      return `${HOUSEHOLD_BUDGET}#${BUFFER_LEVER}`;
+    case "rendite":
+      return `/assets#${RATE_LEVER}`;
+    case "einkommen":
+    case "zahlungen":
+    case "ausgaben":
+      return HOUSEHOLD_PLAY;
+  }
+}
+
+/** An old `#d-annahmen-<group>` hash (a bookmark, a link from before §7.10 (a)) as the group's
+ * new place, or null for any other hash. */
+export function staleAssumptionsTarget(hash: string, path: string): string | null {
+  const prefix = `#d-${ASSUMPTIONS}-`;
+  if (!hash.startsWith(prefix)) return null;
+  const group = hash.slice(prefix.length);
+  return assumptionsHref(path, isAssumptionGroup(group) ? group : "reserve");
 }
 
 /** The query parameters Anlagen › Immobilie reads: the property and the projection's levers. */
@@ -93,7 +126,7 @@ export function planningTarget(search: URLSearchParams, hash = ""): string {
 }
 
 /** A server to-do's href from rules/plan/ (left unchanged, D271): where it leads now. Phase 9's
- * `/planning?tab=haushalt` opens „Annahmen“ (at the group its code names), the bare `/planning`
+ * `/planning?tab=haushalt` leads to the place of the group its code names, the bare `/planning`
  * is the property's scenario (`PROPERTY_HREF`) and leads to Anlagen › Immobilie. Any other href
  * is returned as it is. */
 export function planTodoTarget(href: string, code: string, page: string): string {

@@ -7,8 +7,8 @@
 // net worth over time (components/healthFigures.tsx, AssetsHealthSection): `?month_end=YYYY-MM-DD`
 // opens the card „Monatsabschluss festhalten“ for that month-end, and „Vermögen im Verlauf“
 // follows. Under it since phase 10 wave 3 (a) (§7.9 (a), D288): what was Planung › Vermögen, the
-// net worth in some years on the rates the household typed (`#annahme`), its levers in the panel
-// „Annahmen“ (`#d-annahmen-rendite`), components/householdPlan.tsx.
+// net worth in some years on the rates the household typed (`#annahme`), its rates changed in place
+// with „Rendite ändern“ (`#rendite`, §7.10 (a)), components/householdPlan.tsx.
 //
 // Anlagen › ETF (phase 6 step 4, §13; phase 10 §7.6): „ETF gesamt“, the depots' gain since the
 // start (./Performance.tsx, GET /assets/performance), this year's distributions, the savings plans

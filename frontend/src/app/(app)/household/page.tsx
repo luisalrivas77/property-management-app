@@ -50,8 +50,9 @@
 // Phase 10 wave 3 (a) (§7.9 (a), D288; mockups 19b, 19c): Planung folded in. Haushalt has four
 // tabs, ?tab=budget|ziel|reserve, and Monat (everything above) by default. Budget and Reserve are
 // what Planung's sections were, with „Was mit dem Rest passiert“ (Planung › Anlegen) at Budget's
-// foot; every lever is in one detail panel „Annahmen“ (`#d-annahmen-<group>`), and each tab shows
-// its own figures with an unsaved change (components/householdPlan.tsx). Ziel (§7.9 (d), D289) is
+// foot; since §7.10 (a) (D299) the reserve target is changed on Reserve and the buffer on Budget,
+// each in place (components/householdPlan.tsx), and a fifth tab, Durchspielen, plays spending,
+// income and one-offs through (components/householdPlay.tsx). Ziel (§7.9 (d), D289) is
 // the household's goal with its spending scenarios (components/householdGoal.tsx).
 import "./household.css";
 import "@/components/planningSections.css";
