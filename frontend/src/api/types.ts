@@ -11490,6 +11490,11 @@ export interface components {
             cash?: components["schemas"]["NetWorthLine"][];
             /** Total Eur */
             total_eur: string;
+            /**
+             * Counts To Reserve
+             * @default false
+             */
+            counts_to_reserve: boolean;
         };
         /**
          * OverviewPosition
@@ -13775,6 +13780,14 @@ export interface components {
             amount: string;
             /** Need */
             need: string;
+            /** Need Codes */
+            need_codes?: {
+                [key: string]: string;
+            };
+            /** @default regular */
+            need_basis: components["schemas"]["ReserveNeedBasis"];
+            /** Need Basis From */
+            need_basis_from?: string | null;
             /** Months */
             months?: string | null;
             /** Target Months */
@@ -13819,6 +13832,12 @@ export interface components {
             /** Removed */
             removed?: string[];
         };
+        /**
+         * ReserveNeedBasis
+         * @description What the reserve's monthly need is taken from (phase 10 D305).
+         * @enum {string}
+         */
+        ReserveNeedBasis: "regular" | "needs";
         /**
          * ReserveOrigin
          * @enum {string}

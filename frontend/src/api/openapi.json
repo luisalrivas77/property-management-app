@@ -29484,6 +29484,11 @@
             "type": "string",
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Total Eur"
+          },
+          "counts_to_reserve": {
+            "type": "boolean",
+            "title": "Counts To Reserve",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -35024,6 +35029,33 @@
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Need"
           },
+          "need_codes": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/AllocationCategory"
+            },
+            "type": "object",
+            "title": "Need Codes"
+          },
+          "need_basis": {
+            "$ref": "#/components/schemas/ReserveNeedBasis",
+            "default": "regular"
+          },
+          "need_basis_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Need Basis From"
+          },
           "months": {
             "anyOf": [
               {
@@ -35144,6 +35176,15 @@
         "type": "object",
         "title": "ReserveAccounts",
         "description": "Accounts added to or removed from the reserve's default set (D237). Their kind\n(bank_current, bank_savings, credit_card) is checked by the service, which sees them."
+      },
+      "ReserveNeedBasis": {
+        "type": "string",
+        "enum": [
+          "regular",
+          "needs"
+        ],
+        "title": "ReserveNeedBasis",
+        "description": "What the reserve's monthly need is taken from (phase 10 D305)."
       },
       "ReserveOrigin": {
         "type": "string",
