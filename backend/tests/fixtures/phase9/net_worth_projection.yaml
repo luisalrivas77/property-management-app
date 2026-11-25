@@ -2,7 +2,7 @@
 # §7.11 (a), D301 (25 Nov 2026): `rules/plan/projection.project_net_worth`, one month walk
 # that Anlagen's 31-December points, the goal and Durchspielen all read. Start: the stored run
 # at the newest closed month-end. The reserve row R, month by month, in this order:
-#   1. R earns the typed reserve rate for one month, R × r ÷ 12 (simple, while R > 0; none
+#   1. R earns the typed reserve rate for one month, R × r ÷ 12 to the cent half-up (while R > 0; none
 #      typed: nothing; reserve_above.yaml in phase 10 has the rate's cases);
 #   2. R += investable(k) − every plan (the month function of §7.1, plan_levers.yaml);
 #   3. in December of a property's sale year, R += the sale's net proceeds (phase 4's

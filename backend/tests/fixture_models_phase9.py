@@ -1534,8 +1534,8 @@ def project(
 ) -> dict[str, Any]:
     """§7.5, D247 amended by phase 10 D301 (§7.11 (a)): one month walk. Each month k after the
     newest closed one, in this order:
-    1. the reserve row R earns the typed reserve rate for one month, R × r ÷ 12 (simple, only
-       while R > 0; no reserve rate typed: nothing);
+    1. the reserve row R earns the typed reserve rate for one month, R × r ÷ 12 to the cent
+       half-up (only while R > 0; no reserve rate typed: nothing);
     2. R += the month's „Anlegbar“ (§7.1, the buffer kept back) − every savings plan;
     3. in December of a property's sale year, R += its net proceeds (counted once);
     4. R < 0: the walk ends there, `used_up` = that month, no point from it on;
@@ -1580,7 +1580,11 @@ def project(
             newest, k, month, flat_month, levers.income_changes, levers.one_offs
         )
         if vc.reserve is not None and reserve > 0:
-            reserve += reserve * Fraction(vc.reserve) / 12
+            # the month's interest to the cent, half-up, as a bank credits it (exact fractions
+            # would compound a denominator over up to 480 months)
+            reserve += Fraction(
+                cent(Decimal(reserve.numerator) / reserve.denominator * vc.reserve / 12)
+            )
         reserve += Fraction(investable - continuing)
         if ym.endswith("-12"):
             for f in kept.values():
