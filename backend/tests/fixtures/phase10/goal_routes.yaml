@@ -573,10 +573,10 @@ cases:
     goal: {kind: net_worth, target: '200000.00', due_month: '2029-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06', crypto: '0.10'}
   # the walk: Nov 2026 14,000 moves (8,400 funds, 5,600 crypto), then 1,200 and 800 a month;
-  # 31 Dec 2029 funds 58,588.32, crypto 41,812.91, bank 38,000: 138,401.24
+  # 31 Dec 2029 funds 58,588.32, crypto 41,812.91, bank 38,000: 138,401.23
   expect:
     word: feasible
-    projected: '138401.24'
+    projected: '138401.23'
     noetig: '3488.00'            # E = 1,488
     more_saving: {extra: '1488.00', noetig: '3488.00'}
     more_return:

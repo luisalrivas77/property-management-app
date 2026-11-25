@@ -26,13 +26,23 @@ a product (D247, D251, D289 (1)).
   Σ wants − target × income shared by the means, each part to the cent down); then the saving
   extra = the smallest whole euro that with those cuts reaches the target, within the mean
   income; what the limit left open moves to saving and is named.
-- Route 3 „Mehr Rendite“ is a seam: not available, `not_built` (`generic_mode` in that mode).
+- Route 3 „Mehr Rendite“ (§7.11 (c) 3, D310 amended; rules/goal/history): the one yearly
+  return for funds and crypto together that reaches the target by the due month on the walk
+  with nothing else changed, smallest to 0.1 % between −50 % and +100 % (by bisection),
+  against every window of the goal's months left in whole years in the invested mix's
+  history (the reference series in euros), with the median, the best and N of M reached.
+  Not offered in `generic` mode (D289), for a goal that is not a net worth, with nothing
+  invested and no split, without the funds series, or on a history covering under half of
+  the invested value; out of range above +100 %. Under 5 windows it is thin: shown, never the
+  word. When route 3 decides (available, not thin) the balanced route is walked at its
+  median for funds and crypto, else at the typed rates.
 - „Eigene Wahl“ (D289 (3)) is the household's own spending in play (D263) on the Ziel tab; once
   adopted with `goal_choice.spending = own`, it is read like any adopted budget.
 - The word (D303): „Auf Kurs“ when the walk without change, or with the budget the household
   adopted, reaches the target by the due month; „Machbar“ when a route 4 scenario closes the
-  gap; „Ehrgeizig“ only through route 3 (not built, never in `generic` mode); „Kaum
-  erreichbar“ otherwise.
+  gap or route 3 decides with its return within the median; „Ehrgeizig“ only through route 3,
+  its return reached only in good times (never in `generic` mode, never on a thin history);
+  „Kaum erreichbar“ otherwise.
 - A property without a default scenario is kept (D301 (a) 5); the answer names that
   assumption with the link that replaces it.
 """
@@ -57,9 +67,11 @@ from hausbuch.schemas.goal import (
     GoalIssue,
     GoalMoreReturn,
     GoalMoreSaving,
+    GoalReferenceSource,
     GoalRouteReason,
     GoalScenario,
     GoalUnreachable,
+    GoalVerdict,
     GoalWord,
     HouseholdGoal,
 )
@@ -67,6 +79,7 @@ from hausbuch.schemas.health import HealthTodo
 from hausbuch.schemas.household import BudgetClass
 from hausbuch.schemas.plan import Goal, GoalChoice, GoalKind, GoalSpending, SpendingChange
 
+from . import history as H
 from .walk import Projection, Walk, last_month, walk
 
 CENT = Decimal("0.01")
@@ -98,6 +111,9 @@ class GoalInputs:
     mean_income: Decimal = ZERO  # the window's mean income, the bisection's upper end (D302)
     wants_max: Decimal | None = None  # the household's wants target, % of income (D274)
     mode: AdviceMode = AdviceMode.OWN_USE
+    # Route 3 (D310 amended): today's invested values and the reference series in euros
+    invested: H.Invested = H.Invested()
+    history: H.History = H.History()
 
 
 def none_set() -> HouseholdGoal:
@@ -181,14 +197,9 @@ def household_goal(i: GoalInputs) -> HouseholdGoal:
         "reached": reached_in(goal, as_is, target),
         "used_up": as_is.used_up,
         "more_saving": None if extra is None else GoalMoreSaving(extra=extra, noetig=noetig),
-        "more_return": GoalMoreReturn(
-            reason=(
-                GoalRouteReason.GENERIC_MODE
-                if i.mode is AdviceMode.GENERIC
-                else GoalRouteReason.NOT_BUILT
-            )
-        ),
     }
+    more_return, rate = _more_return(i, p, target, left)
+    known["more_return"] = more_return
     with_budget = None
     if i.choice is not None and i.choice.spending is not None and i.household_changes:
         adopted = walk(p, i.household_changes, until=goal.due_month)
@@ -200,11 +211,24 @@ def household_goal(i: GoalInputs) -> HouseholdGoal:
     scenarios: list[GoalScenario] = []
     if projected < target:
         scenarios = _scenarios(i, p, target, extra, first)
-        known["balanced"] = _balanced(i, reaches, extra, first)
+        if rate is None:
+            known["balanced"] = _balanced(i, reaches, extra, first)
+        else:  # route 3 decides: the invested mix at its median-window return (D302)
+            at_rate = _reaches(i, _at_rate(p, rate), target, first)
+            extra_at = _smallest(lambda e: at_rate(e, ()), EXTRA_CEILING, grow=True)
+            balanced = _balanced(i, at_rate, extra_at, first)
+            known["balanced"] = (
+                None if balanced is None else balanced.model_copy(update={"return_rate": rate})
+            )
+    decides = rate is not None and i.mode is AdviceMode.OWN_USE
     if on_track:
         word = GoalWord.ON_TRACK
-    elif any(s.closes for s in scenarios):
+    elif any(s.closes for s in scenarios) or (
+        decides and more_return.verdict is GoalVerdict.WITHIN_HISTORY
+    ):
         word = GoalWord.FEASIBLE
+    elif decides and more_return.verdict is GoalVerdict.GOOD_TIMES:
+        word = GoalWord.AMBITIOUS
     else:
         word = GoalWord.HARDLY
     unreachable = (
@@ -213,6 +237,90 @@ def household_goal(i: GoalInputs) -> HouseholdGoal:
         else None
     )
     return HouseholdGoal(word=word, scenarios=scenarios, unreachable=unreachable, **known)
+
+
+# --- Route 3 „Mehr Rendite“ -------------------------------------------------------------------
+
+RATE_LOW, RATE_HIGH = -500, 1000  # thousandths: −50 % … +100 % a year
+
+
+def _at_rate(p: Projection, rate: Decimal) -> Projection:
+    """The walk with one yearly rate for funds and crypto (the reserve's own rate kept). Not
+    validated: a rate above the typed lever's ±50 % is a calculation here, never a lever."""
+    vc = p.levers.value_change.model_copy(update={"depot": rate, "crypto": rate})
+    return replace(p, levers=p.levers.model_copy(update={"value_change": vc}))
+
+
+def _needed_return(i: GoalInputs, p: Projection, target: Decimal) -> Decimal | None:
+    """The smallest rate in thousandths that reaches the target at the due month with nothing
+    else changed; −50 % when even that reaches it, None when +100 % does not."""
+    due = i.goal.due_month
+
+    def ok(k: int) -> bool:
+        month = walk(_at_rate(p, Decimal(k) / 1000), until=due).at(due)
+        return month is not None and value_of(i.goal, month) >= target
+
+    if ok(RATE_LOW):
+        return (Decimal(RATE_LOW) / 1000).quantize(H.RETURN_PLACES)
+    if not ok(RATE_HIGH):
+        return None
+    lo, hi = RATE_LOW, RATE_HIGH
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if ok(mid):
+            hi = mid
+        else:
+            lo = mid
+    return (Decimal(hi) / 1000).quantize(H.RETURN_PLACES)
+
+
+def _more_return(
+    i: GoalInputs, p: Projection, target: Decimal, left: int
+) -> tuple[GoalMoreReturn, Decimal | None]:
+    """Route 3 and the rate the balanced route walks at (its median, only when it decides)."""
+    if i.mode is AdviceMode.GENERIC:
+        return GoalMoreReturn(reason=GoalRouteReason.GENERIC_MODE), None
+    if i.goal.kind is not GoalKind.NET_WORTH:  # a sum saved or the reserve: nothing invested
+        return GoalMoreReturn(reason=GoalRouteReason.NOTHING_INVESTED), None
+    years = H.window_years(left)
+    mix = H.mix_of(i.invested, p.split, i.history, years)
+    if isinstance(mix, H.NoCount):
+        return GoalMoreReturn(reason=mix.reason, left_out=list(mix.left_out)), None
+    products = H.window_products(mix.returns, years)
+    median = H.annualised(H.median_of(products), years)
+    thin = len(products) < H.THIN_BELOW
+    shown = {
+        "window_years": years,
+        "windows": len(products),
+        "median": median,
+        "best": H.annualised(max(products), years),
+        "thin": thin,
+        "left_out": list(mix.left_out),
+        "sources": [
+            GoalReferenceSource(
+                key=s.key,
+                source=s.source,
+                url=s.url,
+                licence=s.licence,
+                attribution=s.attribution,
+                read_on=s.read_on,
+                first_year=min(s.returns),
+                last_year=max(s.returns),
+            )
+            for s in mix.series
+        ],
+    }
+    needed = _needed_return(i, p, target)
+    if needed is None:
+        return GoalMoreReturn(reason=GoalRouteReason.OUT_OF_RANGE, **shown), None
+    route = GoalMoreReturn(
+        available=True,
+        needed_return=needed,
+        reached_windows=H.reached(needed, products, years),
+        verdict=H.verdict_of(needed, products, years),
+        **shown,
+    )
+    return route, None if thin else median
 
 
 def _assumptions(p: Projection) -> list[GoalAssumption]:
