@@ -202,10 +202,21 @@ def month_spending(
     HouseholdMonth.regular_spending of the same month built with the same codes, also when a
     marked payment's code nets to 0 in it."""
     out: dict[AllocationCategory, Decimal] = {}
-    for codes in cashflow.spending_by_category.values():
-        for code, value in codes.items():
-            if code not in one_off_codes:
-                out[code] = out.get(code, ZERO) + value
+    if lines:
+        # From the lines: month_cashflow's `spending_by_category` drops a code, or a whole
+        # group, that nets to 0 in the month, so a one-off payment and a regular refund of the
+        # same amount in one group would leave the refund out. A code that nets to 0 is left
+        # out here too, as month_cashflow leaves it out.
+        for line in lines:
+            code = counted_as(line)
+            if counted(code) and code not in one_off_codes:
+                out[code] = out.get(code, ZERO) - line.amount
+        out = {code: value for code, value in out.items() if value}
+    else:
+        for codes in cashflow.spending_by_category.values():
+            for code, value in codes.items():
+                if code not in one_off_codes:
+                    out[code] = out.get(code, ZERO) + value
     for line in lines:
         if marked_one_off(line, one_off_ids, one_off_codes):
             # month_cashflow drops a code (or a group) that nets to 0 in the month, a purchase

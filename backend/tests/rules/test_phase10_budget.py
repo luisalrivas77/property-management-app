@@ -11,7 +11,10 @@ import pytest
 from hausbuch.rules.budget import budget as B
 from hausbuch.rules.budget.references import fill, reference, references
 from hausbuch.rules.health.figures import savings_rate
-from hausbuch.rules.household.taxonomy import ONE_OFF, TAXONOMY
+from hausbuch.rules.health.month import cashflow_rows
+from hausbuch.rules.household.cashflow import month_cashflow
+from hausbuch.rules.household.taxonomy import ONE_OFF, TAXONOMY, one_off_codes
+from hausbuch.rules.plan import spending as SP
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.budget import BudgetLineKey as L
 from hausbuch.schemas.budget import BudgetTargets
@@ -30,10 +33,11 @@ CASES = [(name, case) for name in BUDGET_FILES for case in phase10.load(name).ca
 # a payment marked one-off moves to one-off spending in rules/health/month and
 # rules/plan/spending. A snapshot already stored keeps its old version and is never rewritten
 # (D242); only a month stored from now on carries this one. §7.12 (b), (c) changes it once
-# more (D307, D308: the one-off codes per household and the Sparquote without them).
+# more (D307, D308: the one-off codes per household and the Sparquote without them; the
+# one-off sums read from the month's lines, so a group netting to 0 keeps its one-off).
 MAIN_RULE_VERSION = "1a81f62877cf958eca3c22b40e99c3ba14a5862844d95ed1e0fe983fe1cf9784"
 WAVE3_RULE_VERSION = "3d24e195585146a011f8ec677ef054a8d19cccd92998db4b178c357317f4551d"
-ONE_OFF_RULE_VERSION = "5547fda12de35578842aabc3d7adcb0d775fe93dec63dc82880c29cc3d828efd"
+ONE_OFF_RULE_VERSION = "19e42b2973de12a8fc88b5186f811b2939d19bab14168566651054e806ddc9b2"
 
 
 def _view(case: phase10.BudgetCase):
@@ -324,6 +328,80 @@ def test_uncategorized_lines_netting_to_zero_over_the_window_keep_the_todo() -> 
     (todo,) = view.todos
     assert todo.code is HealthTodoCode.UNCATEGORIZED_LINES
     assert todo.action == "2 Zahlungen einordnen"
+
+
+# --- a one-off payment whose group nets to 0 in its month (review of §7.12) ---------------
+
+
+def _netting_one_off(extra: list[tuple[C, str]], switches: dict[C, bool] | None = None):
+    """Three months of salary 3,000 and rent 1,000, `extra` (signed as on the account) in the
+    second, the one-off codes the taxonomy's with `switches`: the months, their lines, the
+    Budget and the codes in force."""
+    codes = one_off_codes(switches)
+    months = []
+    for i, month in enumerate(("2027-01", "2027-02", "2027-03")):
+        private = [
+            phase10.Booking(category=C.HH_SALARY, amount=Decimal("3000.00")),
+            phase10.Booking(category=C.HH_RENT, amount=Decimal("-1000.00")),
+        ]
+        if i == 1:
+            private += [phase10.Booking(category=c, amount=Decimal(a)) for c, a in extra]
+        months.append(phase10.MonthInput(month=month, private=private))
+    built = [phase10.household(m, "netting-one-off", codes) for m in months]
+    hms, lines = [b[0] for b in built], [b[1] for b in built]
+    view = B.budget(hms, lines, {}, BudgetTargets(), as_of=AS_OF, one_off_codes=codes)
+    return hms, lines, view, codes
+
+
+@pytest.mark.parametrize(
+    ("extra", "switches", "one_off_code", "refund_code"),
+    [
+        # a default one-off code (D307) and a regular refund in the same group (Gesundheit)
+        (
+            [(C.HH_DENTAL_OPTICAL, "-200.00"), (C.HH_DOCTOR, "200.00")],
+            None,
+            C.HH_DENTAL_OPTICAL,
+            C.HH_DOCTOR,
+        ),
+        # a code the household switched on, and a refund in its group (Reisen)
+        (
+            [(C.HH_FLIGHTS, "-300.00"), (C.HH_TRAVEL, "300.00")],
+            {C.HH_FLIGHTS: True},
+            C.HH_FLIGHTS,
+            C.HH_TRAVEL,
+        ),
+    ],
+    ids=["default_code", "switched_on_code"],
+)
+def test_a_one_off_payment_whose_group_nets_to_zero(
+    extra, switches, one_off_code, refund_code
+) -> None:
+    """month_cashflow drops a group that nets to 0 in the month; the one-off payment still
+    leaves the regular spending, and the Budget, the Sparquote and spending in play agree."""
+    hms, lines, view, codes = _netting_one_off(extra, switches)
+    paid = -Decimal(extra[0][1])
+    feb = hms[1]
+    assert feb.spending == Decimal("1000.00")  # the group nets to 0
+    assert feb.one_off_spending == paid
+    assert feb.regular_spending == Decimal("1000.00") - paid
+    assert feb.saved + feb.one_off_spending == feb.income - feb.regular_spending
+    # the Budget reads it without raising: one-off beside the partition, the refund regular
+    assert view.one_off is not None and view.one_off.total == paid
+    assert {c.category: c.total for c in view.one_off.codes} == {one_off_code: paid}
+    assert view.months[1].one_off == paid
+    by_code = {c.category: c.total for li in view.lines for c in li.codes}
+    assert by_code[refund_code] == -paid
+    saving = next(li for li in view.lines if li.key is L.SAVING)
+    assert saving.total == Decimal("6000.00") + paid
+    assert saving.share == savings_rate(hms).rate
+    # spending in play's regular spending per code adds up to the month's
+    per_code = SP.month_spending(_cashflow(feb, lines[1]), lines[1], frozenset(), codes)
+    assert per_code == {C.HH_RENT: Decimal("1000.00"), refund_code: -paid}
+    assert sum(per_code.values()) == feb.regular_spending
+
+
+def _cashflow(month, lines):
+    return month_cashflow(month.month, cashflow_rows(lines), saved=Decimal("0.00"))
 
 
 # --- marks at the precision the sentence prints (review of PR #490) ----------------------

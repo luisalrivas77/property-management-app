@@ -163,15 +163,24 @@ def household_month(
         return _ids(*(block.sources_by_block.get(n, []) for block in rental for n in names))
 
     private_spending = sum(private.spending_by_group.values(), ZERO)
-    one_off = sum(
-        (
-            v
-            for codes in private.spending_by_category.values()
-            for c, v in codes.items()
-            if c in one_off_codes
-        ),
-        ZERO,
-    )
+    if lines:
+        # From the lines, not `spending_by_category`: month_cashflow drops a code, or a whole
+        # group, that nets to 0 in the month (a dentist's bill and a doctor's refund of the
+        # same amount), while the one-off payment still leaves the regular spending.
+        one_off = -sum(
+            (li.amount for li in roles.get("spending", []) if _counted_as(li) in one_off_codes),
+            ZERO,
+        )
+    else:
+        one_off = sum(
+            (
+                v
+                for codes in private.spending_by_category.values()
+                for c, v in codes.items()
+                if c in one_off_codes
+            ),
+            ZERO,
+        )
     marked = [li for li in roles.get("spending", []) if _marked(li, one_off_ids, one_off_codes)]
     one_off += -sum((li.amount for li in marked), ZERO)
     result = sum((block.result for block in rental), ZERO)
