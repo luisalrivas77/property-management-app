@@ -7766,7 +7766,7 @@ export interface components {
          * @description §7.11 (a) 2: the mix the goal's walk invests the money above the reserve in. A kind
          *     without a typed yearly rate is in `left_out` and the other kind takes its share; when
          *     every kind with a share is left out, `shares` is None (nothing moves) and the to-do
-         *     „Rendite eintragen“ names them. Computed by rules/plan/split.py from the levers and the
+         *     „Rendite eintragen“ names them. Computed by rules/investment_split.py from the levers and the
          *     stored rows, on every read.
          */
         EffectiveSplit: {

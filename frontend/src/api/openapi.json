@@ -20015,7 +20015,7 @@
           "source"
         ],
         "title": "EffectiveSplit",
-        "description": "§7.11 (a) 2: the mix the goal's walk invests the money above the reserve in. A kind\nwithout a typed yearly rate is in `left_out` and the other kind takes its share; when\nevery kind with a share is left out, `shares` is None (nothing moves) and the to-do\n„Rendite eintragen“ names them. Computed by rules/plan/split.py from the levers and the\nstored rows, on every read."
+        "description": "§7.11 (a) 2: the mix the goal's walk invests the money above the reserve in. A kind\nwithout a typed yearly rate is in `left_out` and the other kind takes its share; when\nevery kind with a share is left out, `shares` is None (nothing moves) and the to-do\n„Rendite eintragen“ names them. Computed by rules/investment_split.py from the levers and the\nstored rows, on every read."
       },
       "EndTenancyBody": {
         "properties": {
