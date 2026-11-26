@@ -64,7 +64,13 @@ export const planPageText = defineMessages({
     notReached: "nicht erreicht",
     planPanelText: (without: string, gap: string) =>
       `So wie heute erreicht ihr ${without}. Die Lücke von ${gap} schließt ihr durch mehr Anlegen und weniger Wünsche.`,
-    planPanelOnTrack: (month: string) => `Ohne Änderung erreicht ihr euer Ziel im ${month}. Es braucht keinen Schritt.`,
+    // on track (Luis, 26 Nov 2026: „it doesn't say what the plan is“): what keeps you there
+    keepSaving: "Weiter sparen",
+    investNow: "Jetzt anlegen",
+    atYourRates: "Bei euren Raten",
+    perMonth: (amount: string) => `${amount} im Monat`,
+    planPanelOnTrack: (month: string, saved: string | null, above: string | null) =>
+      `Ohne Änderung erreicht ihr euer Ziel im ${month}, vorausgesetzt ihr spart weiter ${saved ? `im Schnitt ${saved} im Monat` : "wie bisher"}, legt das Geld über dem Reserve-Ziel an${above ? ` (heute ${above})` : ""} und eure Anlagen wachsen mit den Raten, die ihr eingetragen habt. Wenn etwas davon nicht mehr stimmt, verschiebt sich das Datum; „Wenn es schlechter läuft“ zeigt, um wie viel.`,
     inDepot: "in Fonds",
     inCrypto: "in Krypto",
     wantsDown: "Diese Wünsche werden kleiner",
@@ -205,7 +211,12 @@ export const planPageText = defineMessages({
     atGoal: "At the goal",
     notReached: "not reached",
     planPanelText: (without, gap) => `As things are you reach ${without}. You close the gap of ${gap} by investing more and spending less on wants.`,
-    planPanelOnTrack: (month) => `Without a change you reach your goal in ${month}. No step is needed.`,
+    keepSaving: "Keep saving",
+    investNow: "Invest now",
+    atYourRates: "At your rates",
+    perMonth: (amount) => `${amount} a month`,
+    planPanelOnTrack: (month, saved, above) =>
+      `Without a change you reach your goal in ${month}, provided you keep saving ${saved ? `${saved} a month on average` : "as you have"}, invest the money above your reserve target${above ? ` (${above} today)` : ""} and your investments grow at the rates you entered. If any of this stops being true, the date moves; “If things go worse” shows by how much.`,
     inDepot: "in funds",
     inCrypto: "in crypto",
     wantsDown: "These wants go down",
