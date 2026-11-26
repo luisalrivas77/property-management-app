@@ -186,6 +186,16 @@ test("the old Jahresfragen address opens Eure Angaben at its question", async ({
   const yearQuestions = page.getByRole("region", { name: "Fragen zum Jahr" });
   await expect(yearQuestions.locator(".fragen-group")).toContainText("Wohnung Alt");
 
+  // The server's to-do „Bruttogehalt eintragen“ (`#arbeitslohn`) opens Arbeitslohn with its
+  // typing form unfolded.
+  await page.goto(`/tax/${YEAR}?tab=angaben&eigentuemer=${b.id}#arbeitslohn`);
+  await expect(page).toHaveURL(`/tax/${YEAR}?tab=angaben&thema=pay&eigentuemer=${b.id}#arbeitslohn`);
+  await expect(page.locator("details#arbeitslohn")).toHaveAttribute("open", "");
+
+  // A property input's old anchor opens the Immobilie step.
+  await page.goto(`/tax/${YEAR}?tab=angaben#tax-useful-life`);
+  await expect(page).toHaveURL(`/tax/${YEAR}?schritt=immobilie#tax-useful-life`);
+
   // An old anchor of the one-page form opens the topic of its kind.
   await page.goto(`/tax/${YEAR}?tab=angaben#eingabe-other_insurance`);
   await expect(page).toHaveURL(`/tax/${YEAR}?tab=angaben&thema=insurance#eingabe-other_insurance`);
