@@ -34,11 +34,11 @@ from uuid import UUID
 from hausbuch.rules.errors import ANLAGE_N_NO_PAY, RuleError
 from hausbuch.rules.tax._common import unique, warning
 from hausbuch.rules.tax.anlage_n._base import ZERO, floor_euros, in_year
-from hausbuch.rules.tax.anlage_n.booked_benefits import booked_benefit_warnings
 from hausbuch.rules.tax.anlage_n.children import child_months, children_months
 from hausbuch.rules.tax.anlage_n.draft import RULE_SET_SOURCE, TARIFF_SOURCE, Itemised, itemise
 from hausbuch.rules.tax.anlage_n.summary import household_figures
 from hausbuch.rules.tax.anlage_n.vorsorge import vorsorge
+from hausbuch.rules.tax.booked_inputs import booked_benefit_warnings
 from hausbuch.rules.tax.questionnaire import extraordinary_threshold
 from hausbuch.rules.tax.tariff import church_tax, income_tax, soli
 from hausbuch.schemas.employment import (

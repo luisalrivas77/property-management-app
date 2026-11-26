@@ -1,0 +1,235 @@
+# Phase 10 §7.8 (a), D293: confirmed private lines whose household code proposes a return input,
+# against the current rows of that kind (rules/tax/booked_inputs.py). Invented owners, payees
+# and amounts only (the repo is public).
+#
+# Amounts are signed as the bank books them: a benefit is a credit (+), a donation, a childcare
+# or a §35a payment a debit (−); a payment back has the other sign. Labels (A, B, l1, r1, ...)
+# become fixed UUIDs in the runner. Each case lists every proposal it expects, in order; a case
+# with `expect: []` expects none. `gap` is the kind's household gate: the proposals' differences
+# of a group sum to it (benefit, donation, childcare; §35a proposes no amount).
+#
+# Each group has a case for the state after the person did what its card says ("after
+# confirming"), where the proposal is gone. Two states a row cannot close stay proposed and are
+# not blocking (D293 as built): a childcare amount the person lowered, and a §35a labour share
+# below its bill (the §35a case closes by one own-invoice row per payee instead).
+
+cases:
+  # --- Lohnersatzleistungen ------------------------------------------------------------------
+  - name: benefit of one owner, nothing typed
+    tax_year: 2026
+    owners: [A, B]
+    lines:
+      - {id: l1, category: hh_wage_replacement, booked_on: 2026-03-30, amount: "640.00", owners: [A], payee: Elterngeldstelle Nord, purpose: Elterngeld 03/2026}
+      - {id: l2, category: hh_wage_replacement, booked_on: 2026-04-29, amount: "640.00", owners: [A], payee: Elterngeldstelle Nord, purpose: Elterngeld 04/2026}
+      - {id: l3, category: hh_wage_replacement, booked_on: 2025-12-30, amount: "640.00", owners: [A], payee: Elterngeldstelle Nord, purpose: Elterngeld 12/2025}
+    expect:
+      - {group: benefit, owner: A, booked: "1280.00", typed: "0.00", difference: "1280.00", allocations: [l1, l2], benefit: elterngeld, blocking: true, value: {benefit: elterngeld, amount: "1280.00"}}
+    gap: {benefit: "1280.00"}
+
+  - name: benefit after confirming its proposal
+    tax_year: 2026
+    owners: [A, B]
+    lines:
+      - {id: l1, category: hh_wage_replacement, booked_on: 2026-03-30, amount: "640.00", owners: [A], payee: Elterngeldstelle Nord, purpose: Elterngeld 03/2026}
+      - {id: l2, category: hh_wage_replacement, booked_on: 2026-04-29, amount: "640.00", owners: [A], payee: Elterngeldstelle Nord, purpose: Elterngeld 04/2026}
+    rows:
+      - {id: r1, owner: A, kind: replacement_income, tax_year: 2026, value: {benefit: elterngeld, amount: "1280.00"}}
+    expect: []
+    gap: {benefit: "0.00"}
+
+  - name: benefit typed on the other spouse still covers it (joint assessment)
+    tax_year: 2026
+    owners: [A, B]
+    lines:
+      - {id: l1, category: hh_wage_replacement, booked_on: 2026-05-28, amount: "900.00", owners: [A], payee: Krankenkasse West, purpose: Krankengeld Mai}
+    rows:
+      - {id: r1, owner: B, kind: replacement_income, tax_year: 2026, value: {benefit: krankengeld, amount: "900.00"}}
+    expect: []
+    gap: {benefit: "0.00"}
+
+  - name: joint account benefit asks the owner; Kurzarbeitergeld never counts
+    tax_year: 2026
+    owners: [A, B]
+    lines:
+      - {id: l1, category: hh_wage_replacement, booked_on: 2026-06-15, amount: "500.00", owners: [A, B], payee: Krankenkasse West, purpose: Krankengeld Juni}
+      - {id: l2, category: hh_wage_replacement, booked_on: 2026-06-30, amount: "400.00", owners: [A], payee: Arbeitgeber Muster GmbH, purpose: Kurzarbeitergeld 06/2026}
+    expect:
+      - {group: benefit, owner: null, booked: "500.00", typed: "0.00", difference: "500.00", allocations: [l1], benefit: krankengeld, needs: [owner], blocking: true, value: {benefit: krankengeld, amount: "500.00"}}
+    gap: {benefit: "500.00"}
+
+  - name: benefit with a payment back and no kind named
+    tax_year: 2026
+    owners: [A]
+    lines:
+      - {id: l1, category: hh_wage_replacement, booked_on: 2026-02-27, amount: "700.00", owners: [A], payee: Bundesagentur Muster, purpose: Leistung 02/2026}
+      - {id: l2, category: hh_wage_replacement, booked_on: 2026-03-10, amount: "-200.00", owners: [A], payee: Bundesagentur Muster, purpose: Rueckforderung 02/2026}
+    expect:
+      - {group: benefit, owner: A, booked: "500.00", typed: "0.00", difference: "500.00", allocations: [l1, l2], needs: [benefit], blocking: true, value: {benefit: null, amount: "500.00"}}
+    gap: {benefit: "500.00"}
+
+  # --- Spenden -------------------------------------------------------------------------------
+  - name: donations, one proposal per payee, a receipt above 300 euros
+    tax_year: 2026
+    owners: [A, B]
+    lines:
+      - {id: d1, category: hh_donation, booked_on: 2026-01-20, amount: "-50.00", owners: [A, B], payee: Tierhilfe Nord e.V., purpose: Spende Januar}
+      - {id: d2, category: hh_donation, booked_on: 2026-03-05, amount: "-30.00", owners: [A], payee: Kinderhilfe Sued, purpose: Spende}
+      - {id: d3, category: hh_donation, booked_on: 2026-11-02, amount: "-400.00", owners: [A, B], payee: TIERHILFE NORD E.V., purpose: Jahresspende}
+      - {id: d4, category: hh_groceries, booked_on: 2026-03-06, amount: "-25.00", owners: [A], payee: Markt Muster, purpose: Einkauf}
+    expect:
+      - {group: donation, payee: Tierhilfe Nord e.V., booked: "450.00", typed: "0.00", difference: "450.00", allocations: [d1, d3], receipt_needed: true, ask_party: true, value: {expense_class: donation, amount: "450.00", recipient_label: Tierhilfe Nord e.V.}}
+      - {group: donation, payee: Kinderhilfe Sued, booked: "30.00", typed: "0.00", difference: "30.00", allocations: [d2], ask_party: true, value: {expense_class: donation, amount: "30.00", recipient_label: Kinderhilfe Sued}}
+    gap: {donation: "480.00"}
+
+  - name: donation after confirming one payee's proposal
+    tax_year: 2026
+    owners: [A, B]
+    lines:
+      - {id: d1, category: hh_donation, booked_on: 2026-01-20, amount: "-50.00", owners: [A, B], payee: Tierhilfe Nord e.V., purpose: Spende Januar}
+      - {id: d2, category: hh_donation, booked_on: 2026-03-05, amount: "-30.00", owners: [A], payee: Kinderhilfe Sued, purpose: Spende}
+      - {id: d3, category: hh_donation, booked_on: 2026-11-02, amount: "-400.00", owners: [A, B], payee: TIERHILFE NORD E.V., purpose: Jahresspende}
+    rows:
+      - {id: r1, kind: special_expense, tax_year: 2026, value: {expense_class: donation, amount: "450.00", recipient_label: Tierhilfe Nord e.V.}}
+    expect:
+      - {group: donation, payee: Kinderhilfe Sued, booked: "30.00", typed: "0.00", difference: "30.00", allocations: [d2], ask_party: true, value: {expense_class: donation, amount: "30.00", recipient_label: Kinderhilfe Sued}}
+    gap: {donation: "30.00"}
+
+  - name: donation typed by hand under another name covers the payees in order
+    tax_year: 2026
+    owners: [A]
+    lines:
+      - {id: d1, category: hh_donation, booked_on: 2026-01-20, amount: "-50.00", owners: [A], payee: Tierhilfe Nord e.V., purpose: Spende}
+      - {id: d2, category: hh_donation, booked_on: 2026-03-05, amount: "-30.00", owners: [A], payee: Kinderhilfe Sued, purpose: Spende}
+    rows:
+      - {id: r1, kind: special_expense, tax_year: 2026, value: {expense_class: donation, amount: "60.00", recipient_label: Spenden 2026}}
+      - {id: r2, kind: special_expense, tax_year: 2025, value: {expense_class: donation, amount: "80.00", recipient_label: Kinderhilfe Sued}}
+    expect:
+      - {group: donation, payee: Kinderhilfe Sued, booked: "30.00", typed: "10.00", difference: "20.00", allocations: [d2], ask_party: true, value: {expense_class: donation, amount: "20.00", recipient_label: Kinderhilfe Sued}}
+    gap: {donation: "20.00"}
+
+  - name: a donation paid back in full proposes nothing
+    tax_year: 2026
+    owners: [A]
+    lines:
+      - {id: d1, category: hh_donation, booked_on: 2026-02-01, amount: "-100.00", owners: [A], payee: Tierhilfe Nord e.V., purpose: Spende}
+      - {id: d2, category: hh_donation, booked_on: 2026-02-10, amount: "120.00", owners: [A], payee: Tierhilfe Nord e.V., purpose: Rueckbuchung}
+    expect: []
+    gap: {donation: "0.00"}
+
+  - name: a withdrawn donation row no longer covers its payee
+    tax_year: 2026
+    owners: [A]
+    lines:
+      - {id: d1, category: hh_donation, booked_on: 2026-02-01, amount: "-75.00", owners: [A], payee: Tierhilfe Nord e.V., purpose: Spende}
+    rows:
+      - {id: r1, kind: special_expense, tax_year: 2026, value: {expense_class: donation, amount: "75.00", recipient_label: Tierhilfe Nord e.V.}}
+      - {id: r2, kind: special_expense, tax_year: 2026, value: {expense_class: donation, amount: "75.00", recipient_label: Tierhilfe Nord e.V.}, supersedes: r1, withdrawn: true}
+    expect:
+      - {group: donation, payee: Tierhilfe Nord e.V., booked: "75.00", typed: "0.00", difference: "75.00", allocations: [d1], ask_party: true, value: {expense_class: donation, amount: "75.00", recipient_label: Tierhilfe Nord e.V.}}
+    gap: {donation: "75.00"}
+
+  # --- Kita und Tagesmutter ------------------------------------------------------------------
+  - name: childcare with one child under 14, the child pre-selected
+    tax_year: 2026
+    owners: [A, B]
+    lines:
+      - {id: k1, category: hh_childcare, booked_on: 2026-01-05, amount: "-310.00", owners: [A, B], payee: Kita Sonnenblume, purpose: Beitrag Januar}
+      - {id: k2, category: hh_childcare, booked_on: 2026-02-05, amount: "-310.00", owners: [A, B], payee: Kita Sonnenblume, purpose: Beitrag Februar}
+    rows:
+      - {id: c1, kind: child, tax_year: 2024, value: {born_on: 2022-05-14}}
+      - {id: c2, kind: child, tax_year: 2026, value: {born_on: 2009-08-01}}
+    expect:
+      - {group: childcare, payee: Kita Sonnenblume, booked: "620.00", typed: "0.00", difference: "620.00", allocations: [k1, k2], child: c1, value: {child_id: c1, amount: "620.00", paid_to_account: true}}
+    gap: {childcare: "620.00"}
+
+  - name: childcare with two children under 14 asks which child
+    tax_year: 2026
+    owners: [A, B]
+    lines:
+      - {id: k1, category: hh_childcare, booked_on: 2026-01-05, amount: "-180.00", owners: [A, B], payee: Tagesmutter Muster, purpose: Betreuung Januar}
+    rows:
+      - {id: c1, kind: child, tax_year: 2024, value: {born_on: 2020-09-01}}
+      - {id: c2, kind: child, tax_year: 2024, value: {born_on: 2023-02-11}}
+    expect:
+      - {group: childcare, payee: Tagesmutter Muster, booked: "180.00", typed: "0.00", difference: "180.00", allocations: [k1], needs: [child], choices: [c1, c2], value: {child_id: null, amount: "180.00", paid_to_account: true}}
+    gap: {childcare: "180.00"}
+
+  - name: childcare after confirming its proposal
+    tax_year: 2026
+    owners: [A, B]
+    lines:
+      - {id: k1, category: hh_childcare, booked_on: 2026-01-05, amount: "-310.00", owners: [A, B], payee: Kita Sonnenblume, purpose: Beitrag Januar}
+      - {id: k2, category: hh_childcare, booked_on: 2026-02-05, amount: "-310.00", owners: [A, B], payee: Kita Sonnenblume, purpose: Beitrag Februar}
+    rows:
+      - {id: c1, kind: child, tax_year: 2024, value: {born_on: 2022-05-14}}
+      - {id: r1, kind: childcare_cost, tax_year: 2026, value: {child_id: c1, amount: "620.00", paid_to_account: true}}
+    expect: []
+    gap: {childcare: "0.00"}
+
+  - name: childcare lowered for meals stays proposed for the rest, not blocking
+    tax_year: 2026
+    owners: [A, B]
+    lines:
+      - {id: k1, category: hh_childcare, booked_on: 2026-01-05, amount: "-310.00", owners: [A, B], payee: Kita Sonnenblume, purpose: Beitrag Januar}
+      - {id: k2, category: hh_childcare, booked_on: 2026-02-05, amount: "-310.00", owners: [A, B], payee: Kita Sonnenblume, purpose: Beitrag Februar}
+    rows:
+      - {id: c1, kind: child, tax_year: 2024, value: {born_on: 2022-05-14}}
+      - {id: r1, kind: childcare_cost, tax_year: 2026, value: {child_id: c1, amount: "560.00", paid_to_account: true}}
+    expect:
+      - {group: childcare, payee: Kita Sonnenblume, booked: "620.00", typed: "560.00", difference: "60.00", allocations: [k1, k2], child: c1, value: {child_id: c1, amount: "60.00", paid_to_account: true}}
+    gap: {childcare: "60.00"}
+
+  # --- Handwerker und Haushaltsdienste (§35a) ------------------------------------------------
+  - name: household services never take the amount from the bank line
+    tax_year: 2026
+    owners: [A, B]
+    lines:
+      - {id: h1, category: hh_household_services, booked_on: 2026-04-12, amount: "-1190.00", owners: [A, B], payee: Malerbetrieb Muster, purpose: Rechnung 2026-041}
+      - {id: h2, category: hh_household_services, booked_on: 2026-05-02, amount: "-60.00", owners: [A, B], payee: Reinigung Blitz, purpose: Mai}
+      - {id: h3, category: hh_household_services, booked_on: 2026-06-02, amount: "-60.00", owners: [A, B], payee: Reinigung Blitz, purpose: Juni}
+    rows:
+      - {id: r1, kind: household_services, tax_year: 2026, value: {service_class: haushaltsnah, labour_cost: "200.00", paid_to_account: true, source: nebenkostenabrechnung}}
+    expect:
+      - {group: household_services, payee: Malerbetrieb Muster, booked: "1190.00", typed: "0.00", difference: "1190.00", allocations: [h1], needs: [labour_cost, service_class], value: {paid_to_account: true, source: own_invoice}}
+      - {group: household_services, payee: Reinigung Blitz, booked: "120.00", typed: "0.00", difference: "120.00", allocations: [h2, h3], needs: [labour_cost, service_class], value: {paid_to_account: true, source: own_invoice}}
+
+  - name: household services after confirming the first payee's labour share
+    tax_year: 2026
+    owners: [A, B]
+    lines:
+      - {id: h1, category: hh_household_services, booked_on: 2026-04-12, amount: "-1190.00", owners: [A, B], payee: Malerbetrieb Muster, purpose: Rechnung 2026-041}
+      - {id: h2, category: hh_household_services, booked_on: 2026-05-02, amount: "-60.00", owners: [A, B], payee: Reinigung Blitz, purpose: Mai}
+    rows:
+      - {id: r1, kind: household_services, tax_year: 2026, value: {service_class: handwerker, labour_cost: "640.00", paid_to_account: true, source: own_invoice}}
+    expect:
+      - {group: household_services, payee: Reinigung Blitz, booked: "60.00", typed: "0.00", difference: "60.00", allocations: [h2], needs: [labour_cost, service_class], value: {paid_to_account: true, source: own_invoice}}
+
+  - name: household services, one own-invoice row per payee closes all
+    tax_year: 2026
+    owners: [A, B]
+    lines:
+      - {id: h1, category: hh_household_services, booked_on: 2026-04-12, amount: "-1190.00", owners: [A, B], payee: Malerbetrieb Muster, purpose: Rechnung 2026-041}
+      - {id: h2, category: hh_household_services, booked_on: 2026-05-02, amount: "-60.00", owners: [A, B], payee: Reinigung Blitz, purpose: Mai}
+    rows:
+      - {id: r1, kind: household_services, tax_year: 2026, value: {service_class: handwerker, labour_cost: "640.00", paid_to_account: true, source: own_invoice}}
+      - {id: r2, kind: household_services, tax_year: 2026, value: {service_class: haushaltsnah, labour_cost: "60.00", paid_to_account: true, source: own_invoice}}
+    expect: []
+
+  # --- every group at once, and another year -------------------------------------------------
+  - name: groups in order, lines of other years left out
+    tax_year: 2025
+    owners: [A]
+    lines:
+      - {id: l1, category: hh_wage_replacement, booked_on: 2025-07-30, amount: "300.00", owners: [A], payee: Elterngeldstelle Nord, purpose: Elterngeld 07/2025}
+      - {id: d1, category: hh_donation, booked_on: 2025-12-31, amount: "-20.00", owners: [A], payee: Kinderhilfe Sued, purpose: Spende}
+      - {id: d2, category: hh_donation, booked_on: 2026-01-01, amount: "-20.00", owners: [A], payee: Kinderhilfe Sued, purpose: Spende}
+      - {id: k1, category: hh_childcare, booked_on: 2025-09-05, amount: "-100.00", owners: [A], payee: Kita Sonnenblume, purpose: Beitrag}
+      - {id: h1, category: hh_household_services, booked_on: 2025-10-01, amount: "-90.00", owners: [A], payee: Reinigung Blitz, purpose: Oktober}
+    rows:
+      - {id: c1, kind: child, tax_year: 2025, value: {born_on: 2021-01-01}}
+    expect:
+      - {group: benefit, owner: A, booked: "300.00", typed: "0.00", difference: "300.00", allocations: [l1], benefit: elterngeld, blocking: true, value: {benefit: elterngeld, amount: "300.00"}}
+      - {group: donation, payee: Kinderhilfe Sued, booked: "20.00", typed: "0.00", difference: "20.00", allocations: [d1], ask_party: true, value: {expense_class: donation, amount: "20.00", recipient_label: Kinderhilfe Sued}}
+      - {group: childcare, payee: Kita Sonnenblume, booked: "100.00", typed: "0.00", difference: "100.00", allocations: [k1], child: c1, value: {child_id: c1, amount: "100.00", paid_to_account: true}}
+      - {group: household_services, payee: Reinigung Blitz, booked: "90.00", typed: "0.00", difference: "90.00", allocations: [h1], needs: [labour_cost, service_class], value: {paid_to_account: true, source: own_invoice}}
+    gap: {benefit: "300.00", donation: "20.00", childcare: "100.00"}
