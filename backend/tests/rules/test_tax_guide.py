@@ -80,9 +80,30 @@ def _todo_codes() -> set[str]:
     return {code for code, todo in entries if todo == "true"}
 
 
+def _notes_with_an_action() -> set[str]:
+    source = TODOS_TSX.read_text(encoding="utf-8")
+    block = re.search(r"export const WARNING_GUIDE\b[^=]*=\s*\{(.*?)\n\};", source, re.S)
+    assert block is not None
+    parts = re.split(r'^  "?([a-z0-9_.]+)"?: \{', block.group(1), flags=re.M)
+    entries = dict(zip(parts[1::2], parts[2::2], strict=True))
+    return {
+        code
+        for code, body in entries.items()
+        if re.match(r"\s*todo: false", body) and re.search(r"^    action:", body, re.M)
+    }
+
+
 def test_every_to_do_warning_has_a_step_and_notes_have_none():
     assert set(rule.STEP_OF_WARNING) == _todo_codes()
     assert set(rule.STEP_OF_WARNING) <= {c.value for c in WarningCode}
+
+
+def test_every_note_with_an_action_is_a_point_of_its_step():
+    """Wave 2's open point: the notes that carry something to check are guide points (never
+    blocking); return.child_over_18 joins them without a button (its place is ELSTER)."""
+    assert set(rule.NOTE_STEP) == _notes_with_an_action() | {"return.child_over_18"}
+    assert set(rule.NOTE_STEP) <= {c.value for c in WarningCode}
+    assert not set(rule.NOTE_STEP) & set(rule.STEP_OF_WARNING)
 
 
 def test_every_requirement_has_its_sender_and_month_data():
@@ -476,3 +497,97 @@ def test_the_benefit_warning_gives_way_to_its_proposal():
     assert [(p.code, p.proposal is not None) for p in result.points] == [
         ("return.benefit_booked", True)
     ]
+
+
+# --- wave 2's open points (phase 10 §7.6) ----------------------------------------------------
+
+
+def test_a_note_is_a_point_of_its_step_that_never_blocks():
+    result = rule.guide(
+        facts(
+            properties=[
+                rule.PropertyFacts(P1, [], [warning(WarningCode.AFA_PURCHASE_PRICE_MISMATCH)])
+            ],
+            owners=[
+                rule.OwnerFacts(A, "certified", [warning(WarningCode.ANLAGE_N_RECEIPT_MISSING)])
+            ],
+            estimate_warnings=[warning(WarningCode.RETURN_CHILDREN_MISMATCH)],
+        )
+    )
+    assert [(p.step, p.code, p.note, p.blocking) for p in result.points] == [
+        ("angaben", "return.children_mismatch", True, False),
+        ("property", "afa.purchase_price_mismatch", True, False),
+        ("review", "anlage_n.receipt_missing", True, False),
+    ]
+    assert all(s.state == "done" for s in result.steps)
+    assert result.ready is True
+    assert result.form_open("anlage_v", property_id=P1) == 0
+
+
+def test_a_refused_input_is_a_point_naming_it_and_the_step_holds():
+    refused = rule.OwnerFacts(A, None, (), refused="anlage_n.useful_life_missing")
+    result = rule.guide(
+        replace(
+            facts(owners=[refused], incomplete=True),
+            estimate_failed=True,
+            estimate_refused="anlage_n.useful_life_missing",  # the same refusal, read twice
+        )
+    )
+    assert [(p.step, p.form, p.code, p.owner_id, p.refused) for p in result.points] == [
+        ("angaben", "anlage_n", "return_input.refused", A, "anlage_n.useful_life_missing")
+    ]
+    assert (result.steps[0].state, result.steps[0].open) == ("open", 1)
+    assert result.ready is False
+
+    household = rule.guide(
+        replace(
+            facts(incomplete=True),
+            estimate_failed=True,
+            estimate_refused="return.household_services_cash",
+        )
+    )
+    assert [(p.form, p.owner_id, p.refused) for p in household.points] == [
+        ("return", None, "return.household_services_cash")
+    ]
+
+
+def test_a_step_whose_draft_failed_never_reads_done():
+    failed = rule.guide(
+        facts(
+            properties=[rule.PropertyFacts(P1, [], None)],
+            owners=[rule.OwnerFacts(A, None, ())],
+            incomplete=True,
+        )
+    )
+    assert [s.state for s in failed.steps][:2] == ["waiting", "waiting"]
+    no_pay = rule.guide(facts(owners=[rule.OwnerFacts(A, None, (), no_pay=True)]))
+    assert no_pay.steps[0].state == "open"  # the no-pay point, as before
+    estimate = rule.guide(replace(facts(incomplete=True), estimate_failed=True))
+    assert estimate.steps[0].state == "waiting"
+
+
+def test_two_overlapping_pairs_and_twins_are_one_point_each():
+    def overlap(first: str, second: str):
+        return warning(WarningCode.ANLAGE_N_PERIODS_OVERLAP, first=first, second=second)
+
+    def kindergeld(child: str):
+        return warning(WarningCode.RETURN_KINDERGELD_APPLY, born_month="2026-05", child=child)
+
+    result = rule.guide(
+        facts(
+            owners=[
+                rule.OwnerFacts(
+                    A,
+                    "certified",
+                    [
+                        overlap("2026-01-01/2026-06-30", "2026-03-01/2026-12-31"),
+                        overlap("2026-01-01/2026-06-30", "2026-05-01/2026-08-31"),
+                    ],
+                )
+            ],
+            estimate_warnings=[kindergeld("1"), kindergeld("2")],
+        )
+    )
+    codes = [p.code for p in result.points]
+    assert codes.count("anlage_n.periods_overlap") == 2
+    assert codes.count("return.kindergeld_apply") == 2

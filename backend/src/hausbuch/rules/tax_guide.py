@@ -85,6 +85,30 @@ STEP_OF_WARNING: dict[str, GuideStepKind] = {
     "anlage_n.payslip_gap": "review",
 }
 
+# The notes (`todo: false` in todos.tsx) that carry something to check, listed on the form
+# views only until phase 10 §7.6 wave 2's open point: each is a point of its step with the
+# note's action, never blocking (it says „stimmt es, ist nichts zu tun“), so it never holds a
+# step, a form card or the year open. tests/rules/test_tax_guide.py keeps this map to the
+# notes with an action in todos.tsx (plus return.child_over_18, whose step is ELSTER's Anlage
+# Kind and carries no button).
+NOTE_STEP: dict[str, Literal["angaben", "property", "review"]] = {
+    "afa.cost_row_unpaid": "property",
+    "afa.purchase_price_mismatch": "property",
+    "afa.movable_asset_no_evidence": "property",
+    "umlagen.mixed_terms": "property",
+    "reduced_rent.prognosis_needed": "property",
+    "limit.estimated_net": "review",
+    "interest.certificate_mismatch": "review",
+    "tax.travel_frequency": "review",
+    "anlage_n.receipt_missing": "review",
+    "anlage_n.work_room_centre": "angaben",
+    "anlage_n.work_room_partial": "angaben",
+    "anlage_n.first_workplace_check": "angaben",
+    "return.children_mismatch": "angaben",
+    "return.child_over_18": "angaben",
+    "return.childcare_until_14": "angaben",
+}
+
 # The Beleg a "documents" point stands for: the property's checklist requirement, or the
 # owner's wage certificate.
 WAGE_CERTIFICATE_KIND = "wage_certificate"
@@ -107,6 +131,21 @@ NO_PAY_CODE = "anlage_n.no_pay"
 # but whose amount is not typed yet (the whole-return estimate's MissingItem `benefit_letter`,
 # which raises no warning): a point of Eure Angaben, one per owner.
 BENEFIT_LETTER_CODE = "anlage_n.benefit_letter"
+
+# An input the rules refuse in a year that has rules (a draft's RuleError naming a typed row,
+# not a missing rule set): a point of Eure Angaben naming the refusal, so „bereit“ is held by
+# something the household can fix instead of a general sentence (phase 10 §7.6, wave 2's open
+# point). The year stays incomplete (the service keeps the source in `unavailable`).
+REFUSED_CODE = "return_input.refused"
+REFUSAL_CODES = frozenset(
+    {
+        "anlage_n.useful_life_missing",
+        "anlage_n.work_room_excludes_day_rate",
+        "return_input.scope_invalid",
+        "return.childcare_age",
+        "return.household_services_cash",
+    }
+)
 
 # The bookings that propose a tax input (phase 10 §7.8 (a), D293, rules/tax/booked_inputs.py):
 # one point of Eure Angaben per proposal, with its POST /return-inputs payload. The benefit
@@ -183,14 +222,21 @@ class PropertyFacts:
 @dataclass(frozen=True)
 class OwnerFacts:
     """One owner: the Anlage N status ("certified", "estimate", "none"; None: no draft, see
-    no_pay), its warnings, whether the draft refused for want of any pay source, and whether a
-    wage-replacement benefit announced in the Jahresfragen is still to be typed."""
+    no_pay), its warnings, whether the draft refused for want of any pay source, whether a
+    wage-replacement benefit announced in the Jahresfragen is still to be typed, and the code
+    of an input the draft refused (REFUSAL_CODES)."""
 
     owner_id: object
     status: Literal["certified", "estimate", "none"] | None
     warnings: Sequence[DraftWarning]
     no_pay: bool = False
     benefit_missing: bool = False
+    refused: str | None = None
+
+    @property
+    def failed(self) -> bool:
+        """No Anlage N for the year, for another reason than no pay at all."""
+        return self.status is None and not self.no_pay
 
 
 @dataclass(frozen=True)
@@ -212,6 +258,10 @@ class GuideInput:
     # not read (the estimate's `return.benefit_booked` warnings then stay points as before);
     # a list, even empty: those warnings are left to the proposals.
     proposals: Sequence[BookedProposal] | None = None
+    # The whole-return estimate could not be computed (its warnings, which are points of Eure
+    # Angaben, are unknown), and the code when it refused an input (REFUSAL_CODES).
+    estimate_failed: bool = False
+    estimate_refused: str | None = None
 
 
 @dataclass(frozen=True)
@@ -334,9 +384,12 @@ def points(facts: GuideInput, docs: list[GuideDocument]) -> list[GuidePoint]:
     def add(warning: DraftWarning, form, property_id=None, owner_id=None) -> None:
         if facts.proposals is not None and warning.code.value == PROPOSAL_CODE["benefit"]:
             return  # the benefit proposal below stands for it, with its payload
-        step = STEP_OF_WARNING.get(warning.code.value)
+        note = warning.code.value in NOTE_STEP
+        step = NOTE_STEP.get(warning.code.value) or STEP_OF_WARNING.get(warning.code.value)
         if step is None or step == "questions":
             return
+        if note and step == "property" and property_id is None:
+            step = "review"  # a property's note read without its property: Prüfen
         if step == "documents":
             if _covered(warning.code.value, docs, property_id, owner_id):
                 return
@@ -362,6 +415,8 @@ def points(facts: GuideInput, docs: list[GuideDocument]) -> list[GuidePoint]:
                 property_id=property_id,
                 owner_id=owner_id,
                 warning=warning,
+                note=note,
+                blocking=not note,
             )
         )
 
@@ -381,8 +436,27 @@ def points(facts: GuideInput, docs: list[GuideDocument]) -> list[GuidePoint]:
                     owner_id=owner.owner_id,
                 )
             )
+        if owner.refused:
+            out.append(
+                GuidePoint(
+                    step="angaben",
+                    form="anlage_n",
+                    code=REFUSED_CODE,
+                    owner_id=owner.owner_id,
+                    refused=owner.refused,
+                )
+            )
         for warning in owner.warnings:
             add(warning, "anlage_n", owner_id=owner.owner_id)
+    # The estimate drafts every Anlage N too: a refusal an owner's point already names is not
+    # a second point.
+    owners_refused = {o.refused for o in facts.owners if o.refused}
+    if facts.estimate_refused and facts.estimate_refused not in owners_refused:
+        out.append(
+            GuidePoint(
+                step="angaben", form="return", code=REFUSED_CODE, refused=facts.estimate_refused
+            )
+        )
     for warning in facts.estimate_warnings:
         add(warning, "return")
     for proposal in facts.proposals or ():
@@ -442,16 +516,26 @@ def guide(facts: GuideInput) -> GuideResult:
             and (property_id is None or p.property_id == property_id)
         )
 
+    # A step whose own draft could not be computed (an owner's Anlage N or the estimate for
+    # Eure Angaben, the property's Anlage V for Immobilie) never reads „erledigt“: with nothing
+    # open it waits, without a month (phase 10 §7.6, wave 2's open point).
     steps: list[GuideStep] = []
     n = open_points("angaben")
-    steps.append(GuideStep(kind="angaben", state="open" if n else "done", open=n))
+    angaben_failed = facts.estimate_failed or any(o.failed for o in facts.owners)
+    steps.append(
+        GuideStep(
+            kind="angaben",
+            state="open" if n else ("waiting" if angaben_failed else "done"),
+            open=n,
+        )
+    )
     for prop in facts.properties:
         n = open_points("property", prop.property_id)
         steps.append(
             GuideStep(
                 kind="property",
                 property_id=prop.property_id,
-                state="open" if n else "done",
+                state="open" if n else ("waiting" if prop.warnings is None else "done"),
                 open=n,
             )
         )

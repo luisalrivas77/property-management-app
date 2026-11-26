@@ -111,8 +111,10 @@ def test_a_year_without_its_rules_is_not_ready(client_a):
     got = _guide(client_a, 2025)
     assert {"estimate:tax.no_rule_set", "questionnaire:tax.no_rule_set"} <= set(got["unavailable"])
     assert got["ready"] is False
-    assert [s["state"] for s in got["steps"]] == ["done", "waiting", "done", "waiting"]
-    assert got["steps_done"] == 2
+    # Eure Angaben waits too: the estimate, whose points it lists, cannot be computed (wave 2's
+    # open point, phase 10 §7.6; it read „erledigt“ until then).
+    assert [s["state"] for s in got["steps"]] == ["waiting", "waiting", "done", "waiting"]
+    assert got["steps_done"] == 1
 
 
 def test_a_property_not_owned_in_the_year_has_no_step(client_a):

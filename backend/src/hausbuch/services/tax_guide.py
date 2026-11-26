@@ -54,11 +54,15 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
 
     estimate = None
     estimate_warnings = []
+    estimate_failed = False
+    estimate_refused = None
     benefit_owners: set[UUID] = set()
     try:
         full = household_return_estimate(conn, tax_year=tax_year, today=today)
     except RuleError as exc:
         unavailable.append(f"estimate:{exc.code}")
+        estimate_failed = True
+        estimate_refused = exc.code if exc.code in rule.REFUSAL_CODES else None
     else:
         estimate = GuideEstimate(result=full.result, status=full.status)
         estimate_warnings = full.warnings
@@ -80,7 +84,14 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
             if not no_pay:
                 unavailable.append(f"anlage_n:{exc.code}")
             owners.append(
-                rule.OwnerFacts(owner.id, None, (), no_pay=no_pay, benefit_missing=benefit_missing)
+                rule.OwnerFacts(
+                    owner.id,
+                    None,
+                    (),
+                    no_pay=no_pay,
+                    benefit_missing=benefit_missing,
+                    refused=exc.code if exc.code in rule.REFUSAL_CODES else None,
+                )
             )
         else:
             n_drafts[owner.id] = n
@@ -109,6 +120,8 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
     result = rule.guide(
         rule.GuideInput(
             proposals=proposals,
+            estimate_failed=estimate_failed,
+            estimate_refused=estimate_refused,
             tax_year=tax_year,
             today=today,
             properties=properties,
