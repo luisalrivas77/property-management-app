@@ -36,7 +36,7 @@ import { overview as catalogue } from "@/i18n/overview";
 import { verdictText } from "@/i18n/verdict";
 import { Icon } from "@/lib/icons";
 import { recentInbox } from "@/lib/inboxCount";
-import { HOUSEHOLD_RESERVE, propertyPlanningHref } from "@/lib/planningRoutes";
+import { HOUSEHOLD_PLAN_PAGE, HOUSEHOLD_RESERVE, propertyPlanningHref } from "@/lib/planningRoutes";
 
 import "./overviewTiles.css";
 
@@ -271,15 +271,21 @@ export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail
             <span className="tile-sub">{tg.noGoal}</span>
           </Link>
         ) : (
-          // Mockup 19f panel 1: the card opens its summary; „Zum Ziel ›“ goes to Haushalt › Ziel.
+          // Mockup 19f panel 1: the card opens its summary; „Zum Ziel ›“ goes to Haushalt › Ziel and
+          // „Euer Plan ›“ to the plan under it (§7.11 (h), mockup 19i).
           <div className="tile tile-wide tile-goal">
             <a {...detail.linkProps("ziel")} className="tile-goal-open">
               <span className="tile-name">{tg.title}</span>
               <Wait state={goal}>{(value) => <GoalTileBody goal={value} />}</Wait>
             </a>
-            <Link href={GOAL_PAGE} className="tile-goal-go">
-              {tg.toGoal} ›
-            </Link>
+            <span className="tile-goal-links">
+              <Link href={GOAL_PAGE} className="tile-goal-go">
+                {tg.toGoal} ›
+              </Link>
+              <Link href={HOUSEHOLD_PLAN_PAGE} className="tile-goal-go">
+                {tg.toPlan} ›
+              </Link>
+            </span>
           </div>
         )}
         {excess != null ? (

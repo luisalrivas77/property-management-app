@@ -1,0 +1,33 @@
+# „Euer Plan“'s risks and shared view (docs/phases/phase-10.md §7.11 (h), D306; sizes as Luis
+# decided them on 26 Nov 2026). Read by rules/goal/risks.py. Kept under rules/goal (the spec
+# names rules/plan/risks.yaml): rules/goal lies outside the folders services.health.rule_version()
+# hashes, so a new figure here never moves the version stored on the key figures.
+
+income_gap:
+  months: 6   # six months without the household's income, from the walk's first month
+
+repair:
+  # The repair paid at once: the living area × the year's maintenance rate per m² × these years.
+  # 10 is the assistant's choice for „a larger repair“, not a published figure.
+  years: 10
+  # Instandhaltungskosten per m² of living area and year, ImmoWertV Anlage 3 (base 9.00 € per m²
+  # and year, indexed by the consumer price index from October 2001 to October of the year
+  # before, rounded to one decimal). A year without its own figure uses the latest earlier one.
+  per_m2:
+    2026: '14.40'
+  sources:
+  - name: ImmoWertV 2021, Anlage 3 (Modellansätze für Bewirtschaftungskosten)
+    url: https://www.gesetze-im-internet.de/immowertv_2022/anlage_3.html
+    read_on: '2026-11-26'
+  - name: Sprengnetter, Neue Bewirtschaftungskosten-Ansätze für 2026
+    url: https://shop.sprengnetter.de/blog/neue-bewirtschaftungskosten-ansaetze-fuer-2026
+    read_on: '2026-11-26'
+
+# „Zum Teilen“ with „Beträge runden“ on: each kind of amount rounded half-up to its step
+# (net worth to 10,000 €, the reserve to 1,000 €, a monthly amount to 50 €, as the spec sets
+# them; a sum paid once to 1,000 €, the assistant's choice since the spec names none).
+rounding:
+  net_worth: '10000'
+  reserve: '1000'
+  monthly: '50'
+  once: '1000'

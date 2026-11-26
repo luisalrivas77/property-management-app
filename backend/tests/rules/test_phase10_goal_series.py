@@ -9,7 +9,9 @@ from hausbuch.rules.goal import series
 from hausbuch.rules.goal.history import EUR_PEGGED, FUNDS, USD_PEGGED
 from hausbuch.services.health import rule_version
 
-WALK_RULE_VERSION = "5f75a9856b0a2a7e0d14cc596036e57a561920b9e08355d5e01eb4cb3c407d0a"
+# moved by §7.11 (h)'s `walk(draw_invested=...)` on 26 Nov 2026 (was 5f75a985...); the
+# committed reference data still does not move it
+WALK_RULE_VERSION = "95bb50becb8276c0d43ceb4b819340a35d49ef35a7018fc9c4f140b7b278162e"
 
 
 def test_rates_are_contiguous_from_1990():

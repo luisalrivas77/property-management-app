@@ -306,6 +306,9 @@ class WalkMonth:
 class Walk:
     months: tuple[WalkMonth, ...]
     used_up: str | None = None  # the first month the reserve row falls below 0, not walked
+    # With `draw_invested` (§7.11 (h), the income gap of „Euer Plan“): what was taken out of the
+    # invested funds and crypto when the reserve row fell below 0, in all, to the cent
+    drawn: Decimal = ZERO
 
     def at(self, month: str) -> WalkMonth | None:
         for m in self.months:
@@ -326,6 +329,7 @@ class _Run:
     paid_by_year: dict[int, dict[PlanClass, Fraction]] = field(default_factory=dict)
     months: list[WalkMonth] = field(default_factory=list)
     used_up: str | None = None
+    drawn: Fraction = Fraction(0)
 
 
 def last_month(p: Projection) -> str:
@@ -340,13 +344,20 @@ def walk(
     until: str | None = None,
     extra: Decimal = ZERO,
     extra_from: str | None = None,
+    draw_invested: bool = False,
 ) -> Walk:
     """Month by month from the month after the newest closed one to `until` (default the
     last month), with `spending_changes` in force and no other (D263) and `extra`
-    added to each month's „Anlegbar“ from `extra_from` on (the goal's more saving, D302)."""
+    added to each month's „Anlegbar“ from `extra_from` on (the goal's more saving, D302).
+
+    `draw_invested` (phase 10 §7.11 (h), „Euer Plan“'s income gap; off everywhere else, so
+    every other answer is unchanged): a month whose reserve row falls below 0 sets it to 0 and
+    takes the rest out of the invested classes that carry a rate, in proportion to their values
+    at that month's end; nothing moves out that month. Only when they hold less than the
+    shortfall is the reserve used up, as without it."""
     end = last_month(p) if until is None else min(until, last_month(p))
-    run = _walk(p, end, spending_changes, extra, extra_from, monthly=True)
-    return Walk(months=tuple(run.months), used_up=run.used_up)
+    run = _walk(p, end, spending_changes, extra, extra_from, monthly=True, draw=draw_invested)
+    return Walk(months=tuple(run.months), used_up=run.used_up, drawn=_cent(run.drawn))
 
 
 def _walk(
@@ -356,6 +367,7 @@ def _walk(
     extra: Decimal,
     extra_from: str | None,
     monthly: bool,
+    draw: bool = False,
 ) -> _Run:
     basis = p.basis
     if spending_changes is not None:
@@ -397,6 +409,12 @@ def _walk(
         december = ym.endswith("-12")
         if december:
             reserve += proceeds.get(int(ym[:4]), Fraction(0))
+        taken: dict[PlanClass, Fraction] = {}
+        if reserve < 0 and draw:
+            taken = _draw(-reserve, values, pays, by_class, rates)
+            if taken:
+                out.drawn += -reserve
+                reserve = Fraction(0)
         if reserve < 0:
             out.as_is[ym] = _cent(reserve)
             out.used_up = ym
@@ -407,7 +425,11 @@ def _walk(
             reserve -= moved
         out.as_is[ym] = _cent(reserve)
         for c in CLASSES:
-            pay = Fraction(by_class[c]) + moved * shares.get(c, Fraction(0))
+            pay = (
+                Fraction(by_class[c])
+                + moved * shares.get(c, Fraction(0))
+                - taken.get(c, Fraction(0))
+            )
             pays[c].append(pay)
             paid[c] += pay
         bank = _cent(Fraction(start.bank) + reserve - r0)
@@ -442,6 +464,28 @@ def _walk(
             out.paid_by_year[year] = dict(paid)
             out.bank[date(year, 12, 31)] = bank
     return out
+
+
+def _draw(
+    short: Fraction,
+    values: Mapping[PlanClass, Fraction],
+    pays: Mapping[PlanClass, Sequence[Fraction]],
+    by_class: Mapping[PlanClass, Decimal],
+    rates: Mapping[PlanClass, Decimal | None],
+) -> dict[PlanClass, Fraction]:
+    """What each invested class gives toward `short` this month (§7.11 (h)): its share of the
+    classes' values at the month's end, its savings plan paid in; only classes with a rate (a
+    class without one is not walked). Empty when they hold less than `short`."""
+    now = {
+        c: stretch(values[c], Fraction(rate), [*pays[c], Fraction(by_class[c])], len(pays[c]) + 1)
+        for c, rate in rates.items()
+        if rate is not None
+    }
+    now = {c: v for c, v in now.items() if v > 0}
+    total = sum(now.values(), Fraction(0))
+    if total < short:
+        return {}
+    return {c: short * v / total for c, v in now.items()}
 
 
 # One property's straight line: (k, value, loans) at the stored month-end and at each 31

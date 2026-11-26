@@ -13,6 +13,7 @@ from hausbuch import i18n
 from hausbuch.rules import investment_split
 from hausbuch.rules.budget import budget
 from hausbuch.rules.goal import goal as goal_rules
+from hausbuch.rules.goal.risks import LIVING_AREA_MISSING, PlanTodo
 from hausbuch.rules.health import bands, figures, window
 from hausbuch.rules.plan import projection
 from hausbuch.schemas.enums import AccountKind
@@ -25,7 +26,7 @@ from hausbuch.schemas.health import (
     Window,
 )
 from hausbuch.schemas.net_worth import NetWorthTodo, NetWorthTodoCode
-from hausbuch.services import health, plan, todo_texts
+from hausbuch.services import health, plan, plan_page, todo_texts
 from hausbuch.services.todo_texts import ACTIONS, PATTERNS
 
 GERMAN_MARKS = ("ä", "ö", "ü", "ß", "„", " der ", " die ", " und ", " ist ", " nicht ")
@@ -169,6 +170,9 @@ def _producers() -> list[HealthTodo | NetWorthTodo]:
         plan._income_change_todo(),
         plan._no_scenario_todo(),
         plan._flat_unprojectable(),
+        plan_page.living_area_todo(
+            PlanTodo(LIVING_AREA_MISSING, uuid4(), "Wohnfläche eintragen", "/properties/x")
+        ),
         *(plan._scenario_check(text) for text in PLAN_TEXTS),
         *(_gap(text) for text in NET_WORTH_TEXTS),
     ]

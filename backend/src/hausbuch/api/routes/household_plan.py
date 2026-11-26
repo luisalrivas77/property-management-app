@@ -36,6 +36,13 @@ replaces (supersedes_id); services/household_scenarios.py holds the checks.
   adopted („Als Budget übernehmen“: its `spending_changes` and `goal_choice`), through
   POST /household-scenarios superseding the default (422 household_scenario.goal_invalid for
   a new or altered goal not due after the current month).
+- GET /household-goal/plan?view=own|share&round_amounts=&accounts=&wants=&risks=&assumptions=
+  (phase 10 §7.11 (h), D306, „Euer Plan“): the goal's seven cards from its one walk, on read for
+  today; `own` („Für euch“) with everything, `share` („Zum Teilen“) rounded by default and built
+  from rules/goal/share with the five switches (defaults: rounded, no accounts, no wants, risks
+  and assumptions shown), a part a switch leaves out absent from the JSON and the to-dos and the
+  properties' labels never in it. Word `none` without a default scenario or a goal. The
+  switches change nothing stored.
 - POST /household-goal/preview {levers, scenario_id?} (phase 10 §7.10 (a), D299): the goal
   for typed levers, checked and run on the same row as POST /household-plan/preview (same
   422s and 404s); word `none` when the levers hold no goal; stores nothing, so it runs as a
@@ -69,11 +76,13 @@ from hausbuch.schemas.plan import (
     HouseholdScenarioCreate,
     SpendingComparison,
 )
+from hausbuch.schemas.plan_page import PlanPage, PlanSwitches, PlanView
 from hausbuch.services import advice as advice_service
 from hausbuch.services import budget as budget_service
 from hausbuch.services import goal as goal_service
 from hausbuch.services import household_scenarios as scenarios
 from hausbuch.services import plan as plan_service
+from hausbuch.services import plan_page as plan_page_service
 from hausbuch.services import reference_returns
 from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.services.todo_texts import english
@@ -137,6 +146,26 @@ def household_budget_get(cmd: Cmd, scenario_id: UUID | None = None) -> BudgetVie
 @router.get("/household-goal")
 def household_goal_get(cmd: Cmd) -> HouseholdGoal:
     return english(cmd.read(goal_service.goal, _today()))
+
+
+@router.get("/household-goal/plan")
+def household_goal_plan(
+    cmd: Cmd,
+    view: PlanView = PlanView.OWN,
+    round_amounts: bool = True,
+    accounts: bool = False,
+    wants: bool = False,
+    risks: bool = True,
+    assumptions: bool = True,
+) -> PlanPage:
+    switches = PlanSwitches(
+        round_amounts=round_amounts,
+        accounts=accounts,
+        wants=wants,
+        risks=risks,
+        assumptions=assumptions,
+    )
+    return english(cmd.read(plan_page_service.plan_page, _today(), view, switches))
 
 
 @router.post("/household-goal/preview")

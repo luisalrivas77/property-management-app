@@ -94,6 +94,7 @@ class HealthTodoCode(StrEnum):
     RATE_MISSING = "rate_missing"  # „Annahme eintragen“ (§7.5 (1))
     INCOME_CHANGE_LINK = "income_change_link"  # an income change beside Eigentümer (Q-O141)
     UNCATEGORIZED_LINES = "uncategorized_lines"  # „N Zahlungen einordnen“ (phase 10 D272 (4))
+    LIVING_AREA_MISSING = "living_area_missing"  # „Wohnfläche eintragen“ (phase 10 §7.11 (h))
 
 
 class HealthTodo(Schema):

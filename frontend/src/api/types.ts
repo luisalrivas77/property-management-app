@@ -2835,6 +2835,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/household-goal/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Household Goal Plan */
+        get: operations["household_goal_plan_api_household_goal_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/household-goal/preview": {
         parameters: {
             query?: never;
@@ -9405,7 +9422,7 @@ export interface components {
          * HealthTodoCode
          * @enum {string}
          */
-        HealthTodoCode: "month_end_missing" | "account_not_covered" | "lines_waiting" | "transfer_open" | "too_few_months" | "balance_stale" | "bands_unconfirmed" | "no_default_scenario" | "scenario_check" | "rate_missing" | "income_change_link" | "uncategorized_lines";
+        HealthTodoCode: "month_end_missing" | "account_not_covered" | "lines_waiting" | "transfer_open" | "too_few_months" | "balance_stale" | "bands_unconfirmed" | "no_default_scenario" | "scenario_check" | "rate_missing" | "income_change_link" | "uncategorized_lines" | "living_area_missing";
         /**
          * HiddenToken
          * @description GET /wallets/{id}/hidden-tokens (D187 (3)): a token held as spam, by its asset's name
@@ -12287,6 +12304,15 @@ export interface components {
             tax_free_benefits_ytd?: components["schemas"]["ExtractedValue"];
         };
         /**
+         * PlanAssumptions
+         * @description Card 4 „Eure Annahmen“: nothing the app chose.
+         */
+        PlanAssumptions: {
+            rates: components["schemas"]["PlanRates"];
+            /** Properties */
+            properties?: components["schemas"]["PlanPropertyAssumption"][];
+        };
+        /**
          * PlanClass
          * @enum {string}
          */
@@ -12339,6 +12365,70 @@ export interface components {
             scenario?: string | null;
         };
         /**
+         * PlanGoalCard
+         * @description Card 1, the green goal card of 19f: target, month, word and the share reached.
+         */
+        PlanGoalCard: {
+            kind: components["schemas"]["GoalKind"];
+            /** Target */
+            target: string | null;
+            /** Due Month */
+            due_month: string;
+            word: components["schemas"]["GoalWord"] | null;
+            /** Value Today */
+            value_today: string | null;
+            /** Percent */
+            percent: string | null;
+        };
+        /**
+         * PlanHeute
+         * @description Card 2 „Heute“: the net worth, the reserve in months of its need (D305) and the mean saved
+         *     per month of the window; the reserve's accounts (D304) with their provider, „Für euch“ or
+         *     with the switch `accounts` only.
+         */
+        PlanHeute: {
+            /** Net Worth */
+            net_worth: string;
+            /** Reserve */
+            reserve: string;
+            /** Reserve Months */
+            reserve_months: string | null;
+            /** Reserve Full */
+            reserve_full: boolean | null;
+            /** Saved Mean */
+            saved_mean: string;
+            /** Window From */
+            window_from?: string | null;
+            /** Window To */
+            window_to?: string | null;
+            /** Reserve Accounts */
+            reserve_accounts?: string[];
+        };
+        /**
+         * PlanIncomeGap
+         * @description „Einkommenslücke“: months with no income, the reserve paying first, then the invested
+         *     money (`drawn`); `used_up` when even that is short.
+         */
+        PlanIncomeGap: {
+            /** Available */
+            available: boolean;
+            /** Months */
+            months: number;
+            /** Reached */
+            reached?: string | null;
+            /** Delay Months */
+            delay_months?: number | null;
+            /** Not Until */
+            not_until?: string | null;
+            /**
+             * Drawn
+             * @default 0.00
+             */
+            drawn: string;
+            /** Used Up */
+            used_up?: string | null;
+        };
+        /**
          * PlanMonth
          * @description One future month of §7.1; `spending_delta` is §7.6 (3)'s Δ(k), Σ (planned − mean) over
          *     the spending changes in force, already inside `free`.
@@ -12359,6 +12449,24 @@ export interface components {
             spending_delta: string;
         };
         /**
+         * PlanOtherRoutes
+         * @description Card 6 „Andere Wege“: routes 2, 3 and 4 of §7.11 (c), one figure each; route 3's history
+         *     (windows reached, verdict) for its panel.
+         */
+        PlanOtherRoutes: {
+            /** More Saving */
+            more_saving: string | null;
+            /** Needed Return */
+            needed_return: string | null;
+            /** Less Spending */
+            less_spending: string | null;
+            /** Return Windows */
+            return_windows?: number | null;
+            /** Return Reached Windows */
+            return_reached_windows?: number | null;
+            return_verdict?: components["schemas"]["GoalVerdict"] | null;
+        };
+        /**
          * PlanOverride
          * @description Sets a detected plan's monthly amount, or drops it (D245).
          */
@@ -12372,6 +12480,247 @@ export interface components {
              * @default false
              */
             dropped: boolean;
+        };
+        /**
+         * PlanPage
+         * @description `GET /household-goal/plan`. `goal` None while no goal is set (word `none`); the other
+         *     cards None while the goal has no word (`issue` says why, `todos` what is missing). In the
+         *     shared view `risks` or `assumptions` are absent when their switch is off, and the to-dos
+         *     always.
+         */
+        PlanPage: {
+            view: components["schemas"]["PlanView"];
+            switches?: components["schemas"]["PlanSwitches"] | null;
+            word: components["schemas"]["GoalWord"] | null;
+            issue?: components["schemas"]["GoalIssue"] | null;
+            goal?: components["schemas"]["PlanGoalCard"] | null;
+            heute?: components["schemas"]["PlanHeute"] | null;
+            plan?: components["schemas"]["PlanRoute"] | null;
+            assumptions?: components["schemas"]["PlanAssumptions"] | null;
+            risks?: components["schemas"]["PlanRisks"] | null;
+            other_routes?: components["schemas"]["PlanOtherRoutes"] | null;
+            this_month?: components["schemas"]["PlanThisMonth"] | null;
+            /** Todos */
+            todos?: components["schemas"]["HealthTodo"][];
+        };
+        /**
+         * PlanPropertyAssumption
+         * @description A property in the walk: kept (D301 (a) 5) or sold in its scenario's year, and its
+         *     scenario's yearly value change. `kind` names it generically („Wohnung“); `label` only „Für
+         *     euch“, since a property's label can be its address.
+         */
+        PlanPropertyAssumption: {
+            /** Key */
+            key: string;
+            kind?: components["schemas"]["PropertyKind"] | null;
+            /** Kept */
+            kept: boolean;
+            /** Sale Year */
+            sale_year: number | null;
+            /** Value Change */
+            value_change: string | null;
+            /** Label */
+            label?: string | null;
+        };
+        /**
+         * PlanRates
+         * @description The yearly rates the route walks (typed by the household, D247; the reserve's D304).
+         */
+        PlanRates: {
+            /** Depot */
+            depot?: string | null;
+            /** Crypto */
+            crypto?: string | null;
+            /** Reserve */
+            reserve?: string | null;
+        };
+        /**
+         * PlanRepair
+         * @description „Große Reparatur“: living area × the year's maintenance rate × `years`, paid once.
+         */
+        PlanRepair: {
+            /** Available */
+            available: boolean;
+            reason?: components["schemas"]["PlanRepairReason"] | null;
+            /** Per M2 */
+            per_m2?: string | null;
+            /** Years */
+            years?: number | null;
+            /** By Property */
+            by_property?: {
+                [key: string]: string;
+            };
+            /** Amount */
+            amount?: string | null;
+            /** Reached */
+            reached?: string | null;
+            /** Delay Months */
+            delay_months?: number | null;
+            /** Not Until */
+            not_until?: string | null;
+            /** Used Up */
+            used_up?: string | null;
+        };
+        /**
+         * PlanRepairReason
+         * @enum {string}
+         */
+        PlanRepairReason: "no_property" | "no_living_area" | "no_rate";
+        /**
+         * PlanRisks
+         * @description Card 5 „Wenn es schlechter läuft“: the route run again under three changes, each the
+         *     months it moves the goal. The to-dos (a property's living area) never in the shared view.
+         */
+        PlanRisks: {
+            /** Base Reached */
+            base_reached: string | null;
+            weak_markets: components["schemas"]["PlanWeakMarkets"];
+            income_gap: components["schemas"]["PlanIncomeGap"];
+            repair: components["schemas"]["PlanRepair"];
+            /** Sources */
+            sources?: components["schemas"]["PlanSource"][];
+            /** Todos */
+            todos?: components["schemas"]["HealthTodo"][];
+        };
+        /**
+         * PlanRoute
+         * @description Card 3 „Der Plan“, the main route (D303, „Ausgewogener Weg“): the extra invested per
+         *     month and its split by class, the wants' cut and the month reached; „auf Kurs“ without
+         *     moves. `without_route` the value at the due month without change, `gap` the target less it.
+         */
+        PlanRoute: {
+            /** On Track */
+            on_track: boolean;
+            /** Reached */
+            reached: string | null;
+            /** Without Route */
+            without_route: string | null;
+            /** Gap */
+            gap: string | null;
+            /** Saving Extra */
+            saving_extra: string | null;
+            /** By Class */
+            by_class?: {
+                [key: string]: string;
+            };
+            /** Cut */
+            cut: string | null;
+            /** Wants */
+            wants?: components["schemas"]["PlanWant"][];
+        };
+        /**
+         * PlanSource
+         * @description A source of a size in risks.yaml (the maintenance rate).
+         */
+        PlanSource: {
+            /** Name */
+            name: string;
+            /** Url */
+            url: string;
+            /** Read On */
+            read_on: string;
+        };
+        /** PlanStep */
+        PlanStep: {
+            kind: components["schemas"]["PlanStepKind"];
+            /** Amount */
+            amount: string;
+            /** Done */
+            done: boolean;
+        };
+        /**
+         * PlanStepKind
+         * @enum {string}
+         */
+        PlanStepKind: "invest" | "wants_budget";
+        /**
+         * PlanSwitches
+         * @description „Was geteilt wird“ (D306): the five switches the shared view was built with.
+         */
+        PlanSwitches: {
+            /**
+             * Round Amounts
+             * @default true
+             */
+            round_amounts: boolean;
+            /**
+             * Accounts
+             * @default false
+             */
+            accounts: boolean;
+            /**
+             * Wants
+             * @default false
+             */
+            wants: boolean;
+            /**
+             * Risks
+             * @default true
+             */
+            risks: boolean;
+            /**
+             * Assumptions
+             * @default true
+             */
+            assumptions: boolean;
+        };
+        /**
+         * PlanThisMonth
+         * @description Card 7 „Diesen Monat“: the route's steps for the running month, at most two.
+         */
+        PlanThisMonth: {
+            /** Steps */
+            steps?: components["schemas"]["PlanStep"][];
+            /** Done */
+            done: number;
+            /** Of */
+            of: number;
+        };
+        /**
+         * PlanView
+         * @enum {string}
+         */
+        PlanView: "own" | "share";
+        /**
+         * PlanWant
+         * @description A want the route lowers: its measured mean (`from`) and its budget on the route (`to`).
+         */
+        PlanWant: {
+            code: components["schemas"]["AllocationCategory"];
+            /** From */
+            from: string;
+            /** To */
+            to: string;
+        };
+        /**
+         * PlanWeakMarkets
+         * @description „Schwache Märkte“: per kind the worst window of the goal's years in its own history
+         *     (`worst`), walked never above the typed rate (`rates`, `capped`).
+         */
+        PlanWeakMarkets: {
+            /** Available */
+            available: boolean;
+            reason?: components["schemas"]["GoalRouteReason"] | null;
+            /** Window Years */
+            window_years?: number | null;
+            /** Rates */
+            rates?: {
+                [key: string]: string;
+            };
+            /** Worst */
+            worst?: {
+                [key: string]: string;
+            };
+            /** Capped */
+            capped?: components["schemas"]["PlanClass"][];
+            /** Left Out */
+            left_out?: components["schemas"]["GoalLeftOut"][];
+            /** Reached */
+            reached?: string | null;
+            /** Delay Months */
+            delay_months?: number | null;
+            /** Not Until */
+            not_until?: string | null;
         };
         /**
          * PlayedChange
@@ -23224,6 +23573,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HouseholdGoal"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_goal_plan_api_household_goal_plan_get: {
+        parameters: {
+            query?: {
+                view?: components["schemas"]["PlanView"];
+                round_amounts?: boolean;
+                accounts?: boolean;
+                wants?: boolean;
+                risks?: boolean;
+                assumptions?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanPage"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

@@ -238,6 +238,12 @@
   border-color: var(--accent);
 }
 
+.tile-goal-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
 .tile-goal-go {
   align-self: flex-start;
   margin-top: 4px;

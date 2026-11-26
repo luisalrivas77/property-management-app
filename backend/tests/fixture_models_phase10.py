@@ -618,6 +618,67 @@ class RouteFixture(Schema):
     cases: list[RouteCase]
 
 
+# --- plan_page.yaml (§7.11 (h), D306) -------------------------------------------------------
+
+
+class PlanFlatIn(RouteFlatIn):
+    """A property of the walk (RouteFlatIn) with what „Euer Plan“ reads besides: its living
+    area in m² (None: not stored) and its scenario's yearly value change (None: none typed)."""
+
+    living_area: Decimal | None = None
+    value_change: Decimal | None = None
+
+
+class PlanSwitchesIn(Schema):
+    """„Was geteilt wird“ (§7.11 (h)): the five switches, their defaults as the spec sets them."""
+
+    round_amounts: bool = True
+    accounts: bool = False
+    wants: bool = False
+    risks: bool = True
+    assumptions: bool = True
+
+
+class PlanExpect(Schema):
+    """`cards`: a subset of the page's answer „Für euch“, compared key by key (a null expects
+    the key present and null); `share`: a subset of the answer „Zum Teilen“ under the case's
+    switches; `share_absent`: dotted key paths that must not be in that answer at all."""
+
+    cards: dict[str, Any] = Field(default_factory=dict)
+    share: dict[str, Any] | None = None
+    share_absent: list[str] = Field(default_factory=list)
+
+
+class PlanCase(RouteCase):
+    net_worth_today: Money
+    reserve_today: Money
+    reserve_accounts: list[str] = Field(default_factory=list)  # labels with their provider
+    flats: dict[str, PlanFlatIn] = Field(default_factory=dict)  # type: ignore[assignment]
+    invested_this_month: Money = Decimal("0.00")  # the running month's booked investments
+    budget_adopted: bool = False  # the balanced route's wants budget is the default scenario's
+    switches: PlanSwitchesIn = Field(default_factory=lambda: PlanSwitchesIn())
+    expect: PlanExpect  # type: ignore[assignment]
+
+
+class RoundingIn(Lenient):
+    kind: Literal["net_worth", "reserve", "monthly", "once"]
+    value: Money
+    rounded: Money
+
+
+class MaintenanceExpect(Schema):
+    year: int
+    per_m2: Money | None  # None: no figure for that year or before it
+
+
+class PlanFixture(Schema):
+    bases: dict[str, Any] = Field(default_factory=dict)  # YAML anchors only
+    rules: dict[str, Any] = Field(default_factory=dict)  # risks.yaml's values, as expected
+    maintenance: list[MaintenanceExpect] = Field(default_factory=list)
+    rounding: list[RoundingIn] = Field(default_factory=list)
+    cases: list[PlanCase]
+
+
 # --- budget_fixed.yaml (§7.10 (c), D300) ----------------------------------------------------
 
 
@@ -845,6 +906,7 @@ MODELS: dict[str, type[Schema]] = {
     "goal": GoalFixture,
     "goal_routes": RouteFixture,
     "reserve_above": RouteFixture,
+    "plan_page": PlanFixture,
     "investment_split": InvestmentSplitFixture,
 }
 

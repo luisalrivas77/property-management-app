@@ -28,7 +28,9 @@ GOAL = phase10.load("goal").cases
 # lever adds) changed rules/health once more; it was 19e42b29... until then.
 # §7.11 (a) (D301: one month walk in rules/plan/projection, money above the reserve target
 # invested, the walk past each sale) changed rules/plan; it was 2b975321... until then.
-RULE_VERSION = "5f75a9856b0a2a7e0d14cc596036e57a561920b9e08355d5e01eb4cb3c407d0a"
+# §7.11 (h) (26 Nov 2026, „Euer Plan“'s income gap: `walk(draw_invested=...)`, off by default,
+# so every existing answer is unchanged) changed rules/plan; it was 5f75a985... until then.
+RULE_VERSION = "95bb50becb8276c0d43ceb4b819340a35d49ef35a7018fc9c4f140b7b278162e"
 
 
 def _projection(case) -> Projection:
