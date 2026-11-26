@@ -12,8 +12,7 @@
 // they were (no migration); Anlage N and Anlage V only show the result. The inputs' own
 // components keep their German texts (shared with /owners and the questionnaire).
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { Owner, Property } from "@/api/schemas";
@@ -23,20 +22,13 @@ import { taxInputsText } from "@/i18n/taxInputs";
 
 import { todayIso } from "./format";
 import { IncomeSection } from "./income";
-import { REPLACEMENT_BENEFIT, STATE_CODE } from "./labels";
-import { InputsPanel, type BenefitForm } from "./returnInputs";
+import { STATE_CODE } from "./labels";
+import { InputsPanel } from "./returnInputs";
 import { ReturnEstimateCard, useReturnEstimate } from "./returnEstimate";
+import { ReturnInputsSync, useReturnInputsSync } from "./returnInputsSync";
 import { AngabenPoints } from "./taxGuide";
 import { PRICE_RENOVATION_ANCHOR, PriceRenovationSection } from "./taxInputs";
-import {
-  benefitPrefill,
-  benefitPrefillBacked,
-  questionnaireHref,
-  TaxTabs,
-  taxFormHref,
-  type TaxYearState,
-  withBenefitPrefill,
-} from "./taxYear";
+import { questionnaireHref, TaxTabs, taxFormHref, type TaxYearState } from "./taxYear";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -57,7 +49,11 @@ export function TaxInputsScreen({
 }) {
   const t = useT(messages);
   const owners = useLoad(loadOwners);
+  // One version for the guide's proposals and the typing blocks (components/returnInputsSync.ts).
+  const [version, setVersion] = useState(0);
+  const sync = useMemo(() => ({ version, bump: () => setVersion((n) => n + 1), active: true }), [version]);
   return (
+    <ReturnInputsSync.Provider value={sync}>
     <Loading state={owners}>
       {(list) => {
         const owner = list.find((o) => o.id === ownerParam) ?? list[0] ?? null;
@@ -80,6 +76,7 @@ export function TaxInputsScreen({
         );
       }}
     </Loading>
+    </ReturnInputsSync.Provider>
   );
 }
 
@@ -125,25 +122,10 @@ function TaxInputsHead({ state }: { state: TaxYearState }) {
 function TaxInputs({ owner, owners, state }: { owner: Owner; owners: Owner[]; state: TaxYearState }) {
   const t = useT(messages);
   const year = state.year;
-  const router = useRouter();
   const estimate = useReturnEstimate(year);
-  // The Lohnersatzleistungen pre-fill of the to-do return.benefit_booked (phase 6 D159 amended
-  // (8)), here since D281: kept on the owner switch, and opened as a form only for the owner
-  // the URL names (or the only owner), so a joint account's amount is never saved on an owner
-  // picked by default. It counts only while a current to-do of the loaded estimate offers its
-  // amount: a stale entry (Back after the save) is dropped from the URL.
-  const search = useSearchParams();
-  const urlPrefill = benefitPrefill((key) => search.get(key), Object.keys(REPLACEMENT_BENEFIT));
-  const backed = urlPrefill && estimate.data !== undefined ? benefitPrefillBacked(urlPrefill, estimate.data?.warnings ?? []) : null;
-  const prefill = backed ? urlPrefill : null;
-  const ownerNamed = search.get("eigentuemer") === owner.id;
-  const clearPrefill = useCallback(() => router.replace(taxFormHref("angaben", state), { scroll: false }), [router, state]);
-  const stale = backed === false;
-  useEffect(() => {
-    if (stale) clearPrefill();
-  }, [stale, clearPrefill]);
-  const benefitForm: BenefitForm | null = prefill ? { prefill, open: ownerNamed || owners.length === 1, clear: clearPrefill } : null;
-
+  // The booked benefits are a proposal of Eure Angaben's points (phase 10 §7.8 (a), D293),
+  // saved there with „Übernehmen“; until then the to-do return.benefit_booked carried the
+  // amount in this tab's URL into the typing form.
   const loadRows = useCallback(
     () => ok(api.GET("/api/return-inputs", { params: { query: { tax_year: year, owner_id: owner.id } } })),
     [owner.id, year],
@@ -151,10 +133,11 @@ function TaxInputs({ owner, owners, state }: { owner: Owner; owners: Owner[]; st
   const rows = useLoad(loadRows);
   const reloadRows = rows.reload;
   const reloadEstimate = estimate.reload;
-  const changed = useCallback(() => {
+  const reloadBoth = useCallback(() => {
     reloadRows();
     reloadEstimate();
   }, [reloadRows, reloadEstimate]);
+  const changed = useReturnInputsSync(reloadBoth);
 
   const progress = estimate.data?.questionnaire ?? null;
   const percent = progress && progress.total > 0 ? Math.round((progress.answered / progress.total) * 100) : 0;
@@ -232,7 +215,7 @@ function TaxInputs({ owner, owners, state }: { owner: Owner; owners: Owner[]; st
                 {owners.map((o) => (
                   <Link
                     key={o.id}
-                    href={withBenefitPrefill(taxFormHref("angaben", { ...state, ownerId: o.id }), stale ? null : urlPrefill)}
+                    href={taxFormHref("angaben", { ...state, ownerId: o.id })}
                     aria-current={o.id === owner.id ? "page" : undefined}
                     scroll={false}
                   >
@@ -243,7 +226,7 @@ function TaxInputs({ owner, owners, state }: { owner: Owner; owners: Owner[]; st
             ) : null}
             <p className="muted">{t.perOwnerIntro(owner.full_name)}</p>
             <Loading state={rows}>
-              {(list) => <InputsPanel ownerId={owner.id} year={year} rows={list} onChanged={changed} benefitForm={benefitForm} />}
+              {(list) => <InputsPanel ownerId={owner.id} year={year} rows={list} onChanged={changed} />}
             </Loading>
           </section>
         </div>

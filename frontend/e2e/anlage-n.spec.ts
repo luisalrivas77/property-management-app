@@ -284,14 +284,11 @@ test("the Anlage N tab names the open questions, the Gesamt card the tax classes
   await expect(page.locator("h2.fragen-question")).toHaveText("Leben Kinder im Haushalt, und kam in diesem Jahr ein Kind dazu?");
 });
 
-// Phase 6 D159 amended (8): a confirmed Elterngeld & Lohnersatz line on owner A's own private
-// account is a to-do on the Gesamt card. Its button opens the pre-filled form on the owner
-// already on screen (the page does not remount there), and once the amount is saved the
-// browser's Back never offers the same amount again.
-test("the Lohnersatz to-do opens its pre-filled form on the owner on screen, and a stale pre-fill is dropped", async ({
-  page,
-  signedIn,
-}) => {
+// Phase 6 D159 amended (8), phase 10 §7.8 (a) (D293): a confirmed Elterngeld & Lohnersatz line on
+// owner A's own private account is a to-do on the Gesamt card and a proposal among the points of
+// Eure Angaben. „Übernehmen“ writes the row with the booked amount; once it is saved the proposal
+// and the to-do end, and the row exists once.
+test("a booked Lohnersatz line is proposed under Eure Angaben and taken over once", async ({ page, signedIn }) => {
   void signedIn;
   const origin = new URL(page.url()).origin;
   const a = await apiCall<Owner>(page, "POST", "/api/owners", { full_name: "A. Muster", church_tax: false });
@@ -331,28 +328,33 @@ test("the Lohnersatz to-do opens its pre-filled form on the owner on screen, and
   });
   expect(booked.status()).toBe(200);
 
-  // A is on screen under Eure Angaben (the form lives there since phase 10 D281); the to-do's
-  // button names A, so the URL changes on the same page.
+  // A is on screen under Eure Angaben (the form lives there since phase 10 D281).
   await page.goto(`/tax/${YEAR}?tab=angaben&eigentuemer=${a.id}`);
   await expect(page.getByText("Die Angaben von A. Muster.", { exact: false })).toBeVisible();
   const card = page.getByRole("region", { name: "Gesamt" });
   await expect(card).toContainText("Bei Krankengeld zeigt die Bescheinigung der Krankenkasse einen höheren Betrag");
-  await card.getByRole("link", { name: "Lohnersatzleistung eintragen" }).click();
-  const form = page.getByRole("form", { name: "Lohnersatzleistungen eintragen" });
-  await expect(form).toBeVisible();
-  await expect(form.getByLabel("Betrag im Jahr", { exact: true })).toHaveValue(euroInput(line.amount));
-  // The sample's purpose text names no benefit, so the person picks it.
-  await form.getByLabel("Leistung", { exact: true }).selectOption("elterngeld");
-  await form.getByRole("button", { name: "Speichern" }).click();
-  await expect(form).toBeHidden();
-  await expect(page).not.toHaveURL(/lohnersatz=/);
-  await expect(card.getByRole("link", { name: "Lohnersatzleistung eintragen" })).toHaveCount(0);
+  await card.getByRole("link", { name: "Vorschlag ansehen" }).click();
+  await expect(page).toHaveURL(/#tax-angaben-points$/);
 
-  // Back to the pre-filled URL: no to-do offers the amount any more, so no form opens and the
-  // pre-fill leaves the URL.
-  await page.goBack();
-  await expect(page).not.toHaveURL(/lohnersatz=/);
-  await expect(page.getByRole("form", { name: "Lohnersatzleistungen eintragen" })).toHaveCount(0);
+  const proposal = page.getByRole("listitem").filter({ hasText: "Lohnersatzleistung aus dem Konto" });
+  await expect(proposal).toBeVisible();
+  // The payments it sums, by date and amount.
+  await proposal.getByRole("button", { name: "1 Zahlung ansehen" }).click();
+  const payments = page.getByRole("dialog", { name: "Zahlungen" });
+  await expect(payments).toContainText(euroInput(line.amount));
+  await payments.getByRole("button", { name: "Schließen" }).click();
+  await expect(payments).toBeHidden();
+
+  await proposal.getByRole("button", { name: "Übernehmen" }).click();
+  const dialog = page.getByRole("dialog", { name: "Vorschlag übernehmen" });
+  await expect(dialog.getByLabel("Betrag", { exact: true })).toHaveValue(euroInput(line.amount));
+  // The sample's purpose text names no benefit, so the person picks it.
+  await dialog.getByLabel("Art der Leistung", { exact: true }).selectOption("elterngeld");
+  await dialog.getByRole("button", { name: "Übernehmen" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole("listitem").filter({ hasText: "Lohnersatzleistung aus dem Konto" })).toHaveCount(0);
+  await expect(card.getByRole("link", { name: "Vorschlag ansehen" })).toHaveCount(0);
+
   const rows = await apiCall<Row[]>(page, "GET", `/api/return-inputs?tax_year=${YEAR}&owner_id=${a.id}`);
   expect(rows.filter((row) => row.kind === "replacement_income")).toHaveLength(1);
 });

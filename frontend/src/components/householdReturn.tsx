@@ -28,6 +28,7 @@ import { householdReturn } from "@/i18n/income";
 
 import { DocumentPicker } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
+import { useReturnInputsSync } from "./returnInputsSync";
 import { toMoneyString } from "./input";
 import { BelegLink } from "./returnInputEvidence";
 import { GROSS_SOURCE, HOUSEHOLD_SERVICE_CLASS, HOUSEHOLD_SERVICE_SOURCE, options } from "./labels";
@@ -136,6 +137,7 @@ function PayslipChip({ ownerId, year }: { ownerId: string; year: number }) {
 export function HouseholdReturnBlocks({ year }: { year: number }) {
   const loadChildren = useCallback(() => loadRows(year, "child"), [year]);
   const children = useLoad(loadChildren);
+  const childrenChanged = useReturnInputsSync(children.reload);
   const t = useT(householdReturn);
   const f = useFormat();
   return (
@@ -153,9 +155,9 @@ export function HouseholdReturnBlocks({ year }: { year: number }) {
               rows={list}
               empty={t.noChildren(year)}
               describe={(row, index) => childText(row, index)}
-              onChanged={children.reload}
+              onChanged={childrenChanged}
             />
-            <ChildForm year={year} onDone={children.reload} />
+            <ChildForm year={year} onDone={childrenChanged} />
           </>
         )}
       </Loading>
@@ -246,6 +248,9 @@ function ItemBlock({
 }) {
   const load = useCallback(() => loadRows(year, kind), [year, kind]);
   const rows = useLoad(load);
+  // A row saved here ends a proposal of the guide above it, and a proposal taken over there adds
+  // a row here (components/returnInputsSync.ts).
+  const changed = useReturnInputsSync(rows.reload);
   return (
     <div className="stack">
       <h4>{title}</h4>
@@ -253,8 +258,8 @@ function ItemBlock({
       <Loading state={rows}>
         {(list) => (
           <>
-            <RowList rows={list} empty={empty} describe={describe} onChanged={rows.reload} />
-            {form(rows.reload)}
+            <RowList rows={list} empty={empty} describe={describe} onChanged={changed} />
+            {form(changed)}
           </>
         )}
       </Loading>

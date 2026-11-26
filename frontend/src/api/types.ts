@@ -5996,6 +5996,91 @@ export interface components {
             /** File */
             file: string;
         };
+        /**
+         * BookedPayment
+         * @description One payment a proposal sums, for „Zahlungen ansehen“: its booking date, the amount as on
+         *     the account (signed) and the payee's name, never the purpose text. Filled by the service
+         *     (services/return_inputs.booked_input_proposals); the rule leaves it empty.
+         */
+        BookedPayment: {
+            /**
+             * Allocation Id
+             * Format: uuid
+             */
+            allocation_id: string;
+            /**
+             * Booking Date
+             * Format: date
+             */
+            booking_date: string;
+            /** Amount */
+            amount: string;
+            /** Payee */
+            payee?: string | null;
+        };
+        /**
+         * BookedProposal
+         * @description One proposed return input from the year's bookings.
+         *
+         *     `booked` is the group's year sum as a positive amount (clamped at zero), `typed` what the
+         *     current rows cover of it, `difference` = booked − typed, the amount the row would carry
+         *     (for §35a the bill's sum, shown only: the row carries the labour share the person types).
+         *     `payload` is the `POST /return-inputs` body with every field the bookings say; the card
+         *     adds the fields in `needs`. `blocking`: whether the guide counts it as open (a benefit
+         *     does, as its to-do did; the other groups are proposals the amounts alone cannot close, see
+         *     rules/tax/booked_inputs.py).
+         */
+        BookedProposal: {
+            /**
+             * Group
+             * @enum {string}
+             */
+            group: "benefit" | "donation" | "childcare" | "household_services";
+            kind: components["schemas"]["ReturnInputKind"];
+            /** Tax Year */
+            tax_year: number;
+            /** Owner Id */
+            owner_id?: string | null;
+            /** Payee */
+            payee?: string | null;
+            /** Booked */
+            booked: string;
+            /** Typed */
+            typed: string;
+            /** Difference */
+            difference: string;
+            /** Payments */
+            payments: number;
+            /** Allocation Ids */
+            allocation_ids: string[];
+            /** Lines */
+            lines?: components["schemas"]["BookedPayment"][];
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Needs */
+            needs?: ("owner" | "benefit" | "child" | "labour_cost" | "service_class" | "recipient")[];
+            /** Benefit */
+            benefit?: string | null;
+            /** Child Choices */
+            child_choices?: components["schemas"]["ChildChoice"][];
+            /**
+             * Receipt Needed
+             * @default false
+             */
+            receipt_needed: boolean;
+            /**
+             * Ask Party
+             * @default false
+             */
+            ask_party: boolean;
+            /**
+             * Blocking
+             * @default false
+             */
+            blocking: boolean;
+        };
         /** BridgeRow */
         BridgeRow: {
             /**
@@ -6474,6 +6559,23 @@ export interface components {
          * @enum {string}
          */
         ChecklistStatus: "present" | "missing" | "expected" | "incomplete";
+        /**
+         * ChildChoice
+         * @description A child the childcare card may name: its return_input row and birth date (a child is
+         *     stored as a birth date only, phase 4b D103).
+         */
+        ChildChoice: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Born On
+             * Format: date
+             */
+            born_on: string;
+        };
         /**
          * ChildFact
          * @description A child of the household (phase 4b D109; return_input kind child, household scope). No
@@ -9160,8 +9262,17 @@ export interface components {
          * GuidePoint
          * @description One open point: a draft's to-do warning, an owner without any pay source
          *     (`anlage_n.no_pay`), an owner whose wage-replacement benefit, announced in the
-         *     Jahresfragen, is not typed yet (`anlage_n.benefit_letter`), or a checklist gap that is a
-         *     value to type (price_split, market_rent).
+         *     Jahresfragen, is not typed yet (`anlage_n.benefit_letter`), a checklist gap that is a
+         *     value to type (price_split, market_rent), a booking that proposes a tax input
+         *     (`return.benefit_booked`, `return.donation_booked`, `return.childcare_booked`,
+         *     `return.services_booked`: `proposal` holds the POST /return-inputs payload and the
+         *     allocations; phase 10 §7.8 (a), D293), a note of a form that carries an action (`note`
+         *     true, the warning's code), or an input the rules refuse (`return_input.refused`, the
+         *     rule's error code in `refused`).
+         *
+         *     `blocking` false: listed, but not counted in a step's or a form's open points and never
+         *     holding the year back from „bereit“ (a note; a donation, Kita or §35a proposal, which a
+         *     person may rightly lower or leave out).
          */
         GuidePoint: {
             /**
@@ -9182,6 +9293,19 @@ export interface components {
             owner_id?: string | null;
             warning?: components["schemas"]["DraftWarning"] | null;
             item?: components["schemas"]["DocumentChecklistItem"] | null;
+            proposal?: components["schemas"]["BookedProposal"] | null;
+            /**
+             * Note
+             * @default false
+             */
+            note: boolean;
+            /** Refused */
+            refused?: string | null;
+            /**
+             * Blocking
+             * @default true
+             */
+            blocking: boolean;
         };
         /** GuideStep */
         GuideStep: {

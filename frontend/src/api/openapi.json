@@ -15654,6 +15654,194 @@
         ],
         "title": "Body_movement_import_create_api_accounts__account_id__movement_imports_post"
       },
+      "BookedPayment": {
+        "properties": {
+          "allocation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Allocation Id"
+          },
+          "booking_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Booking Date"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "payee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payee"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "allocation_id",
+          "booking_date",
+          "amount"
+        ],
+        "title": "BookedPayment",
+        "description": "One payment a proposal sums, for „Zahlungen ansehen“: its booking date, the amount as on\nthe account (signed) and the payee's name, never the purpose text. Filled by the service\n(services/return_inputs.booked_input_proposals); the rule leaves it empty."
+      },
+      "BookedProposal": {
+        "properties": {
+          "group": {
+            "type": "string",
+            "enum": [
+              "benefit",
+              "donation",
+              "childcare",
+              "household_services"
+            ],
+            "title": "Group"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ReturnInputKind"
+          },
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "payee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payee"
+          },
+          "booked": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Booked"
+          },
+          "typed": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Typed"
+          },
+          "difference": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Difference"
+          },
+          "payments": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Payments"
+          },
+          "allocation_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Allocation Ids"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/BookedPayment"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          },
+          "needs": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "owner",
+                "benefit",
+                "child",
+                "labour_cost",
+                "service_class",
+                "recipient"
+              ]
+            },
+            "type": "array",
+            "title": "Needs"
+          },
+          "benefit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benefit"
+          },
+          "child_choices": {
+            "items": {
+              "$ref": "#/components/schemas/ChildChoice"
+            },
+            "type": "array",
+            "title": "Child Choices"
+          },
+          "receipt_needed": {
+            "type": "boolean",
+            "title": "Receipt Needed",
+            "default": false
+          },
+          "ask_party": {
+            "type": "boolean",
+            "title": "Ask Party",
+            "default": false
+          },
+          "blocking": {
+            "type": "boolean",
+            "title": "Blocking",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "group",
+          "kind",
+          "tax_year",
+          "booked",
+          "typed",
+          "difference",
+          "payments",
+          "allocation_ids",
+          "payload"
+        ],
+        "title": "BookedProposal",
+        "description": "One proposed return input from the year's bookings.\n\n`booked` is the group's year sum as a positive amount (clamped at zero), `typed` what the\ncurrent rows cover of it, `difference` = booked − typed, the amount the row would carry\n(for §35a the bill's sum, shown only: the row carries the labour share the person types).\n`payload` is the `POST /return-inputs` body with every field the bookings say; the card\nadds the fields in `needs`. `blocking`: whether the guide counts it as open (a benefit\ndoes, as its to-do did; the other groups are proposals the amounts alone cannot close, see\nrules/tax/booked_inputs.py)."
+      },
       "BridgeRow": {
         "properties": {
           "key": {
@@ -16939,6 +17127,28 @@
           "incomplete"
         ],
         "title": "ChecklistStatus"
+      },
+      "ChildChoice": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "born_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Born On"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "born_on"
+        ],
+        "title": "ChildChoice",
+        "description": "A child the childcare card may name: its return_input row and birth date (a child is\nstored as a birth date only, phase 4b D103)."
       },
       "ChildFact": {
         "properties": {
@@ -23672,6 +23882,37 @@
                 "type": "null"
               }
             ]
+          },
+          "proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BookedProposal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note": {
+            "type": "boolean",
+            "title": "Note",
+            "default": false
+          },
+          "refused": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refused"
+          },
+          "blocking": {
+            "type": "boolean",
+            "title": "Blocking",
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -23682,7 +23923,7 @@
           "code"
         ],
         "title": "GuidePoint",
-        "description": "One open point: a draft's to-do warning, an owner without any pay source\n(`anlage_n.no_pay`), an owner whose wage-replacement benefit, announced in the\nJahresfragen, is not typed yet (`anlage_n.benefit_letter`), or a checklist gap that is a\nvalue to type (price_split, market_rent)."
+        "description": "One open point: a draft's to-do warning, an owner without any pay source\n(`anlage_n.no_pay`), an owner whose wage-replacement benefit, announced in the\nJahresfragen, is not typed yet (`anlage_n.benefit_letter`), a checklist gap that is a\nvalue to type (price_split, market_rent), a booking that proposes a tax input\n(`return.benefit_booked`, `return.donation_booked`, `return.childcare_booked`,\n`return.services_booked`: `proposal` holds the POST /return-inputs payload and the\nallocations; phase 10 §7.8 (a), D293), a note of a form that carries an action (`note`\ntrue, the warning's code), or an input the rules refuse (`return_input.refused`, the\nrule's error code in `refused`).\n\n`blocking` false: listed, but not counted in a step's or a form's open points and never\nholding the year back from „bereit“ (a note; a donation, Kita or §35a proposal, which a\nperson may rightly lower or leave out)."
       },
       "GuideStep": {
         "properties": {

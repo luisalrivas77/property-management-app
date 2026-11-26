@@ -373,8 +373,6 @@ export const returnInputs = defineMessages({
     fromYear: (year: number) => ` (aus ${year})`,
     change: "ändern",
     remove: "Entfernen",
-    benefitAsk: (amount: string) =>
-      `Auf einem gemeinsamen Konto sind ${amount} als Lohnersatzleistung gebucht. Bitte oben die Person wählen, die die Leistung bekommen hat; dann öffnet sich hier das Formular mit dem Betrag.`,
     addSingle: (title: string) => `${title} eintragen`,
     addMany: (title: string) => `${title} hinzufügen`,
     formChange: (title: string) => `${title} ändern`,
@@ -382,8 +380,6 @@ export const returnInputs = defineMessages({
     alreadyRecorded:
       "Für dieses Jahr ist schon ein Eintrag erfasst. Bitte abbrechen; die Anzeige zeigt ihn nach dem Neuladen.",
     changedMeanwhile: "Die Angabe wurde inzwischen geändert. Bitte abbrechen und erneut ändern.",
-    prefilled:
-      "Vorgeschlagen aus den Zahlungen, die auf dem Konto als Lohnersatzleistung gebucht sind. Bitte Betrag und Leistung prüfen; erst „Speichern“ trägt sie ein.",
     pleaseChoose: "Bitte wählen",
     yes: "ja",
     no: "nein",
@@ -420,16 +416,12 @@ export const returnInputs = defineMessages({
     fromYear: (year: number) => ` (from ${year})`,
     change: "change",
     remove: "Remove",
-    benefitAsk: (amount: string) =>
-      `${amount} is booked as a wage-replacement benefit on a joint account. Please choose above the person who received the benefit; the form with the amount then opens here.`,
     addSingle: (title: string) => `Enter ${title}`,
     addMany: (title: string) => `Add ${title}`,
     formChange: (title: string) => `Change ${title}`,
     formEnter: (title: string) => `Enter ${title}`,
     alreadyRecorded: "An entry is already recorded for this year. Please cancel; the view shows it after reloading.",
     changedMeanwhile: "The entry has changed in the meantime. Please cancel and change it again.",
-    prefilled:
-      "Suggested from the payments booked on the account as a wage-replacement benefit. Please check the amount and the benefit; only “Save” enters them.",
     pleaseChoose: "Please choose",
     yes: "yes",
     no: "no",

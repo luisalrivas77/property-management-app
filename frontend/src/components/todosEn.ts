@@ -260,8 +260,8 @@ export const WARNING_EN: Record<string, WarningEn> = {
     title: (p) => `Enter wage-replacement benefits (Lohnersatzleistungen) ${p.tax_year ?? ""}`,
     text: (p) =>
       p.owner_id
-        ? `${money(p.difference)} of Elterngeld, Mutterschaftsgeld, Krankengeld or Arbeitslosengeld arrived on the account and is not entered as a wage-replacement benefit yet. It raises the tax rate on the other income. The amount proposed is what arrived on the account. For Krankengeld the health insurer's certificate shows a higher amount: enter that one. Check the amount and save it at the wage-replacement benefits.`
-        : `${money(p.difference)} of Elterngeld, Mutterschaftsgeld, Krankengeld or Arbeitslosengeld arrived on a joint account and is not entered as a wage-replacement benefit yet. It raises the tax rate on the other income. The amount proposed is what arrived on the account. For Krankengeld the health insurer's certificate shows a higher amount: enter that one. First choose the person who received the benefit, then check the amount and save it.`,
+        ? `${money(p.difference)} of Elterngeld, Mutterschaftsgeld, Krankengeld or Arbeitslosengeld arrived on the account and is not entered as a wage-replacement benefit yet. It raises the tax rate on the other income. The amount proposed is what arrived on the account. For Krankengeld the health insurer's certificate shows a higher amount: enter that one. Check the amount and take it over.`
+        : `${money(p.difference)} of Elterngeld, Mutterschaftsgeld, Krankengeld or Arbeitslosengeld arrived on a joint account and is not entered as a wage-replacement benefit yet. It raises the tax rate on the other income. The amount proposed is what arrived on the account. For Krankengeld the health insurer's certificate shows a higher amount: enter that one. First choose the person who received the benefit, then check the amount and take it over.`,
   },
   "return.children_mismatch": {
     text: () =>
@@ -487,6 +487,7 @@ export const LABEL_EN: Record<string, string> = {
   "Unter Dokumente verknüpfen": "Link under Documents",
   "Unter Nebenkosten eintragen": "Enter under Nebenkosten",
   "Unterlagen ansehen": "View documents",
+  "Vorschlag ansehen": "See the proposal",
   "Zahlung öffnen": "Open payment",
   "Zahlung öffnen und einordnen": "Open and classify the payment",
   "Zahlungsnachweis hochladen": "Upload proof of payment",
