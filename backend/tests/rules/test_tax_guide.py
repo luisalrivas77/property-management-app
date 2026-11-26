@@ -3,12 +3,14 @@ dran“, the Belege and the routing of each to-do warning to its step. Invented 
 properties only."""
 
 import re
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from uuid import uuid4
 
 from hausbuch.rules import tax_guide as rule
 from hausbuch.rules.tax._common import warning
+from hausbuch.schemas.booked_inputs import BookedProposal
 from hausbuch.schemas.checklist import (
     ChecklistScope,
     ChecklistScopeType,
@@ -411,3 +413,66 @@ def test_a_year_that_cannot_be_computed_is_never_ready():
     assert result.steps_done == 4
     assert result.next_step is None
     assert rule.guide(facts()).ready is True
+
+
+# --- phase 10 §7.8 (a), D293: bookings propose tax inputs -------------------------------------
+
+_KIND_OF_GROUP = {
+    "benefit": "replacement_income",
+    "donation": "special_expense",
+    "childcare": "childcare_cost",
+    "household_services": "household_services",
+}
+
+
+def _proposal(group: str, *, blocking: bool, owner=None) -> BookedProposal:
+    kind = _KIND_OF_GROUP[group]
+    return BookedProposal.model_validate(
+        {
+            "group": group,
+            "kind": kind,
+            "tax_year": YEAR,
+            "owner_id": owner,
+            "booked": "50.00",
+            "typed": "0.00",
+            "difference": "50.00",
+            "payments": 1,
+            "allocation_ids": [uuid4()],
+            "payload": {"kind": kind, "tax_year": YEAR, "value": {}},
+            "blocking": blocking,
+        }
+    )
+
+
+def test_proposals_are_points_and_only_the_blocking_ones_hold_the_step():
+    donation = _proposal("donation", blocking=False)
+    result = rule.guide(replace(facts(), proposals=[donation]))
+    (point,) = result.points
+    assert (point.step, point.form, point.code, point.blocking) == (
+        "angaben",
+        "return",
+        "return.donation_booked",
+        False,
+    )
+    assert point.proposal == donation
+    assert (result.steps[0].state, result.steps[0].open) == ("done", 0)
+    assert result.ready is True
+
+    benefit = _proposal("benefit", blocking=True, owner=A)
+    result = rule.guide(replace(facts(), proposals=[benefit, donation]))
+    assert [p.code for p in result.points] == ["return.benefit_booked", "return.donation_booked"]
+    assert (result.steps[0].state, result.steps[0].open) == ("open", 1)
+    assert result.ready is False
+
+
+def test_the_benefit_warning_gives_way_to_its_proposal():
+    """With the proposals read, the estimate's `return.benefit_booked` warning is no second
+    point; without them (None) it stays a point as before."""
+    todo = warning(WarningCode.RETURN_BENEFIT_BOOKED, difference="50.00")
+    base = facts(estimate_warnings=[todo])
+    assert [p.code for p in rule.guide(base).points] == ["return.benefit_booked"]
+    assert rule.guide(replace(base, proposals=[])).points == []
+    result = rule.guide(replace(base, proposals=[_proposal("benefit", blocking=True)]))
+    assert [(p.code, p.proposal is not None) for p in result.points] == [
+        ("return.benefit_booked", True)
+    ]

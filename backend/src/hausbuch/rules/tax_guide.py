@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Literal
 
+from hausbuch.schemas.booked_inputs import BookedGroup, BookedProposal
 from hausbuch.schemas.checklist import ChecklistStatus, DocumentChecklistItem, RequirementCode
 from hausbuch.schemas.employment import OpenQuestion
 from hausbuch.schemas.tax import DraftWarning
@@ -106,6 +107,17 @@ NO_PAY_CODE = "anlage_n.no_pay"
 # but whose amount is not typed yet (the whole-return estimate's MissingItem `benefit_letter`,
 # which raises no warning): a point of Eure Angaben, one per owner.
 BENEFIT_LETTER_CODE = "anlage_n.benefit_letter"
+
+# The bookings that propose a tax input (phase 10 §7.8 (a), D293, rules/tax/booked_inputs.py):
+# one point of Eure Angaben per proposal, with its POST /return-inputs payload. The benefit
+# proposal keeps the code of the estimate's to-do it replaces; when the service hands the
+# proposals in, that warning is no separate point.
+PROPOSAL_CODE: dict[BookedGroup, str] = {
+    "benefit": "return.benefit_booked",
+    "donation": "return.donation_booked",
+    "childcare": "return.childcare_booked",
+    "household_services": "return.services_booked",
+}
 
 
 # --- Who sends a Beleg, and when ----------------------------------------------------------
@@ -196,6 +208,10 @@ class GuideInput:
     # A source could not be read for the year (the service's `unavailable`: no rule set, a
     # draft refused): the year cannot be finished, so Prüfen und abgeben is never done.
     incomplete: bool = False
+    # The bookings that propose a tax input (rules/tax/booked_inputs.booked_proposals). None:
+    # not read (the estimate's `return.benefit_booked` warnings then stay points as before);
+    # a list, even empty: those warnings are left to the proposals.
+    proposals: Sequence[BookedProposal] | None = None
 
 
 @dataclass(frozen=True)
@@ -221,7 +237,11 @@ class GuideResult:
                 return property_id is not None and p_id == property_id
             return owner_id is not None and o_id == owner_id
 
-        points = sum(1 for p in self.points if p.form == form and mine(p.property_id, p.owner_id))
+        points = sum(
+            1
+            for p in self.points
+            if p.blocking and p.form == form and mine(p.property_id, p.owner_id)
+        )
         belege = sum(
             1 for d in self.documents if d.status != "present" and mine(d.property_id, d.owner_id)
         )
@@ -312,6 +332,8 @@ def points(facts: GuideInput, docs: list[GuideDocument]) -> list[GuidePoint]:
     seen: set[tuple] = set()
 
     def add(warning: DraftWarning, form, property_id=None, owner_id=None) -> None:
+        if facts.proposals is not None and warning.code.value == PROPOSAL_CODE["benefit"]:
+            return  # the benefit proposal below stands for it, with its payload
         step = STEP_OF_WARNING.get(warning.code.value)
         if step is None or step == "questions":
             return
@@ -363,6 +385,17 @@ def points(facts: GuideInput, docs: list[GuideDocument]) -> list[GuidePoint]:
             add(warning, "anlage_n", owner_id=owner.owner_id)
     for warning in facts.estimate_warnings:
         add(warning, "return")
+    for proposal in facts.proposals or ():
+        out.append(
+            GuidePoint(
+                step="angaben",
+                form="return",
+                code=PROPOSAL_CODE[proposal.group],
+                owner_id=proposal.owner_id,
+                proposal=proposal,
+                blocking=proposal.blocking,
+            )
+        )
     for prop in facts.properties:
         warnings = list(prop.warnings or ())
         codes = {w.code.value for w in warnings}
@@ -404,7 +437,9 @@ def guide(facts: GuideInput) -> GuideResult:
         return sum(
             1
             for p in pts
-            if p.step == step and (property_id is None or p.property_id == property_id)
+            if p.blocking
+            and p.step == step
+            and (property_id is None or p.property_id == property_id)
         )
 
     steps: list[GuideStep] = []

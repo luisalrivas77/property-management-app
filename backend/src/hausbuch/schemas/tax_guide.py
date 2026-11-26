@@ -12,6 +12,7 @@ from uuid import UUID
 
 from pydantic import Field
 
+from .booked_inputs import BookedProposal
 from .checklist import DocumentChecklistItem
 from .common import Money, Schema, TaxYear
 from .tax import DraftWarning
@@ -50,8 +51,17 @@ class GuideStep(Schema):
 class GuidePoint(Schema):
     """One open point: a draft's to-do warning, an owner without any pay source
     (`anlage_n.no_pay`), an owner whose wage-replacement benefit, announced in the
-    Jahresfragen, is not typed yet (`anlage_n.benefit_letter`), or a checklist gap that is a
-    value to type (price_split, market_rent)."""
+    Jahresfragen, is not typed yet (`anlage_n.benefit_letter`), a checklist gap that is a
+    value to type (price_split, market_rent), a booking that proposes a tax input
+    (`return.benefit_booked`, `return.donation_booked`, `return.childcare_booked`,
+    `return.services_booked`: `proposal` holds the POST /return-inputs payload and the
+    allocations; phase 10 §7.8 (a), D293), a note of a form that carries an action (`note`
+    true, the warning's code), or an input the rules refuse (`return_input.refused`, the
+    rule's error code in `refused`).
+
+    `blocking` false: listed, but not counted in a step's or a form's open points and never
+    holding the year back from „bereit“ (a note; a donation, Kita or §35a proposal, which a
+    person may rightly lower or leave out)."""
 
     step: Literal["angaben", "property", "review"]
     form: GuideForm
@@ -60,6 +70,10 @@ class GuidePoint(Schema):
     owner_id: UUID | None = None
     warning: DraftWarning | None = None
     item: DocumentChecklistItem | None = None
+    proposal: BookedProposal | None = None
+    note: bool = False
+    refused: str | None = None
+    blocking: bool = True
 
 
 class GuideDocument(Schema):

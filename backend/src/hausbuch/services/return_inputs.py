@@ -77,9 +77,11 @@ from hausbuch.rules.tax.anlage_n._base import SPANNING_KINDS, rules_for
 from hausbuch.rules.tax.anlage_n.children import child_months
 from hausbuch.rules.tax.anlage_n.draft import draft_n
 from hausbuch.rules.tax.anlage_n.summary import TaxContexts
+from hausbuch.rules.tax.booked_inputs import CHILDCARE_MAX_AGE, PROPOSING_CODES, booked_proposals
 from hausbuch.rules.tax.questionnaire import reminders
 from hausbuch.rules.tax.return_estimate import return_estimate
 from hausbuch.schemas.allocation import AllocationCategory
+from hausbuch.schemas.booked_inputs import BookedLine, BookedProposal
 from hausbuch.schemas.employment import (
     HOUSEHOLD_KINDS,
     AnlageNDraft,
@@ -304,18 +306,27 @@ def household_return_estimate(conn: Connection, *, tax_year: int, today: date) -
     )
 
 
-def booked_benefits(conn: Connection, tax_year: int) -> list[BookedBenefit]:
-    """The confirmed `hh_wage_replacement` allocations on the private accounts booked in
-    `tax_year` (phase 6 D159 amended (8)), with the line's payee and purpose as their text and
-    the account's current owners; a line marked as a duplicate is left out. Read for
-    rules/tax/anlage_n/booked_benefits only, never returned."""
+def booked_lines(conn: Connection, tax_year: int) -> list[BookedLine]:
+    """The confirmed allocations on the private accounts booked in `tax_year` whose household
+    code proposes a return input (phase 10 §7.8 (a), D293; rules/tax/booked_inputs
+    PROPOSING_CODES), with the line's payee, purpose and the account's current owners; a line
+    marked as a duplicate is left out. Read for rules/tax/booked_inputs only: the payee name
+    reaches a proposal, the purpose never does."""
     a, t, acc = allocation_table.c, transaction_table.c, account_table.c
     rows = conn.execute(
-        select(a.id, a.amount, t.booking_date, t.counterparty_name, t.purpose, t.account_id)
+        select(
+            a.id,
+            a.amount,
+            a.category,
+            t.booking_date,
+            t.counterparty_name,
+            t.purpose,
+            t.account_id,
+        )
         .join(transaction_table, t.id == a.transaction_id)
         .join(account_table, acc.id == t.account_id)
         .where(
-            a.category == AllocationCategory.HH_WAGE_REPLACEMENT.value,
+            a.category.in_(sorted(c.value for c in PROPOSING_CODES)),
             a.status == AllocationStatus.CONFIRMED.value,
             acc.purpose == AccountPurpose.PRIVATE.value,
             t.excluded_as_duplicate_of.is_(None),
@@ -335,15 +346,42 @@ def booked_benefits(conn: Connection, tax_year: int) -> list[BookedBenefit]:
     ):
         owners.setdefault(account_id, []).append(owner_id)
     return [
-        BookedBenefit(
+        BookedLine(
             allocation_id=r.id,
             booking_date=r.booking_date,
             amount=r.amount,
             text=" ".join(x for x in (r.counterparty_name, r.purpose) if x),
             owner_ids=sorted(owners.get(r.account_id, []), key=str),
+            category=r.category,
+            payee=r.counterparty_name,
+            purpose=r.purpose,
         )
         for r in rows
     ]
+
+
+def booked_benefits(conn: Connection, tax_year: int) -> list[BookedBenefit]:
+    """The confirmed `hh_wage_replacement` lines of `tax_year` (phase 6 D159 amended (8)), for
+    the estimate's to-do `return.benefit_booked`; never returned."""
+    return [
+        x
+        for x in booked_lines(conn, tax_year)
+        if x.category == AllocationCategory.HH_WAGE_REPLACEMENT
+    ]
+
+
+def booked_input_proposals(conn: Connection, tax_year: int) -> list[BookedProposal]:
+    """The year's proposed return inputs from the bookings (phase 10 §7.8 (a), D293): pure
+    rules/tax/booked_inputs over the owners' and household's current rows and the year's
+    lines. Writes nothing; „Übernehmen“ posts the proposal's payload to /return-inputs."""
+    care = registry.tariff(tax_year).childcare
+    return booked_proposals(
+        tax_year,
+        owner_facts(conn, tax_year),
+        household_rows(conn),
+        booked_lines(conn, tax_year),
+        childcare_max_age=CHILDCARE_MAX_AGE if care is None else care.max_age,
+    )
 
 
 # --- Writes ------------------------------------------------------------------------------

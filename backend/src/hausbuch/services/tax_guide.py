@@ -28,7 +28,7 @@ from .checklist import checklist_facts, document_checklist
 from .owners import list_owners
 from .properties import list_properties
 from .questionnaire import questionnaire_progress
-from .return_inputs import anlage_n_draft, household_return_estimate
+from .return_inputs import anlage_n_draft, booked_input_proposals, household_return_estimate
 from .tax import anlage_v_draft
 
 
@@ -98,8 +98,17 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
         answered, total = progress.answered, progress.total
         open_questions = progress.open
 
+    # The bookings that propose a tax input (phase 10 §7.8 (a), D293): a point of Eure Angaben
+    # each, with the POST /return-inputs payload; nothing is written here.
+    try:
+        proposals = booked_input_proposals(conn, tax_year)
+    except RuleError as exc:
+        unavailable.append(f"proposals:{exc.code}")
+        proposals = None
+
     result = rule.guide(
         rule.GuideInput(
+            proposals=proposals,
             tax_year=tax_year,
             today=today,
             properties=properties,

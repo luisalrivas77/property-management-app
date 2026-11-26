@@ -75,7 +75,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from hausbuch.rules.household.taxonomy import household_code
+from hausbuch.rules.household.taxonomy import TAXONOMY, household_code
 from hausbuch.rules.matching import payee_key, same_payee
 from hausbuch.rules.tax._common import warning
 from hausbuch.rules.tax.anlage_n._base import ZERO, cents, current, in_year, row_sources
@@ -114,6 +114,10 @@ KIND_OF_GROUP: dict[BookedGroup, ReturnInputKind] = {
     "household_services": K.HOUSEHOLD_SERVICES,
 }
 GROUP_ORDER: tuple[BookedGroup, ...] = ("benefit", "donation", "childcare", "household_services")
+# The household codes whose lines propose a return input (services read only these).
+PROPOSING_CODES = frozenset(
+    code for code, row in TAXONOMY.items() if row.proposes in GROUP_OF_INPUT
+)
 
 # §50 Abs. 4 Satz 1 Nr. 2 EStDV: a donation up to this amount is proven by the bank line.
 DONATION_RECEIPT_LIMIT = Decimal("300.00")

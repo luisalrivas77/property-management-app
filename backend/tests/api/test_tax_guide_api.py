@@ -209,3 +209,96 @@ def test_a_benefit_announced_but_not_typed_keeps_eure_angaben_open(client_a):
     ]
     assert got["steps"][0]["state"] == "open"
     assert got["ready"] is False
+
+
+# --- Phase 10 §7.8 (a), D293: bookings propose tax inputs -----------------------------------
+
+
+def _booked_line(client, *, debit: bool) -> dict:
+    """A private account with the camt fixture's lines; one debit (or credit) line of 2026."""
+    from test_bank_parsers import CAMT, build
+
+    case = next(c for c in CAMT.cases if c.id == "sparkasse_zip_of_daily_reports")
+    account = create(
+        client,
+        "/api/accounts",
+        {
+            "label": "Girokonto",
+            "bank": "Testbank",
+            "iban": "DE50100000000000000001",  # the fixture file's own
+            "purpose": "private",
+            "opening_balance": "0.00",
+            "opening_balance_on": "2026-03-31",
+        },
+    )
+    files = {"file": ("umsaetze.zip", build(case.input), "application/zip")}
+    ok(client.post(f"/api/accounts/{account['id']}/imports", files=files), 201)
+    lines = ok(client.get(f"/api/accounts/{account['id']}/transactions"))
+    return next(
+        t
+        for t in lines
+        if t["amount"].startswith("-") == debit
+        and t["amount"] != "0.00"
+        and t["booking_date"].startswith("2026-")
+    )
+
+
+def _allocate(client, line: dict, category: str) -> None:
+    body = {
+        "allocation_set": {
+            "transaction_id": line["id"],
+            "allocations": [{"amount": line["amount"], "category": category}],
+            "method": "user",
+            "confidence": "1.000",
+        },
+        "learn_rule": False,
+    }
+    ok(client.put(f"/api/transactions/{line['id']}/allocations", json=body))
+
+
+def _proposal_points(client, code: str) -> list[dict]:
+    return [p for p in _guide(client, 2026)["points"] if p["code"] == code]
+
+
+def test_a_booked_donation_is_a_proposal_whose_payload_posts_verbatim(client_a, client_b):
+    """The guide's donation point carries the exact POST /return-inputs body; posting it (with
+    the recipient filled when the line names none) ends the point. It never blocks the year."""
+    create(client_a, "/api/owners", {"full_name": "Person A"})
+    line = _booked_line(client_a, debit=True)
+    assert _proposal_points(client_a, "return.donation_booked") == []
+    _allocate(client_a, line, "hh_donation")
+
+    (point,) = _proposal_points(client_a, "return.donation_booked")
+    proposal = point["proposal"]
+    assert (point["step"], point["form"], point["blocking"]) == ("angaben", "return", False)
+    assert proposal["difference"] == line["amount"].lstrip("-")
+    assert proposal["allocation_ids"]
+    assert proposal["ask_party"] is True
+    # The purpose text never leaves the server: the payee's name only.
+    assert not {"purpose", "text", "lines"} & set(proposal)
+    assert _proposal_points(client_b, "return.donation_booked") == []  # RLS
+
+    body = proposal["payload"]
+    if "recipient" in proposal["needs"]:
+        body["value"]["recipient_label"] = "Empfänger"
+    create(client_a, "/api/return-inputs", body)
+    assert _proposal_points(client_a, "return.donation_booked") == []
+
+
+def test_a_booked_benefit_is_one_point_with_its_payload(client_a):
+    """`return.benefit_booked` is the proposal's point, no longer a second point from the
+    estimate's warning; typing the payload ends it."""
+    owner = create(client_a, "/api/owners", {"full_name": "Person A"})["id"]
+    line = _booked_line(client_a, debit=False)
+    _allocate(client_a, line, "hh_wage_replacement")
+    (point,) = _proposal_points(client_a, "return.benefit_booked")
+    assert point["blocking"] is True and point["proposal"]["group"] == "benefit"
+    assert _guide(client_a, 2026)["steps"][0]["state"] == "open"
+
+    body = point["proposal"]["payload"]
+    if "owner" in point["proposal"]["needs"]:
+        body["owner_id"] = owner
+    if "benefit" in point["proposal"]["needs"]:
+        body["value"]["benefit"] = "elterngeld"
+    create(client_a, "/api/return-inputs", body)
+    assert _proposal_points(client_a, "return.benefit_booked") == []
