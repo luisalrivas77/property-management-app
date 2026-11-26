@@ -121,6 +121,9 @@ class PlanInputs:
     properties: Sequence[PlanProperty] = ()
     invested_this_month: Decimal = ZERO  # the running month's booked investment transfers
     budget_adopted: bool = False  # the route's wants budget is the default scenario's
+    # „Anlegbar jetzt“ (§7.11 (d)): the plan's own `above_target`, as GET /household-plan
+    # serves it; shown on the on-track plan card („Jetzt anlegen“). None when not read.
+    above_target: Decimal | None = None
 
 
 # --- The route --------------------------------------------------------------------------------
@@ -462,6 +465,7 @@ class HeuteCard:
     reserve_full: bool | None  # at or above its target
     saved_mean: Decimal
     reserve_accounts: list[str]
+    above_target: Decimal | None = None  # the plan's „Anlegbar jetzt“, read, never computed here
 
 
 @dataclass(frozen=True)
@@ -598,6 +602,7 @@ def plan_cards(i: PlanInputs, answer: HouseholdGoal | None = None) -> PlanCards:
         reserve_full=None if reserve_target is None else i.reserve_today >= reserve_target,
         saved_mean=gi.heute,
         reserve_accounts=list(i.reserve_accounts),
+        above_target=i.above_target,
     )
     base = route.walk()
     base_reached = reached_in(goal, base, target)

@@ -101,6 +101,8 @@ def plan_page(
             ),
             invested_this_month=invested,
             budget_adopted=_budget_adopted(levers, answer),
+            # „Jetzt anlegen“ on the on-track plan card: GET /household-plan's own figure
+            above_target=built.plan.above_target,
         ),
         answer,
     )

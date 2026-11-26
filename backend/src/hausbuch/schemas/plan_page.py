@@ -86,6 +86,10 @@ class PlanHeute(_Absent):
     reserve_months: ReserveMonths | None
     reserve_full: bool | None
     saved_mean: Money
+    # „Anlegbar jetzt“ (§7.11 (d)): the reserve above its target today, GET /household-plan's
+    # `above_target`; read by the on-track plan card („Jetzt anlegen“). Rounded like the reserve
+    # in „Zum Teilen“.
+    above_target: NonNegativeMoney | None = None
     window_from: YearMonth | None = None  # the closed months the mean is taken over
     window_to: YearMonth | None = None
     reserve_accounts: list[str] = Field(default_factory=list)
