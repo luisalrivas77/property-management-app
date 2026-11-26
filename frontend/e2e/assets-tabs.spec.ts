@@ -14,6 +14,8 @@
 // - Krypto: the total with the gain since the start, „Heute steuerfrei verkaufbar“ opening the
 //   tax-free lots, a card per exchange, „Bestandsnachweis 31.12.“ as a button at the foot.
 // - Planung's old Immobilie links land on Anlagen › Immobilie with their levers.
+// - „Für euer Ziel“ (§7.9 (e) 3) sits after the gain card when the household follows a route
+//   (GET /household-goal/tracking mocked), with no sideways scroll on a phone, light and dark.
 import type { Page, Route } from "@playwright/test";
 
 import type { components } from "../src/api/types";
@@ -26,6 +28,7 @@ type PropertiesPayback = components["schemas"]["PropertiesPayback"];
 type EtfToday = components["schemas"]["EtfToday"];
 type CryptoHoldings = components["schemas"]["CryptoHoldings"];
 type NetWorthPoint = components["schemas"]["NetWorthPoint"];
+type GoalTracking = components["schemas"]["GoalTracking"];
 
 const DEPOT = "00000000-0000-4000-8000-000000000a01";
 const EXCHANGE = "00000000-0000-4000-8000-000000000a02";
@@ -283,4 +286,48 @@ test("Planung's old links land where their part is now, Immobilie with its lever
   await expect(page).toHaveURL("/household?tab=durchspielen");
   await page.goto("/planning?section=vermoegen#annahme");
   await expect(page).toHaveURL("/assets#rendite");
+});
+
+test("„Für euer Ziel“ sits after the gain card, with no sideways scroll on a phone", async ({ page, signedIn }) => {
+  void signedIn;
+  await holdings(page);
+  const tracking: GoalTracking = {
+    shown: true,
+    reason: null,
+    route: "more_return",
+    chosen_on: "2026-06-01",
+    days: 178,
+    rate: "0.061",
+    planned_per_year: "6000.00",
+    planned_by_now: "2926.03",
+    paid_in: "3000.00",
+    value_then: "20000.00",
+    value_now: "23900.00",
+    value_change: "900.00",
+    implied_change: "620.00",
+    yearly_return: null,
+    no_rate: "short_history",
+    word: "on_path",
+    short: [],
+    reserve_depots: 0,
+  };
+  await serve(page, "/api/household-goal/tracking", () => tracking);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const backgrounds: string[] = [];
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.goto("/assets");
+    const card = page.getByTestId("goal-tracking");
+    await expect(card).toContainText("Auf dem Pfad");
+    await expect(card).toContainText("3.000,00 € von 2.926,03 € eingezahlt");
+    // After the gain card, in the same row of cards.
+    const gain = page.getByRole("group", { name: "ETF und Krypto: Gewinn seit Beginn" });
+    const after = await gain.evaluate((node, other) => Boolean(node.compareDocumentPosition(other!) & Node.DOCUMENT_POSITION_FOLLOWING), await card.elementHandle());
+    expect(after).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    backgrounds.push(await page.evaluate(() => getComputedStyle(document.body).backgroundColor));
+    await card.evaluate((node) => node.scrollIntoView({ block: "center" }));
+    await page.screenshot({ path: test.info().outputPath(`goal-track-held-${scheme}.png`) });
+  }
+  expect(backgrounds[0]).not.toEqual(backgrounds[1]);
 });
