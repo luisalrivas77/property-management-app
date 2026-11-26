@@ -24401,7 +24401,6 @@
             "enum": [
               "angaben",
               "property",
-              "questions",
               "documents",
               "review"
             ],
@@ -24484,6 +24483,221 @@
           "open"
         ],
         "title": "GuideStep"
+      },
+      "GuideTopic": {
+        "properties": {
+          "topic": {
+            "type": "string",
+            "enum": [
+              "couple",
+              "pay",
+              "work_costs",
+              "insurance",
+              "benefits",
+              "children",
+              "household"
+            ],
+            "title": "Topic"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "done",
+              "open",
+              "not_needed"
+            ],
+            "title": "State"
+          },
+          "open": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Open"
+          },
+          "proposals": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Proposals",
+            "default": 0
+          },
+          "questions_open": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Questions Open"
+          },
+          "questions_total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Questions Total"
+          },
+          "owners": {
+            "items": {
+              "$ref": "#/components/schemas/GuideTopicOwner"
+            },
+            "type": "array",
+            "title": "Owners"
+          },
+          "open_questions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Open Questions"
+          },
+          "rows": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Rows"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "topic",
+          "state",
+          "open",
+          "questions_open",
+          "questions_total"
+        ],
+        "title": "GuideTopic",
+        "description": "One topic of Eure Angaben. `open`: its unanswered questions, its blocking points that are\nno proposal and, for couple, each owner without a Bundesland. `proposals`: the bookings that\npropose an input of the topic (§7.8 (a)), blocking or not. `owners`: one per owner in an owner\ntopic (couple, pay, work_costs, insurance, benefits); `open_questions` and `rows` the\nhousehold's own in children and household."
+      },
+      "GuideTopicOwner": {
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Owner Id"
+          },
+          "open": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Open"
+          },
+          "open_questions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Open Questions"
+          },
+          "rows": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Rows"
+          },
+          "church_tax": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Church Tax"
+          },
+          "tax_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax State"
+          },
+          "tax_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Class"
+          },
+          "pay_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "certified",
+                  "estimate",
+                  "none"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pay Status"
+          },
+          "gross_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "certificate",
+                  "payslip",
+                  "expected",
+                  "declared_none"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gross Source"
+          },
+          "gross": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gross"
+          },
+          "insurance_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Insurance Status"
+          },
+          "benefit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benefit"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "owner_id",
+          "open"
+        ],
+        "title": "GuideTopicOwner",
+        "description": "One owner in an owner topic: what is open for them and the facts the topic shows. Only\nthe facts of the topic are set; the browser words them and computes nothing."
       },
       "HandFields": {
         "properties": {
@@ -35960,6 +36174,26 @@
               }
             ],
             "title": "Default Answer"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "couple",
+                  "pay",
+                  "work_costs",
+                  "insurance",
+                  "benefits",
+                  "children",
+                  "household"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
           }
         },
         "additionalProperties": false,
@@ -41435,6 +41669,20 @@
             },
             "type": "array",
             "title": "Unavailable"
+          },
+          "topics": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/GuideTopic"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topics"
           }
         },
         "additionalProperties": false,

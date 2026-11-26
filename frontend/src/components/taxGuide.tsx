@@ -187,12 +187,6 @@ function stepView(step: GuideStep, year: number, properties: readonly Property[]
         sub: t.stepPropertySub,
         href: taxStepHref(year, "immobilie", step.property_id ?? null),
       };
-    case "questions":
-      return {
-        title: t.stepQuestions,
-        sub: step.total ? t.stepQuestionsSub(step.done ?? 0, step.total) : t.stepQuestionsNone,
-        href: questionnaireHref(year),
-      };
     case "documents":
       return {
         title: t.stepBelege,
@@ -253,7 +247,6 @@ function StartPage({ guide, properties }: { guide: TaxGuide; properties: readonl
   const nextView = next ? stepView(next, year, properties, t) : null;
   let now: string;
   if (guide.ready) now = t.nowReady;
-  else if (next?.kind === "questions") now = t.nowQuestions(next.open);
   else if (next?.kind === "documents") now = t.nowBelege(next.open);
   else if (next) now = t.nowOpen(next.open);
   // Nothing to do now, yet the year cannot be computed: say so instead of „Alles ist geklärt“.
@@ -1257,7 +1250,9 @@ function ReviewStep({
   const openSteps = guide.steps.filter((s) => s.kind !== "review" && s.state !== "done");
   // A note or a proposal a person may rightly leave is listed but never counted (GuidePoint.blocking).
   const blocking = points.filter((p) => p.blocking !== false).length;
-  const stillOpen = blocking + openSteps.filter((s) => s.kind === "questions" || s.kind === "documents").reduce((n, s) => n + s.open, 0);
+  // Every step's open count: its blocking points, its open Jahresfragen (Eure Angaben and
+  // Immobilie since D294 folded the Jahresfragen step into them) and the Belege missing.
+  const stillOpen = guide.steps.reduce((n, s) => n + s.open, 0);
   // Nothing left to clear, yet a part of the year cannot be computed: say that, not „0 Punkte“.
   const elsterWhy = (stillOpen === 0 ? unavailableText(guide, t) : null) ?? t.elsterNotYet(stillOpen);
   // The open point, remembered: once it is cleared (the guide reloads without it), „Nächster

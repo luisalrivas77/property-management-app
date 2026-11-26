@@ -766,6 +766,10 @@ class BookedBenefit(Schema):
 # --- The questionnaire (D110, §4.2) ----------------------------------------------------
 
 QuestionScope = Literal["owner", "household", "property"]
+# The topics of Eure Angaben (schemas.tax_guide.GuideTopicKind says the same).
+QuestionTopic = Literal[
+    "couple", "pay", "work_costs", "insurance", "benefits", "children", "household"
+]
 QUESTION_KEY_PATTERN = r"^(owner|household|property)\.[a-z0-9_]{1,52}$"
 CHOICE_CODE_PATTERN = r"^[a-z0-9_]{1,32}$"
 
@@ -809,12 +813,17 @@ class Question(Schema):
     targets: list[QuestionTarget] = Field(default_factory=list)
     carry_forward: Literal["copy", "reconfirm", "none"]
     default_answer: Literal["yes", "no"] | None = None
+    # The topic of Eure Angaben it is asked in (phase 10 §7.8 (b), D294): every owner and
+    # household question names one, a property question none (its slot is the property's).
+    topic: QuestionTopic | None = None
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
         problems = []
         if self.key.split(".", 1)[0] != self.scope:
             problems.append("the key starts with its scope")
+        if (self.topic is None) != (self.scope == "property"):
+            problems.append("an owner or household question names its topic, a property one none")
         if self.answer_type == "choice" and not self.choices:
             problems.append("a choice question lists its choices")
         if self.answer_type == "yes_no" and self.choices:

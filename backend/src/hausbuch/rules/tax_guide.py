@@ -3,8 +3,10 @@ who sends each Beleg and when it usually comes, and the step states. Pure: the s
 (services/tax_guide.py) reads the drafts, the checklists and the questionnaire and hands their
 results here; nothing in this module computes a tax figure.
 
-The five steps, in order: Eure Angaben, Immobilie (one per property owned in the year),
-Jahresfragen, Belege, Prüfen und abgeben.
+The four steps, in order: Eure Angaben, Immobilie (one per property owned in the year), Belege,
+Prüfen und abgeben. The Jahresfragen are no step of their own since phase 10 §7.8 (b), D294: an
+open question about an owner or the household is open in Eure Angaben, one about a property in
+that property's Immobilie step (rules/angaben_topics.py sorts Eure Angaben into its topics).
 
 - STEP_OF_WARNING names the step of every warning code the frontend lists as a to-do
   (components/todos.tsx, `todo: true`); tests/rules/test_tax_guide.py keeps the two equal. A
@@ -64,9 +66,11 @@ STEP_OF_WARNING: dict[str, GuideStepKind] = {
     "income.living_area_missing": "property",
     "reduced_rent.no_market_rent": "property",
     "reduced_rent.partial": "property",
-    # Jahresfragen: counted by the questionnaire's own progress, never as a separate point.
-    "return.questionnaire_open": "questions",
-    "tax_export.questions_open": "questions",
+    # The Jahresfragen: the open questions themselves are counted (Eure Angaben, or the
+    # property's step), so these two warnings, which only say that some are open, are never
+    # a point of their own (QUESTIONNAIRE_CODES).
+    "return.questionnaire_open": "angaben",
+    "tax_export.questions_open": "angaben",
     # Belege: the document itself, while it is not there.
     "anlage_n.certificate_missing": "documents",
     "hausgeld.abrechnung_pending": "documents",
@@ -108,6 +112,8 @@ NOTE_STEP: dict[str, Literal["angaben", "property", "review"]] = {
     "return.child_over_18": "angaben",
     "return.childcare_until_14": "angaben",
 }
+
+QUESTIONNAIRE_CODES = frozenset({"return.questionnaire_open", "tax_export.questions_open"})
 
 # The Beleg a "documents" point stands for: the property's checklist requirement, or the
 # owner's wage certificate.
@@ -249,7 +255,9 @@ class GuideInput:
     questions_answered: int | None  # None: no questionnaire for the year
     questions_total: int | None
     # The open Jahresfragen with their owner and property: each counts on that owner's Anlage N
-    # or that property's Anlage V card; a household question counts on no card.
+    # or that property's Anlage V card (a household question on no card), and in its step: an
+    # owner's or the household's in Eure Angaben, a property's in that property's Immobilie step
+    # (in Eure Angaben when the property has no step in the year).
     open_questions: Sequence[OpenQuestion] = ()
     # A source could not be read for the year (the service's `unavailable`: no rule set, a
     # draft refused): the year cannot be finished, so Prüfen und abgeben is never done.
@@ -386,7 +394,7 @@ def points(facts: GuideInput, docs: list[GuideDocument]) -> list[GuidePoint]:
             return  # the benefit proposal below stands for it, with its payload
         note = warning.code.value in NOTE_STEP
         step = NOTE_STEP.get(warning.code.value) or STEP_OF_WARNING.get(warning.code.value)
-        if step is None or step == "questions":
+        if step is None or warning.code.value in QUESTIONNAIRE_CODES:
             return
         if note and step == "property" and property_id is None:
             step = "review"  # a property's note read without its property: Prüfen
@@ -516,12 +524,28 @@ def guide(facts: GuideInput) -> GuideResult:
             and (property_id is None or p.property_id == property_id)
         )
 
+    # The open Jahresfragen count in their step (D294): a property's in its Immobilie step, any
+    # other in Eure Angaben, so a question about a property without a step still holds the year.
+    with_step = {prop.property_id for prop in facts.properties}
+
+    def open_questions(property_id=None) -> int:
+        if property_id is not None:
+            return sum(1 for q in facts.open_questions if q.property_id == property_id)
+        return sum(
+            1
+            for q in facts.open_questions
+            if q.property_id is None or q.property_id not in with_step
+        )
+
     # A step whose own draft could not be computed (an owner's Anlage N or the estimate for
     # Eure Angaben, the property's Anlage V for Immobilie) never reads „erledigt“: with nothing
-    # open it waits, without a month (phase 10 §7.6, wave 2's open point).
+    # open it waits, without a month (phase 10 §7.6, wave 2's open point). Nor does one whose
+    # questions could not be read (no questionnaire for the year): it held the Jahresfragen step
+    # waiting until D294.
+    unread = facts.questions_total is None
     steps: list[GuideStep] = []
-    n = open_points("angaben")
-    angaben_failed = facts.estimate_failed or any(o.failed for o in facts.owners)
+    n = open_points("angaben") + open_questions()
+    angaben_failed = facts.estimate_failed or any(o.failed for o in facts.owners) or unread
     steps.append(
         GuideStep(
             kind="angaben",
@@ -530,28 +554,14 @@ def guide(facts: GuideInput) -> GuideResult:
         )
     )
     for prop in facts.properties:
-        n = open_points("property", prop.property_id)
+        n = open_points("property", prop.property_id) + open_questions(prop.property_id)
+        failed = prop.warnings is None or unread
         steps.append(
             GuideStep(
                 kind="property",
                 property_id=prop.property_id,
-                state="open" if n else ("waiting" if prop.warnings is None else "done"),
+                state="open" if n else ("waiting" if failed else "done"),
                 open=n,
-            )
-        )
-    if facts.questions_total is None:
-        # The questionnaire could not be read (no file for the year): not done, nothing to do.
-        steps.append(GuideStep(kind="questions", state="waiting", open=0))
-    else:
-        answered = facts.questions_answered or 0
-        n = facts.questions_total - answered
-        steps.append(
-            GuideStep(
-                kind="questions",
-                state="open" if n else "done",
-                open=n,
-                done=answered,
-                total=facts.questions_total,
             )
         )
     missing = sum(1 for d in docs if d.status == "missing")

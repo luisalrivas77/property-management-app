@@ -7,6 +7,10 @@
 # are offered for confirmation; reconfirm = rows that span years (a child, an item still in
 # use) are asked about again, never copied; none = asked fresh each year.
 #
+# topic: the topic of Steuern › „Eure Angaben“ the question is asked in (phase 10 §7.8 (b),
+# D294; rules/angaben_topics.py): every owner and household question names one, a property
+# question none (it is asked in that property's step).
+#
 # Keys are stable across years: a renamed key breaks carry-forward, so tests pin them. The
 # texts are plain and generic; nothing in this file is about a particular household.
 
@@ -17,6 +21,7 @@ questions:
   - key: owner.pay_documents
     section: einkommen
     scope: owner
+    topic: pay
     question_de: "Liegt die Lohnsteuerbescheinigung für das Jahr vor, oder Gehaltsabrechnungen?"
     why_de: >-
       Die Bescheinigung des Arbeitgebers enthält Lohn, Lohnsteuer und Sozialversicherung des
@@ -29,6 +34,7 @@ questions:
   - key: owner.tax_class
     section: einkommen
     scope: owner
+    topic: couple
     question_de: "Welche Steuerklasse gilt?"
     why_de: >-
       Die Steuerklasse bestimmt nur, wie viel Lohnsteuer monatlich einbehalten wird, nicht die
@@ -46,6 +52,7 @@ questions:
   - key: owner.replacement_income
     section: einkommen
     scope: owner
+    topic: benefits
     question_de: "Gab es Lohnersatzleistungen, etwa Elterngeld, Mutterschaftsgeld oder Krankengeld?"
     why_de: >-
       Diese Leistungen sind steuerfrei, erhöhen aber den Steuersatz auf das übrige Einkommen
@@ -64,6 +71,7 @@ questions:
   - key: owner.insurance_status
     section: einkommen
     scope: owner
+    topic: insurance
     question_de: "Wie ist die Krankenversicherung?"
     why_de: >-
       Bei gesetzlich Versicherten stehen die Beiträge auf der Lohnsteuerbescheinigung. Bei
@@ -80,6 +88,7 @@ questions:
   - key: owner.other_insurance
     section: einkommen
     scope: owner
+    topic: insurance
     question_de: "Gab es weitere Versicherungen, etwa Haftpflicht, Unfall oder Berufsunfähigkeit?"
     why_de: >-
       Sie zählen nur bis zu einer Höchstgrenze, die bei Angestellten meist schon durch die
@@ -93,6 +102,7 @@ questions:
   - key: owner.commute
     section: werbungskosten
     scope: owner
+    topic: work_costs
     question_de: "Ging es regelmäßig zur Arbeitsstätte, und hat sich der Weg geändert?"
     why_de: >-
       Für jeden Arbeitstag zählen 38 Cent je Kilometer der einfachen Strecke. Das ist oft der
@@ -104,6 +114,7 @@ questions:
   - key: owner.home_office_days
     section: werbungskosten
     scope: owner
+    topic: work_costs
     question_de: "An wie vielen Tagen wurde überwiegend zu Hause gearbeitet?"
     why_de: >-
       Für jeden solchen Tag zählen 6 Euro, höchstens 1.260 Euro im Jahr. An einem Tag zählt
@@ -115,6 +126,7 @@ questions:
   - key: owner.work_room
     section: werbungskosten
     scope: owner
+    topic: work_costs
     question_de: "Gibt es ein eigenes, abgeschlossenes Arbeitszimmer, das der Mittelpunkt der ganzen Arbeit ist?"
     why_de: >-
       Nur dann zählen die Kosten des Zimmers oder eine Jahrespauschale von 1.260 Euro. Eine
@@ -126,6 +138,7 @@ questions:
   - key: owner.equipment_new
     section: werbungskosten
     scope: owner
+    topic: work_costs
     question_de: "Wurden Arbeitsmittel gekauft, etwa ein Computer, ein Bildschirm oder ein Schreibtisch?"
     why_de: >-
       Der beruflich genutzte Anteil zählt: kleine Anschaffungen und Computer im Jahr des Kaufs,
@@ -137,6 +150,7 @@ questions:
   - key: owner.equipment_prior
     section: werbungskosten
     scope: owner
+    topic: work_costs
     question_de: "Werden Arbeitsmittel aus früheren Jahren noch genutzt?"
     why_de: >-
       Ein über mehrere Jahre verteiltes Arbeitsmittel zählt jedes Jahr mit seinem Anteil, bis
@@ -148,6 +162,7 @@ questions:
   - key: owner.subscriptions
     section: werbungskosten
     scope: owner
+    topic: work_costs
     question_de: "Gab es beruflich genutzte Abonnements, etwa Software oder Fachzeitschriften?"
     why_de: "Der beruflich genutzte Anteil zählt im Jahr der Zahlung."
     answer_type: yes_no
@@ -157,6 +172,7 @@ questions:
   - key: owner.telecom
     section: werbungskosten
     scope: owner
+    topic: work_costs
     question_de: "Wurden Telefon oder Internet auch beruflich genutzt?"
     why_de: >-
       Ohne Einzelnachweis zählen 20 Prozent der Rechnungen, höchstens 20 Euro im Monat, soweit
@@ -168,6 +184,7 @@ questions:
   - key: owner.account_fee
     section: werbungskosten
     scope: owner
+    topic: work_costs
     question_de: "Kontoführungsgebühren pauschal ansetzen?"
     why_de: "Üblich sind 16 Euro im Jahr ohne Nachweis, für das Konto, auf das der Lohn fließt."
     answer_type: yes_no
@@ -178,6 +195,7 @@ questions:
   - key: owner.union_association
     section: werbungskosten
     scope: owner
+    topic: work_costs
     question_de: "Gab es Beiträge an eine Gewerkschaft oder einen Berufsverband?"
     why_de: >-
       Gewerkschaftsbeiträge zählen ab 2026 zusätzlich zum Arbeitnehmer-Pauschbetrag von
@@ -189,6 +207,7 @@ questions:
   - key: owner.training
     section: werbungskosten
     scope: owner
+    topic: work_costs
     question_de: "Gab es Kosten für eine berufliche Fortbildung?"
     why_de: "Kurse, Prüfungen und Fachbücher für den Beruf zählen, soweit niemand sie erstattet hat."
     answer_type: yes_no
@@ -198,6 +217,7 @@ questions:
   - key: owner.job_move
     section: werbungskosten
     scope: owner
+    topic: work_costs
     question_de: "Gab es einen Umzug aus beruflichen Gründen?"
     why_de: "Die App berechnet Umzugskosten nicht; sie erinnert daran, sie von Hand einzutragen."
     answer_type: yes_no
@@ -207,6 +227,7 @@ questions:
   - key: owner.own_expense_trips
     section: werbungskosten
     scope: owner
+    topic: work_costs
     question_de: "Gab es Dienstreisen, die der Arbeitgeber nicht erstattet hat?"
     why_de: "Die App berechnet Reisekosten nicht; sie erinnert daran, sie von Hand einzutragen."
     answer_type: yes_no
@@ -218,6 +239,7 @@ questions:
   - key: household.children
     section: kinder
     scope: household
+    topic: children
     question_de: "Leben Kinder im Haushalt, und kam in diesem Jahr ein Kind dazu?"
     why_de: >-
       Das Finanzamt vergleicht Kindergeld und Kinderfreibeträge und nimmt, was günstiger ist.
@@ -229,6 +251,7 @@ questions:
   - key: household.childcare
     section: kinder
     scope: household
+    topic: children
     question_de: "Gab es Kosten für Kita, Tagesmutter oder Hort?"
     why_de: "80 Prozent der Kosten zählen, höchstens 4.800 Euro je Kind unter 14 Jahren."
     answer_type: yes_no
@@ -240,6 +263,7 @@ questions:
   - key: household.services_35a
     section: haushalt
     scope: household
+    topic: household
     question_de: "Gab es Handwerker oder Dienstleistungen im eigenen Haushalt, per Überweisung bezahlt?"
     why_de: >-
       20 Prozent der Arbeitskosten mindern die Steuer direkt. Gemeint ist die eigene Wohnung;
@@ -251,6 +275,7 @@ questions:
   - key: household.donations
     section: haushalt
     scope: household
+    topic: household
     question_de: "Gab es Spenden oder Mitgliedsbeiträge an gemeinnützige Organisationen?"
     why_de: "Sie zählen als Sonderausgaben, bis zu 20 Prozent der Einkünfte."
     answer_type: yes_no
@@ -260,6 +285,7 @@ questions:
   - key: household.extraordinary
     section: haushalt
     scope: household
+    topic: household
     question_de: "Gab es hohe Krankheitskosten oder andere außergewöhnliche Belastungen?"
     why_de: >-
       Sie zählen erst über einem zumutbaren Anteil des Einkommens. Die App rechnet sie nicht,
@@ -271,6 +297,7 @@ questions:
   - key: household.other_not_modelled
     section: haushalt
     scope: household
+    topic: household
     question_de: "Gibt es Riester-Verträge, Unterhaltszahlungen oder Steuervorauszahlungen?"
     why_de: "Die App berechnet sie nicht; sie erinnert daran, sie von Hand zu berücksichtigen."
     answer_type: yes_no

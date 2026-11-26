@@ -9477,7 +9477,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "angaben" | "property" | "questions" | "documents" | "review";
+            kind: "angaben" | "property" | "documents" | "review";
             /** Property Id */
             property_id?: string | null;
             /**
@@ -9498,6 +9498,81 @@ export interface components {
             total?: number | null;
             /** Waiting From */
             waiting_from?: string | null;
+        };
+        /**
+         * GuideTopic
+         * @description One topic of Eure Angaben. `open`: its unanswered questions, its blocking points that are
+         *     no proposal and, for couple, each owner without a Bundesland. `proposals`: the bookings that
+         *     propose an input of the topic (§7.8 (a)), blocking or not. `owners`: one per owner in an owner
+         *     topic (couple, pay, work_costs, insurance, benefits); `open_questions` and `rows` the
+         *     household's own in children and household.
+         */
+        GuideTopic: {
+            /**
+             * Topic
+             * @enum {string}
+             */
+            topic: "couple" | "pay" | "work_costs" | "insurance" | "benefits" | "children" | "household";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "done" | "open" | "not_needed";
+            /** Open */
+            open: number;
+            /**
+             * Proposals
+             * @default 0
+             */
+            proposals: number;
+            /** Questions Open */
+            questions_open: number;
+            /** Questions Total */
+            questions_total: number;
+            /** Owners */
+            owners?: components["schemas"]["GuideTopicOwner"][];
+            /** Open Questions */
+            open_questions?: string[];
+            /** Rows */
+            rows?: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * GuideTopicOwner
+         * @description One owner in an owner topic: what is open for them and the facts the topic shows. Only
+         *     the facts of the topic are set; the browser words them and computes nothing.
+         */
+        GuideTopicOwner: {
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
+            /** Open */
+            open: number;
+            /** Open Questions */
+            open_questions?: string[];
+            /** Rows */
+            rows?: {
+                [key: string]: number;
+            };
+            /** Church Tax */
+            church_tax?: boolean | null;
+            /** Tax State */
+            tax_state?: string | null;
+            /** Tax Class */
+            tax_class?: string | null;
+            /** Pay Status */
+            pay_status?: ("certified" | "estimate" | "none") | null;
+            /** Gross Source */
+            gross_source?: ("certificate" | "payslip" | "expected" | "declared_none") | null;
+            /** Gross */
+            gross?: string | null;
+            /** Insurance Status */
+            insurance_status?: string | null;
+            /** Benefit */
+            benefit?: string | null;
         };
         /**
          * HandFields
@@ -14045,6 +14120,8 @@ export interface components {
             carry_forward: "copy" | "reconfirm" | "none";
             /** Default Answer */
             default_answer?: ("yes" | "no") | null;
+            /** Topic */
+            topic?: ("couple" | "pay" | "work_costs" | "insurance" | "benefits" | "children" | "household") | null;
         };
         /**
          * QuestionTarget
@@ -16167,6 +16244,8 @@ export interface components {
             documents?: components["schemas"]["GuideDocument"][];
             /** Unavailable */
             unavailable?: string[];
+            /** Topics */
+            topics?: components["schemas"]["GuideTopic"][] | null;
         };
         /**
          * TaxInput
