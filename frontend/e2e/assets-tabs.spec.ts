@@ -16,10 +16,13 @@
 // - Planung's old Immobilie links land on Anlagen › Immobilie with their levers.
 // - „Für euer Ziel“ (§7.9 (e) 3) sits after the gain card when the household follows a route
 //   (GET /household-goal/tracking mocked), with no sideways scroll on a phone, light and dark.
+// - „Wertzuwachs fürs Ziel“ (§7.9 (e) items 1, 2) on Anlagen › Immobilie for a property the goal's
+//   walk sells (GET /household-goal/properties mocked; the property is real), its windows and
+//   source in the side panel, no sideways scroll on a phone, light and dark.
 import type { Page, Route } from "@playwright/test";
 
 import type { components } from "../src/api/types";
-import { expect, test } from "./support";
+import { apiCall, expect, test } from "./support";
 
 type AssetsOverview = components["schemas"]["AssetsOverview"];
 type AssetsPerformance = components["schemas"]["AssetsPerformance"];
@@ -29,6 +32,7 @@ type EtfToday = components["schemas"]["EtfToday"];
 type CryptoHoldings = components["schemas"]["CryptoHoldings"];
 type NetWorthPoint = components["schemas"]["NetWorthPoint"];
 type GoalTracking = components["schemas"]["GoalTracking"];
+type GoalProperties = components["schemas"]["GoalProperties"];
 
 const DEPOT = "00000000-0000-4000-8000-000000000a01";
 const EXCHANGE = "00000000-0000-4000-8000-000000000a02";
@@ -328,6 +332,74 @@ test("„Für euer Ziel“ sits after the gain card, with no sideways scroll on 
     backgrounds.push(await page.evaluate(() => getComputedStyle(document.body).backgroundColor));
     await card.evaluate((node) => node.scrollIntoView({ block: "center" }));
     await page.screenshot({ path: test.info().outputPath(`goal-track-held-${scheme}.png`) });
+  }
+  expect(backgrounds[0]).not.toEqual(backgrounds[1]);
+});
+
+test("„Wertzuwachs fürs Ziel“ on Immobilie opens its windows, with no sideways scroll on a phone", async ({ page, signedIn }) => {
+  void signedIn;
+  const property = await apiCall<{ id: string }>(page, "POST", "/api/properties", {
+    label: "Wohnung Ziel",
+    kind: "etw",
+    address: { street: "Teststraße", house_number: "7", postal_code: "10115", city: "Berlin", country_code: "DE" },
+    build_year: 1994,
+    notarized_on: "2026-03-10",
+    purchase_date: "2026-07-01",
+    purchase_price: "300000.00",
+  });
+  const growth: GoalProperties = {
+    shown: true,
+    reason: null,
+    properties: [
+      {
+        property_id: property.id,
+        available: true,
+        reason: null,
+        typed_growth: "0.020",
+        needed_growth: "0.030",
+        sale_year: 2036,
+        window_years: 5,
+        windows: 16,
+        reached_windows: 10,
+        median: "0.039",
+        best: "0.087",
+        verdict: "within_history",
+        thin: false,
+        source: {
+          key: "house_prices",
+          source: "Eurostat, Hauspreisindex (prc_hpi_q)",
+          url: "https://ec.europa.eu/eurostat/databrowser/view/prc_hpi_q/default/table",
+          licence: "CC BY 4.0",
+          attribution: "Eurostat (prc_hpi_q), Statistisches Bundesamt",
+          read_on: "2026-11-26",
+          own_calculation: "Eigene Berechnung",
+          first_year: 2005,
+          last_year: 2025,
+        },
+      },
+    ],
+  };
+  await serve(page, "/api/household-goal/properties", () => growth);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const backgrounds: string[] = [];
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.goto("/assets?tab=immobilie");
+    const card = page.getByTestId("property-growth");
+    await expect(card).toContainText("Wertzuwachs fürs Ziel");
+    await expect(card).toContainText("3,0 % im Jahr");
+    await expect(card).toContainText("Hauspreise: oft erreicht");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    backgrounds.push(await page.evaluate(() => getComputedStyle(document.body).backgroundColor));
+    await card.evaluate((node) => node.scrollIntoView({ block: "center" }));
+    await page.screenshot({ path: test.info().outputPath(`property-growth-${scheme}.png`) });
+    await card.click();
+    const panel = page.getByTestId("property-growth-panel");
+    await expect(panel).toContainText("10 von 16");
+    await expect(panel).toContainText("Zeiträume à 5 Jahre");
+    await expect(panel).toContainText("ohne Miete und Kosten");
+    await expect(panel).toContainText("Eurostat (prc_hpi_q), Statistisches Bundesamt");
+    await page.screenshot({ path: test.info().outputPath(`property-growth-panel-${scheme}.png`) });
   }
   expect(backgrounds[0]).not.toEqual(backgrounds[1]);
 });

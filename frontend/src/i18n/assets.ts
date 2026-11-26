@@ -355,6 +355,44 @@ const de = {
     n === 1 ? "Ein Depot zählt zur Reserve und ist hier nicht mitgezählt." : `${n} Depots zählen zur Reserve und sind hier nicht mitgezählt.`,
   goalOpenRoute: "Weg ansehen",
   goalFootnote: "Ein Vergleich aus euren Zahlen, kein Rat.",
+  growthTitle: "Wertzuwachs fürs Ziel",
+  growthAria: (label: string) => `Wertzuwachs fürs Ziel: ${label}`,
+  growthValue: (rate: string) => `${rate} im Jahr`,
+  growthNone: "Keiner reicht",
+  growthLine: (verdict: string) =>
+    (({ within_history: "Hauspreise: oft erreicht", good_times: "Hauspreise: nur in guten Zeiten", never: "Hauspreise: nie erreicht" }) as Record<string, string>)[verdict] ??
+    "",
+  growthText: (label: string, rate: string, typed: string) =>
+    `Mit eurem heutigen Sparen wäre euer Ziel erreicht, wenn ${label} jedes Jahr ${rate} an Wert gewinnt. Eingetragen sind ${typed}; Fonds und Krypto bleiben bei euren Raten.`,
+  growthVerdict: (verdict: string) =>
+    (
+      {
+        within_history: "So viel stiegen die deutschen Hauspreise in der Vergangenheit oft.",
+        good_times: "So viel stiegen die deutschen Hauspreise in der Vergangenheit nur in guten Zeiten.",
+        never: "So viel stiegen die deutschen Hauspreise in der Vergangenheit nie über so lange Zeit.",
+      } as Record<string, string>
+    )[verdict] ?? "",
+  growthReason: (reason: string) =>
+    (
+      {
+        out_of_range: "Kein Wertzuwachs zwischen −50 % und +100 % im Jahr erreicht das Ziel allein.",
+        history_short: "Die Hauspreise reichen für die Laufzeit eures Ziels nicht weit genug zurück.",
+      } as Record<string, string>
+    )[reason] ?? "",
+  growthShort: (reason: string) =>
+    (({ out_of_range: "Allein nicht erreichbar", history_short: "Hauspreise: Reihe zu kurz" }) as Record<string, string>)[reason] ?? "",
+  growthNeeded: "nötig im Jahr",
+  growthTyped: "eingetragen",
+  growthWindows: (reached: number, windows: number) => `${reached} von ${windows}`,
+  growthWindowsLabel: (years: number) => (years === 1 ? "Zeiträume à 1 Jahr" : `Zeiträume à ${years} Jahre`),
+  growthMedian: "Mitte",
+  growthBest: "beste",
+  growthThin: "Nur wenige Zeiträume, weil die Daten kurz zurückreichen.",
+  growthSale: (year: number) => `Verkauf im Plan: ${year}.`,
+  growthPriceOnly:
+    "Verglichen wird nur der Preis: Hauspreisindex für ganz Deutschland, Quartal 4 zu Quartal 4, ohne Miete und Kosten. Eure Lage kann anders laufen.",
+  growthSource: "Quelle",
+  growthFootnote: "Eine Rechnung aus euren Zahlen, kein Rat.",
 };
 
 type Messages = typeof de;
@@ -697,6 +735,44 @@ const en: Messages = {
     n === 1 ? "One securities account counts toward the reserve and is not counted here." : `${n} securities accounts count toward the reserve and are not counted here.`,
   goalOpenRoute: "See the route",
   goalFootnote: "A comparison from your figures, not advice.",
+  growthTitle: "Value growth for the goal",
+  growthAria: (label) => `Value growth for the goal: ${label}`,
+  growthValue: (rate) => `${rate} a year`,
+  growthNone: "None is enough",
+  growthLine: (verdict) =>
+    (({ within_history: "House prices: often reached", good_times: "House prices: good times only", never: "House prices: never reached" }) as Record<string, string>)[verdict] ??
+    "",
+  growthText: (label, rate, typed) =>
+    `At today's saving your goal would be reached if ${label} gained ${rate} in value every year. You typed ${typed}; funds and crypto keep your rates.`,
+  growthVerdict: (verdict) =>
+    (
+      {
+        within_history: "German house prices often rose that much in the past.",
+        good_times: "German house prices rose that much in the past only in good times.",
+        never: "German house prices never rose that much over such a long time in the past.",
+      } as Record<string, string>
+    )[verdict] ?? "",
+  growthReason: (reason) =>
+    (
+      {
+        out_of_range: "No value growth between −50% and +100% a year reaches the goal on its own.",
+        history_short: "The house prices do not go back far enough for your goal's length.",
+      } as Record<string, string>
+    )[reason] ?? "",
+  growthShort: (reason) =>
+    (({ out_of_range: "Not reachable on its own", history_short: "House prices: series too short" }) as Record<string, string>)[reason] ?? "",
+  growthNeeded: "needed a year",
+  growthTyped: "typed",
+  growthWindows: (reached, windows) => `${reached} of ${windows}`,
+  growthWindowsLabel: (years) => (years === 1 ? "periods of 1 year" : `periods of ${years} years`),
+  growthMedian: "median",
+  growthBest: "best",
+  growthThin: "Only a few periods, because the data does not go back far.",
+  growthSale: (year) => `Sale in the plan: ${year}.`,
+  growthPriceOnly:
+    "Only the price is compared: the house price index for all of Germany, fourth quarter to fourth quarter, without rent or costs. Your location can differ.",
+  growthSource: "Source",
+  growthFootnote: "A calculation from your figures, not advice.",
 };
 
 export const assets = defineMessages({ de, en });
