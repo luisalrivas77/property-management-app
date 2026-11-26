@@ -153,6 +153,13 @@ function categoryName(code: AllocationCategory): string {
 
 // --- Übersicht's tile ------------------------------------------------------------------------
 
+/** On track with a mean saved above 0: the one line „Weiter X im Monat sparen und anlegen“ (Luis,
+ * 26 Nov 2026: „it doesn't say what the plan is“), X the goal's `heute`. */
+function keepsOnTrack(goal: HouseholdGoal): goal is HouseholdGoal & { heute: string } {
+  const saved = goal.heute;
+  return goal.word === "on_track" && goal.issue == null && saved != null && !saved.startsWith("-") && !isZero(saved);
+}
+
 /** The tile's body under „Euer Ziel“ (mockup 19f panel 1): the target and its month, the word as
  * its pill, the bar, and two figures (today, the month the balanced route reaches it). Every
  * figure is the server's. */
@@ -165,6 +172,7 @@ export function GoalTileBody({ goal }: { goal: HouseholdGoal }) {
     <>
       <GoalHeadline goal={goal} goalSet={goal.goal} />
       {goal.word && goal.word !== "none" ? <WordPill word={goal.word} text={goalWordText(t, goal)} /> : <span className="tile-sub">{goalWordText(t, goal)}</span>}
+      {keepsOnTrack(goal) ? <span className="tile-sub">{t.keepOnTrack(p.euro(goal.heute))}</span> : null}
       {goal.percent != null ? (
         <span className="goal-bar goal-bar-tile" role="img" aria-label={t.percentReached(p.percentValue(goal.percent))}>
           <span style={{ width: barWidth(goal.percent) }} />
@@ -519,7 +527,9 @@ function GoalCards({ goal, goalSet, onChanged }: { goal: HouseholdGoal; goalSet:
         ) : (
           <WordPill word="none" text={goalWordText(t, goal)} />
         )}
-        {chosen && goal.issue == null ? (
+        {keepsOnTrack(goal) ? (
+          <p className="goal-one">{t.keepOnTrack(p.euro(goal.heute))}</p>
+        ) : chosen && goal.issue == null ? (
           <p className="goal-one">
             {goal.reached_with_budget
               ? t.reachedWithBudget(scenarioName(t, chosen), p.month(goal.reached_with_budget))

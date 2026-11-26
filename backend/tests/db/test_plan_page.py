@@ -9,7 +9,7 @@ from decimal import Decimal
 
 import pytest
 from db.matching_support import World
-from db.test_household_goal import _goal, _projected_world, _save
+from db.test_household_goal import _goal, _projected_world, _save, _sold_in_2028
 from db.test_household_plan import _plan
 from db.test_services_health_snapshots import NOW, TODAY
 from sqlalchemy import update
@@ -22,6 +22,7 @@ from hausbuch.schemas.plan import GoalChoice, GoalSpending
 from hausbuch.schemas.plan_page import PlanStepKind, PlanSwitches, PlanView
 from hausbuch.services import goal as goal_service
 from hausbuch.services import plan_page as service
+from hausbuch.services.scenarios import default_scenario_on
 
 pytestmark = pytest.mark.db
 
@@ -113,3 +114,22 @@ def test_this_month_reads_the_adopted_budget(world):
     done = {s.kind: s.done for s in after.this_month.steps}
     assert done == {PlanStepKind.INVEST: False, PlanStepKind.WANTS_BUDGET: True}
     assert (after.this_month.done, after.this_month.of) == (1, 2)
+
+
+def test_heute_carries_the_plans_money_above_the_reserve(world):
+    """The on-track plan card's „Jetzt anlegen“ (Luis, 26 Nov 2026: „it doesn't say what the
+    plan is“): `heute.above_target` is GET /household-plan's own `above_target` (Übersicht's
+    „Anlegbar jetzt“), never a second computation; „Zum Teilen“ rounds it like the reserve."""
+    _projected_world(world, groceries=True, salary="1000.00")
+    flat = world.query(default_scenario_on, world.property_id, TODAY)
+    _sold_in_2028(world, flat.id)
+    _save(world, _goal("10000000.00"), horizon_months=45)
+    above = _plan(world).above_target
+    assert above is not None and above > 0
+    got = _page(world)
+    assert got.heute is not None and got.heute.above_target == above
+    shared = _page(world, PlanView.SHARE).heute
+    assert shared is not None and shared.above_target is not None
+    assert shared.above_target % 1000 == 0 and abs(shared.above_target - above) <= 500
+    exact = _page(world, PlanView.SHARE, round_amounts=False).heute
+    assert exact is not None and exact.above_target == above

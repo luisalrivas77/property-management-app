@@ -119,6 +119,7 @@ def share(
             *((p, goal_kind) for p in GOAL_FIGURES),
             ("heute.net_worth", "net_worth"),
             ("heute.reserve", "reserve"),
+            ("heute.above_target", "reserve"),  # the reserve above its target: the reserve's step
             *((p, "monthly") for p in MONTHLY),
             *((p, "once") for p in ONCE),
         ):

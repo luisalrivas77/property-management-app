@@ -231,12 +231,15 @@ test("no goal: Übersicht leads to the form, saving the goal shows its word ther
   await expect(card).toContainText("Auf Kurs");
   await expect(card).toContainText("Ihr seid auf Kurs");
   await expect(card).toContainText("am Ziel");
+  // On track, what keeps it there in one line (Luis, 26 Nov 2026: „it doesn't say what the plan is“).
+  await expect(card).toContainText(/Weiter 1\.800\s€ im Monat sparen und anlegen/);
   await expect(card.getByRole("link", { name: "Ziel ändern" })).toBeVisible();
 
   await page.goto("/");
   const tile = page.getByRole("region", { name: "Auf einen Blick" }).getByRole("link", { name: /Euer Ziel/ });
   await expect(tile).toContainText("Auf Kurs");
   await expect(tile.locator(".goal-word")).toHaveAttribute("data-word", "on_track");
+  await expect(tile).toContainText(/Weiter 1\.800\s€ im Monat sparen und anlegen/);
   await tile.click();
   const panel = detail(page, "Euer Ziel");
   await expect(panel).toContainText("Auf Kurs");
@@ -353,6 +356,17 @@ test("the goal at phone width, light and dark", async ({ page, signedIn }) => {
   await phoneScreens(page, "goal-tile", async () => {
     await page.goto("/");
     await expect(page.getByRole("region", { name: "Auf einen Blick" }).getByRole("link", { name: /Euer Ziel/ })).toContainText("Machbar");
+  });
+});
+
+test("on track, the goal tile at phone width, light and dark", async ({ page, signedIn }) => {
+  void signedIn;
+  const goal: Goal = { kind: "net_worth", target: "500000.00", due_month: monthsAhead(24), set_on: TODAY };
+  await goalApi(page, { goal: onTrack(goal) }, () => onTrack(goal));
+  await phoneScreens(page, "goal-tile-on-track", async () => {
+    await page.goto("/");
+    const tile = page.getByRole("region", { name: "Auf einen Blick" }).getByRole("link", { name: /Euer Ziel/ });
+    await expect(tile).toContainText(/Weiter 1\.800\s€ im Monat sparen und anlegen/);
   });
 });
 

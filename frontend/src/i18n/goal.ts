@@ -40,6 +40,7 @@ export const goalText = defineMessages({
     savingSub: "Schnitt der abgeschlossenen Monate",
     reachedWithBudget: (name: string, month: string) => `Mit eurem Budget „${name}“ erreicht ihr es im ${month}.`,
     notReachedWithBudget: (name: string) => `Mit eurem Budget „${name}“ reicht es in der Rechnung noch nicht.`,
+    keepOnTrack: (amount: string) => `Weiter ${amount} im Monat sparen und anlegen`,
     // why there is no word yet
     issueNoProjection:
       "Ob ihr auf Kurs seid, rechnet Hausbuch aus, sobald es die kommenden Monate rechnen kann. Dafür fehlt noch, was unten steht; danach steht hier euer Weg zum Ziel.",
@@ -321,6 +322,7 @@ export const goalText = defineMessages({
     savingSub: "mean of the closed months",
     reachedWithBudget: (name, month) => `With your budget “${name}” you reach it in ${month}.`,
     notReachedWithBudget: (name) => `With your budget “${name}” it is not yet enough within the projection.`,
+    keepOnTrack: (amount) => `Keep saving and investing ${amount} a month`,
     issueNoProjection:
       "Whether you are on track, Hausbuch works out as soon as it can project the coming months. What it still needs for that is listed below; then your path to the goal appears here.",
     issueDuePassed: "Your goal's month has come or passed. Set a later month or a new goal.",
