@@ -29,7 +29,7 @@ import { type Translation, useT } from "@/i18n";
 import { goalText } from "@/i18n/goal";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { detailHref } from "@/lib/detailHash";
-import { HOUSEHOLD_PLAY, HOUSEHOLD_RESERVE, RATE_LEVER } from "@/lib/planningRoutes";
+import { HOUSEHOLD_PLAN_PAGE, HOUSEHOLD_PLAY, HOUSEHOLD_RESERVE, RATE_LEVER } from "@/lib/planningRoutes";
 
 import { DetailPanel, useDetail } from "./DetailPanel";
 import { todayIso } from "./format";
@@ -483,9 +483,15 @@ function GoalCards({ goal, goalSet, onChanged }: { goal: HouseholdGoal; goalSet:
       <div className="goal-c">
         <div className="goal-ch">
           <h3 id={`${ids}-title`}>{t.title}</h3>
-          <a {...detail.linkProps(GOAL_FORM)} className="goal-lnk" aria-label={t.changeGoal}>
-            {t.change}
-          </a>
+          <span className="goal-ch-end">
+            {/* „Euer Plan“ (§7.11 (h), mockup 19i): the plan as seven cards, under this tab. */}
+            <Link href={HOUSEHOLD_PLAN_PAGE} className="goal-lnk">
+              {t.toPlan} ›
+            </Link>
+            <a {...detail.linkProps(GOAL_FORM)} className="goal-lnk" aria-label={t.changeGoal}>
+              {t.change}
+            </a>
+          </span>
         </div>
         <GoalHeadline goal={goal} goalSet={goalSet} />
         {goal.word != null ? (

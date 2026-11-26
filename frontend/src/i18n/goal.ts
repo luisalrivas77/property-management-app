@@ -13,6 +13,7 @@ export const goalText = defineMessages({
     setGoal: "Ziel festlegen",
     changeGoal: "Ziel ändern",
     toGoal: "Zum Ziel",
+    toPlan: "Euer Plan",
     // the target in one line
     targetNetWorth: (amount: string, month: string) => `${amount} Vermögen bis ${month}`,
     targetSaved: (amount: string, month: string) => `${amount} angespart bis ${month}`,
@@ -285,6 +286,7 @@ export const goalText = defineMessages({
     setGoal: "Set a goal",
     changeGoal: "Change goal",
     toGoal: "To the goal",
+    toPlan: "Your plan",
     targetNetWorth: (amount, month) => `${amount} net worth by ${month}`,
     targetSaved: (amount, month) => `${amount} saved by ${month}`,
     targetReserve: (months, month) => `Reserve for ${months} months by ${month}`,
