@@ -66,6 +66,8 @@ export const questionnaireText = defineMessages({
     byHand: "Von Hand in ELSTER",
     toTaxYear: (year: number) => `Zum Steuerjahr ${year}`,
     toFirst: "Zur ersten Frage",
+    skip: "Überspringen",
+    topicDone: "Alle Fragen dieses Themas sind beantwortet.",
   },
   en: {
     groupOwner: (name: string) => `Questions for ${name}`,
@@ -128,6 +130,8 @@ export const questionnaireText = defineMessages({
     byHand: "By hand in ELSTER (the tax office's online portal)",
     toTaxYear: (year: number) => `To tax year ${year}`,
     toFirst: "To the first question",
+    skip: "Skip",
+    topicDone: "Every question of this topic is answered.",
   },
 });
 

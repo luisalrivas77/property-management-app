@@ -1,0 +1,611 @@
+# Field help for „Eure Angaben“ 2026 (phase 10 §7.8 (b), D294): per form and field, what it
+# is, where to find it, an example (invented numbers only, no household data: public repo),
+# whether it goes behind „Weitere Angaben“ (rare) and which document the „where“ is from.
+#
+# Line numbers: only those read from the official sample are given. Only lstb_2026 is marked
+# official: the Anlage N and ESt sections were named from knowledge, not checked against the
+# Anleitung (26 Nov 2026), so anleitung_n and anleitung_est are official: false. The Lohnsteuerbescheinigung
+# lines (Nr. 1 to 27, the header box) were checked on 26 Nov 2026 against the BMF's sample for
+# 2026 (source lstb_2026). The Anlage N and the other forms are named by their section only
+# („siehe Anleitung …“), never by a Zeile: the 2026 forms are not published yet and the
+# mapping in anlage_n/2026.yaml reuses 2025's, marked provisional. A payslip has no official
+# sample, so its fields name the usual label only (source payslip, official: false).
+#
+# Forms: every return_input kind with a form (schemas/employment.py RETURN_INPUT_VALUES,
+# except no_pay, a button with no field), the income input expected_gross_pay and the owner's
+# church_tax and tax_state. tests/rules/test_field_help.py fails when a field has no entry.
+# Read through registry.field_help(); a year without its own file reuses the latest earlier.
+
+tax_year: 2026
+
+sources:
+  lstb_2026:
+    official: true
+    url: "https://www.bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Steuerarten/Lohnsteuer/2025-08-29-ausdruck-elektr-lstbesch-2026.pdf"
+    de: "BMF, Muster für den Ausdruck der elektronischen Lohnsteuerbescheinigung für 2026 (Bekanntmachung vom 29. August 2025)"
+    en: "German Federal Ministry of Finance (BMF), sample printout of the electronic wage tax certificate for 2026 (notice of 29 August 2025)"
+  anleitung_n:
+    official: false
+    url: null
+    de: "Die Unterlagen zur Arbeit (Arbeitsvertrag, Rechnungen, Bescheinigungen) und der Abschnitt der Anlage N, in den der Wert gehört; die Abschnittsnamen am 26.11.2026 mit der Anleitung zur Anlage N 2025 (Stand 25.09.2025, gelesen aus einer Drittkopie) abgeglichen; ohne Zeilennummer, da sich die Zeilen jedes Jahr verschieben und die Vordrucke 2026 noch nicht veröffentlicht sind"
+    en: "The papers about the job (employment contract, invoices, certificates) and the section of the Anlage N the value belongs to; section names checked on 26 Nov 2026 against the Anleitung zur Anlage N 2025 (as of 25 Sep 2025, read from a third-party copy); no line number, since the lines move every year and the 2026 forms are not published yet"
+  anleitung_est:
+    official: false
+    url: null
+    de: "Die eigenen Belege (Rechnungen, Bescheide, Bescheinigungen, Kontoauszüge) und die Anlage der Einkommensteuererklärung, in die der Wert gehört (Anlage Kind, Haushaltsnahe Aufwendungen, Sonderausgaben, Vorsorgeaufwand); die Abschnittsnamen am 26.11.2026 mit den Anleitungen 2025 zu diesen Anlagen abgeglichen (Stand 25.09.2025, gelesen aus Drittkopien); ohne Zeilennummer, da sich die Zeilen jedes Jahr verschieben"
+    en: "Your own papers (invoices, notices, certificates, bank statements) and the annex of the income tax return the value belongs to (Anlage Kind, Haushaltsnahe Aufwendungen, Sonderausgaben, Vorsorgeaufwand); section names checked on 26 Nov 2026 against the 2025 instructions for these annexes (as of 25 Sep 2025, read from third-party copies); no line number, since the lines move every year"
+  payslip:
+    official: false
+    url: null
+    de: "Gehaltsabrechnung des Arbeitgebers: kein amtliches Muster, die Bezeichnungen unterscheiden sich je Arbeitgeber"
+    en: "The employer's payslip: there is no official sample, and the labels differ between employers"
+
+forms:
+  # --- Lohnsteuerbescheinigung (wage_certificate) --------------------------------------------
+  wage_certificate:
+    period_from:
+      rare: false
+      source: lstb_2026
+      de: {what: "Der erste Tag, für den der Arbeitgeber Lohn bescheinigt.", where: "Lohnsteuerbescheinigung, Nr. 1 – Bescheinigungszeitraum, „vom“.", example: "01.01.2026"}
+      en: {what: "The first day the employer certifies pay for.", where: "Lohnsteuerbescheinigung, line 1 – Bescheinigungszeitraum, „vom“.", example: "01.01.2026"}
+    period_to:
+      rare: false
+      source: lstb_2026
+      de: {what: "Der letzte Tag, für den der Arbeitgeber Lohn bescheinigt.", where: "Lohnsteuerbescheinigung, Nr. 1 – Bescheinigungszeitraum, „bis“.", example: "31.12.2026"}
+      en: {what: "The last day the employer certifies pay for.", where: "Lohnsteuerbescheinigung, line 1 – Bescheinigungszeitraum, „bis“.", example: "31.12.2026"}
+    employer:
+      rare: false
+      source: lstb_2026
+      de: {what: "Der Name des Arbeitgebers, nur der Name.", where: "Lohnsteuerbescheinigung, Feld „Anschrift und Steuernummer des Arbeitgebers“.", example: "Muster Maschinenbau GmbH"}
+      en: {what: "The employer's name, the name only.", where: "Lohnsteuerbescheinigung, box „Anschrift und Steuernummer des Arbeitgebers“.", example: "Muster Maschinenbau GmbH"}
+    tax_class:
+      rare: false
+      source: lstb_2026
+      de: {what: "Die Steuerklasse, mit der der Arbeitgeber zuletzt abgerechnet hat (1 bis 6).", where: "Lohnsteuerbescheinigung, Kopf links – „Steuerklasse/Faktor“.", example: "4"}
+      en: {what: "The tax class the employer last applied (1 to 6).", where: "Lohnsteuerbescheinigung, header on the left – „Steuerklasse/Faktor“.", example: "4"}
+    tax_class_factor:
+      rare: true
+      source: lstb_2026
+      de: {what: "Ob neben Steuerklasse 4 ein Faktor steht (Faktorverfahren).", where: "Lohnsteuerbescheinigung, Kopf links – „Steuerklasse/Faktor“: eine Zahl wie 0,9 hinter der 4.", example: "4 / 0,912 → ja"}
+      en: {what: "Whether a factor stands beside tax class 4 (the factor method).", where: "Lohnsteuerbescheinigung, header on the left – „Steuerklasse/Faktor“: a number such as 0.9 after the 4.", example: "4 / 0.912 → yes"}
+    church_tax_marked:
+      rare: false
+      source: lstb_2026
+      de: {what: "Ob ein Kirchensteuermerkmal (z. B. rk, ev) eingetragen ist.", where: "Lohnsteuerbescheinigung, Kopf links – „Kirchensteuermerkmale“.", example: "ev → ja; „--“ → nein"}
+      en: {what: "Whether a church tax code (such as rk, ev) is shown.", where: "Lohnsteuerbescheinigung, header on the left – „Kirchensteuermerkmale“.", example: "ev → yes; „--“ → no"}
+    child_allowance_count:
+      rare: false
+      source: lstb_2026
+      de: {what: "Die Zahl der Kinderfreibeträge, die der Arbeitgeber berücksichtigt hat.", where: "Lohnsteuerbescheinigung, Kopf links – „Zahl der Kinderfreibeträge“.", example: "1,0"}
+      en: {what: "The number of child allowances the employer applied.", where: "Lohnsteuerbescheinigung, header on the left – „Zahl der Kinderfreibeträge“.", example: "1.0"}
+    gross:
+      rare: false
+      source: lstb_2026
+      de: {what: "Der steuerpflichtige Arbeitslohn des Jahres bei diesem Arbeitgeber.", where: "Lohnsteuerbescheinigung, Nr. 3 – Bruttoarbeitslohn einschl. Sachbezüge.", example: "48.250,00 €"}
+      en: {what: "The year's taxable pay from this employer.", where: "Lohnsteuerbescheinigung, line 3 – Bruttoarbeitslohn einschl. Sachbezüge.", example: "€48,250.00"}
+    income_tax:
+      rare: false
+      source: lstb_2026
+      de: {what: "Die einbehaltene Lohnsteuer.", where: "Lohnsteuerbescheinigung, Nr. 4 – Einbehaltene Lohnsteuer von 3.", example: "6.120,00 €"}
+      en: {what: "The wage tax withheld.", where: "Lohnsteuerbescheinigung, line 4 – Einbehaltene Lohnsteuer von 3.", example: "€6,120.00"}
+    soli:
+      rare: false
+      source: lstb_2026
+      de: {what: "Der einbehaltene Solidaritätszuschlag; oft 0.", where: "Lohnsteuerbescheinigung, Nr. 5 – Einbehaltener Solidaritätszuschlag von 3.", example: "0,00 €"}
+      en: {what: "The solidarity surcharge withheld; often 0.", where: "Lohnsteuerbescheinigung, line 5 – Einbehaltener Solidaritätszuschlag von 3.", example: "€0.00"}
+    church_tax:
+      rare: false
+      source: lstb_2026
+      de: {what: "Die einbehaltene Kirchensteuer der Person selbst.", where: "Lohnsteuerbescheinigung, Nr. 6 – Einbehaltene Kirchensteuer des Arbeitnehmers von 3.", example: "489,60 €"}
+      en: {what: "The church tax withheld for the person.", where: "Lohnsteuerbescheinigung, line 6 – Einbehaltene Kirchensteuer des Arbeitnehmers von 3.", example: "€489.60"}
+    church_tax_spouse:
+      rare: true
+      source: lstb_2026
+      de: {what: "Kirchensteuer für den Ehepartner, nur wenn die Konfessionen verschieden sind.", where: "Lohnsteuerbescheinigung, Nr. 7 – Einbehaltene Kirchensteuer des Ehegatten/Lebenspartners von 3.", example: "0,00 €"}
+      en: {what: "Church tax for the spouse, only when the two belong to different churches.", where: "Lohnsteuerbescheinigung, line 7 – Einbehaltene Kirchensteuer des Ehegatten/Lebenspartners von 3.", example: "€0.00"}
+    replacement_benefits:
+      rare: true
+      source: lstb_2026
+      de: {what: "Leistungen des Arbeitgebers, die den Steuersatz erhöhen, z. B. Kurzarbeitergeld oder der Zuschuss zum Mutterschaftsgeld.", where: "Lohnsteuerbescheinigung, Nr. 15 – Leistungen, die dem Progressionsvorbehalt unterliegen.", example: "1.340,00 €"}
+      en: {what: "Employer benefits that raise the tax rate, such as short-time work pay or the top-up to maternity pay.", where: "Lohnsteuerbescheinigung, line 15 – Leistungen, die dem Progressionsvorbehalt unterliegen.", example: "€1,340.00"}
+    short_time_allowance:
+      rare: true
+      source: lstb_2026
+      de: {what: "Der Teil von Nr. 15, der Kurzarbeitergeld ist.", where: "Lohnsteuerbescheinigung, Nr. 15a – (Saison-)Kurzarbeitergeld in 15. enthalten.", example: "1.340,00 €"}
+      en: {what: "The part of line 15 that is short-time work pay.", where: "Lohnsteuerbescheinigung, line 15a – (Saison-)Kurzarbeitergeld in 15. enthalten.", example: "€1,340.00"}
+    employer_commute_tax_free:
+      rare: true
+      source: lstb_2026
+      de: {what: "Steuerfreie Zuschüsse des Arbeitgebers zum Arbeitsweg, z. B. ein Jobticket; sie mindern die Entfernungspauschale.", where: "Lohnsteuerbescheinigung, Nr. 17 – Steuerfreie Arbeitgeberleistungen, die auf die Entfernungspauschale anzurechnen sind.", example: "588,00 €"}
+      en: {what: "Tax-free employer contributions to the commute, such as a job ticket; they reduce the commuting allowance.", where: "Lohnsteuerbescheinigung, line 17 – Steuerfreie Arbeitgeberleistungen, die auf die Entfernungspauschale anzurechnen sind.", example: "€588.00"}
+    employer_commute_flat_taxed:
+      rare: true
+      source: lstb_2026
+      de: {what: "Fahrtkostenzuschüsse, die der Arbeitgeber pauschal versteuert hat; sie mindern die Entfernungspauschale.", where: "Lohnsteuerbescheinigung, Nr. 18 – Pauschal mit 15 % besteuerte Arbeitgeberleistungen für Fahrten zwischen Wohnung und erster Tätigkeitsstätte.", example: "600,00 €"}
+      en: {what: "Travel allowances the employer taxed at a flat rate; they reduce the commuting allowance.", where: "Lohnsteuerbescheinigung, line 18 – Pauschal mit 15 % besteuerte Arbeitgeberleistungen für Fahrten zwischen Wohnung und erster Tätigkeitsstätte.", example: "€600.00"}
+    pension_employer:
+      rare: false
+      source: lstb_2026
+      de: {what: "Der Anteil des Arbeitgebers zur gesetzlichen Rentenversicherung.", where: "Lohnsteuerbescheinigung, Nr. 22 a) – Arbeitgeberanteil zur gesetzlichen Rentenversicherung.", example: "4.487,25 €"}
+      en: {what: "The employer's share of the statutory pension insurance.", where: "Lohnsteuerbescheinigung, line 22 a) – Arbeitgeberanteil zur gesetzlichen Rentenversicherung.", example: "€4,487.25"}
+    pension_employee:
+      rare: false
+      source: lstb_2026
+      de: {what: "Der eigene Anteil zur gesetzlichen Rentenversicherung.", where: "Lohnsteuerbescheinigung, Nr. 23 a) – Arbeitnehmeranteil zur gesetzlichen Rentenversicherung.", example: "4.487,25 €"}
+      en: {what: "The person's own share of the statutory pension insurance.", where: "Lohnsteuerbescheinigung, line 23 a) – Arbeitnehmeranteil zur gesetzlichen Rentenversicherung.", example: "€4,487.25"}
+    pension_employee_professional:
+      rare: true
+      source: lstb_2026
+      de: {what: "Der eigene Beitrag an ein berufsständisches Versorgungswerk (z. B. für Ärzte oder Architekten).", where: "Lohnsteuerbescheinigung, Nr. 23 b) – Arbeitnehmeranteil an berufsständische Versorgungseinrichtungen.", example: "0,00 €"}
+      en: {what: "The person's own contribution to a professional pension fund (for doctors or architects, say).", where: "Lohnsteuerbescheinigung, line 23 b) – Arbeitnehmeranteil an berufsständische Versorgungseinrichtungen.", example: "€0.00"}
+    subsidy_health:
+      rare: true
+      source: lstb_2026
+      de: {what: "Steuerfreier Zuschuss des Arbeitgebers zur gesetzlichen Krankenversicherung, meist bei freiwillig Versicherten.", where: "Lohnsteuerbescheinigung, Nr. 24 a) – Steuerfreie Arbeitgeberzuschüsse zur gesetzlichen Krankenversicherung.", example: "0,00 €"}
+      en: {what: "A tax-free employer subsidy to statutory health insurance, mostly for voluntary members.", where: "Lohnsteuerbescheinigung, line 24 a) – Steuerfreie Arbeitgeberzuschüsse zur gesetzlichen Krankenversicherung.", example: "€0.00"}
+    subsidy_private_health:
+      rare: true
+      source: lstb_2026
+      de: {what: "Steuerfreier Zuschuss des Arbeitgebers zur privaten Krankenversicherung.", where: "Lohnsteuerbescheinigung, Nr. 24 b) – Steuerfreie Arbeitgeberzuschüsse zur privaten Krankenversicherung.", example: "2.950,00 €"}
+      en: {what: "A tax-free employer subsidy to private health insurance.", where: "Lohnsteuerbescheinigung, line 24 b) – Steuerfreie Arbeitgeberzuschüsse zur privaten Krankenversicherung.", example: "€2,950.00"}
+    subsidy_care:
+      rare: true
+      source: lstb_2026
+      de: {what: "Steuerfreier Zuschuss des Arbeitgebers zur Pflegeversicherung.", where: "Lohnsteuerbescheinigung, Nr. 24 c) – Steuerfreie Arbeitgeberzuschüsse zur gesetzlichen Pflegeversicherung.", example: "0,00 €"}
+      en: {what: "A tax-free employer subsidy to long-term care insurance.", where: "Lohnsteuerbescheinigung, line 24 c) – Steuerfreie Arbeitgeberzuschüsse zur gesetzlichen Pflegeversicherung.", example: "€0.00"}
+    health_employee:
+      rare: false
+      source: lstb_2026
+      de: {what: "Die eigenen Beiträge zur gesetzlichen Krankenversicherung.", where: "Lohnsteuerbescheinigung, Nr. 25 – Arbeitnehmerbeiträge zur gesetzlichen Krankenversicherung.", example: "4.100,50 €"}
+      en: {what: "The person's own statutory health insurance contributions.", where: "Lohnsteuerbescheinigung, line 25 – Arbeitnehmerbeiträge zur gesetzlichen Krankenversicherung.", example: "€4,100.50"}
+    care_employee:
+      rare: false
+      source: lstb_2026
+      de: {what: "Die eigenen Beiträge zur Pflegeversicherung.", where: "Lohnsteuerbescheinigung, Nr. 26 – Arbeitnehmerbeiträge zur sozialen Pflegeversicherung.", example: "868,40 €"}
+      en: {what: "The person's own long-term care insurance contributions.", where: "Lohnsteuerbescheinigung, line 26 – Arbeitnehmerbeiträge zur sozialen Pflegeversicherung.", example: "€868.40"}
+    unemployment_employee:
+      rare: false
+      source: lstb_2026
+      de: {what: "Die eigenen Beiträge zur Arbeitslosenversicherung.", where: "Lohnsteuerbescheinigung, Nr. 27 – Arbeitnehmerbeiträge zur Arbeitslosenversicherung.", example: "627,25 €"}
+      en: {what: "The person's own unemployment insurance contributions.", where: "Lohnsteuerbescheinigung, line 27 – Arbeitnehmerbeiträge zur Arbeitslosenversicherung.", example: "€627.25"}
+
+  # --- Gehaltsabrechnung (payslip): no official sample ---------------------------------------
+  payslip:
+    period_month:
+      rare: false
+      source: payslip
+      de: {what: "Der Monat, für den die Abrechnung gilt.", where: "Gehaltsabrechnung, Kopf – „Abrechnungsmonat“ oder „Zeitraum“.", example: "März 2026"}
+      en: {what: "The month the payslip is for.", where: "Payslip, header – „Abrechnungsmonat“ or „Zeitraum“.", example: "March 2026"}
+    employer:
+      rare: false
+      source: payslip
+      de: {what: "Der Name des Arbeitgebers.", where: "Gehaltsabrechnung, Kopf – Absender.", example: "Muster Maschinenbau GmbH"}
+      en: {what: "The employer's name.", where: "Payslip, header – the sender.", example: "Muster Maschinenbau GmbH"}
+    tax_class:
+      rare: false
+      source: payslip
+      de: {what: "Die Steuerklasse, mit der abgerechnet wurde.", where: "Gehaltsabrechnung, Kopf oder Steuerdaten – „StKl“.", example: "4"}
+      en: {what: "The tax class the month was calculated with.", where: "Payslip, header or tax data – „StKl“.", example: "4"}
+    tax_class_factor:
+      rare: true
+      source: payslip
+      de: {what: "Ob neben Steuerklasse 4 ein Faktor steht.", where: "Gehaltsabrechnung, Steuerdaten – „Faktor“.", example: "0,912 → ja"}
+      en: {what: "Whether a factor stands beside tax class 4.", where: "Payslip, tax data – „Faktor“.", example: "0.912 → yes"}
+    months_remaining_paid:
+      rare: false
+      source: payslip
+      de: {what: "Wie viele Monate nach diesem noch Lohn kommt; meist bis Dezember. Weniger, wenn die Stelle endet oder Elternzeit beginnt.", where: "Keine Zeile: die eigene Planung (z. B. Arbeitsvertrag, Elternzeitantrag).", example: "März abgerechnet, bis Dezember bezahlt → 9"}
+      en: {what: "How many months after this one will still be paid; usually to December. Fewer when the job ends or parental leave starts.", where: "No line: your own plans (the employment contract, a parental leave request).", example: "March payslip, paid to December → 9"}
+    gross:
+      rare: false
+      source: payslip
+      de: {what: "Der steuerpflichtige Lohn des Monats und seit Januar (nicht das Gesamt-Brutto).", where: "Gehaltsabrechnung – „Steuer-Brutto“ (Monat und Jahressumme).", example: "4.020,00 € / 12.060,00 €"}
+      en: {what: "The month's taxable pay and the total since January (not the overall gross).", where: "Payslip – „Steuer-Brutto“ (month and year-to-date).", example: "€4,020.00 / €12,060.00"}
+    income_tax:
+      rare: false
+      source: payslip
+      de: {what: "Die einbehaltene Lohnsteuer im Monat und seit Januar.", where: "Gehaltsabrechnung – „Lohnsteuer“.", example: "510,00 € / 1.530,00 €"}
+      en: {what: "The wage tax withheld in the month and since January.", where: "Payslip – „Lohnsteuer“.", example: "€510.00 / €1,530.00"}
+    soli:
+      rare: false
+      source: payslip
+      de: {what: "Der Solidaritätszuschlag im Monat und seit Januar; oft 0.", where: "Gehaltsabrechnung – „Solidaritätszuschlag“ oder „SolZ“.", example: "0,00 €"}
+      en: {what: "The solidarity surcharge in the month and since January; often 0.", where: "Payslip – „Solidaritätszuschlag“ or „SolZ“.", example: "€0.00"}
+    church_tax:
+      rare: false
+      source: payslip
+      de: {what: "Die Kirchensteuer im Monat und seit Januar.", where: "Gehaltsabrechnung – „Kirchensteuer“ oder „KiSt“.", example: "40,80 € / 122,40 €"}
+      en: {what: "The church tax in the month and since January.", where: "Payslip – „Kirchensteuer“ or „KiSt“.", example: "€40.80 / €122.40"}
+    pension_employee:
+      rare: false
+      source: payslip
+      de: {what: "Der eigene Rentenversicherungsbeitrag im Monat und seit Januar.", where: "Gehaltsabrechnung, Sozialversicherung – „RV-Beitrag“ (Arbeitnehmeranteil).", example: "373,86 € / 1.121,58 €"}
+      en: {what: "The person's own pension insurance contribution in the month and since January.", where: "Payslip, social insurance – „RV-Beitrag“ (employee share).", example: "€373.86 / €1,121.58"}
+    health_employee:
+      rare: false
+      source: payslip
+      de: {what: "Der eigene Krankenversicherungsbeitrag im Monat und seit Januar.", where: "Gehaltsabrechnung, Sozialversicherung – „KV-Beitrag“ (Arbeitnehmeranteil).", example: "341,70 € / 1.025,10 €"}
+      en: {what: "The person's own health insurance contribution in the month and since January.", where: "Payslip, social insurance – „KV-Beitrag“ (employee share).", example: "€341.70 / €1,025.10"}
+    care_employee:
+      rare: false
+      source: payslip
+      de: {what: "Der eigene Pflegeversicherungsbeitrag im Monat und seit Januar.", where: "Gehaltsabrechnung, Sozialversicherung – „PV-Beitrag“ (Arbeitnehmeranteil).", example: "72,36 € / 217,08 €"}
+      en: {what: "The person's own care insurance contribution in the month and since January.", where: "Payslip, social insurance – „PV-Beitrag“ (employee share).", example: "€72.36 / €217.08"}
+    unemployment_employee:
+      rare: false
+      source: payslip
+      de: {what: "Der eigene Arbeitslosenversicherungsbeitrag im Monat und seit Januar.", where: "Gehaltsabrechnung, Sozialversicherung – „AV-Beitrag“ (Arbeitnehmeranteil).", example: "52,26 € / 156,78 €"}
+      en: {what: "The person's own unemployment insurance contribution in the month and since January.", where: "Payslip, social insurance – „AV-Beitrag“ (employee share).", example: "€52.26 / €156.78"}
+    tax_free_benefits:
+      rare: true
+      source: payslip
+      de: {what: "Steuerfreie Bezüge im Monat und seit Januar, z. B. ein Jobticket oder Zuschläge.", where: "Gehaltsabrechnung – Zeilen mit „steuerfrei“ oder „st.-frei“.", example: "49,00 € / 147,00 €"}
+      en: {what: "Tax-free pay in the month and since January, such as a job ticket or allowances.", where: "Payslip – lines marked „steuerfrei“ or „st.-frei“.", example: "€49.00 / €147.00"}
+
+  # --- Erwartetes Bruttogehalt (income_input expected_gross_pay) ----------------------------
+  expected_gross_pay:
+    amount:
+      rare: false
+      source: payslip
+      de: {what: "Der steuerpflichtige Lohn, den die Person im ganzen Jahr erwartet, solange keine Lohnsteuerbescheinigung da ist.", where: "Aus der letzten Gehaltsabrechnung: „Steuer-Brutto“ des Monats mal die Monate, oder der Bruttolohn laut Arbeitsvertrag.", example: "4.000 € im Monat × 12 = 48.000,00 €"}
+      en: {what: "The taxable pay the person expects for the whole year, until the wage tax certificate arrives.", where: "From the latest payslip: the month's „Steuer-Brutto“ times the months, or the gross pay in the employment contract.", example: "€4,000 a month × 12 = €48,000.00"}
+
+  # --- Eigentümer: Kirchensteuer und Bundesland (owner) -------------------------------------
+  owner:
+    church_tax:
+      rare: false
+      source: lstb_2026
+      de: {what: "Ob die Person Kirchensteuer zahlt, also Mitglied einer steuererhebenden Kirche ist.", where: "Lohnsteuerbescheinigung, Kopf links – „Kirchensteuermerkmale“ (z. B. rk, ev); „--“ heißt keine.", example: "ev → ja"}
+      en: {what: "Whether the person pays church tax, as a member of a church that levies it.", where: "Lohnsteuerbescheinigung, header on the left – „Kirchensteuermerkmale“ (such as rk, ev); „--“ means none.", example: "ev → yes"}
+    tax_state:
+      rare: false
+      source: anleitung_est
+      de: {what: "Das Bundesland, in dem die Person wohnt; es bestimmt den Kirchensteuersatz.", where: "Die eigene Wohnanschrift (Hauptvordruck der Einkommensteuererklärung, Angaben zur Person; siehe Anleitung zur Einkommensteuererklärung).", example: "Hessen"}
+      en: {what: "The federal state the person lives in; it sets the church tax rate.", where: "Your home address (main form of the income tax return, personal details; see the instructions for the income tax return).", example: "Hessen"}
+
+  # --- Werbungskosten (Anlage N) ------------------------------------------------------------
+  commute:
+    kind:
+      rare: false
+      source: anleitung_n
+      de: {what: "Ob der Weg zur ersten Tätigkeitsstätte führt (der Normalfall) oder zu einem Sammelpunkt bzw. weiträumigen Tätigkeitsgebiet.", where: "Arbeitsvertrag oder Auskunft des Arbeitgebers; Anlage N, Abschnitt Wege zwischen Wohnung und erster Tätigkeitsstätte (siehe Anleitung zur Anlage N).", example: "Erste Tätigkeitsstätte"}
+      en: {what: "Whether the route leads to the first place of work (the usual case) or to a collection point or wide work area.", where: "Employment contract or the employer's word; Anlage N, section on journeys between home and first place of work (see the instructions for the Anlage N).", example: "First place of work"}
+    workplace_label:
+      rare: false
+      source: anleitung_n
+      de: {what: "Ort und Straße der Arbeitsstätte.", where: "Anschrift des Arbeitgebers bzw. des Standorts, an dem gearbeitet wird.", example: "Frankfurt, Musterstraße 1"}
+      en: {what: "Town and street of the workplace.", where: "The address of the employer or the site you work at.", example: "Frankfurt, Musterstraße 1"}
+    period_from:
+      rare: false
+      source: anleitung_n
+      de: {what: "Ab wann dieser Weg galt.", where: "Eigene Unterlagen; bei einem Wechsel im Jahr der erste Tag am neuen Ort.", example: "01.01.2026"}
+      en: {what: "From when this route applied.", where: "Your own records; for a change during the year, the first day at the new place.", example: "01.01.2026"}
+    period_to:
+      rare: false
+      source: anleitung_n
+      de: {what: "Bis wann dieser Weg galt.", where: "Eigene Unterlagen; bei einem Wechsel im Jahr der letzte Tag am alten Ort.", example: "31.12.2026"}
+      en: {what: "Until when this route applied.", where: "Your own records; for a change during the year, the last day at the old place.", example: "31.12.2026"}
+    days_per_week:
+      rare: false
+      source: anleitung_n
+      de: {what: "An wie vielen Tagen pro Woche normalerweise gearbeitet wird.", where: "Arbeitsvertrag oder Dienstplan.", example: "5"}
+      en: {what: "How many days a week are usually worked.", where: "Employment contract or rota.", example: "5"}
+    absent_days:
+      rare: true
+      source: anleitung_n
+      de: {what: "Tage ohne Fahrt: Urlaub, Krankheit, Homeoffice und Dienstreisen.", where: "Urlaubsübersicht, Krankmeldungen und Homeoffice-Kalender; Anlage N, Abschnitt Wege zwischen Wohnung und erster Tätigkeitsstätte.", example: "30 Urlaub + 5 krank + 40 Homeoffice = 75"}
+      en: {what: "Days without the journey: holidays, sick days, home office and business trips.", where: "Holiday overview, sick notes and home office calendar; Anlage N, section on journeys between home and first place of work.", example: "30 holiday + 5 sick + 40 home office = 75"}
+    days:
+      rare: false
+      source: anleitung_n
+      de: {what: "An wie vielen Tagen tatsächlich zur Arbeitsstätte gefahren wurde.", where: "Eigener Kalender; Anlage N, Abschnitt Wege zwischen Wohnung und erster Tätigkeitsstätte (siehe Anleitung zur Anlage N).", example: "155"}
+      en: {what: "On how many days the journey to the workplace was actually made.", where: "Your own calendar; Anlage N, section on journeys between home and first place of work (see the instructions for the Anlage N).", example: "155"}
+    km:
+      rare: false
+      source: anleitung_n
+      de: {what: "Die einfache Entfernung in vollen Kilometern, kürzeste Straßenverbindung.", where: "Routenplaner (kürzeste Strecke); Anlage N, Abschnitt Wege zwischen Wohnung und erster Tätigkeitsstätte.", example: "23"}
+      en: {what: "The one-way distance in full kilometres, the shortest road route.", where: "A route planner (shortest route); Anlage N, section on journeys between home and first place of work.", example: "23"}
+    km_car:
+      rare: false
+      source: anleitung_n
+      de: {what: "Wie viele der Kilometer mit dem eigenen Auto gefahren werden.", where: "Eigene Angabe; die drei Teilstrecken ergeben zusammen die Entfernung.", example: "23"}
+      en: {what: "How many of the kilometres are driven in your own car.", where: "Your own figure; the three parts add up to the distance.", example: "23"}
+    km_collective:
+      rare: true
+      source: anleitung_n
+      de: {what: "Kilometer mit einer Sammelbeförderung des Arbeitgebers (z. B. Werksbus).", where: "Auskunft des Arbeitgebers.", example: "0"}
+      en: {what: "Kilometres in a shuttle the employer provides (a works bus, say).", where: "Your employer's word.", example: "0"}
+    km_other:
+      rare: true
+      source: anleitung_n
+      de: {what: "Kilometer mit Bus, Bahn, Rad oder zu Fuß.", where: "Eigene Angabe; die drei Teilstrecken ergeben zusammen die Entfernung.", example: "0"}
+      en: {what: "Kilometres by bus, train, bike or on foot.", where: "Your own figure; the three parts add up to the distance.", example: "0"}
+    public_transport_costs:
+      rare: true
+      source: anleitung_n
+      de: {what: "Was die Fahrkarten für Bus und Bahn im Zeitraum gekostet haben; zählt, wenn es mehr ist als die Pauschale.", where: "Fahrkarten, Abo-Rechnungen oder Kontoauszug.", example: "696,00 €"}
+      en: {what: "What the bus and train tickets cost in the period; it counts when it is more than the allowance.", where: "Tickets, subscription invoices or the bank statement.", example: "€696.00"}
+
+  home_office:
+    days_other_workplace:
+      rare: false
+      source: anleitung_n
+      de: {what: "Tage, an denen überwiegend zu Hause gearbeitet wurde, obwohl beim Arbeitgeber ein Arbeitsplatz da war.", where: "Eigener Homeoffice-Kalender; Anlage N, Abschnitt Tagespauschale (bei beruflicher Tätigkeit im Homeoffice) (siehe Anleitung zur Anlage N).", example: "40"}
+      en: {what: "Days worked mainly at home although a desk at the employer was available.", where: "Your own home office calendar; Anlage N, section Tagespauschale (daily flat rate for work in the home office) (see the instructions for the Anlage N).", example: "40"}
+    days_no_other_workplace:
+      rare: true
+      source: anleitung_n
+      de: {what: "Tage zu Hause, an denen kein anderer Arbeitsplatz zur Verfügung stand (z. B. bei Lehrkräften für die Vorbereitung).", where: "Eigener Kalender; Anlage N, Abschnitt Tagespauschale (siehe Anleitung zur Anlage N).", example: "0"}
+      en: {what: "Days at home with no other workplace available (teachers preparing lessons, say).", where: "Your own calendar; Anlage N, section on the daily flat rate (see the instructions for the Anlage N).", example: "0"}
+
+  work_room:
+    months:
+      rare: false
+      source: anleitung_n
+      de: {what: "Wie viele Monate das Arbeitszimmer im Jahr genutzt wurde.", where: "Eigene Angabe; Anlage N, Abschnitt häusliches Arbeitszimmer (siehe Anleitung zur Anlage N).", example: "12"}
+      en: {what: "How many months of the year the study was used.", where: "Your own figure; Anlage N, section on the home study (see the instructions for the Anlage N).", example: "12"}
+    room_m2:
+      rare: false
+      source: anleitung_n
+      de: {what: "Die Fläche des Arbeitszimmers.", where: "Grundriss, Wohnflächenberechnung oder selbst gemessen.", example: "12,5 m²"}
+      en: {what: "The floor area of the study.", where: "Floor plan, floor area calculation or measured yourself.", example: "12.5 m²"}
+    home_m2:
+      rare: false
+      source: anleitung_n
+      de: {what: "Die Fläche der ganzen Wohnung, mit Arbeitszimmer.", where: "Mietvertrag, Wohnflächenberechnung oder Kaufvertrag.", example: "85 m²"}
+      en: {what: "The floor area of the whole home, study included.", where: "Lease, floor area calculation or purchase contract.", example: "85 m²"}
+    rent_year:
+      rare: false
+      source: anleitung_n
+      de: {what: "Die Kaltmiete des Jahres, bei Eigentum die Kosten des Eigentums (z. B. Abschreibung, Zinsen).", where: "Mietvertrag oder Kontoauszüge; bei Eigentum Darlehens- und Kaufunterlagen.", example: "10.200,00 €"}
+      en: {what: "The year's base rent, or for an owned home its costs (depreciation, interest).", where: "Lease or bank statements; for an owned home the loan and purchase papers.", example: "€10,200.00"}
+    running_costs_year:
+      rare: true
+      source: anleitung_n
+      de: {what: "Nebenkosten der Wohnung im Jahr: Heizung, Strom, Wasser, Müll.", where: "Nebenkostenabrechnung, Strom- und Gasrechnungen.", example: "2.400,00 €"}
+      en: {what: "The home's running costs for the year: heating, electricity, water, waste.", where: "Service charge statement, electricity and gas bills.", example: "€2,400.00"}
+    room_only_costs_year:
+      rare: true
+      source: anleitung_n
+      de: {what: "Kosten, die nur das Arbeitszimmer betreffen, z. B. seine Renovierung.", where: "Rechnungen.", example: "350,00 €"}
+      en: {what: "Costs for the study alone, such as redecorating it.", where: "Invoices.", example: "€350.00"}
+    prefer:
+      rare: true
+      source: anleitung_n
+      de: {what: "Ob die Jahrespauschale oder die tatsächlichen Kosten angesetzt werden sollen; leer lassen, dann wählt der Entwurf das Günstigere.", where: "Keine Zeile: eine eigene Wahl.", example: "leer"}
+      en: {what: "Whether the annual flat rate or the actual costs should count; leave it empty and the draft picks the better one.", where: "No line: your own choice.", example: "empty"}
+
+  work_equipment:
+    label:
+      rare: false
+      source: anleitung_n
+      de: {what: "Was gekauft wurde.", where: "Rechnung; Anlage N, Abschnitt Arbeitsmittel (siehe Anleitung zur Anlage N).", example: "Laptop"}
+      en: {what: "What was bought.", where: "Invoice; Anlage N, section on work equipment (see the instructions for the Anlage N).", example: "Laptop"}
+    item_class:
+      rare: false
+      source: anleitung_n
+      de: {what: "Die Art des Arbeitsmittels; sie bestimmt die Nutzungsdauer.", where: "Rechnung.", example: "Computer"}
+      en: {what: "The kind of item; it sets how long it is depreciated over.", where: "Invoice.", example: "Computer"}
+    gross:
+      rare: false
+      source: anleitung_n
+      de: {what: "Der Preis mit Mehrwertsteuer.", where: "Rechnung, Endbetrag.", example: "1.190,00 €"}
+      en: {what: "The price including VAT.", where: "Invoice, total.", example: "€1,190.00"}
+    net:
+      rare: true
+      source: anleitung_n
+      de: {what: "Der Preis ohne Mehrwertsteuer; leer lassen, dann rechnet der Entwurf mit 19 %.", where: "Rechnung, Nettobetrag.", example: "1.000,00 €"}
+      en: {what: "The price without VAT; leave it empty and the draft assumes 19 %.", where: "Invoice, net amount.", example: "€1,000.00"}
+    bought_on:
+      rare: false
+      source: anleitung_n
+      de: {what: "Das Kaufdatum, auch in einem Vorjahr.", where: "Rechnung, Rechnungsdatum.", example: "15.03.2025"}
+      en: {what: "The purchase date, also in an earlier year.", where: "Invoice, invoice date.", example: "15.03.2025"}
+    disposed_on:
+      rare: true
+      source: anleitung_n
+      de: {what: "Ab wann das Gerät nicht mehr genutzt wurde (verkauft, kaputt).", where: "Eigene Angabe oder Verkaufsbeleg.", example: "30.09.2026"}
+      en: {what: "From when the item was no longer used (sold, broken).", where: "Your own figure or the sales receipt.", example: "30.09.2026"}
+    professional_share:
+      rare: false
+      source: anleitung_n
+      de: {what: "Welcher Anteil beruflich genutzt wird.", where: "Eigene, ehrliche Schätzung.", example: "50 %"}
+      en: {what: "What share is used for work.", where: "Your own honest estimate.", example: "50 %"}
+    useful_life_months:
+      rare: true
+      source: anleitung_n
+      de: {what: "Über wie viele Monate abgeschrieben wird; nur bei „Sonstiges“ nötig.", where: "Eigene Angabe.", example: "60"}
+      en: {what: "Over how many months it is depreciated; only needed for „Other“.", where: "Your own figure.", example: "60"}
+
+  telecom:
+    bills_year:
+      rare: false
+      source: anleitung_n
+      de: {what: "Telefon- und Internetrechnungen des Jahres zusammen.", where: "Rechnungen des Anbieters oder Kontoauszüge; Anlage N, Abschnitt weitere Werbungskosten (siehe Anleitung zur Anlage N).", example: "12 × 40,00 € = 480,00 €"}
+      en: {what: "The year's phone and internet bills added up.", where: "The provider's bills or bank statements; Anlage N, section on other work-related costs (see the instructions for the Anlage N).", example: "12 × €40.00 = €480.00"}
+    months:
+      rare: true
+      source: anleitung_n
+      de: {what: "Für wie viele Monate es Rechnungen gab.", where: "Rechnungen.", example: "12"}
+      en: {what: "For how many months there were bills.", where: "Bills.", example: "12"}
+    employer_reimbursed:
+      rare: true
+      source: anleitung_n
+      de: {what: "Was der Arbeitgeber davon steuerfrei erstattet hat.", where: "Gehaltsabrechnung oder Auskunft des Arbeitgebers.", example: "0,00 €"}
+      en: {what: "What the employer paid back tax-free.", where: "Payslip or the employer's word.", example: "€0.00"}
+
+  professional_association:
+    name:
+      rare: false
+      source: anleitung_n
+      de: {what: "Der Name der Gewerkschaft oder des Berufsverbands.", where: "Beitragsbescheinigung; Anlage N, Abschnitt Beiträge zu Berufsverbänden (siehe Anleitung zur Anlage N).", example: "Musterverband e. V."}
+      en: {what: "The name of the union or professional body.", where: "Contribution statement; Anlage N, section on professional associations (see the instructions for the Anlage N).", example: "Musterverband e. V."}
+    amount:
+      rare: false
+      source: anleitung_n
+      de: {what: "Die Beiträge des Jahres.", where: "Beitragsbescheinigung oder Kontoauszüge.", example: "360,00 €"}
+      en: {what: "The year's contributions.", where: "Contribution statement or bank statements.", example: "€360.00"}
+    is_union:
+      rare: false
+      source: anleitung_n
+      de: {what: "Ob es eine Gewerkschaft ist (zählt zusätzlich zum Pauschbetrag).", where: "Beitragsbescheinigung.", example: "ja"}
+      en: {what: "Whether it is a trade union (counts on top of the flat allowance).", where: "Contribution statement.", example: "yes"}
+
+  training:
+    label:
+      rare: false
+      source: anleitung_n
+      de: {what: "Was es war: Kurs, Fachbuch, Prüfung.", where: "Rechnung; Anlage N, Abschnitt Fortbildungskosten (siehe Anleitung zur Anlage N).", example: "Excel-Kurs"}
+      en: {what: "What it was: course, trade book, exam.", where: "Invoice; Anlage N, section on further training (see the instructions for the Anlage N).", example: "Excel course"}
+    amount:
+      rare: false
+      source: anleitung_n
+      de: {what: "Was selbst gezahlt wurde, ohne das, was der Arbeitgeber erstattet hat.", where: "Rechnung.", example: "290,00 €"}
+      en: {what: "What you paid yourself, without what the employer paid back.", where: "Invoice.", example: "€290.00"}
+
+  other_expense:
+    expense_class:
+      rare: false
+      source: anleitung_n
+      de: {what: "Die Art der Ausgabe: Kontoführung, Bewerbung, Fähr- oder Flugkosten zur Arbeit oder Sonstiges.", where: "Beleg; Anlage N, Abschnitt weitere Werbungskosten (siehe Anleitung zur Anlage N).", example: "Kontoführungsgebühren"}
+      en: {what: "The kind of cost: account fees, job applications, ferry or flight costs to work, or other.", where: "Receipt; Anlage N, section on other work-related costs (see the instructions for the Anlage N).", example: "Account fees"}
+    label:
+      rare: false
+      source: anleitung_n
+      de: {what: "Eine kurze Bezeichnung.", where: "Beleg.", example: "Bewerbungsmappen"}
+      en: {what: "A short name.", where: "Receipt.", example: "Application folders"}
+    amount:
+      rare: false
+      source: anleitung_n
+      de: {what: "Der Betrag; bei der Kontoführungspauschale leer lassen.", where: "Beleg.", example: "85,00 €"}
+      en: {what: "The amount; leave it empty for the account fee flat rate.", where: "Receipt.", example: "€85.00"}
+
+  other_insurance:
+    amount:
+      rare: false
+      source: anleitung_est
+      de: {what: "Beiträge zu Haftpflicht-, Unfall- und Berufsunfähigkeitsversicherung im Jahr.", where: "Beitragsrechnungen der Versicherer; Anlage Vorsorgeaufwand, Abschnitt Weitere Vorsorgeaufwendungen (siehe Anleitung zur Anlage Vorsorgeaufwand).", example: "420,00 €"}
+      en: {what: "The year's premiums for liability, accident and disability insurance.", where: "The insurers' premium notices; Anlage Vorsorgeaufwand, section Weitere Vorsorgeaufwendungen (further provident expenses; see the instructions for the Anlage Vorsorgeaufwand).", example: "€420.00"}
+
+  replacement_income:
+    benefit:
+      rare: false
+      source: anleitung_n
+      de: {what: "Welche Leistung: Elterngeld, Mutterschaftsgeld, Krankengeld, Arbeitslosengeld oder andere.", where: "Bescheid oder Leistungsnachweis der zahlenden Stelle; Anlage N, Abschnitt Lohnersatzleistungen (siehe Anleitung zur Anlage N).", example: "Elterngeld"}
+      en: {what: "Which benefit: parental allowance, maternity pay, sickness benefit, unemployment benefit or other.", where: "The paying office's notice or statement; Anlage N, section on wage replacement benefits (see the instructions for the Anlage N).", example: "Parental allowance"}
+    amount:
+      rare: false
+      source: anleitung_n
+      de: {what: "Der Betrag im Jahr laut Bescheinigung der zahlenden Stelle.", where: "Leistungsnachweis oder Bescheid (z. B. der Elterngeldstelle oder Krankenkasse).", example: "9.600,00 €"}
+      en: {what: "The year's amount as the paying office certifies it.", where: "The statement or notice (from the parental allowance office or the health insurer, say).", example: "€9,600.00"}
+    period_from:
+      rare: true
+      source: anleitung_n
+      de: {what: "Ab wann die Leistung gezahlt wurde.", where: "Bescheid.", example: "01.02.2026"}
+      en: {what: "From when the benefit was paid.", where: "Notice.", example: "01.02.2026"}
+    period_to:
+      rare: true
+      source: anleitung_n
+      de: {what: "Bis wann die Leistung gezahlt wurde.", where: "Bescheid.", example: "31.07.2026"}
+      en: {what: "Until when the benefit was paid.", where: "Notice.", example: "31.07.2026"}
+
+  vorsorge_override:
+    pension:
+      rare: false
+      source: lstb_2026
+      de: {what: "Eigene Beiträge zur Rentenversicherung im Jahr, wenn sie von der Bescheinigung abweichen.", where: "Lohnsteuerbescheinigung Nr. 23 a) oder Beitragsbescheinigung; Anlage Vorsorgeaufwand (siehe Anleitung).", example: "4.487,25 €"}
+      en: {what: "Your own pension contributions for the year, when they differ from the certificate.", where: "Lohnsteuerbescheinigung line 23 a) or a contribution statement; Anlage Vorsorgeaufwand (see the instructions).", example: "€4,487.25"}
+    health_care_basis:
+      rare: false
+      source: anleitung_est
+      de: {what: "Beiträge zur Basis-Kranken- und Pflegeversicherung im Jahr, z. B. bei privater Versicherung.", where: "Beitragsbescheinigung der Krankenversicherung; Anlage Vorsorgeaufwand (siehe Anleitung).", example: "5.300,00 €"}
+      en: {what: "The year's basic health and care insurance contributions, for private cover say.", where: "The health insurer's contribution statement; Anlage Vorsorgeaufwand (see the instructions).", example: "€5,300.00"}
+    other:
+      rare: false
+      source: anleitung_est
+      de: {what: "Weitere Vorsorgeaufwendungen, z. B. Arbeitslosenversicherung oder Wahlleistungen der Krankenversicherung.", where: "Beitragsbescheinigungen; Anlage Vorsorgeaufwand (siehe Anleitung).", example: "627,25 €"}
+      en: {what: "Other provident costs, such as unemployment insurance or optional health cover.", where: "Contribution statements; Anlage Vorsorgeaufwand (see the instructions).", example: "€627.25"}
+    krankengeld_entitlement:
+      rare: true
+      source: anleitung_est
+      de: {what: "Ob die Krankenversicherung einen Anspruch auf Krankengeld einschließt.", where: "Versicherungsschein oder Beitragsbescheinigung der Krankenversicherung.", example: "ja"}
+      en: {what: "Whether the health insurance includes a right to sickness benefit.", where: "The policy or the health insurer's contribution statement.", example: "yes"}
+
+  # --- Kinder und Haushalt (household) ------------------------------------------------------
+  child:
+    born_on:
+      rare: false
+      source: anleitung_est
+      de: {what: "Das Geburtsdatum des Kindes; sonst wird nichts über das Kind gespeichert.", where: "Geburtsurkunde; Anlage Kind (siehe Anleitung zur Anlage Kind).", example: "12.05.2022"}
+      en: {what: "The child's date of birth; nothing else about the child is stored.", where: "Birth certificate; Anlage Kind (see the instructions for the Anlage Kind).", example: "12.05.2022"}
+    kindergeld_from:
+      rare: true
+      source: anleitung_est
+      de: {what: "Der erste Monat mit Kindergeld, nur wenn er nicht der Geburtsmonat ist.", where: "Kindergeldbescheid der Familienkasse.", example: "01.09.2026"}
+      en: {what: "The first month with child benefit, only when it is not the birth month.", where: "The Familienkasse's child benefit notice.", example: "01.09.2026"}
+
+  childcare_cost:
+    child_id:
+      rare: false
+      source: anleitung_est
+      de: {what: "Für welches Kind die Betreuung war.", where: "Betreuungsvertrag; Anlage Kind, Abschnitt Kinderbetreuungskosten (siehe Anleitung zur Anlage Kind).", example: "Kind, geboren 12.05.2022"}
+      en: {what: "Which child the care was for.", where: "Childcare contract; Anlage Kind, section on childcare costs (see the instructions for the Anlage Kind).", example: "Child born 12.05.2022"}
+    amount:
+      rare: false
+      source: anleitung_est
+      de: {what: "Die Betreuungskosten des Jahres, ohne Essensgeld.", where: "Jahresbescheinigung der Kita oder Tagesmutter, Kontoauszüge.", example: "2.640,00 €"}
+      en: {what: "The year's childcare costs, without meal money.", where: "The nursery's or childminder's annual statement, bank statements.", example: "€2,640.00"}
+    paid_to_account:
+      rare: false
+      source: anleitung_est
+      de: {what: "Ob auf ein Konto überwiesen wurde; bar bezahlte Betreuung zählt nicht.", where: "Kontoauszug.", example: "ja"}
+      en: {what: "Whether it was paid into an account; care paid in cash does not count.", where: "Bank statement.", example: "yes"}
+    payee_label:
+      rare: true
+      source: anleitung_est
+      de: {what: "An wen gezahlt wurde; aus den gebuchten Zahlungen übernommen.", where: "Kontoauszug, Empfänger.", example: "Kita Sonnenschein"}
+      en: {what: "Who was paid; taken from the booked payments.", where: "Bank statement, payee.", example: "Kita Sonnenschein"}
+
+  household_services:
+    service_class:
+      rare: false
+      source: anleitung_est
+      de: {what: "Die Art: Handwerkerleistung, haushaltsnahe Dienstleistung oder Minijob im Haushalt.", where: "Rechnung; Anlage Haushaltsnahe Aufwendungen (siehe Anleitung).", example: "Handwerker"}
+      en: {what: "The kind: tradesman's work, household service or a mini-job in the household.", where: "Invoice; Anlage Haushaltsnahe Aufwendungen (see the instructions).", example: "Tradesman"}
+    labour_cost:
+      rare: false
+      source: anleitung_est
+      de: {what: "Nur die Arbeits- und Fahrtkosten mit Mehrwertsteuer, ohne Material.", where: "Rechnung, ausgewiesener Lohnanteil; bei Mietern oder WEG die Nebenkosten- bzw. Hausgeldabrechnung.", example: "476,00 €"}
+      en: {what: "Only the labour and travel costs including VAT, without materials.", where: "Invoice, the labour share shown; for tenants or owners' associations the service charge statement.", example: "€476.00"}
+    paid_to_account:
+      rare: false
+      source: anleitung_est
+      de: {what: "Ob auf das Konto des Anbieters überwiesen wurde; Barzahlung zählt nicht.", where: "Kontoauszug.", example: "ja"}
+      en: {what: "Whether it was paid into the provider's account; cash does not count.", where: "Bank statement.", example: "yes"}
+    source:
+      rare: false
+      source: anleitung_est
+      de: {what: "Ob die Kosten aus einer eigenen Rechnung oder aus einer Nebenkostenabrechnung stammen.", where: "Rechnung oder Nebenkostenabrechnung (dort der Abschnitt nach §35a EStG).", example: "eigene Rechnung"}
+      en: {what: "Whether the costs come from your own invoice or from a service charge statement.", where: "Invoice or service charge statement (its section under §35a EStG).", example: "own invoice"}
+    payee_label:
+      rare: true
+      source: anleitung_est
+      de: {what: "An wen gezahlt wurde; aus den gebuchten Zahlungen übernommen.", where: "Kontoauszug, Empfänger.", example: "Muster Sanitär GmbH"}
+      en: {what: "Who was paid; taken from the booked payments.", where: "Bank statement, payee.", example: "Muster Sanitär GmbH"}
+
+  special_expense:
+    expense_class:
+      rare: false
+      source: anleitung_est
+      de: {what: "Die Art der Sonderausgabe; derzeit nur Spenden.", where: "Anlage Sonderausgaben, Zuwendungen (siehe Anleitung).", example: "Spende"}
+      en: {what: "The kind of special expense; donations only for now.", where: "Anlage Sonderausgaben, donations (see the instructions).", example: "Donation"}
+    amount:
+      rare: false
+      source: anleitung_est
+      de: {what: "Der gespendete Betrag im Jahr.", where: "Zuwendungsbestätigung; bis 300 € reicht der Kontoauszug.", example: "150,00 €"}
+      en: {what: "The amount donated in the year.", where: "Donation receipt; up to €300 the bank statement is enough.", example: "€150.00"}
+    recipient_label:
+      rare: false
+      source: anleitung_est
+      de: {what: "Wer die Spende bekommen hat.", where: "Zuwendungsbestätigung oder Kontoauszug, Empfänger.", example: "Musterhilfe e. V."}
+      en: {what: "Who received the donation.", where: "Donation receipt or bank statement, payee.", example: "Musterhilfe e. V."}

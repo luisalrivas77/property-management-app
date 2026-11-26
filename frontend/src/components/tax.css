@@ -434,10 +434,6 @@ button.link.tax-sources-button {
   color: var(--muted);
 }
 
-.tabs .tax-tab-questions {
-  margin-left: auto;
-}
-
 .tax-owner-switch {
   flex-wrap: wrap;
   gap: 8px;
@@ -702,4 +698,83 @@ button.link.tax-sources-button {
 
 .tax-line-calc h3 {
   margin: 0 0 6px;
+}
+
+/* Steuern › Eure Angaben as topics (phase 10 §7.8 (b), D294, mockup 22c; components/angaben.tsx) */
+.angaben-topics {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.angaben-topics li + li {
+  border-top: 1px solid var(--divider);
+}
+.angaben-topic {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 0;
+  color: var(--text);
+  text-decoration: none;
+}
+.angaben-topic-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.angaben-topic-line {
+  font-size: 0.9em;
+}
+.angaben-proposals {
+  background: var(--accent-tint);
+  border-color: var(--accent-tint-2);
+}
+.angaben-source {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: var(--radius-tag);
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+  font-size: 0.85em;
+}
+.angaben-prefill {
+  border-color: var(--accent-tint-2);
+}
+.angaben-recipients {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.angaben-recipients li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--divider);
+}
+.angaben-without > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.fragen-embedded {
+  margin: 0;
+}
+
+/* The field help under a label (fieldHelp.tsx). */
+.field-help {
+  display: block;
+  font-size: 0.85em;
+  color: var(--text-2);
+  font-weight: normal;
+}
+.field-help-info {
+  text-decoration: none;
+  padding: 0 4px;
+  color: var(--accent);
+}
+.field-rare {
+  grid-column: 1 / -1;
+}
+.field-rare > summary {
+  cursor: pointer;
+  color: var(--accent-strong);
+  margin: 8px 0;
 }

@@ -1,5 +1,7 @@
-// Jahresfragen (docs/phases/phase-4b.md §10, D110) at /tax/<year>/fragen: the 2026 flow walked
-// for a two-owner household with one property until every slot is answered: Ja with facts for
+// Jahresfragen (docs/phases/phase-4b.md §10, D110), asked per topic of Steuern › Eure Angaben and
+// the property's in its Immobilie step under „Fragen zum Jahr“ since phase 10 §7.8 (b) (D294;
+// /tax/<year>/fragen forwards there, e2e/angaben-topics.spec.ts): the 2026 questions walked
+// topic by topic for a two-owner household with one property until every slot is answered: Ja with facts for
 // A's commute, home office and a work item and for a child; a choice for the tax class, the
 // insurance and the wage-replacement benefits; Nein / Trifft nicht zu for the rest; one slot
 // left for later and answered from the last screen. Then 2027, which reuses the 2026 questions:
@@ -25,6 +27,12 @@ async function answer(page: Page, label: string): Promise<void> {
   await answers(page).getByRole("button", { name: label, exact: true }).click();
 }
 
+/** Whether the topic's (or the property's) questions ended: its short summary, a paragraph where
+ * a question is a heading. */
+async function atEnd(page: Page): Promise<boolean> {
+  return (await page.locator("p.fragen-question").count()) > 0;
+}
+
 /** The question on screen, and which group ("Fragen für A") it belongs to. */
 async function screen(page: Page): Promise<{ question: string; group: string; position: number }> {
   const heading = page.locator("h2.fragen-question");
@@ -39,7 +47,7 @@ async function screen(page: Page): Promise<{ question: string; group: string; po
 
 async function waitPast(page: Page, position: number): Promise<void> {
   await expect(async () => {
-    const summary = await page.getByRole("heading", { name: /noch offen|Alle Fragen beantwortet/ }).count();
+    const summary = await page.locator("p.fragen-question").count();
     const head = (await page.locator(".fragen-progress-head strong").allTextContents()).join("");
     const now = Number(/Frage (\d+) von/.exec(head)?.[1] ?? "0");
     expect(summary > 0 || now !== position).toBe(true);
@@ -99,7 +107,7 @@ async function answerScreen(page: Page, question: string, group: string): Promis
     case "Gab es hohe Krankheitskosten oder andere außergewöhnliche Belastungen?":
       // The zumutbare Belastung from the estimate, a reminder figure (gap 6); 2027 has no
       // Anlage N rule set, so no estimate and no figure there.
-      if (page.url().includes(`/tax/${YEAR}/`)) await expect(page.getByText(`Ihre zumutbare Belastung ${YEAR}:`)).toBeVisible();
+      if (page.url().includes(`/tax/${YEAR}?`)) await expect(page.getByText(`Ihre zumutbare Belastung ${YEAR}:`)).toBeVisible();
       return answer(page, "Nein");
     default:
       return answer(page, "Nein");
@@ -121,41 +129,58 @@ test("the 2026 questions are walked to all answered, and 2027 carries and reconf
     purchase_price: "250000.00",
   });
 
-  await page.goto(`/tax/${YEAR}/fragen`);
-  await expect(page.getByRole("heading", { name: `Jahresfragen ${YEAR}` })).toBeVisible();
+  // Arbeitslohn first: A's first question is left for later.
+  await page.goto(`/tax/${YEAR}?tab=angaben&thema=pay`);
   const first = await screen(page);
   expect(first.position).toBe(1);
-  await expect(page.getByText("Frage 1 von 42")).toBeVisible();
+  expect(first.question).toBe("Liegt die Lohnsteuerbescheinigung für das Jahr vor, oder Gehaltsabrechnungen?");
   expect(first.group).toContain("Fragen für A");
+  await expect(page.getByText(/^Frage 1 von \d+$/)).toBeVisible();
   await expect(page.getByText(/^Warum:/)).toBeVisible();
-  // Leave the first question for later.
-  await page.getByRole("button", { name: "Später beantworten" }).click();
-  await expect(page.getByText("Frage 2 von 42")).toBeVisible();
+  await page.getByRole("button", { name: "Überspringen" }).click();
+  await waitPast(page, 1);
 
   const seen = new Set<string>();
-  for (let step = 0; step < 60; step += 1) {
-    if ((await page.getByRole("heading", { name: /noch offen|Alle Fragen beantwortet/ }).count()) > 0) break;
-    const { question, group, position } = await screen(page);
-    seen.add(group.split(" · ")[0] ?? group);
-    await answerScreen(page, question, group);
-    await waitPast(page, position);
-  }
-  expect([...seen]).toEqual(["Fragen für A", "Fragen für B", "Fragen für den Haushalt", "Fragen zur Immobilie Wohnung Fragen"]);
-
-  // The last screen: one question left open, reachable from there.
-  await expect(page.getByRole("heading", { name: "1 Frage noch offen" })).toBeVisible();
-  await expect(page.getByText("41 von 42 beantwortet.")).toBeVisible();
-  await expect(page.getByText("Berufliche Umzugskosten von Hand in der Anlage N eintragen.")).toBeVisible();
+  const walk = async () => {
+    for (let step = 0; step < 60; step += 1) {
+      if (await atEnd(page)) return;
+      const { question, group, position } = await screen(page);
+      seen.add(group.split(" · ")[0] ?? group);
+      await answerScreen(page, question, group);
+      await waitPast(page, position);
+    }
+    throw new Error("the questions did not end");
+  };
+  await walk();
+  // The topic's end: the one question left open, reachable from there.
+  await expect(page.locator("p.fragen-question")).toHaveText("1 Frage noch offen");
   await page.getByRole("button", { name: /^Fragen für A: Liegt die Lohnsteuerbescheinigung/ }).click();
   await answer(page, "Nein");
-  await expect(page.getByRole("heading", { name: "Alle Fragen beantwortet" })).toBeVisible();
-  await expect(page.getByText("42 von 42 beantwortet.")).toBeVisible();
-  await expect(page.getByRole("link", { name: `Zum Steuerjahr ${YEAR}` })).toHaveAttribute("href", `/tax/${YEAR}`);
+  await expect(page.locator("p.fragen-question")).toHaveText("Alle Fragen dieses Themas sind beantwortet.");
+
+  for (const topic of ["couple", "work_costs", "insurance", "benefits", "children", "household"]) {
+    await page.goto(`/tax/${YEAR}?tab=angaben&thema=${topic}`);
+    await expect(page.locator("h2.fragen-question, p.fragen-question").first()).toBeVisible();
+    await walk();
+    await expect(page.locator("p.fragen-question")).toHaveText("Alle Fragen dieses Themas sind beantwortet.");
+  }
+  // The property's questions, in its Immobilie step.
+  const properties = await apiCall<{ id: string }[]>(page, "GET", "/api/properties");
+  await page.goto(`/tax/${YEAR}?schritt=immobilie&immobilie=${properties[0]!.id}`);
+  const yearQuestions = page.getByRole("region", { name: "Fragen zum Jahr" });
+  await expect(yearQuestions.locator("h2.fragen-question, p.fragen-question").first()).toBeVisible();
+  await walk();
+  expect([...seen].sort()).toEqual(["Fragen für A", "Fragen für B", "Fragen für den Haushalt", "Fragen zur Immobilie Wohnung Fragen"]);
+  // Back to the Werbungskosten, whose questions are all answered, with what a „Ja“ leaves to type
+  // by hand.
+  await page.goto(`/tax/${YEAR}?tab=angaben&thema=work_costs`);
+  await expect(page.locator("p.fragen-question")).toHaveText("Alle Fragen dieses Themas sind beantwortet.");
+  await expect(page.getByText("Berufliche Umzugskosten von Hand in der Anlage N eintragen.")).toBeVisible();
 
   // Change two answers. An answered slot shows its answer and "Antwort ändern".
   await page.getByRole("button", { name: "Zur ersten Frage" }).click();
-  await expect(page.getByText("Frage 1 von 42")).toBeVisible();
-  await expect(page.getByText("Ihre Antwort: Nein")).toBeVisible();
+  await expect(page.getByText(/^Frage 1 von \d+$/)).toBeVisible();
+  await expect(page.getByText("Ihre Antwort:", { exact: false }).first()).toBeVisible();
   const forward = async (text: string) => {
     for (let step = 0; step < 20; step += 1) {
       const { question, position } = await screen(page);
@@ -207,13 +232,13 @@ test("the 2026 questions are walked to all answered, and 2027 carries and reconf
   expect(children[0]?.value).toMatchObject({ born_on: "2026-03-14" });
 
   // 2027 reuses the 2026 questions. A's commute is proposed from 2026, its values marked.
-  await page.goto(`/tax/${YEAR + 1}/fragen`);
+  await page.goto(`/tax/${YEAR + 1}?tab=angaben&thema=work_costs`);
   await expect(page.getByText(`es gelten die von ${YEAR}`)).toBeVisible();
   const skipTo = async (text: string) => {
     for (let step = 0; step < 20; step += 1) {
       const { question, position } = await screen(page);
       if (question === text) return;
-      await page.getByRole("button", { name: "Später beantworten" }).click();
+      await page.getByRole("button", { name: "Überspringen" }).click();
       await waitPast(page, position);
     }
     throw new Error(`question not reached: ${text}`);
@@ -228,7 +253,7 @@ test("the 2026 questions are walked to all answered, and 2027 carries and reconf
   await expect(form.getByLabel(/^Arbeitsstätte\s*Vorjahr$/)).toBeVisible();
   await expect(form.getByLabel(/^Entfernung/)).toHaveValue("30");
   await form.getByRole("button", { name: "Abbrechen" }).click();
-  await page.getByRole("button", { name: "Später beantworten" }).click();
+  await page.getByRole("button", { name: "Überspringen" }).click();
 
   // A's desk from 2026 is reconfirmed: no longer used since the end of June.
   await skipTo("Werden Arbeitsmittel aus früheren Jahren noch genutzt?");

@@ -90,6 +90,10 @@ test("the Anlage N tab saves every kind of input, switches owner and shows the e
   await tabs.getByRole("link", { name: "Eure Angaben" }).click();
   await expect(page).toHaveURL(new RegExp(`/tax/${YEAR}\\?tab=angaben`));
   await expect(page.getByRole("heading", { level: 1, name: `Steuern ${YEAR}` })).toBeVisible();
+  // Eure Angaben is a list of topics since phase 10 §7.8 (b) (D294); the Werbungskosten blocks
+  // are entered in their topic, under „Weitere Einträge“.
+  await page.getByRole("link", { name: /^Werbungskosten/ }).click();
+  await expect(page).toHaveURL(new RegExp(`tab=angaben&thema=work_costs`));
 
   // Eure Angaben in English (phase 10 D284): a block's button and its form's fields.
   await page.evaluate(() => window.localStorage.setItem("hausbuch.locale", "en"));
@@ -128,7 +132,9 @@ test("the Anlage N tab saves every kind of input, switches owner and shows the e
   });
   await save(page, "Fortbildung hinzufügen", "Fortbildung eintragen", { Bezeichnung: "Fachbuch", Betrag: "45" });
   await save(page, "Sonstige Werbungskosten hinzufügen", "Sonstige Werbungskosten eintragen", {});
+  await page.goto(`/tax/${YEAR}?tab=angaben&thema=benefits`);
   await save(page, "Lohnersatzleistungen hinzufügen", "Lohnersatzleistungen eintragen", { "Betrag im Jahr": "1500" });
+  await page.goto(`/tax/${YEAR}?tab=angaben&thema=insurance`);
   await save(page, "Weitere Versicherungen eintragen", "Weitere Versicherungen eintragen", { "Beiträge im Jahr": "90" });
   await save(page, "Vorsorge manuell eintragen", "Vorsorge manuell eintragen", {
     "Rentenversicherung (Arbeitnehmeranteil)": "4800",
@@ -182,7 +188,9 @@ test("the Anlage N tab saves every kind of input, switches owner and shows the e
     `/tax/${YEAR}?tab=angaben&eigentuemer=${a.id}#eingabe-commute`,
   );
   await linePanel.getByRole("link", { name: "Ändern in Eure Angaben ›" }).click();
-  await expect(page).toHaveURL(new RegExp(`tab=angaben&eigentuemer=${a.id}#eingabe-commute$`));
+  // The old anchor opens its topic (phase 10 D294) at the block, for the same owner.
+  await expect(page).toHaveURL(new RegExp(`tab=angaben&thema=work_costs&eigentuemer=${a.id}#eingabe-commute$`));
+  await expect(page.locator("#eingabe-commute")).toBeVisible();
 
   // A change is a new row naming the old one; Entfernen withdraws a row.
   const training = rows.find((row) => row.kind === "training");
@@ -194,6 +202,7 @@ test("the Anlage N tab saves every kind of input, switches owner and shows the e
   await change.getByRole("button", { name: "Speichern" }).click();
   await expect(change).toBeHidden();
   await expect(trainingBlock).toContainText("65,00 €");
+  await page.goto(`/tax/${YEAR}?tab=angaben&thema=insurance&eigentuemer=${a.id}`);
   await panel.getByRole("group", { name: "Weitere Versicherungen", exact: true }).getByRole("button", { name: "Entfernen" }).click();
   await expect(panel.getByRole("button", { name: "Weitere Versicherungen eintragen" })).toBeVisible();
   const after = await apiCall<Row[]>(page, "GET", rowsPath);
@@ -203,13 +212,16 @@ test("the Anlage N tab saves every kind of input, switches owner and shows the e
   expect(after.some((row) => row.kind === "other_insurance")).toBe(false);
 
   // The owner switch changes only the URL; B has none of A's inputs.
-  await page.getByRole("navigation", { name: "Eigentümer wählen", exact: true }).getByRole("link", { name: "B. Muster" }).click();
+  await page.goto(`/tax/${YEAR}?tab=angaben&thema=work_costs&eigentuemer=${a.id}`);
+  await page.getByRole("navigation", { name: "Person wählen", exact: true }).getByRole("link", { name: "B. Muster" }).click();
   await expect(page).toHaveURL(new RegExp(`eigentuemer=${b.id}`));
-  await expect(page.getByText("Die Angaben von B. Muster.", { exact: false })).toBeVisible();
+  await expect(page.getByText("Einträge von B. Muster", { exact: false })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Arbeitsweg hinzufügen" })).toBeVisible();
   await expect(panel.getByRole("group", { name: "Arbeitsweg", exact: true })).not.toContainText("Werk Nord");
 
-  // The Gesamt card renders the API's estimate, the figures as sent.
+  // The Gesamt card (on the form tabs since Eure Angaben became topics) renders the API's
+  // estimate, the figures as sent.
+  await page.goto(`/tax/${YEAR}?tab=anlage-n`);
   const estimate = await apiCall<Estimate>(page, "GET", `/api/tax/return-estimate?tax_year=${YEAR}`);
   const card = page.getByRole("region", { name: "Gesamt" });
   await expect(card).toContainText(
@@ -224,7 +236,7 @@ test("the Anlage N tab saves every kind of input, switches owner and shows the e
   await expect(card).toContainText(euro(estimate.zve));
 
   // The Anlage V tab keeps the card, and says there is no property yet.
-  await tabs.getByRole("link", { name: "Anlage V" }).click();
+  await page.getByRole("navigation", { name: "Formulare" }).getByRole("link", { name: "Anlage V" }).click();
   await expect(page.getByText("Noch keine Immobilie.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Gesamt" })).toContainText(euro(estimate.result.replace(/^-/, "")));
 });
@@ -328,13 +340,13 @@ test("a booked Lohnersatz line is proposed under Eure Angaben and taken over onc
   });
   expect(booked.status()).toBe(200);
 
-  // A is on screen under Eure Angaben (the form lives there since phase 10 D281).
-  await page.goto(`/tax/${YEAR}?tab=angaben&eigentuemer=${a.id}`);
-  await expect(page.getByText("Die Angaben von A. Muster.", { exact: false })).toBeVisible();
+  // The Gesamt card's to-do opens the topic Lohnersatzleistungen of Eure Angaben for A (topics
+  // since phase 10 §7.8 (b), D294), where the proposal waits among the topic's points.
+  await page.goto(`/tax/${YEAR}?tab=anlage-n&eigentuemer=${a.id}`);
   const card = page.getByRole("region", { name: "Gesamt" });
   await expect(card).toContainText("Bei Krankengeld zeigt die Bescheinigung der Krankenkasse einen höheren Betrag");
   await card.getByRole("link", { name: "Vorschlag ansehen" }).click();
-  await expect(page).toHaveURL(/#tax-angaben-points$/);
+  await expect(page).toHaveURL(new RegExp(`tab=angaben&thema=benefits&eigentuemer=${a.id}$`));
 
   const proposal = page.getByRole("listitem").filter({ hasText: "Lohnersatzleistung aus dem Konto" });
   await expect(proposal).toBeVisible();
@@ -353,6 +365,8 @@ test("a booked Lohnersatz line is proposed under Eure Angaben and taken over onc
   await dialog.getByRole("button", { name: "Übernehmen" }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByRole("listitem").filter({ hasText: "Lohnersatzleistung aus dem Konto" })).toHaveCount(0);
+  await page.goto(`/tax/${YEAR}?tab=anlage-n&eigentuemer=${a.id}`);
+  await expect(card).toContainText("Voraussichtliche");
   await expect(card.getByRole("link", { name: "Vorschlag ansehen" })).toHaveCount(0);
 
   const rows = await apiCall<Row[]>(page, "GET", `/api/return-inputs?tax_year=${YEAR}&owner_id=${a.id}`);

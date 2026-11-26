@@ -1,4 +1,5 @@
-"""GET /tax/{tax_year}/guide (phase 10 §7.6, D290): Steuern as one guided path of five steps.
+"""GET /tax/{tax_year}/guide (phase 10 §7.6, D290): Steuern as one guided path of four steps
+(five until §7.8 (b), D294, folded the Jahresfragen into Eure Angaben and the Immobilie steps).
 
 A composition of reads that exist already (the Anlage V and Anlage N drafts, the document
 checklists, the questionnaire's progress and the whole-return estimate); it computes no tax
@@ -15,9 +16,10 @@ from pydantic import Field
 from .booked_inputs import BookedProposal
 from .checklist import DocumentChecklistItem
 from .common import Money, Schema, TaxYear
+from .employment import QuestionTopic
 from .tax import DraftWarning
 
-GuideStepKind = Literal["angaben", "property", "questions", "documents", "review"]
+GuideStepKind = Literal["angaben", "property", "documents", "review"]
 # done: „erledigt“ (the review step: ready to file, only when every other step is done);
 # open: „N offen“; waiting: „ab <Monat>“, or „noch nicht“ without a month (the review step
 # while another step is not done).
@@ -42,8 +44,8 @@ class GuideStep(Schema):
     state: GuideStepState
     open: int = Field(ge=0)  # what is to do now
     waiting: int = Field(default=0, ge=0)  # Belege not issued yet
-    done: int | None = Field(default=None, ge=0)  # questions answered, Belege there
-    total: int | None = Field(default=None, ge=0)  # question slots, Belege expected
+    done: int | None = Field(default=None, ge=0)  # Belege there
+    total: int | None = Field(default=None, ge=0)  # Belege expected
     # The first month a waiting Beleg usually comes (never before this month).
     waiting_from: date | None = None
 
@@ -74,6 +76,9 @@ class GuidePoint(Schema):
     note: bool = False
     refused: str | None = None
     blocking: bool = True
+    # The topic of Eure Angaben the point belongs to (rules/angaben_topics.topic_of_point;
+    # None: a point of another step, or one no topic lists), so the screen shows it there.
+    topic: QuestionTopic | None = None
 
 
 class GuideDocument(Schema):
@@ -115,6 +120,54 @@ class GuideEstimate(Schema):
     status: Literal["estimate", "certified"]
 
 
+# --- The topics of Eure Angaben (phase 10 §7.8 (b), D294, rules/angaben_topics.py) -----------
+
+GuideTopicKind = QuestionTopic
+# open: something to answer, type or confirm (a proposal counts, even one that does not hold the
+# step); not_needed: every question of the topic answered „nein“ (or with a choice that means
+# none) and no row of its kinds in the year; done: otherwise.
+GuideTopicState = Literal["done", "open", "not_needed"]
+
+
+class GuideTopicOwner(Schema):
+    """One owner in an owner topic: what is open for them and the facts the topic shows. Only
+    the facts of the topic are set; the browser words them and computes nothing."""
+
+    owner_id: UUID
+    open: int = Field(ge=0)
+    open_questions: list[str] = Field(default_factory=list)  # their unanswered question keys
+    rows: dict[str, int] = Field(default_factory=dict)  # the year's rows by input kind
+    # couple
+    church_tax: bool | None = None
+    tax_state: str | None = None  # None in couple: no Bundesland recorded (open)
+    tax_class: str | None = None  # the Jahresfragen's choice code
+    # pay: the Anlage N's status and the gross pay it counts (None: no draft for the year)
+    pay_status: Literal["certified", "estimate", "none"] | None = None
+    gross_source: Literal["certificate", "payslip", "expected", "declared_none"] | None = None
+    gross: Money | None = None
+    # insurance and benefits: the Jahresfragen's choice codes
+    insurance_status: str | None = None
+    benefit: str | None = None
+
+
+class GuideTopic(Schema):
+    """One topic of Eure Angaben. `open`: its unanswered questions, its blocking points that are
+    no proposal and, for couple, each owner without a Bundesland. `proposals`: the bookings that
+    propose an input of the topic (§7.8 (a)), blocking or not. `owners`: one per owner in an owner
+    topic (couple, pay, work_costs, insurance, benefits); `open_questions` and `rows` the
+    household's own in children and household."""
+
+    topic: GuideTopicKind
+    state: GuideTopicState
+    open: int = Field(ge=0)
+    proposals: int = Field(default=0, ge=0)
+    questions_open: int = Field(ge=0)
+    questions_total: int = Field(ge=0)
+    owners: list[GuideTopicOwner] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    rows: dict[str, int] = Field(default_factory=dict)
+
+
 class TaxGuide(Schema):
     tax_year: TaxYear
     filing_deadline: date
@@ -132,3 +185,5 @@ class TaxGuide(Schema):
     # A source that could not be read for the year, as "<source>:<error code>" (e.g.
     # "estimate:tax.no_rule_set"); the rest of the guide is still served.
     unavailable: list[str] = Field(default_factory=list)
+    # Eure Angaben by topic, in order (D294). None: the year's questionnaire could not be read.
+    topics: list[GuideTopic] | None = None

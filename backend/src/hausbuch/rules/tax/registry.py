@@ -26,6 +26,7 @@ import yaml
 
 from hausbuch.rules.errors import PROJECTION_NO_RULE_SET, TARIFF_NO_FILE, TAX_NO_RULE_SET, RuleError
 from hausbuch.schemas.employment import AnlageNRuleSet, Questionnaire
+from hausbuch.schemas.field_help import FieldHelp
 from hausbuch.schemas.performance import Tariff
 from hausbuch.schemas.tax import RuleSet
 
@@ -33,6 +34,7 @@ _RULESETS = files("hausbuch.rules.tax") / "rulesets"
 _TARIFFS = files("hausbuch.rules.tax") / "tariffs"
 _ANLAGE_N = files("hausbuch.rules.tax") / "anlage_n"
 _QUESTIONNAIRES = files("hausbuch.rules.tax") / "questionnaire"
+_FIELD_HELP = files("hausbuch.rules.tax") / "field_help"
 
 
 def _years(directory) -> tuple[int, ...]:
@@ -161,3 +163,26 @@ def questionnaire(tax_year: int) -> Questionnaire:
     return Questionnaire.model_validate(
         own.model_dump() | {"tax_year": tax_year, "reused_from": year}
     )
+
+
+def field_help_years() -> tuple[int, ...]:
+    """The tax years that have a field help file, ascending."""
+    return _years(_FIELD_HELP)
+
+
+@cache
+def field_help(tax_year: int) -> FieldHelp:
+    """The year's field help for „Eure Angaben“ (phase 10 D294); for a year without a file,
+    the latest earlier file with tax_year set to the year asked for and reused_from to the
+    file's year, as the questionnaire. Before every file: RuleError tax.no_rule_set. Cached."""
+    earlier = [y for y in field_help_years() if y <= tax_year]
+    if not earlier:
+        raise RuleError(TAX_NO_RULE_SET, f"no field help for {tax_year} or any earlier year")
+    year = earlier[-1]
+    data = yaml.safe_load((_FIELD_HELP / f"{year}.yaml").read_text(encoding="utf-8"))
+    own = FieldHelp.model_validate(data)
+    if own.tax_year != year or own.reused_from is not None:
+        raise ValueError(f"field_help/{year}.yaml declares tax_year {own.tax_year}")
+    if year == tax_year:
+        return own
+    return FieldHelp.model_validate(own.model_dump() | {"tax_year": tax_year, "reused_from": year})

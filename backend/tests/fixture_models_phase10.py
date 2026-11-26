@@ -28,6 +28,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 import yaml
 from fixture_models import Lenient
+from fixture_models_angaben_topics import AngabenTopicsFixture
 from fixture_models_booked_inputs import BookedInputsFixture
 from pydantic import AfterValidator, Field, model_validator
 
@@ -1084,6 +1085,7 @@ MODELS: dict[str, type[Schema]] = {
     "plan_page": PlanFixture,
     "investment_split": InvestmentSplitFixture,
     "booked_inputs": BookedInputsFixture,
+    "angaben_topics": AngabenTopicsFixture,
     "goal_invest": TrackerFixture,
     "goal_property": GrowthFixture,
 }

@@ -2,7 +2,8 @@
 
 Reads what the Steuern screens already read, each through its own service, and hands the
 results to rules/tax_guide.py: every property's document checklist and Anlage V draft, every
-owner's Anlage N draft, the questionnaire's progress and the whole-return estimate. A source
+owner's Anlage N draft, the questionnaire's progress and the whole-return estimate, and sorts
+Eure Angaben into its topics (rules/angaben_topics.py, phase 10 §7.8 (b), D294). A source
 that cannot be read for the year (a year without a rule set: `tax.no_rule_set`) is named in
 `unavailable` and the rest is still served, so the guide never answers 422 as a whole.
 
@@ -16,9 +17,12 @@ from uuid import UUID
 
 from sqlalchemy import Connection
 
+from hausbuch.rules import angaben_topics as topics_rule
 from hausbuch.rules import document_checklist as checklist_rule
 from hausbuch.rules import tax_guide as rule
 from hausbuch.rules.errors import ANLAGE_N_NO_PAY, RuleError
+from hausbuch.rules.tax import registry
+from hausbuch.rules.tax.anlage_n._base import in_year
 from hausbuch.rules.tax.return_estimate import filing_deadline
 from hausbuch.schemas.employment import AnlageNDraft, OpenQuestion
 from hausbuch.schemas.tax import AnlageVDraft
@@ -27,8 +31,13 @@ from hausbuch.schemas.tax_guide import GuideEstimate, GuideFormResult, TaxGuide
 from .checklist import checklist_facts, document_checklist
 from .owners import list_owners
 from .properties import list_properties
-from .questionnaire import questionnaire_progress
-from .return_inputs import anlage_n_draft, booked_input_proposals, household_return_estimate
+from .questionnaire import current_answers, questionnaire_progress
+from .return_inputs import (
+    anlage_n_draft,
+    booked_input_proposals,
+    current_rows,
+    household_return_estimate,
+)
 from .tax import anlage_v_draft
 
 
@@ -74,7 +83,8 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
 
     owners: list[rule.OwnerFacts] = []
     n_drafts: dict[UUID, AnlageNDraft | str] = {}
-    for owner in list_owners(conn):
+    owner_records = list_owners(conn)
+    for owner in owner_records:
         benefit_missing = owner.id in benefit_owners
         try:
             n = anlage_n_draft(conn, owner.id, tax_year=tax_year)
@@ -158,6 +168,36 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
                 open=result.form_open("anlage_n", owner_id=owner_id),
             )
         )
+    # Eure Angaben by topic (D294): None while the year's questionnaire cannot be read.
+    topics = None
+    if total is not None:
+        topic_owners = []
+        for o in owner_records:
+            n = n_drafts[o.id]
+            draft = None if isinstance(n, str) else n
+            topic_owners.append(
+                topics_rule.TopicOwner(
+                    owner_id=o.id,
+                    church_tax=o.church_tax,
+                    tax_state=o.tax_state,
+                    status=draft.status if draft else None,
+                    gross_source=draft.gross_source if draft else None,
+                    gross=draft.gross if draft else None,
+                )
+            )
+        topics = topics_rule.topics(
+            registry.questionnaire(tax_year),
+            topic_owners,
+            current_answers(conn, tax_year),
+            in_year(current_rows(conn), tax_year),
+            result.points,
+            proposals,
+        )
+    # Each point names its topic, so Eure Angaben shows it in its topic (a read, D294).
+    points = [
+        p.model_copy(update={"topic": topics_rule.topic_of_point(p)}) if p.step == "angaben" else p
+        for p in result.points
+    ]
     return TaxGuide(
         tax_year=tax_year,
         filing_deadline=filing_deadline(tax_year),
@@ -168,7 +208,8 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
         ready=result.ready and not unavailable,
         estimate=estimate,
         forms=forms,
-        points=result.points,
+        points=points,
         documents=result.documents,
         unavailable=sorted(set(unavailable)),
+        topics=topics,
     )

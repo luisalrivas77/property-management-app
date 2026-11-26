@@ -11,7 +11,7 @@
 // abgeben“, each point opening alone in the detail panel (#d-punkt-<key>). Eure Angaben stays
 // ?tab=angaben and the Jahresfragen /tax/<year>/fragen.
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useId, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
@@ -22,12 +22,14 @@ import { ChecklistTab } from "@/app/(app)/properties/[id]/ChecklistTab";
 import { formatter, translate, useFormat, useT } from "@/i18n";
 import { getLocale } from "@/i18n/locale";
 import { taxGuide as messages } from "@/i18n/taxGuide";
+import { angaben as angabenText } from "@/i18n/angaben";
 import { todosText } from "@/i18n/todos";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { Icon } from "@/lib/icons";
 
 import { DetailLayout, DetailPanel, useDetail } from "./DetailPanel";
 import { ReadUpload } from "./documents";
+import { QuestionnaireFlow } from "./questionnaire";
 import { decimalInput, toMoneyString } from "./input";
 import { HOUSEHOLD_SERVICE_CLASS, REPLACEMENT_BENEFIT, WARNING_TEXT } from "./labels";
 import { NoPayButton, noPayHint } from "./noPay";
@@ -38,6 +40,7 @@ import {
   GrundsteuerSection,
   MovableAssetSection,
   PRICE_RENOVATION_ANCHOR,
+  PriceRenovationSection,
   type TaxInput,
   UsefulLifeSection,
 } from "./taxInputs";
@@ -52,12 +55,12 @@ import {
   warningEntry,
 } from "./todos";
 import {
+  angabenTopicHref,
   guidePointKey,
   type GuideStepParam,
   POINT_DETAIL_KIND,
   propertyAnchorHref,
   payInputsHref,
-  questionnaireHref,
   taxFormHref,
   taxGuideHref,
   taxStepHref,
@@ -75,12 +78,13 @@ type GuideDocument = components["schemas"]["GuideDocument"];
 type GuideFormResult = components["schemas"]["GuideFormResult"];
 type BookedProposal = components["schemas"]["BookedProposal"];
 type ReturnInputCreate = components["schemas"]["ReturnInputCreate"];
+export type TaxGuideText = ReturnType<typeof translate<typeof messages.de>>;
 type T = ReturnType<typeof translate<typeof messages.de>>;
 
 const loadProperties = () => ok(api.GET("/api/properties"));
 const loadOwners = () => ok(api.GET("/api/owners"));
 
-function useGuide(year: number): Loaded<TaxGuide> {
+export function useGuide(year: number): Loaded<TaxGuide> {
   const load = useCallback(() => ok(api.GET("/api/tax/{tax_year}/guide", { params: { path: { tax_year: year } } })), [year]);
   return useLoad(load);
 }
@@ -187,12 +191,6 @@ function stepView(step: GuideStep, year: number, properties: readonly Property[]
         sub: t.stepPropertySub,
         href: taxStepHref(year, "immobilie", step.property_id ?? null),
       };
-    case "questions":
-      return {
-        title: t.stepQuestions,
-        sub: step.total ? t.stepQuestionsSub(step.done ?? 0, step.total) : t.stepQuestionsNone,
-        href: questionnaireHref(year),
-      };
     case "documents":
       return {
         title: t.stepBelege,
@@ -250,10 +248,16 @@ function StartPage({ guide, properties }: { guide: TaxGuide; properties: readonl
   const thisYear = new Date().getFullYear();
   const years = [...new Set([thisYear - 2, thisYear - 1, thisYear, year])].sort((a, b) => a - b);
   const next = guide.next_step != null ? guide.steps[guide.next_step] : null;
-  const nextView = next ? stepView(next, year, properties, t) : null;
+  const a = useT(angabenText);
+  const baseView = next ? stepView(next, year, properties, t) : null;
+  // „Jetzt dran“ on Eure Angaben opens its first open topic (phase 10 D294), not the list.
+  const firstTopic = next?.kind === "angaben" ? (guide.topics ?? []).find((topic) => topic.state === "open") : undefined;
+  const nextView =
+    baseView && firstTopic
+      ? { ...baseView, title: `${baseView.title} › ${a.topic(firstTopic.topic)}`, href: angabenTopicHref(year, firstTopic.topic) }
+      : baseView;
   let now: string;
   if (guide.ready) now = t.nowReady;
-  else if (next?.kind === "questions") now = t.nowQuestions(next.open);
   else if (next?.kind === "documents") now = t.nowBelege(next.open);
   else if (next) now = t.nowOpen(next.open);
   // Nothing to do now, yet the year cannot be computed: say so instead of „Alles ist geklärt“.
@@ -504,17 +508,22 @@ function pointEntry(point: GuidePoint, scope: PointScope, t: T): TodoEntry | nul
 /** A proposal as a card: what it is and the amount, its explanation behind „Warum?“, and the
  * buttons. Nothing counts before „Übernehmen“ (principle 3), which posts the server's payload
  * with the fields the bookings cannot say. */
-function proposalEntry(proposal: BookedProposal, key: string, scope: PointScope, t: T, context: string | undefined): TodoEntry {
+/** A booked proposal's card title and line (phase 10 D293); Eure Angaben's walk-through uses them
+ * too (components/angaben.tsx). */
+export function proposalTexts(proposal: BookedProposal, t: T): [string, string] {
   const amount = formatter(getLocale()).money(proposal.difference);
   const payee = proposal.payee ?? null;
-  const [title, text] =
-    proposal.group === "benefit"
+  return proposal.group === "benefit"
       ? [t.proposalBenefit(amount), t.proposalBenefitText]
       : proposal.group === "donation"
         ? [t.proposalDonation(payee, amount), t.proposalDonationText]
         : proposal.group === "childcare"
           ? [t.proposalChildcare(payee, amount), t.proposalChildcareText]
           : [t.proposalServices(payee, amount), t.proposalServicesText];
+}
+
+function proposalEntry(proposal: BookedProposal, key: string, scope: PointScope, t: T, context: string | undefined): TodoEntry {
+  const [title, text] = proposalTexts(proposal, t);
   return {
     key,
     title,
@@ -532,10 +541,10 @@ const BOOKED_BENEFITS = (Object.keys(REPLACEMENT_BENEFIT) as (keyof typeof REPLA
   (b) => b !== "kurzarbeitergeld",
 );
 /** The 409 constraint of a row taken from a card the guide no longer shows (D293 review). */
-const PROPOSAL_STALE = "return_input.proposal_stale";
+export const PROPOSAL_STALE = "return_input.proposal_stale";
 const SERVICE_CLASSES = Object.keys(HOUSEHOLD_SERVICE_CLASS) as (keyof typeof HOUSEHOLD_SERVICE_CLASS)[];
 
-function ProposalAction({ proposal, owners, onChanged }: { proposal: BookedProposal; owners: readonly Owner[]; onChanged: () => void }) {
+export function ProposalAction({ proposal, owners, onChanged }: { proposal: BookedProposal; owners: readonly Owner[]; onChanged: () => void }) {
   const t = useT(messages);
   // Once saved, „Übernehmen“ stays off until the guide has reloaded without this proposal: the
   // server takes a second identical row for these kinds, which would count the sum twice.
@@ -571,7 +580,7 @@ function ProposalAction({ proposal, owners, onChanged }: { proposal: BookedPropo
 
 /** „Zahlungen ansehen“: the payments the proposal sums, by date, payee and amount (never the
  * purpose text, which the server does not send). */
-function PaymentsDialog({ proposal }: { proposal: BookedProposal }) {
+export function PaymentsDialog({ proposal }: { proposal: BookedProposal }) {
   const t = useT(messages);
   const f = useFormat();
   const lines = proposal.lines ?? [];
@@ -594,18 +603,23 @@ function PaymentsDialog({ proposal }: { proposal: BookedProposal }) {
   );
 }
 
-function ProposalForm({
+export function ProposalForm({
   proposal,
   owners,
   onDone,
   onStale,
   onCancel,
+  submitLabel,
+  cancelLabel,
 }: {
   proposal: BookedProposal;
   owners: readonly Owner[];
   onDone: () => void;
   onStale: () => void;
   onCancel: () => void;
+  /** Eure Angaben's question card says „Ja, übernehmen“ and „Anders eintragen“ (22c frame 3). */
+  submitLabel?: string;
+  cancelLabel?: string;
 }) {
   const t = useT(messages);
   const f = useFormat();
@@ -617,7 +631,8 @@ function ProposalForm({
   const [amount, setAmount] = useState(services ? "" : decimalInput(proposal.difference));
   const [owner, setOwner] = useState(proposal.owner_id ?? "");
   const [benefit, setBenefit] = useState(proposal.benefit ?? "");
-  const [child, setChild] = useState("");
+  // Kita (22c frame 7): the one child is pre-selected; with several the person picks.
+  const [child, setChild] = useState(proposal.child_choices?.length === 1 ? (proposal.child_choices[0]?.id ?? "") : "");
   const [serviceClass, setServiceClass] = useState("");
   const [recipient, setRecipient] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
@@ -753,10 +768,10 @@ function ProposalForm({
       <ErrorNotice error={error} />
       <div className="row">
         <button type="submit" disabled={busy}>
-          {busy ? t.saving : t.take}
+          {busy ? t.saving : (submitLabel ?? t.take)}
         </button>
         <button type="button" className="secondary" onClick={onCancel}>
-          {t.cancel}
+          {cancelLabel ?? t.cancel}
         </button>
       </div>
     </form>
@@ -807,7 +822,9 @@ function StepPoints({ entries, empty, loading, titleId }: { entries: TodoEntry[]
 }
 
 /** The points of Eure Angaben (phase 10 D290), at the top of Steuern › Eure Angaben. */
-export function AngabenPoints({ year }: { year: number }) {
+/** The points of the Eure Angaben step: all of them, one topic's (`topic`), or with
+ * `topic: null` those no topic holds (the topic list shows them below the topics). */
+export function AngabenPoints({ year, topic }: { year: number; topic?: string | null }) {
   const t = useT(messages);
   const guide = useGuide(year);
   const properties = useLoad(loadProperties);
@@ -817,7 +834,16 @@ export function AngabenPoints({ year }: { year: number }) {
   const changed = useReturnInputsSync(guide.reload);
   const data = guide.data;
   if (!data) return null;
-  return <AngabenPointList guide={data} properties={properties.data ?? []} owners={owners.data ?? []} onChanged={changed} empty={t.pointsNone} />;
+  return (
+    <AngabenPointList
+      guide={data}
+      properties={properties.data ?? []}
+      owners={owners.data ?? []}
+      onChanged={changed}
+      empty={t.pointsNone}
+      topic={topic}
+    />
+  );
 }
 
 function AngabenPointList({
@@ -826,14 +852,20 @@ function AngabenPointList({
   owners,
   onChanged,
   empty,
+  topic,
 }: {
   guide: TaxGuide;
   properties: readonly Property[];
   owners: readonly Owner[];
   onChanged: () => void;
   empty: string;
+  /** Only the points of one topic of Eure Angaben (phase 10 D294, GuidePoint.topic); null for
+   * the points of no topic. */
+  topic?: string | null;
 }) {
-  const points = (guide.points ?? []).filter((p) => p.step === "angaben");
+  const points = (guide.points ?? []).filter(
+    (p) => p.step === "angaben" && (topic === undefined || (topic === null ? !p.topic : p.topic === topic)),
+  );
   const { scope } = usePointScope(guide, properties, owners, onChanged, propertyIdsOf(points));
   const t = useT(messages);
   const entries = points
@@ -852,7 +884,7 @@ function liveRows(rows: readonly TaxInput[]): TaxInput[] {
 
 /** Opens the `<details>` the URL's hash names: on arrival, on a hash change, and on a click of a
  * same-page `#…` link (a Next `<Link>` moves the hash by pushState, which fires no hashchange). */
-function useOpenAnchor() {
+export function useOpenAnchor() {
   useEffect(() => {
     function openId(id: string) {
       if (!id || id.startsWith("d-")) return;
@@ -966,8 +998,11 @@ function PropertyStepBody({
   onChanged: () => void;
 }) {
   const t = useT(messages);
+  const a = useT(angabenText);
   const f = useFormat();
   const year = guide.tax_year;
+  // ?frage=… (an old /tax/<year>/fragen link to a property question) opens that question.
+  const frage = useSearchParams().get("frage");
   // This property's draft (the 15 % limit, the kitchen's purchase year) and its points' actions.
   const { scope, contexts } = usePointScope(guide, properties, [], onChanged, [propertyId]);
   const loadInputs = useCallback(
@@ -1032,14 +1067,21 @@ function PropertyStepBody({
           >
             <MovableAssetSection propertyId={propertyId} purchaseYear={draft?.header.transfer_date ? Number(draft.header.transfer_date.slice(0, 4)) : year} onChanged={changed} />
           </InputRow>
+          {/* On Eure Angaben until phase 10 §7.8 (b) part 2; the property's own step since, its
+              old anchor kept (PROPERTY_STEP_ANCHORS), so the to-dos and bookmarks land here. */}
           <InputRow
+            id={PRICE_RENOVATION_ANCHOR}
             title={t.rowPriceRenovation}
             why={t.priceRenovationWhy}
             value={value(renovation && "amount_net" in renovation.value ? f.money(renovation.value.amount) : t.noneClaimed)}
-            change={{
-              href: `${taxFormHref("angaben", { year, propertyId, ownerId: null })}#${PRICE_RENOVATION_ANCHOR}`,
-            }}
-          />
+          >
+            <PriceRenovationSection
+              propertyId={propertyId}
+              title={t.rowPriceRenovation}
+              anchor={`${PRICE_RENOVATION_ANCHOR}-${propertyId}`}
+              onChanged={changed}
+            />
+          </InputRow>
           <InputRow
             id="tax-limit"
             title={t.rowLimit}
@@ -1082,6 +1124,19 @@ function PropertyStepBody({
           />
         </ul>
         {!draft && contexts.data ? <p className="muted">{t.noDraft}</p> : null}
+      </section>
+      {/* The property's questions of the year (trips, privately paid costs), the Jahresfragen
+          until phase 10 §7.8 (b): the same questionnaire, this property's slots only. */}
+      <section className="card stack" aria-labelledby="tax-year-questions">
+        <h2 id="tax-year-questions">{a.yearQuestions}</h2>
+        <p className="muted">{a.yearQuestionsLine}</p>
+        <QuestionnaireFlow
+          year={year}
+          propertyId={propertyId}
+          embedded
+          start={frage ? { key: frage, propertyId } : null}
+          onAnswered={changed}
+        />
       </section>
     </>
   );
@@ -1257,7 +1312,9 @@ function ReviewStep({
   const openSteps = guide.steps.filter((s) => s.kind !== "review" && s.state !== "done");
   // A note or a proposal a person may rightly leave is listed but never counted (GuidePoint.blocking).
   const blocking = points.filter((p) => p.blocking !== false).length;
-  const stillOpen = blocking + openSteps.filter((s) => s.kind === "questions" || s.kind === "documents").reduce((n, s) => n + s.open, 0);
+  // Every step's open count: its blocking points, its open Jahresfragen (Eure Angaben and
+  // Immobilie since D294 folded the Jahresfragen step into them) and the Belege missing.
+  const stillOpen = guide.steps.reduce((n, s) => n + s.open, 0);
   // Nothing left to clear, yet a part of the year cannot be computed: say that, not „0 Punkte“.
   const elsterWhy = (stillOpen === 0 ? unavailableText(guide, t) : null) ?? t.elsterNotYet(stillOpen);
   // The open point, remembered: once it is cleared (the guide reloads without it), „Nächster

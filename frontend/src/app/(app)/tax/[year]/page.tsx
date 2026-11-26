@@ -5,7 +5,8 @@
 // (?immobilie=… for the Immobilie step). The forms are views: Anlage V (?tab=anlage-v, or a
 // legacy ?immobilie=… without a tab or step; the first property when absent), Anlage N
 // (?tab=anlage-n, ?eigentuemer=…). Eure Angaben (?tab=angaben, ?eigentuemer=…; D281) holds the
-// owners' and household's inputs. KAP and SO are tabs of phase 8 and stay disabled.
+// owners' and household's inputs as topics (D294): ?thema=<topic> opens one, &frage=<key> at
+// that question (components/angaben.tsx). KAP and SO are tabs of phase 8 and stay disabled.
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
@@ -14,9 +15,9 @@ import { api, ok } from "@/api/client";
 import { AnlageNScreen } from "@/components/anlageN";
 import { ReturnEstimateSummary } from "@/components/returnEstimate";
 import { AnlageVScreen } from "@/components/tax";
-import { TaxInputsScreen } from "@/components/taxAngaben";
+import { AngabenScreen } from "@/components/angaben";
 import { TaxGuideScreen } from "@/components/taxGuide";
-import { ANGABEN_PARAM, ANLAGE_N_PARAM, ANLAGE_V_PARAM, type GuideStepParam, STEP_PARAM, TaxTabs } from "@/components/taxYear";
+import { ANGABEN_PARAM, ANLAGE_N_PARAM, ANLAGE_V_PARAM, type GuideStepParam, STEP_PARAM, TaxTabs, TOPIC_PARAM } from "@/components/taxYear";
 import { Loading, LoadingLine } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 import { useT } from "@/i18n";
@@ -60,7 +61,13 @@ function TaxYear() {
           {t.invalidYear} <Link href="/tax">{t.currentYear}</Link>
         </p>
       ) : form === "angaben" ? (
-        <TaxInputsScreen year={year} ownerParam={owner} propertyParam={requested} />
+        <AngabenScreen
+          year={year}
+          ownerParam={owner}
+          propertyParam={requested}
+          topicParam={search.get(TOPIC_PARAM)}
+          frage={search.get("frage")}
+        />
       ) : form === "guide" ? (
         <TaxGuideScreen year={year} step={step} propertyParam={requested} />
       ) : form === "n" ? (

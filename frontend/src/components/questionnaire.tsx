@@ -25,7 +25,7 @@
 //
 // No euro figure is computed here: the last screen shows the estimate as the API returns it.
 import Link from "next/link";
-import { useCallback, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
 import { ApiError, ruleCodes } from "@/api/errors";
@@ -51,6 +51,8 @@ import {
   WORK_ROOM_PREFER,
 } from "./labels";
 import type { QuestionTarget } from "./taxYear";
+import { FieldHelpNote, RareFields, useFormHelp } from "./fieldHelp";
+import { type FormField, type HelpForm } from "./returnInputFields";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -174,7 +176,12 @@ const DOCUMENT_KINDS: ReadonlySet<string> = new Set(["wage_certificate", "paysli
 /** Kinds whose standing items end with a disposal date (D108 (a)). */
 const DISPOSABLE: ReadonlySet<string> = new Set(["work_equipment"]);
 
-const FORMS: Record<string, FieldSpec[]> = {
+/** The forms by kind. A return_input form's field names are those of returnInputFields.ts (the
+ * field help of D294 names the same), so a field without help fails `tsc`; private_cost is a
+ * property's tax_input and has no field help. */
+type FormSpecs = { [F in HelpForm]?: (FieldSpec & { name: FormField<F> })[] } & { private_cost: FieldSpec[] };
+
+const FORM_SPECS = {
   commute: [
     { name: "kind", label: "type", type: "select", options: COMMUTE_KIND, initial: () => "first_workplace" },
     { name: "workplace_label", label: "workplace", type: "text", hint: "workplaceHint" },
@@ -289,7 +296,9 @@ const FORMS: Record<string, FieldSpec[]> = {
       hint: "netHint",
     },
   ],
-};
+} satisfies FormSpecs;
+
+const FORMS: Record<string, FieldSpec[] | undefined> = FORM_SPECS;
 
 /** Values a kind always has and the form does not ask for. */
 const FIXED: Record<string, Value> = {
@@ -372,10 +381,14 @@ interface Existing {
 
 let itemCounter = 0;
 
+function blankText(spec: FieldSpec, year: number): string {
+  return spec.initial ? spec.initial(year) : spec.type === "bool" ? "false" : "";
+}
+
 function blankItem(target: Target, year: number): Item {
   const kind = target.input_kind ?? "";
   const raw: Record<string, string> = {};
-  for (const spec of FORMS[kind] ?? []) raw[spec.name] = spec.initial ? spec.initial(year) : spec.type === "bool" ? "false" : "";
+  for (const spec of FORMS[kind] ?? []) raw[spec.name] = blankText(spec, year);
   for (const [name, value] of Object.entries(target.value_match ?? {})) raw[name] = value;
   return { key: ++itemCounter, target, kind, raw, carried: null, base: {}, carriedFromId: null, existing: null, originalRaw: null };
 }
@@ -585,23 +598,64 @@ function describeRow(row: ReturnInputFact, index: number): string {
 
 // --- the page -------------------------------------------------------------------------------
 
+/** What a question of Eure Angaben shows above its answers: a booked proposal as the pre-filled
+ * answer (22c frame 3). `answer` answers the slot „Ja“ (with the choice for a choice question),
+ * `other` opens the question's own form („Anders eintragen“). */
+export interface SlotExtra {
+  slot: Slot;
+  question: Question;
+  answer: (choice: string | null) => void;
+  other: () => void;
+}
+
 /** `start` opens the flow at that slot (a link from the Anlage N tab); without it, or when the
- * year has no such slot, the flow opens at the first open question. */
-export function QuestionnaireFlow({ year, start }: { year: number; start?: QuestionTarget | null }) {
+ * year has no such slot, the flow opens at the first open question.
+ *
+ * Eure Angaben (phase 10 §7.8 (b), D294) embeds the same flow per topic: `topic` keeps that
+ * topic's owner and household questions, `propertyId` one property's questions (the Immobilie
+ * step's „Fragen zum Jahr“), `embedded` drops the page's heading and back link and ends on a short
+ * summary of the shown questions, and `extra` puts a booked proposal above a question's answers.
+ * The answers go through the same POST /tax/questionnaire/answers. */
+export function QuestionnaireFlow({
+  year,
+  start,
+  topic,
+  propertyId,
+  embedded = false,
+  extra,
+  onAnswered: answered,
+}: {
+  year: number;
+  start?: QuestionTarget | null;
+  topic?: string;
+  propertyId?: string;
+  embedded?: boolean;
+  extra?: (props: SlotExtra) => ReactNode;
+  onAnswered?: () => void;
+}) {
   const t = useT(questionnaireText);
   const load = useCallback(() => loadFlow(year), [year]);
   const state = useLoad(load);
   const [index, setIndex] = useState<number | null>(null);
 
   return (
-    <section className="fragen">
-      <p className="fragen-back">
-        <Link href={`/tax/${year}`}>{t.back(year)}</Link>
-      </p>
-      <h1>{t.title(year)}</h1>
+    <section className={embedded ? "fragen fragen-embedded" : "fragen"}>
+      {embedded ? null : (
+        <>
+          <p className="fragen-back">
+            <Link href={`/tax/${year}`}>{t.back(year)}</Link>
+          </p>
+          <h1>{t.title(year)}</h1>
+        </>
+      )}
       <Loading state={state}>
         {(data) => {
-          const list = steps(data);
+          const list = steps(data).filter(
+            (s) =>
+              (topic === undefined || (!s.slot.property_id && s.question.topic === topic)) &&
+              (propertyId === undefined || s.slot.property_id === propertyId),
+          );
+          if (embedded && list.length === 0) return null;
           const firstOpen = list.findIndex((s) => isOpen(data.view, s.slot));
           const startAt = start
             ? list.findIndex((s) =>
@@ -616,7 +670,11 @@ export function QuestionnaireFlow({ year, start }: { year: number; start?: Quest
                 <p className="notice notice-info">{t.reusedFrom(year, data.view.reused_from)}</p>
               ) : null}
               {current >= list.length ? (
-                <Summary year={year} data={data} steps={list} onJump={setIndex} />
+                embedded ? (
+                  <TopicSummary data={data} steps={list} onJump={setIndex} />
+                ) : (
+                  <Summary year={year} data={data} steps={list} onJump={setIndex} />
+                )
               ) : (
                 <StepScreen
                   key={`${current}:${list[current]?.slot.key}:${list[current]?.slot.current_answer?.id ?? "open"}`}
@@ -627,6 +685,8 @@ export function QuestionnaireFlow({ year, start }: { year: number; start?: Quest
                   total={list.length}
                   onBack={() => setIndex(Math.max(0, current - 1))}
                   onNext={() => setIndex(current + 1)}
+                  skipLabel={embedded ? t.skip : undefined}
+                  extra={extra}
                   onAnswered={(changed) => {
                     // A first answer moves on to the next open slot after this one, else to the
                     // last screen (which lists any slot left open before it); a changed answer
@@ -636,6 +696,7 @@ export function QuestionnaireFlow({ year, start }: { year: number; start?: Quest
                       : list.findIndex((s, at) => at > current && isOpen(data.view, s.slot));
                     setIndex(next === -1 ? list.length : next);
                     reload();
+                    answered?.();
                   }}
                 />
               )}
@@ -669,6 +730,8 @@ function StepScreen({
   onBack,
   onNext,
   onAnswered,
+  skipLabel,
+  extra,
 }: {
   year: number;
   data: FlowData;
@@ -678,6 +741,8 @@ function StepScreen({
   onBack: () => void;
   onNext: () => void;
   onAnswered: (changed: boolean) => void;
+  skipLabel?: string;
+  extra?: (props: SlotExtra) => ReactNode;
 }) {
   const t = useT(questionnaireText);
   const words = useT(common);
@@ -694,6 +759,8 @@ function StepScreen({
   const facts = question.answer_type !== "choice" && formTargets.length > 0;
 
   const [expanded, setExpanded] = useState(false);
+  // „Anders eintragen“ on a booked proposal: the question's own answers instead (22c frame 3).
+  const [otherChosen, setOtherChosen] = useState(false);
   const [items, setItems] = useState<Item[]>(() => initialItems(slot, question, formTargets, reconfirm, year));
   // A standing item's "nicht mehr genutzt seit" as stored (null: in use), so only a change is posted.
   const storedDisposal = useMemo(
@@ -946,6 +1013,17 @@ function StepScreen({
               errors={(id) => form.of(`dispose.${id}`)}
             />
           ) : null}
+          {extra && !otherChosen
+            ? extra({
+                slot,
+                question,
+                answer: (choice) => void send("yes", choice, false),
+                other: () => {
+                  setOtherChosen(true);
+                  if (facts) setExpanded(true);
+                },
+              })
+            : null}
           {question.answer_type === "choice" ? (
             <div className="fragen-answers" role="group" aria-label={t.answer}>
               {(question.choices ?? []).map((c) => (
@@ -973,6 +1051,7 @@ function StepScreen({
                   key={item.key}
                   item={item}
                   index={at}
+                  year={year}
                   prefix={prefixOf(items, at)}
                   questions={data.view.questions}
                   childRows={data.children}
@@ -1047,13 +1126,57 @@ function StepScreen({
         </button>
         {open ? (
           <button type="button" className="link" onClick={onNext}>
-            {t.later}
+            {skipLabel ?? t.later}
           </button>
         ) : (
           <button type="button" className="link" onClick={onNext}>
             {t.next}
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** The end of a topic's questions in Eure Angaben: what is still open among them, with a jump. */
+function TopicSummary({ data, steps: list, onJump }: { data: FlowData; steps: Step[]; onJump: (index: number) => void }) {
+  const t = useT(questionnaireText);
+  const open = list.map((s, at) => [s, at] as const).filter(([s]) => isOpen(data.view, s.slot));
+  // What the year's „Ja“ answers leave to type by hand in ELSTER, for this topic's questions only.
+  const own = new Set(
+    list.flatMap((s) =>
+      (s.question.targets ?? []).flatMap((target) => (target.kind === "reminder" && target.reminder_de ? [target.reminder_de] : [])),
+    ),
+  );
+  const reminders = data.view.reminders.filter((text) => own.has(text));
+  return (
+    <div className="fragen-card stack">
+      <p className="fragen-question">{open.length === 0 ? t.topicDone : t.stillOpen(open.length)}</p>
+      {open.length > 0 ? (
+        <ul className="fragen-standing">
+          {open.map(([s, at]) => (
+            <li key={`${s.slot.key}:${s.slot.owner_id ?? ""}:${s.slot.property_id ?? ""}`}>
+              <button type="button" className="link" onClick={() => onJump(at)}>
+                {s.group}: {s.question.question_de}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {reminders.length > 0 ? (
+        <>
+          <h3>{t.byHand}</h3>
+          <ul>
+            {reminders.map((text) => (
+              <li key={text}>{text}</li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      <div className="fragen-answers">
+        <button type="button" className="secondary" onClick={() => onJump(0)}>
+          {t.toFirst}
+        </button>
       </div>
     </div>
   );
@@ -1097,6 +1220,7 @@ function fieldKeys(items: Item[]): string[] {
 function ItemForm({
   item,
   index,
+  year,
   prefix,
   questions,
   childRows,
@@ -1106,6 +1230,7 @@ function ItemForm({
 }: {
   item: Item;
   index: number;
+  year: number;
   prefix: string;
   questions: Question[];
   childRows: ReturnInputFact[];
@@ -1118,6 +1243,18 @@ function ItemForm({
   const fixed = item.target.value_match ?? {};
   const set = (name: string, value: string) => onChange({ ...item.raw, [name]: value });
   const id = (name: string) => `item-${item.key}-${name}`;
+  const help = useFormHelp(item.kind);
+  const visible = (FORMS[item.kind] ?? []).filter((spec) => shown(spec, item));
+  // With one child, a child field starts on that child (22c frame 7, Kita); with more, a person picks.
+  const onlyChild = childRows.length === 1 ? childRows[0]!.id : null;
+  const childSpecs = visible.filter((spec) => spec.type === "child" && (item.raw[spec.name] ?? "") === "").map((spec) => spec.name);
+  const preselect = onlyChild !== null && childSpecs.length > 0;
+  useEffect(() => {
+    if (!preselect || onlyChild === null) return;
+    onChange({ ...item.raw, ...Object.fromEntries(childSpecs.map((name) => [name, onlyChild])) });
+    // once per item: the effect runs again only while a child field is still empty
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preselect, onlyChild]);
   return (
     <fieldset className="fragen-item">
       <legend>
@@ -1125,7 +1262,26 @@ function ItemForm({
         {index + 1}
       </legend>
       <div className="grid">
-        {(FORMS[item.kind] ?? []).filter((spec) => shown(spec, item)).map((spec) => {
+        {visible.filter((spec) => !help.rare(spec.name)).map(renderSpec)}
+        {visible.some((spec) => help.rare(spec.name)) ? (
+          <RareFields
+            open={visible.some(
+              (spec) =>
+                help.rare(spec.name) &&
+                ((item.raw[spec.name] ?? "") !== blankText(spec, year) || errors(`${prefix}.${spec.name}`).length > 0),
+            )}
+          >
+            {visible.filter((spec) => help.rare(spec.name)).map(renderSpec)}
+          </RareFields>
+        ) : null}
+      </div>
+      <button type="button" className="link" onClick={onRemove}>
+        {t.removeItem}
+      </button>
+    </fieldset>
+  );
+
+  function renderSpec(spec: FieldSpec) {
           const raw = item.raw[spec.name] ?? "";
           const carried = item.carried !== null && raw !== "" && raw === item.carried[spec.name];
           const label = (
@@ -1134,6 +1290,9 @@ function ItemForm({
               {carried ? <span className="badge fragen-carried">{t.priorYear}</span> : null}
             </>
           );
+          // The field help of Eure Angaben (phase 10 D294); nothing outside its provider.
+          const note = <FieldHelpNote form={item.kind} field={spec.name} label={fields[spec.label]} />;
+          const hint = spec.hint ? fields[spec.hint] : undefined;
           if (fixed[spec.name] !== undefined) {
             return (
               <p key={spec.name} className="field">
@@ -1146,12 +1305,18 @@ function ItemForm({
             return (
               <label key={spec.name} className="inline">
                 <input type="checkbox" checked={raw === "true"} onChange={(e) => set(spec.name, e.target.checked ? "true" : "false")} />
-                {label}
+                {label} {note}
               </label>
             );
           }
           return (
-            <Field key={spec.name} id={id(spec.name)} label={label} hint={spec.hint ? fields[spec.hint] : undefined} errors={errors(`${prefix}.${spec.name}`)}>
+            <Field
+              key={spec.name}
+              id={id(spec.name)}
+              label={label}
+              hint={help.loaded ? <>{hint}{hint ? " " : null}{note}</> : hint}
+              errors={errors(`${prefix}.${spec.name}`)}
+            >
               {spec.type === "select" ? (
                 <select value={raw} onChange={(e) => set(spec.name, e.target.value)}>
                   {spec.optional ? <option value="">–</option> : null}
@@ -1183,13 +1348,7 @@ function ItemForm({
               )}
             </Field>
           );
-        })}
-      </div>
-      <button type="button" className="link" onClick={onRemove}>
-        {t.removeItem}
-      </button>
-    </fieldset>
-  );
+  }
 }
 
 function Reconfirm({

@@ -1,5 +1,6 @@
-// Steuern as one guided path of five steps (phase 10 §7.6, D290, mockup 22b). For a household
-// with one flat: the start page with its progress, deadline, „Jetzt dran“, the five steps and
+// Steuern as one guided path of four steps (phase 10 §7.6, D290, mockup 22b; four since the
+// Jahresfragen folded into „Eure Angaben“, §7.8 (b), D294). For a household with one flat: the
+// start page with its progress, deadline, „Jetzt dran“, the four steps and
 // the forms line; the Immobilie step's rows with their ⓘ; an old bookmark to one of those
 // inputs opening the step; Prüfen und abgeben with its points opened one at a time in the panel
 // („Später“) and the ELSTER button greyed with its reason; the Anlage V view
@@ -16,7 +17,7 @@ function pointPanel(page: Page, name: string | RegExp) {
   return page.getByRole("complementary", { name }).or(page.getByRole("dialog", { name }));
 }
 
-test("Steuern leads through five steps, one point at a time", async ({ page, signedIn }) => {
+test("Steuern leads through four steps, one point at a time", async ({ page, signedIn }) => {
   void signedIn;
   const property = await apiCall<{ id: string }>(page, "POST", "/api/properties", {
     label: LABEL,
@@ -31,25 +32,22 @@ test("Steuern leads through five steps, one point at a time", async ({ page, sig
   // The start page.
   await page.goto(`/tax/${YEAR}`);
   await expect(page.getByRole("heading", { level: 1, name: `Eure Steuererklärung ${YEAR}` })).toBeVisible();
-  const bar = page.getByRole("progressbar", { name: /von 5 Schritten erledigt$/ });
-  await expect(bar).toHaveAttribute("aria-valuemax", "5");
+  const bar = page.getByRole("progressbar", { name: /von 4 Schritten erledigt$/ });
+  await expect(bar).toHaveAttribute("aria-valuemax", "4");
   await expect(page.getByText(/^abgeben bis \d/)).toBeVisible();
   const now = page.getByRole("region", { name: "Jetzt dran" });
   await expect(now.getByRole("link", { name: /^Weiter: / })).toBeVisible();
   const steps = page.getByRole("region", { name: "Schritte", exact: true }).getByRole("link");
-  await expect(steps).toHaveCount(5);
+  await expect(steps).toHaveCount(4);
   await expect(steps.nth(0)).toContainText("Eure Angaben");
   await expect(steps.nth(1)).toContainText(`Immobilie: ${LABEL}`);
-  await expect(steps.nth(2)).toContainText("Jahresfragen");
-  await expect(steps.nth(3)).toContainText("Belege");
-  await expect(steps.nth(4)).toContainText("Prüfen und abgeben");
-  await expect(steps.nth(1)).toContainText("1 offen");
-  await expect(now.getByRole("link", { name: `Weiter: Immobilie: ${LABEL}` })).toHaveAttribute(
-    "href",
-    `/tax/${YEAR}?schritt=immobilie&immobilie=${property.id}`,
-  );
+  await expect(steps.nth(2)).toContainText("Belege");
+  await expect(steps.nth(3)).toContainText("Prüfen und abgeben");
+  // The household's yearly questions are open in „Eure Angaben“, so it comes first; the
+  // property's two yearly questions (trips, privately paid costs) count in its step.
+  await expect(steps.nth(1)).toContainText("3 offen");
+  await expect(now.getByRole("link", { name: "Weiter: Eure Angaben" })).toBeVisible();
   await expect(steps.nth(0)).toHaveAttribute("href", `/tax/${YEAR}?tab=angaben`);
-  await expect(steps.nth(2)).toHaveAttribute("href", `/tax/${YEAR}/fragen`);
   const forms = page.locator(".tax-guide-forms");
   await expect(forms.getByRole("link", { name: "Anlage V" })).toHaveAttribute("href", `/tax/${YEAR}?tab=anlage-v`);
   await expect(forms.getByRole("link", { name: "Anlage N" })).toHaveAttribute("href", `/tax/${YEAR}?tab=anlage-n`);
@@ -125,9 +123,9 @@ test("Steuern leads through five steps, one point at a time", async ({ page, sig
   // In English (phase 10 D284).
   await page.evaluate(() => window.localStorage.setItem("hausbuch.locale", "en"));
   await page.reload();
-  await expect(page.getByRole("progressbar", { name: /of 5 steps done$/ })).toBeVisible();
+  await expect(page.getByRole("progressbar", { name: /of 4 steps done$/ })).toBeVisible();
   await expect(page.getByRole("region", { name: "Next up" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Steps", exact: true }).getByRole("link").nth(4)).toContainText("Check and file");
+  await expect(page.getByRole("region", { name: "Steps", exact: true }).getByRole("link").nth(3)).toContainText("Check and file");
   await page.goto(`/tax/${YEAR}?schritt=pruefen`);
   await expect(page.getByRole("button", { name: "Make the ELSTER filling aid" })).toBeDisabled();
 });

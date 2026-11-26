@@ -1,8 +1,10 @@
 // Steuern › Eure Angaben (Eigentümer › Einkommen until phase 10 D281), phase 4b
 // (docs/phases/phase-4b.md §10): the gross pay's source chip
 // (a typed estimate, and a payslip's projection naming its month), a child added on the Kinder
-// block shown by its birth month only, a §35a cost and a donation added on the Haushalt block,
-// and the links to the Anlage N tab and the Jahresfragen. Synthetic data only (owners A and B).
+// block shown by its birth month only, a §35a cost and a donation added on the Haushalt block.
+// Since phase 10 §7.8 (b) (D294) each lives in its topic: the pay under Arbeitslohn › „Ohne
+// Dokument eintragen“, the child and childcare under Kinder, the §35a cost and the donation under
+// Haushalt und Spenden. Synthetic data only (owners A and B).
 import { apiCall, expect, test } from "./support";
 
 const YEAR = 2026;
@@ -48,7 +50,8 @@ test("the Einkommen section shows the pay source and adds a child and household 
     withdrawn: false,
   });
 
-  await page.goto(`/tax/${YEAR}?tab=angaben`);
+  await page.goto(`/tax/${YEAR}?tab=angaben&thema=pay`);
+  await page.getByText("Ohne Dokument eintragen").click();
   const income = page.getByRole("table").filter({ hasText: `Erwartetes Bruttogehalt ${YEAR}` });
   const rowA = income.getByRole("row").filter({ hasText: /^A/ });
   await expect(rowA).toContainText("Schätzung");
@@ -62,19 +65,16 @@ test("the Einkommen section shows the pay source and adds a child and household 
   await expect(chips.getByRole("link", { name: String(next), exact: true })).toBeVisible();
   await chips.getByRole("link", { name: String(next), exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/tax/${next}\\?tab=angaben`));
+  await page.goto(`/tax/${next}?tab=angaben&thema=pay`);
+  await page.getByText("Ohne Dokument eintragen").click();
   await expect(page.getByRole("table").filter({ hasText: `Erwartetes Bruttogehalt ${next}` })).toBeVisible();
-  await page.goto(`/tax/${YEAR}?tab=angaben`);
 
-  await expect(page.getByRole("link", { name: `Anlage N ${YEAR} ansehen` })).toHaveAttribute("href", `/tax/${YEAR}?tab=anlage-n`);
-  await expect(page.getByRole("link", { name: `Jahresfragen ${YEAR} beantworten` })).toHaveAttribute(
-    "href",
-    `/tax/${YEAR}/fragen`,
-  );
+  await page.goto(`/tax/${YEAR}?tab=angaben&thema=children`);
 
   // A child: only the month is shown, and the row holds a birth date and nothing else.
   await expect(page.getByText(`Für ${YEAR} sind keine Kinder erfasst.`)).toBeVisible();
   const childForm = page.getByRole("form", { name: "Kind hinzufügen" });
-  await childForm.getByLabel("Geburtsdatum").fill("2026-03-14");
+  await childForm.getByLabel("Geburtsdatum", { exact: true }).fill("2026-03-14");
   await childForm.getByRole("button", { name: "Kind hinzufügen" }).click();
   await expect(page.getByText("Kind 1 (geboren März 2026) · Kindergeld ab März 2026")).toBeVisible();
   await expect(page.getByText("14.03.2026")).toHaveCount(0);
@@ -87,24 +87,27 @@ test("the Einkommen section shows the pay source and adds a child and household 
   expect(children[0]).toMatchObject({ tax_year: YEAR, owner_id: null, value: { born_on: "2026-03-14" } });
 
   // A §35a cost and a donation.
+  await page.goto(`/tax/${YEAR}?tab=angaben&thema=household`);
   const services = page.getByRole("form", { name: "Handwerker oder Dienstleistung hinzufügen" });
-  await services.getByLabel("Arbeitskosten (€)").fill("600,00");
+  await services.getByLabel("Arbeitskosten (€)", { exact: true }).fill("600,00");
   await services.getByRole("button", { name: "Hinzufügen" }).click();
   await expect(page.getByText("Handwerkerleistung · Arbeitskosten 600,00 € · eigene Rechnung")).toBeVisible();
 
   const donation = page.getByRole("form", { name: "Spende hinzufügen" });
-  await donation.getByLabel("Empfänger").fill("Verein X");
-  await donation.getByLabel("Betrag (€)").fill("50");
+  await donation.getByLabel("Empfänger", { exact: true }).fill("Verein X");
+  await donation.getByLabel("Betrag (€)", { exact: true }).fill("50");
   await donation.getByRole("button", { name: "Hinzufügen" }).click();
   await expect(page.getByText("Verein X · 50,00 €")).toBeVisible();
 
   // Childcare names the child; then the donation is removed (a withdrawal row).
+  await page.goto(`/tax/${YEAR}?tab=angaben&thema=children`);
   const childcare = page.getByRole("form", { name: "Betreuungskosten hinzufügen" });
-  await expect(childcare.getByLabel("Kind")).toContainText("Kind 1 (geboren März 2026)");
-  await childcare.getByLabel("Kosten im Jahr (€)").fill("1200");
+  await expect(childcare.getByLabel("Kind", { exact: true })).toContainText("Kind 1 (geboren März 2026)");
+  await childcare.getByLabel("Kosten im Jahr (€)", { exact: true }).fill("1200");
   await childcare.getByRole("button", { name: "Hinzufügen" }).click();
   await expect(page.getByText("Kind 1 (geboren März 2026) · 1.200,00 €")).toBeVisible();
 
+  await page.goto(`/tax/${YEAR}?tab=angaben&thema=household`);
   await page.getByRole("listitem").filter({ hasText: "Verein X" }).getByRole("button", { name: "Entfernen" }).click();
   await expect(page.getByText(`Für ${YEAR} sind keine Spenden erfasst.`)).toBeVisible();
   const donations = await apiCall<unknown[]>(page, "GET", `/api/return-inputs?tax_year=${YEAR}&kind=special_expense`);

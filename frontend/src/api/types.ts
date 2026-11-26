@@ -3661,12 +3661,35 @@ export interface paths {
         };
         /**
          * Get Tax Guide
-         * @description The year's five steps with their states, „Jetzt dran“, the Belege with their sender and
+         * @description The year's four steps with their states, „Jetzt dran“, the Belege with their sender and
          *     usual month, every open point with the step and form it belongs to, each form's result and
          *     the whole-return estimate's. A source that cannot be read for the year is named in
          *     `unavailable`; the rest is served.
          */
         get: operations["get_tax_guide_api_tax__tax_year__guide_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tax/{tax_year}/field-help": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Tax Field Help
+         * @description Per form and field of „Eure Angaben“ what it is, where to find it and an invented
+         *     example, in German and English, with the documents it points into (D294). A year without
+         *     its own file gets the latest earlier one with `reused_from`; before every file 422
+         *     tax.no_rule_set. The same for every household: no workspace data is read.
+         */
+        get: operations["get_tax_field_help_api_tax__tax_year__field_help_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8587,6 +8610,68 @@ export interface components {
             type: string;
         };
         /**
+         * FieldHelp
+         * @description The year's field help. reused_from: set by registry.field_help when the year has no
+         *     file of its own; the help is then the latest earlier year's.
+         */
+        FieldHelp: {
+            /** Tax Year */
+            tax_year: number;
+            /** Reused From */
+            reused_from?: number | null;
+            /** Sources */
+            sources: {
+                [key: string]: components["schemas"]["FieldHelpSource"];
+            };
+            /** Forms */
+            forms: {
+                [key: string]: {
+                    [key: string]: components["schemas"]["FieldHelpEntry"];
+                };
+            };
+        };
+        /**
+         * FieldHelpEntry
+         * @description One field's help. rare: the screen shows the field behind „Weitere Angaben“ unless it
+         *     is filled. source: a key of FieldHelp.sources, the document `where` points into.
+         */
+        FieldHelpEntry: {
+            /** Rare */
+            rare: boolean;
+            /** Source */
+            source: string;
+            de: components["schemas"]["FieldHelpText"];
+            en: components["schemas"]["FieldHelpText"];
+        };
+        /**
+         * FieldHelpSource
+         * @description A document the help points into. official: an official sample or instruction (a line
+         *     number in `where` was read from it); false for a paper with no official sample (a
+         *     payslip), whose labels differ by issuer.
+         */
+        FieldHelpSource: {
+            /** Official */
+            official: boolean;
+            /** Url */
+            url?: string | null;
+            /** De */
+            de: string;
+            /** En */
+            en: string;
+        };
+        /**
+         * FieldHelpText
+         * @description One language's help for one field. `example` uses invented numbers only.
+         */
+        FieldHelpText: {
+            /** What */
+            what: string;
+            /** Where */
+            where: string;
+            /** Example */
+            example: string;
+        };
+        /**
          * FieldOption
          * @description A value the review offers for one field with one click (D139): the field's value as
          *     the apply body sends it and its label, e.g. "61.40" and "WE 3 · 2. OG links · 61,40 m²"
@@ -9470,6 +9555,8 @@ export interface components {
              * @default true
              */
             blocking: boolean;
+            /** Topic */
+            topic?: ("couple" | "pay" | "work_costs" | "insurance" | "benefits" | "children" | "household") | null;
         };
         /** GuideStep */
         GuideStep: {
@@ -9477,7 +9564,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "angaben" | "property" | "questions" | "documents" | "review";
+            kind: "angaben" | "property" | "documents" | "review";
             /** Property Id */
             property_id?: string | null;
             /**
@@ -9498,6 +9585,81 @@ export interface components {
             total?: number | null;
             /** Waiting From */
             waiting_from?: string | null;
+        };
+        /**
+         * GuideTopic
+         * @description One topic of Eure Angaben. `open`: its unanswered questions, its blocking points that are
+         *     no proposal and, for couple, each owner without a Bundesland. `proposals`: the bookings that
+         *     propose an input of the topic (§7.8 (a)), blocking or not. `owners`: one per owner in an owner
+         *     topic (couple, pay, work_costs, insurance, benefits); `open_questions` and `rows` the
+         *     household's own in children and household.
+         */
+        GuideTopic: {
+            /**
+             * Topic
+             * @enum {string}
+             */
+            topic: "couple" | "pay" | "work_costs" | "insurance" | "benefits" | "children" | "household";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "done" | "open" | "not_needed";
+            /** Open */
+            open: number;
+            /**
+             * Proposals
+             * @default 0
+             */
+            proposals: number;
+            /** Questions Open */
+            questions_open: number;
+            /** Questions Total */
+            questions_total: number;
+            /** Owners */
+            owners?: components["schemas"]["GuideTopicOwner"][];
+            /** Open Questions */
+            open_questions?: string[];
+            /** Rows */
+            rows?: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * GuideTopicOwner
+         * @description One owner in an owner topic: what is open for them and the facts the topic shows. Only
+         *     the facts of the topic are set; the browser words them and computes nothing.
+         */
+        GuideTopicOwner: {
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
+            /** Open */
+            open: number;
+            /** Open Questions */
+            open_questions?: string[];
+            /** Rows */
+            rows?: {
+                [key: string]: number;
+            };
+            /** Church Tax */
+            church_tax?: boolean | null;
+            /** Tax State */
+            tax_state?: string | null;
+            /** Tax Class */
+            tax_class?: string | null;
+            /** Pay Status */
+            pay_status?: ("certified" | "estimate" | "none") | null;
+            /** Gross Source */
+            gross_source?: ("certificate" | "payslip" | "expected" | "declared_none") | null;
+            /** Gross */
+            gross?: string | null;
+            /** Insurance Status */
+            insurance_status?: string | null;
+            /** Benefit */
+            benefit?: string | null;
         };
         /**
          * HandFields
@@ -14045,6 +14207,8 @@ export interface components {
             carry_forward: "copy" | "reconfirm" | "none";
             /** Default Answer */
             default_answer?: ("yes" | "no") | null;
+            /** Topic */
+            topic?: ("couple" | "pay" | "work_costs" | "insurance" | "benefits" | "children" | "household") | null;
         };
         /**
          * QuestionTarget
@@ -16167,6 +16331,8 @@ export interface components {
             documents?: components["schemas"]["GuideDocument"][];
             /** Unavailable */
             unavailable?: string[];
+            /** Topics */
+            topics?: components["schemas"]["GuideTopic"][] | null;
         };
         /**
          * TaxInput
@@ -25275,6 +25441,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaxGuide"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_tax_field_help_api_tax__tax_year__field_help_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tax_year: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FieldHelp"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
