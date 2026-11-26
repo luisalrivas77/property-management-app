@@ -291,6 +291,43 @@ def test_a_booked_donation_is_a_proposal_whose_payload_posts_verbatim(client_a, 
     assert _proposal_points(client_a, "return.donation_booked") == []
 
 
+def test_a_proposal_posted_twice_is_refused_the_second_time(client_a):
+    """The card sends what it showed (`from_proposal`): the first post saves, the same post again
+    is a 409 return_input.proposal_stale (the proposal is gone, so a second row would count the
+    sum twice), and nothing is written. The origin is never stored. A row typed by hand sends
+    none and still saves, duplicate or not: rows have no uniqueness rule."""
+    create(client_a, "/api/owners", {"full_name": "Person A"})
+    line = _booked_line(client_a, debit=True)
+    _allocate(client_a, line, "hh_donation")
+    (point,) = _proposal_points(client_a, "return.donation_booked")
+    proposal = point["proposal"]
+    body = proposal["payload"]
+    if "recipient" in proposal["needs"]:
+        body["value"]["recipient_label"] = "Empfänger"
+    origin = {
+        "group": proposal["group"],
+        "allocation_ids": proposal["allocation_ids"],
+        "difference": proposal["difference"],
+    }
+    saved = create(client_a, "/api/return-inputs", body | {"from_proposal": origin})
+    assert "from_proposal" not in saved
+    assert _proposal_points(client_a, "return.donation_booked") == []
+
+    rows = ok(client_a.get("/api/return-inputs", params={"tax_year": 2026}))
+    again = client_a.post("/api/return-inputs", json=body | {"from_proposal": origin})
+    assert again.status_code == 409, again.text
+    assert again.json()["constraint"] == "return_input.proposal_stale"
+    assert ok(client_a.get("/api/return-inputs", params={"tax_year": 2026})) == rows
+
+    # An origin no current proposal matches (another difference) is refused the same way.
+    stale = origin | {"difference": "0.01"}
+    refused = client_a.post("/api/return-inputs", json=body | {"from_proposal": stale})
+    assert refused.status_code == 409, refused.text
+
+    # Typed by hand (no origin): the same row saves again.
+    create(client_a, "/api/return-inputs", body)
+
+
 def test_a_booked_benefit_is_one_point_with_its_payload(client_a):
     """`return.benefit_booked` is the proposal's point, no longer a second point from the
     estimate's warning; typing the payload ends it."""

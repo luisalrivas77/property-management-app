@@ -617,6 +617,23 @@ def carried_allowed(kind: ReturnInputKind, value: Schema) -> bool:
     return True
 
 
+# What a booked proposal stands for (phase 10 §7.8 (a), D293); schemas/booked_inputs.py re-exports
+# it. Kept here so a row's create body can name the proposal it was taken from.
+BookedGroup = Literal["benefit", "donation", "childcare", "household_services"]
+
+
+class ProposalOrigin(Schema):
+    """What a booked proposal's card showed when „Übernehmen“ was pressed (D293 review): its
+    group, the allocations it summed and its difference. Never stored: `create_input` recomputes
+    the year's proposals under the workspace lock and refuses the row (409
+    return_input.proposal_stale) unless one of them still matches exactly, so a card posted
+    twice, or after the bookings or rows changed, cannot count a sum twice."""
+
+    group: BookedGroup
+    allocation_ids: list[UUID] = Field(min_length=1)
+    difference: NonNegativeMoney
+
+
 class ReturnInputCreate(Schema):
     """One return input row as written. A correction is a new row with supersedes_id (a current
     row of the same kind and year, and the same owner); withdrawn = true ends it. Rows are
@@ -631,6 +648,8 @@ class ReturnInputCreate(Schema):
     supersedes_id: UUID | None = None
     carried_from_id: UUID | None = None  # D110: the Y−1 row this one was confirmed from
     withdrawn: bool = False
+    # Sent by a booked proposal's card only; checked, never stored (create_input leaves it out).
+    from_proposal: ProposalOrigin | None = Field(default=None, exclude_if=lambda v: v is None)
 
     @model_validator(mode="before")
     @classmethod

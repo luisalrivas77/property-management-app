@@ -16,11 +16,11 @@ from pydantic import Field
 
 from .allocation import AllocationCategory
 from .common import Money, NonNegativeMoney, Schema, TaxYear
-from .employment import BookedBenefit
+from .employment import BookedBenefit, BookedGroup  # noqa: F401 (BookedGroup re-exported)
 from .enums import ReturnInputKind
 
-# What a proposal stands for; the guide point's code is BOOKED_POINT_CODES[group].
-BookedGroup = Literal["benefit", "donation", "childcare", "household_services"]
+# BookedGroup, what a proposal stands for, is defined in .employment so a row's create body can
+# name its proposal (ProposalOrigin); the guide point's code is BOOKED_POINT_CODES[group].
 
 # A field the card asks for before „Übernehmen“ can write the row: the bank line does not say it.
 # owner: a joint account's benefit; benefit: the lines name no one kind; child: not exactly one

@@ -15,7 +15,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useId, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
-import { ruleCodeText } from "@/api/errors";
+import { ApiError, ruleCodeText } from "@/api/errors";
 import type { components } from "@/api/types";
 import type { AllocationFact, AnlageVDraft, DocumentChecklistItem, Owner, Property } from "@/api/schemas";
 import { ChecklistTab } from "@/app/(app)/properties/[id]/ChecklistTab";
@@ -531,6 +531,8 @@ function proposalEntry(proposal: BookedProposal, key: string, scope: PointScope,
 const BOOKED_BENEFITS = (Object.keys(REPLACEMENT_BENEFIT) as (keyof typeof REPLACEMENT_BENEFIT)[]).filter(
   (b) => b !== "kurzarbeitergeld",
 );
+/** The 409 constraint of a row taken from a card the guide no longer shows (D293 review). */
+const PROPOSAL_STALE = "return_input.proposal_stale";
 const SERVICE_CLASSES = Object.keys(HOUSEHOLD_SERVICE_CLASS) as (keyof typeof HOUSEHOLD_SERVICE_CLASS)[];
 
 function ProposalAction({ proposal, owners, onChanged }: { proposal: BookedProposal; owners: readonly Owner[]; onChanged: () => void }) {
@@ -547,6 +549,12 @@ function ProposalAction({ proposal, owners, onChanged }: { proposal: BookedPropo
             owners={owners}
             onDone={() => {
               setTaken(true);
+              close();
+              onChanged();
+            }}
+            onStale={() => {
+              // The card was out of date (taken already, or the bookings changed): the server
+              // wrote nothing, so reload the guide and show the proposals as they are now.
               close();
               onChanged();
             }}
@@ -590,11 +598,13 @@ function ProposalForm({
   proposal,
   owners,
   onDone,
+  onStale,
   onCancel,
 }: {
   proposal: BookedProposal;
   owners: readonly Owner[];
   onDone: () => void;
+  onStale: () => void;
   onCancel: () => void;
 }) {
   const t = useT(messages);
@@ -642,13 +652,28 @@ function ProposalForm({
     if (needs.has("child")) value.child_id = child;
     if (needs.has("service_class")) value.service_class = serviceClass;
     if (needs.has("recipient")) value.recipient_label = recipient.trim();
-    const body = { ...payload, value, ...(needs.has("owner") ? { owner_id: owner } : {}) } as unknown as ReturnInputCreate;
+    // What the card showed: the server refuses the row (409) unless the proposal still matches.
+    const from_proposal = {
+      group: proposal.group,
+      allocation_ids: proposal.allocation_ids,
+      difference: proposal.difference,
+    };
+    const body = {
+      ...payload,
+      value,
+      from_proposal,
+      ...(needs.has("owner") ? { owner_id: owner } : {}),
+    } as unknown as ReturnInputCreate;
     // Off while the request runs; the card's button stays off after it (ProposalAction).
     setBusy(true);
     try {
       await ok(api.POST("/api/return-inputs", { body }));
       onDone();
     } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 409 && caught.body?.constraint === PROPOSAL_STALE) {
+        onStale();
+        return;
+      }
       setError(caught);
       setBusy(false);
     }

@@ -370,6 +370,31 @@ def booked_benefits(conn: Connection, tax_year: int) -> list[BookedBenefit]:
     ]
 
 
+_PROPOSAL_STALE = "return_input.proposal_stale"
+
+
+def _check_proposal_current(conn: Connection, data: ReturnInputCreate) -> None:
+    """A row taken from a booked proposal's card (D293 review): one of the year's proposals,
+    recomputed now under the workspace lock, must still match what the card showed (group,
+    allocations, difference). Otherwise the card is stale (posted twice, or the bookings or rows
+    changed since the guide loaded) and the row would count a sum twice: 409, nothing written.
+    A row typed by hand sends no origin and is not checked; rows still have no uniqueness rule."""
+    origin = data.from_proposal
+    assert origin is not None
+    wanted = sorted(origin.allocation_ids)
+    for p in booked_input_proposals(conn, data.tax_year):
+        if (
+            p.group == origin.group
+            and sorted(p.allocation_ids) == wanted
+            and p.difference == origin.difference
+        ):
+            return
+    raise ConflictError(
+        "the proposal this row was taken from has changed or is gone; reload the guide",
+        constraint=_PROPOSAL_STALE,
+    )
+
+
 def booked_input_proposals(conn: Connection, tax_year: int) -> list[BookedProposal]:
     """The year's proposed return inputs from the bookings (phase 10 §7.8 (a), D293): pure
     rules/tax/booked_inputs over the owners' and household's current rows and the year's
@@ -416,14 +441,17 @@ def create_input(ctx: CommandContext, data: ReturnInputCreate) -> ReturnInput:
     Raises NotFoundError for an unknown owner, document or referenced row;
     RuleViolationError return_input.scope_invalid, return_input.not_current,
     return_input.carried_from_invalid, return_input.work_room_conflict,
-    return.childcare_age, return.household_services_cash or anlage_n.useful_life_missing.
-    Nothing is written then."""
+    return.childcare_age, return.household_services_cash or anlage_n.useful_life_missing;
+    ConflictError return_input.proposal_stale when `from_proposal` no longer matches a current
+    booked proposal. Nothing is written then."""
     if data.kind not in SPANNING_KINDS:
         # A yearly row before the first Anlage N rule set could never be computed (and would
         # break phase 4's screens that read it): RuleError tax.no_rule_set. A child or a work
         # item may start earlier; only its later years are computed.
         rules_for(data.tax_year)
     _lock_workspace(ctx.conn, ctx.workspace_id)
+    if data.from_proposal is not None:
+        _check_proposal_current(ctx.conn, data)
     if data.owner_id is not None:
         require_row(ctx.conn, owner_table, EntityType.OWNER, data.owner_id)
     _check_document(ctx.conn, data)
@@ -441,7 +469,7 @@ def create_input(ctx: CommandContext, data: ReturnInputCreate) -> ReturnInput:
             insert(return_input_table)
             .values(
                 workspace_id=ctx.workspace_id,
-                **data.model_dump(exclude={"value"}),
+                **data.model_dump(exclude={"value", "from_proposal"}),
                 value=data.value.model_dump(mode="json"),
                 recorded_at=ctx.now,
                 recorded_by=user_id(ctx),

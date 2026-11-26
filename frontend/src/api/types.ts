@@ -13745,6 +13745,25 @@ export interface components {
             applied: components["schemas"]["AppliedEntity"][];
         };
         /**
+         * ProposalOrigin
+         * @description What a booked proposal's card showed when „Übernehmen“ was pressed (D293 review): its
+         *     group, the allocations it summed and its difference. Never stored: `create_input` recomputes
+         *     the year's proposals under the workspace lock and refuses the row (409
+         *     return_input.proposal_stale) unless one of them still matches exactly, so a card posted
+         *     twice, or after the bookings or rows changed, cannot count a sum twice.
+         */
+        ProposalOrigin: {
+            /**
+             * Group
+             * @enum {string}
+             */
+            group: "benefit" | "donation" | "childcare" | "household_services";
+            /** Allocation Ids */
+            allocation_ids: string[];
+            /** Difference */
+            difference: string;
+        };
+        /**
          * ProposalRecord
          * @description One record the proposal would create or patch.
          *
@@ -14748,6 +14767,7 @@ export interface components {
              * @default false
              */
             withdrawn: boolean;
+            from_proposal?: components["schemas"]["ProposalOrigin"] | null;
             /**
              * Id
              * Format: uuid
@@ -14793,6 +14813,7 @@ export interface components {
              * @default false
              */
             withdrawn: boolean;
+            from_proposal?: components["schemas"]["ProposalOrigin"] | null;
         };
         /**
          * ReturnInputEvidence
@@ -14866,6 +14887,7 @@ export interface components {
              * @default false
              */
             withdrawn: boolean;
+            from_proposal?: components["schemas"]["ProposalOrigin"] | null;
             /**
              * Id
              * Format: uuid
