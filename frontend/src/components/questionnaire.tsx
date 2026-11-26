@@ -666,7 +666,7 @@ export function QuestionnaireFlow({
           const reload = () => state.reload();
           return (
             <>
-              {data.view.reused_from != null && !embedded ? (
+              {data.view.reused_from != null ? (
                 <p className="notice notice-info">{t.reusedFrom(year, data.view.reused_from)}</p>
               ) : null}
               {current >= list.length ? (
