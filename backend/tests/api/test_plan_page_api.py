@@ -5,6 +5,7 @@ isolation. The service on the database is tests/db/test_plan_page.py; the cards'
 tests/fixtures/phase10/plan_page.yaml."""
 
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -115,3 +116,19 @@ def test_english(client_a, planned):
     assert todo["text"].startswith("No living area is entered for the flat")
     shared = ok(client_a.get(PLAN, params={"view": "share"}, headers={"Accept-Language": "en"}))
     assert "todos" not in shared["risks"] and "reserve_accounts" not in shared["heute"]
+
+
+def test_a_kept_answer_is_kept_per_view_and_switch(client_a, planned, api_app):
+    """The route is a kept answer (§7.4): its key holds the query, so a kept own view never
+    answers a shared request and a kept shared view never another switch's."""
+    store = api_app.state.kept_answers
+    store.clock = lambda: datetime(2026, 11, 21, 10, 0, tzinfo=UTC)
+    own = client_a.get(PLAN)
+    shared = client_a.get(PLAN, params={"view": "share"})
+    with_accounts = client_a.get(PLAN, params={"view": "share", "accounts": "true"})
+    assert store.counters.hits == 0
+    assert FLAT in own.text and GIRO in own.text
+    assert FLAT not in shared.text and GIRO not in shared.text
+    assert FLAT not in with_accounts.text and GIRO in with_accounts.text
+    again = client_a.get(PLAN, params={"view": "share"})
+    assert store.counters.hits == 1 and again.content == shared.content
