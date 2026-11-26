@@ -18,8 +18,10 @@
 #
 # Readings this fixture pins (§7.11 (h); the spec leaves them to the build):
 # 1. The base run is the plan's route: the balanced route when the word is not on track (its
-#    cuts and its saving extra from next month to the due month, at route 3's median when that
-#    decides, else at the typed rates); on track, the walk without change (or with the adopted
+#    cuts from next month to the due month and its saving extra from next month to the walk's
+#    end, as the goal's walk runs them, at route 3's median when that decides, else at the typed
+#    rates; corrected 26 Nov 2026 before merge: the hand-work had ended the extra at the due
+#    month too, which only moves a risk run that slips past it); on track, the walk without change (or with the adopted
 #    budget when only that reaches the target). Card 3's „Am Ziel“ is that run's first month at
 #    or above the target; „ohne den Weg“ is the projected value at the due month and the gap the
 #    target less it.
@@ -125,8 +127,8 @@ cases:
 - id: cards_one_walk
   description: >-
     the seven cards from one walk: „Machbar“, the balanced route reaches 600,000 in Jun 2036;
-    weak markets at the funds' worst 9-year window 1.8 % move it 29 months, six months without
-    income 15, a 7,920 € repair 4
+    weak markets at the funds' worst 9-year window 1.8 % move it 28 months, six months without
+    income 14, a 7,920 € repair 4
   <<: *cards
   expect:
     cards:
@@ -157,8 +159,8 @@ cases:
           worst: {depot: '0.018'}
           capped: []
           left_out: []
-          reached: '2038-11'
-          delay_months: 29
+          reached: '2038-10'
+          delay_months: 28
           not_until: null
         income_gap:
           # Nov 2026 – Apr 2027 without the 5,000 (and without the 98 extra from Dec): in Nov the
@@ -167,8 +169,8 @@ cases:
           # 2,196.01 a month (16,666.11 at 31 Oct 2027); nothing drawn
           available: true
           months: 6
-          reached: '2037-09'
-          delay_months: 15
+          reached: '2037-08'
+          delay_months: 14
           not_until: null
           drawn: '0.00'
         repair:
@@ -194,8 +196,8 @@ cases:
       heute: {net_worth: '250000.00', reserve: '31000.00', reserve_months: '10.3', saved_mean: '2000.00'}
       plan: {reached: '2036-06', without_route: '570000.00', gap: '30000.00', saving_extra: '100.00', by_class: {depot: '100.00'}, cut: '100.00'}
       risks:
-        weak_markets: {rates: {depot: '0.018'}, delay_months: 29}
-        income_gap: {delay_months: 15, drawn: '0.00'}
+        weak_markets: {rates: {depot: '0.018'}, delay_months: 28}
+        income_gap: {delay_months: 14, drawn: '0.00'}
         repair: {amount: '8000.00', by_property: {flat: '8000.00'}, delay_months: 4}
       other_routes: {more_saving: '200.00', needed_return: '0.077', less_spending: '200.00'}
       this_month:
@@ -356,7 +358,7 @@ cases:
       risks:
         base_reached: '2036-06'
         weak_markets: {available: false, reason: series_missing}
-        income_gap: {available: true, reached: '2037-09', delay_months: 15}
+        income_gap: {available: true, reached: '2037-08', delay_months: 14}
         repair: {available: true, amount: '7920.00', reached: '2036-10', delay_months: 4}
 
 - id: weak_markets_generic
@@ -368,7 +370,7 @@ cases:
       other_routes: {needed_return: null}
       risks:
         weak_markets: {available: false, reason: generic_mode}
-        income_gap: {available: true, delay_months: 15}
+        income_gap: {available: true, delay_months: 14}
         repair: {available: true, delay_months: 4}
 
 - id: repair_without_area
