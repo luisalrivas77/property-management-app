@@ -35,6 +35,7 @@ import { income } from "@/i18n/income";
 
 import { DocumentPicker, ReadUpload } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
+import { useHelpHint } from "./fieldHelp";
 import { todayIso } from "./format";
 import { GrossSourceChip, HouseholdReturnBlocks } from "./householdReturn";
 import {
@@ -575,6 +576,8 @@ function InputForm({
   const form = useFormErrors(useMemo(() => [...FORM_KEYS], []));
   const base = useId();
   const t = useT(income);
+  // The field help of „Eure Angaben“ (D294) under the expected pay; only that kind has an entry.
+  const helpHint = useHelpHint(kind);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -621,6 +624,7 @@ function InputForm({
         <Field
           id={`${base}-value`}
           label={`${t.kindLabel(kind)} ${year}${isRate ? " (%)" : " (€)"}`}
+          hint={kind === "expected_gross_pay" ? helpHint("amount", t.kindLabel(kind)) : undefined}
           description={t.fieldHelp(kind)}
           errors={form.of(valueKey)}
         >
