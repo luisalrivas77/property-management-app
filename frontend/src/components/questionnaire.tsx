@@ -51,6 +51,7 @@ import {
   WORK_ROOM_PREFER,
 } from "./labels";
 import type { QuestionTarget } from "./taxYear";
+import { type FormField, type HelpForm } from "./returnInputFields";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -174,7 +175,12 @@ const DOCUMENT_KINDS: ReadonlySet<string> = new Set(["wage_certificate", "paysli
 /** Kinds whose standing items end with a disposal date (D108 (a)). */
 const DISPOSABLE: ReadonlySet<string> = new Set(["work_equipment"]);
 
-const FORMS: Record<string, FieldSpec[]> = {
+/** The forms by kind. A return_input form's field names are those of returnInputFields.ts (the
+ * field help of D294 names the same), so a field without help fails `tsc`; private_cost is a
+ * property's tax_input and has no field help. */
+type FormSpecs = { [F in HelpForm]?: (FieldSpec & { name: FormField<F> })[] } & { private_cost: FieldSpec[] };
+
+const FORM_SPECS = {
   commute: [
     { name: "kind", label: "type", type: "select", options: COMMUTE_KIND, initial: () => "first_workplace" },
     { name: "workplace_label", label: "workplace", type: "text", hint: "workplaceHint" },
@@ -289,7 +295,9 @@ const FORMS: Record<string, FieldSpec[]> = {
       hint: "netHint",
     },
   ],
-};
+} satisfies FormSpecs;
+
+const FORMS: Record<string, FieldSpec[] | undefined> = FORM_SPECS;
 
 /** Values a kind always has and the form does not ask for. */
 const FIXED: Record<string, Value> = {

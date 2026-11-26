@@ -205,6 +205,7 @@ def test_a_benefit_announced_but_not_typed_keeps_eure_angaben_open(client_a):
     assert [(p["step"], p["form"], p["owner_id"]) for p in benefit] == [
         ("angaben", "anlage_n", owner["id"])
     ]
+    assert [p["topic"] for p in benefit] == ["benefits"]  # shown in its topic (D294)
     assert got["steps"][0]["state"] == "open"
     assert got["ready"] is False
     # ... and it is open in the benefits topic, the choice shown as the owner's fact (D294)
@@ -317,6 +318,7 @@ def test_a_booked_donation_is_a_proposal_whose_payload_posts_verbatim(client_a, 
     (point,) = _proposal_points(client_a, "return.donation_booked")
     proposal = point["proposal"]
     assert (point["step"], point["form"], point["blocking"]) == ("angaben", "return", False)
+    assert point["topic"] == "household"
     assert proposal["difference"] == line["amount"].lstrip("-")
     assert proposal["allocation_ids"]
     assert "ask_party" not in proposal  # no party question (Luis, 26 Nov 2026)

@@ -23,6 +23,7 @@ import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { formatFraction, formatShare } from "./format";
 import { decimalInput, toDecimalString, toFraction, toMoneyString, type Parsed } from "./input";
 import { BelegLink } from "./returnInputEvidence";
+import { type FormField, type HelpForm } from "./returnInputFields";
 import {
   COMMUTE_KIND,
   EQUIPMENT_CLASS,
@@ -64,6 +65,12 @@ interface KindSpec {
   taxYear?: (value: Record<string, unknown>, year: number) => number;
 }
 
+/** A kind's fields, each named as `form`'s fields are named in returnInputFields.ts (D294's field
+ * help), so a field without a help entry fails `tsc` here and e2e/field-help.spec.ts there. */
+function fieldsOf<F extends HelpForm>(_form: F, list: (FieldSpec & { name: FormField<F> })[]): FieldSpec[] {
+  return list;
+}
+
 const str = (value: unknown): string => (value == null ? "" : String(value));
 const money = (value: unknown): string => formatter().money(value == null ? null : String(value));
 const date = (value: unknown): string => formatter().date(str(value));
@@ -74,7 +81,7 @@ const KINDS: KindSpec[] = [
   {
     kind: "commute",
     single: false,
-    fields: [
+    fields: fieldsOf("commute", [
       { name: "kind", type: "select", options: () => options(COMMUTE_KIND), initial: "first_workplace" },
       { name: "workplace_label", type: "text" },
       { name: "period_from", type: "date", initial: "{year}-01-01" },
@@ -87,24 +94,24 @@ const KINDS: KindSpec[] = [
       { name: "km_collective", type: "int", initial: "0" },
       { name: "km_other", type: "int", initial: "0" },
       { name: "public_transport_costs", type: "money_optional" },
-    ],
+    ]),
     summary: (v) =>
       msg().commuteSummary(str(v.workplace_label), date(v.period_from), date(v.period_to), str(v.days), str(v.km)),
   },
   {
     kind: "home_office",
     single: true,
-    fields: [
+    fields: fieldsOf("home_office", [
       { name: "days_other_workplace", type: "int", initial: "0" },
       { name: "days_no_other_workplace", type: "int", initial: "0" },
-    ],
+    ]),
     summary: (v) => msg().homeOfficeSummary(str(v.days_other_workplace), str(v.days_no_other_workplace)),
   },
   {
     kind: "work_room",
     single: true,
     document: true,
-    fields: [
+    fields: fieldsOf("work_room", [
       { name: "months", type: "int", initial: "12" },
       { name: "room_m2", type: "area" },
       { name: "home_m2", type: "area" },
@@ -112,7 +119,7 @@ const KINDS: KindSpec[] = [
       { name: "running_costs_year", type: "money", initial: "0" },
       { name: "room_only_costs_year", type: "money", initial: "0" },
       { name: "prefer", type: "select", initial: "", options: () => options(workRoomChoice) },
-    ],
+    ]),
     summary: (v) =>
       msg().workRoomSummary(str(v.months), area(v.room_m2), area(v.home_m2), money(v.rent_year)),
   },
@@ -120,7 +127,7 @@ const KINDS: KindSpec[] = [
     kind: "work_equipment",
     single: false,
     document: true,
-    fields: [
+    fields: fieldsOf("work_equipment", [
       { name: "label", type: "text" },
       { name: "item_class", type: "select", options: () => options(EQUIPMENT_CLASS), initial: "computer" },
       { name: "gross", type: "money" },
@@ -134,7 +141,7 @@ const KINDS: KindSpec[] = [
       { name: "professional_share", type: "fraction", initial: "100 %" },
       { name: "useful_life_months", type: "int", initial: "" },
       { name: "disposed_on", type: "date_optional" },
-    ],
+    ]),
     summary: (v) =>
       msg().equipmentSummary(str(v.label), money(v.gross), date(v.bought_on), formatShare(v.professional_share as never)) +
       (v.disposed_on ? msg().disposedSince(date(v.disposed_on)) : ""),
@@ -146,74 +153,74 @@ const KINDS: KindSpec[] = [
   {
     kind: "telecom",
     single: true,
-    fields: [
+    fields: fieldsOf("telecom", [
       { name: "bills_year", type: "money" },
       { name: "months", type: "int", initial: "12" },
       { name: "employer_reimbursed", type: "money", initial: "0" },
-    ],
+    ]),
     summary: (v) => msg().telecomSummary(money(v.bills_year), str(v.months), money(v.employer_reimbursed)),
   },
   {
     kind: "professional_association",
     single: false,
     document: true,
-    fields: [
+    fields: fieldsOf("professional_association", [
       { name: "name", type: "text" },
       { name: "amount", type: "money" },
       { name: "is_union", type: "bool", initial: "false" },
-    ],
+    ]),
     summary: (v) => `${str(v.name)} · ${money(v.amount)}${v.is_union ? msg().unionSuffix : ""}`,
   },
   {
     kind: "training",
     single: false,
     document: true,
-    fields: [
+    fields: fieldsOf("training", [
       { name: "label", type: "text" },
       { name: "amount", type: "money" },
-    ],
+    ]),
     summary: (v) => `${str(v.label)} · ${money(v.amount)}`,
   },
   {
     kind: "other_expense",
     single: false,
     document: true,
-    fields: [
+    fields: fieldsOf("other_expense", [
       { name: "expense_class", type: "select", options: () => options(OTHER_EXPENSE_CLASS), initial: "account_fee" },
       // stays German in English too: it is the value saved as typed, like any label a person types
       { name: "label", type: "text", initial: "Kontoführung" },
       { name: "amount", type: "money_optional" },
-    ],
+    ]),
     summary: (v) => `${str(v.label)}${v.amount != null ? ` · ${money(v.amount)}` : msg().flatSuffix}`,
   },
   {
     kind: "replacement_income",
     single: false,
     document: true,
-    fields: [
+    fields: fieldsOf("replacement_income", [
       { name: "benefit", type: "select", options: () => options(REPLACEMENT_BENEFIT), initial: "elterngeld" },
       { name: "amount", type: "money" },
       { name: "period_from", type: "date_optional" },
       { name: "period_to", type: "date_optional" },
-    ],
+    ]),
     summary: (v) =>
       `${REPLACEMENT_BENEFIT[str(v.benefit) as keyof typeof REPLACEMENT_BENEFIT] ?? str(v.benefit)} · ${money(v.amount)}${v.period_from ? msg().periodSuffix(date(v.period_from), date(v.period_to)) : ""}`,
   },
   {
     kind: "other_insurance",
     single: true,
-    fields: [{ name: "amount", type: "money" }],
+    fields: fieldsOf("other_insurance", [{ name: "amount", type: "money" }]),
     summary: (v) => money(v.amount),
   },
   {
     kind: "vorsorge_override",
     single: true,
-    fields: [
+    fields: fieldsOf("vorsorge_override", [
       { name: "pension", type: "money" },
       { name: "health_care_basis", type: "money" },
       { name: "other", type: "money", initial: "0" },
       { name: "krankengeld_entitlement", type: "bool", initial: "true" },
-    ],
+    ]),
     summary: (v) => msg().vorsorgeSummary(money(v.pension), money(v.health_care_basis), money(v.other)),
   },
 ];

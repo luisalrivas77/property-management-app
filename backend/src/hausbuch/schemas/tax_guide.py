@@ -76,6 +76,9 @@ class GuidePoint(Schema):
     note: bool = False
     refused: str | None = None
     blocking: bool = True
+    # The topic of Eure Angaben the point belongs to (rules/angaben_topics.topic_of_point;
+    # None: a point of another step, or one no topic lists), so the screen shows it there.
+    topic: QuestionTopic | None = None
 
 
 class GuideDocument(Schema):

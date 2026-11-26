@@ -9555,6 +9555,8 @@ export interface components {
              * @default true
              */
             blocking: boolean;
+            /** Topic */
+            topic?: ("couple" | "pay" | "work_costs" | "insurance" | "benefits" | "children" | "household") | null;
         };
         /** GuideStep */
         GuideStep: {

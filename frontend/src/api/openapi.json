@@ -24597,6 +24597,26 @@
             "type": "boolean",
             "title": "Blocking",
             "default": true
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "couple",
+                  "pay",
+                  "work_costs",
+                  "insurance",
+                  "benefits",
+                  "children",
+                  "household"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
           }
         },
         "additionalProperties": false,

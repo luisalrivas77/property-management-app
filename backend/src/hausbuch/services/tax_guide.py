@@ -193,6 +193,11 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
             result.points,
             proposals,
         )
+    # Each point names its topic, so Eure Angaben shows it in its topic (a read, D294).
+    points = [
+        p.model_copy(update={"topic": topics_rule.topic_of_point(p)}) if p.step == "angaben" else p
+        for p in result.points
+    ]
     return TaxGuide(
         tax_year=tax_year,
         filing_deadline=filing_deadline(tax_year),
@@ -203,7 +208,7 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
         ready=result.ready and not unavailable,
         estimate=estimate,
         forms=forms,
-        points=result.points,
+        points=points,
         documents=result.documents,
         unavailable=sorted(set(unavailable)),
         topics=topics,
