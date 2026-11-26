@@ -115,7 +115,7 @@ function ownPlan(): PlanPage {
 
 /** What the server answers for ?view=share: rounded, the labels and what the switches keep back
  * absent (the server's own rule, tested in test_plan_page_api.py; here only its shape). */
-function sharedPlan(query: URLSearchParams): PlanPage {
+function sharedPlan(query: URLSearchParams, base: () => PlanPage = ownPlan): PlanPage {
   const on = (name: string, fallback: boolean) => (query.has(name) ? query.get(name) === "true" : fallback);
   const switches = {
     round_amounts: on("round_amounts", true),
@@ -124,13 +124,21 @@ function sharedPlan(query: URLSearchParams): PlanPage {
     risks: on("risks", true),
     assumptions: on("assumptions", true),
   };
-  const own = ownPlan();
+  const own = base();
   const { todos: _todos, ...rest } = own;
   void _todos;
   const page: PlanPage = { ...rest, view: "share", switches };
   if (switches.round_amounts) {
     page.goal = { ...own.goal!, value_today: "310000.00" };
-    page.heute = { ...own.heute!, net_worth: "310000.00", reserve: "21000.00", saved_mean: "1850.00" };
+    // „Jetzt anlegen“ on the reserve's step (1.000 €), as rules/goal/share.py rounds it
+    const above = own.heute!.above_target;
+    page.heute = {
+      ...own.heute!,
+      net_worth: "310000.00",
+      reserve: "21000.00",
+      saved_mean: "1850.00",
+      above_target: above == null ? above : (Math.round(Number(above) / 1000) * 1000).toFixed(2),
+    };
   }
   const { reserve_accounts: _accounts, ...heute } = page.heute!;
   void _accounts;
@@ -155,10 +163,25 @@ async function planApi(page: Page, own: () => PlanPage = ownPlan) {
     (route: Route) => {
       const query = new URL(route.request().url()).searchParams;
       asked.push(query);
-      return route.fulfill({ json: query.get("view") === "share" ? sharedPlan(query) : own() });
+      return route.fulfill({ json: query.get("view") === "share" ? sharedPlan(query, own) : own() });
     },
   );
   return asked;
+}
+
+/** The walk reaches the goal without change (Luis, 26 Nov 2026: „it doesn't say what the plan
+ * is“): the plan card names what keeps it there. `above` the money above the reserve target. */
+function onTrackPlan(above: string): () => PlanPage {
+  return () => {
+    const plan = ownPlan();
+    return {
+      ...plan,
+      word: "on_track",
+      goal: { ...plan.goal!, word: "on_track" },
+      heute: { ...plan.heute!, above_target: above },
+      plan: { on_track: true, reached: monthsAhead(58), without_route: "512000.00", gap: null, saving_extra: null, by_class: {}, cut: null, wants: [] },
+    };
+  };
 }
 
 function goalAnswer(): HouseholdGoal {
@@ -383,6 +406,52 @@ test("„Euer Plan ›“ from Haushalt › Ziel and from Übersicht's goal tile
   await expect(tiles.getByRole("link", { name: "Euer Plan" })).toHaveAttribute("href", "/household/plan");
 });
 
+test("on track, the plan card says what keeps you there: saving, investing now, your rates", async ({ page, signedIn }) => {
+  void signedIn;
+  await planApi(page, onTrackPlan("12340.00"));
+  await page.goto("/household/plan");
+  const main = page.locator(".planp-cards");
+  const card = main.locator(".goal-c-main");
+  await expect(card.getByRole("link", { name: /^Ihr seid auf Kurs$/ })).toBeVisible();
+  await expect(card).toContainText("Weiter sparen");
+  await expect(card).toContainText(/1\.840\s€ im Monat/);
+  await expect(card).toContainText("Jetzt anlegen");
+  await expect(card).toContainText(/12\.340\s€/);
+  await expect(card).toContainText("Bei euren Raten");
+  await expect(card).toContainText(/Fonds 6,0\s%\s·\sKrypto 8,0\s%/);
+  await expect(card).toContainText("Am Ziel");
+  await expect(card).not.toContainText("+ mehr anlegen");
+
+  await card.getByRole("link", { name: /^Ihr seid auf Kurs$/ }).click();
+  const panel = detail(page, "Ihr seid auf Kurs");
+  await expect(panel).toContainText(/vorausgesetzt ihr spart weiter im Schnitt 1\.840\s€ im Monat/);
+  await expect(panel).toContainText(/legt das Geld über dem Reserve-Ziel an \(heute 12\.340\s€\)/);
+  await expect(panel).toContainText("„Wenn es schlechter läuft“ zeigt, um wie viel.");
+  await expect(panel).not.toContainText("Es braucht keinen Schritt");
+
+  // Zum Teilen: rounded like the reserve; without the assumptions no rates row.
+  await page.goto("/household/plan?ansicht=teilen");
+  await expect(card).toContainText(/rund 12\.000\s€/);
+  await expect(card).toContainText("Bei euren Raten");
+  await page.goto("/household/plan?ansicht=teilen#d-plan-teilen");
+  await detail(page, "Was geteilt wird").getByRole("switch", { name: "Eure Annahmen" }).uncheck();
+  await expect(main.getByRole("link", { name: /^Eure Annahmen$/ })).toHaveCount(0);
+  await expect(card).toContainText("Weiter sparen");
+  await expect(card).not.toContainText("Bei euren Raten");
+});
+
+test("on track with nothing above the reserve target: no „Jetzt anlegen“", async ({ page, signedIn }) => {
+  void signedIn;
+  await planApi(page, onTrackPlan("0.00"));
+  await page.goto("/household/plan#d-plan-weg");
+  const card = page.locator(".planp-cards .goal-c-main");
+  await expect(card).toContainText("Weiter sparen");
+  await expect(card).not.toContainText("Jetzt anlegen");
+  const panel = detail(page, "Ihr seid auf Kurs");
+  await expect(panel).toContainText("legt das Geld über dem Reserve-Ziel an und eure Anlagen");
+  await expect(panel).not.toContainText("(heute");
+});
+
 async function screens(page: Page, name: string, width: number, open: () => Promise<void>) {
   await page.setViewportSize({ width, height: width < 800 ? 844 : 900 });
   const backgrounds: string[] = [];
@@ -423,4 +492,13 @@ test("Euer Plan at phone and computer width, light and dark", async ({ page, sig
       await expect(detail(page, "Wenn es schlechter läuft")).toContainText("ImmoWertV");
     });
   }
+});
+
+test("on track, the plan card at phone width, light and dark", async ({ page, signedIn }) => {
+  void signedIn;
+  await planApi(page, onTrackPlan("12340.00"));
+  await screens(page, "plan-on-track-phone", 390, async () => {
+    await page.goto("/household/plan");
+    await expect(page.locator(".planp-cards .goal-c-main")).toContainText("Jetzt anlegen");
+  });
 });

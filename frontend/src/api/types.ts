@@ -12604,6 +12604,8 @@ export interface components {
             reserve_full: boolean | null;
             /** Saved Mean */
             saved_mean: string;
+            /** Above Target */
+            above_target?: string | null;
             /** Window From */
             window_from?: string | null;
             /** Window To */

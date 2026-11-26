@@ -32155,6 +32155,18 @@
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Saved Mean"
           },
+          "above_target": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Target"
+          },
           "window_from": {
             "anyOf": [
               {

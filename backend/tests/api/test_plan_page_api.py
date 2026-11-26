@@ -72,6 +72,7 @@ def test_own_view_has_everything(client_a, client_b, planned):
     assert [t["code"] for t in got["risks"]["todos"]] == ["living_area_missing"]
     assert got["plan"]["wants"], "the balanced route cuts the restaurant"
     assert isinstance(got["goal"]["target"], str)  # money is a string
+    assert isinstance(got["heute"]["above_target"], str)  # GET /household-plan's „Anlegbar jetzt“
     assert ok(client_b.get(PLAN))["word"] == "none"
 
 

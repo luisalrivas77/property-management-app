@@ -306,6 +306,11 @@ function isZero(value: string | null | undefined): boolean {
   return value == null || /^-?0+(\.0+)?$/.test(value);
 }
 
+/** A server amount above 0 (its sign read from the text; nothing computed). */
+function positive(value: string | null | undefined): value is string {
+  return value != null && !value.startsWith("-") && !isZero(value);
+}
+
 function RouteCard({ plan }: { plan: PlanPage }) {
   const t = useT(planPageText);
   const p = usePlanFormat();
@@ -326,12 +331,48 @@ function RouteCard({ plan }: { plan: PlanPage }) {
             <b>{amount(t, p, plan, route.cut)}</b>
           </div>
         ) : null}
+        {route.on_track ? <OnTrackRows plan={plan} /> : null}
         <div className="goal-rw">
           <span>{t.atGoal}</span>
           <b>{route.reached ? p.month(route.reached) : t.notReached}</b>
         </div>
       </div>
     </div>
+  );
+}
+
+/** On track, what keeps the household there (Luis, 26 Nov 2026: „it doesn't say what the plan
+ * is“): the mean it saves, the money above the reserve target to invest now and the rates it
+ * typed. Each the server's figure; the rates only while the shared view keeps the assumptions. */
+function OnTrackRows({ plan }: { plan: PlanPage }) {
+  const t = useT(planPageText);
+  const p = usePlanFormat();
+  const heute = plan.heute;
+  const rates = plan.assumptions?.rates;
+  const rateParts: string[] = [];
+  if (rates?.depot != null) rateParts.push(`${t.funds} ${p.ratio(rates.depot)}`);
+  if (rates?.crypto != null) rateParts.push(`${t.crypto} ${p.ratio(rates.crypto)}`);
+  return (
+    <>
+      {heute && positive(heute.saved_mean) ? (
+        <div className="goal-rw">
+          <span>{t.keepSaving}</span>
+          <b>{t.perMonth(amount(t, p, plan, heute.saved_mean))}</b>
+        </div>
+      ) : null}
+      {heute && positive(heute.above_target) ? (
+        <div className="goal-rw">
+          <span>{t.investNow}</span>
+          <b>{amount(t, p, plan, heute.above_target)}</b>
+        </div>
+      ) : null}
+      {rateParts.length > 0 ? (
+        <div className="goal-rw">
+          <span>{t.atYourRates}</span>
+          <b>{rateParts.join(" · ")}</b>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -605,7 +646,15 @@ function RoutePanel({ plan }: { plan: PlanPage }) {
   return (
     <>
       {route.on_track ? (
-        <p>{route.reached ? t.planPanelOnTrack(p.month(route.reached)) : null}</p>
+        <p>
+          {route.reached
+            ? t.planPanelOnTrack(
+                p.month(route.reached),
+                plan.heute && positive(plan.heute.saved_mean) ? amount(t, p, plan, plan.heute.saved_mean) : null,
+                plan.heute && positive(plan.heute.above_target) ? amount(t, p, plan, plan.heute.above_target) : null,
+              )
+            : null}
+        </p>
       ) : (
         <>
           {route.without_route != null && route.gap != null ? (
