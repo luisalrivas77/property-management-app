@@ -12,7 +12,7 @@
 // ?tab=angaben and the Jahresfragen /tax/<year>/fragen.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useCallback, useEffect, useId, useMemo, useState, useSyncExternalStore, type MouseEvent, type ReactNode } from "react";
+import { type FormEvent, useCallback, useEffect, useId, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
 import { ruleCodeText } from "@/api/errors";
@@ -526,41 +526,6 @@ function proposalEntry(proposal: BookedProposal, key: string, scope: PointScope,
   };
 }
 
-const PARTY_KEY = "hausbuch.tax.partyDonation.";
-
-function partyKey(proposal: BookedProposal): string {
-  return PARTY_KEY + [...proposal.allocation_ids].sort().join(",");
-}
-
-function readParty(proposal: BookedProposal): boolean {
-  try {
-    return window.localStorage.getItem(partyKey(proposal)) === "1";
-  } catch {
-    return partyFallback.get(partyKey(proposal)) ?? false;
-  }
-}
-
-// Answers not stored (localStorage refused): they hold for this page view only.
-const partyFallback = new Map<string, boolean>();
-const partyListeners = new Set<() => void>();
-
-function subscribeParty(listener: () => void): () => void {
-  partyListeners.add(listener);
-  return () => partyListeners.delete(listener);
-}
-
-function writeParty(proposal: BookedProposal, value: boolean) {
-  const key = partyKey(proposal);
-  partyFallback.set(key, value);
-  try {
-    if (value) window.localStorage.setItem(key, "1");
-    else window.localStorage.removeItem(key);
-  } catch {
-    // kept in partyFallback
-  }
-  partyListeners.forEach((listener) => listener());
-}
-
 /** The benefits a booking can be: Kurzarbeitergeld is on the wage certificate and never
  * proposed from the account (phase 6 D159 amended (8)). */
 const BOOKED_BENEFITS = (Object.keys(REPLACEMENT_BENEFIT) as (keyof typeof REPLACEMENT_BENEFIT)[]).filter(
@@ -570,28 +535,9 @@ const SERVICE_CLASSES = Object.keys(HOUSEHOLD_SERVICE_CLASS) as (keyof typeof HO
 
 function ProposalAction({ proposal, owners, onChanged }: { proposal: BookedProposal; owners: readonly Owner[]; onChanged: () => void }) {
   const t = useT(messages);
-  // „An eine Partei? Ja“ is kept in this browser (nothing is stored for a proposal); false during
-  // the server render and hydration.
-  const party = useSyncExternalStore(subscribeParty, () => readParty(proposal), () => false);
   // Once saved, „Übernehmen“ stays off until the guide has reloaded without this proposal: the
   // server takes a second identical row for these kinds, which would count the sum twice.
   const [taken, setTaken] = useState(false);
-  if (proposal.group === "donation" && proposal.ask_party && party) {
-    return (
-      <>
-        <span className="muted">{t.partyLeftOut}</span>
-        <button
-          type="button"
-          className="link"
-          onClick={() => {
-            writeParty(proposal, false);
-          }}
-        >
-          {t.partyUndo}
-        </button>
-      </>
-    );
-  }
   return (
     <>
       <ActionDialog label={taken ? t.saved : t.take} title={t.takeTitle} buttonClass="" disabled={taken}>
@@ -599,10 +545,6 @@ function ProposalAction({ proposal, owners, onChanged }: { proposal: BookedPropo
           <ProposalForm
             proposal={proposal}
             owners={owners}
-            onParty={() => {
-              writeParty(proposal, true);
-              close();
-            }}
             onDone={() => {
               setTaken(true);
               close();
@@ -647,13 +589,11 @@ function PaymentsDialog({ proposal }: { proposal: BookedProposal }) {
 function ProposalForm({
   proposal,
   owners,
-  onParty,
   onDone,
   onCancel,
 }: {
   proposal: BookedProposal;
   owners: readonly Owner[];
-  onParty: () => void;
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -716,15 +656,6 @@ function ProposalForm({
 
   return (
     <form className="stack" onSubmit={(event) => void submit(event)}>
-      {proposal.group === "donation" && proposal.ask_party ? (
-        <div className="row">
-          <span>{t.partyAsk}</span>
-          <button type="button" className="secondary" onClick={onParty}>
-            {t.partyYes}
-          </button>
-          <span className="muted">{t.partyNoHint}</span>
-        </div>
-      ) : null}
       {needs.has("owner") ? (
         <label htmlFor={`${ids}-owner`}>
           {t.ownerAsk}

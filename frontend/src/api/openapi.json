@@ -15843,11 +15843,6 @@
             "title": "Receipt Needed",
             "default": false
           },
-          "ask_party": {
-            "type": "boolean",
-            "title": "Ask Party",
-            "default": false
-          },
           "blocking": {
             "type": "boolean",
             "title": "Blocking",

@@ -6088,11 +6088,6 @@ export interface components {
              */
             receipt_needed: boolean;
             /**
-             * Ask Party
-             * @default false
-             */
-            ask_party: boolean;
-            /**
              * Blocking
              * @default false
              */

@@ -50,8 +50,9 @@ rules/matching.payee from the counterparty name, so two spellings of one payee a
   first covers the payee its `recipient_label` names (rules/matching.same_payee), what is left of
   it the other payees in order (first booking date, then payee). The proposal carries the payee
   as `recipient_label` and the difference as its amount; a payment above 300 € needs its
-  Zuwendungsbestätigung (§50 Abs. 4 EStDV), and every card asks „An eine Partei?“ (§34g EStG is
-  not modelled, phase 4b D95). A line without a payee name asks for the recipient.
+  Zuwendungsbestätigung (§50 Abs. 4 EStDV). A line without a payee name asks for the
+  recipient. A donation is an ordinary §10b donation; a party donation (§34g) is not modelled
+  and, since 26 Nov 2026, not asked about either (Luis: no feature for it).
 - Childcare (`childcare_cost`): the same gate over the year's childcare rows, which name no
   payee, so the rows cover the payees in order. The child is pre-selected when exactly one
   current child was under `childcare_max_age` when the year began (the rule the write refuses
@@ -62,9 +63,9 @@ rules/matching.payee from the counterparty name, so two spellings of one payee a
   bill, so each current row of the year paid to an account from an own invoice covers one
   payee, in order; a Nebenkostenabrechnung's row covers no payment of the household's own.
 
-These three are not `blocking`: an amount the person lowers (meals at the Kita), a labour share
-below its bill, or a party donation answered „Ja“ would otherwise stay open for ever, since the
-rule reads only return_input rows and nothing stores a dismissal. A benefit is blocking, as its
+These three are not `blocking`: an amount the person lowers (meals at the Kita) or a labour
+share below its bill would otherwise stay open for ever, since the rule reads only
+return_input rows and nothing stores a dismissal. A benefit is blocking, as its
 to-do was.
 """
 
@@ -444,7 +445,6 @@ def _donations(tax_year, rows, lines) -> list[BookedProposal]:
                 value,
                 [] if g.label else ["recipient"],
                 receipt_needed=any(-x.amount > DONATION_RECEIPT_LIMIT for x in g.lines),
-                ask_party=True,
             )
         )
     return out

@@ -87,5 +87,4 @@ class BookedProposal(Schema):
     benefit: str | None = None  # the benefit kind the lines name (benefit group)
     child_choices: list[ChildChoice] = Field(default_factory=list)
     receipt_needed: bool = False  # a donation above 300 € in one payment (§50 Abs. 4 EStDV)
-    ask_party: bool = False  # a donation: „An eine Partei?“ (§34g EStG, not modelled)
     blocking: bool = False

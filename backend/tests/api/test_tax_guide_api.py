@@ -275,7 +275,7 @@ def test_a_booked_donation_is_a_proposal_whose_payload_posts_verbatim(client_a, 
     assert (point["step"], point["form"], point["blocking"]) == ("angaben", "return", False)
     assert proposal["difference"] == line["amount"].lstrip("-")
     assert proposal["allocation_ids"]
-    assert proposal["ask_party"] is True
+    assert "ask_party" not in proposal  # no party question (Luis, 26 Nov 2026)
     # The purpose text never leaves the server: the payee's name only („Zahlungen ansehen“).
     assert not {"purpose", "text"} & set(proposal)
     (shown,) = proposal["lines"]

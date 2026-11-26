@@ -77,8 +77,8 @@ cases:
       - {id: d3, category: hh_donation, booked_on: 2026-11-02, amount: "-400.00", owners: [A, B], payee: TIERHILFE NORD E.V., purpose: Jahresspende}
       - {id: d4, category: hh_groceries, booked_on: 2026-03-06, amount: "-25.00", owners: [A], payee: Markt Muster, purpose: Einkauf}
     expect:
-      - {group: donation, payee: Tierhilfe Nord e.V., booked: "450.00", typed: "0.00", difference: "450.00", allocations: [d1, d3], receipt_needed: true, ask_party: true, value: {expense_class: donation, amount: "450.00", recipient_label: Tierhilfe Nord e.V.}}
-      - {group: donation, payee: Kinderhilfe Sued, booked: "30.00", typed: "0.00", difference: "30.00", allocations: [d2], ask_party: true, value: {expense_class: donation, amount: "30.00", recipient_label: Kinderhilfe Sued}}
+      - {group: donation, payee: Tierhilfe Nord e.V., booked: "450.00", typed: "0.00", difference: "450.00", allocations: [d1, d3], receipt_needed: true, value: {expense_class: donation, amount: "450.00", recipient_label: Tierhilfe Nord e.V.}}
+      - {group: donation, payee: Kinderhilfe Sued, booked: "30.00", typed: "0.00", difference: "30.00", allocations: [d2], value: {expense_class: donation, amount: "30.00", recipient_label: Kinderhilfe Sued}}
     gap: {donation: "480.00"}
 
   - name: donation after confirming one payee's proposal
@@ -91,7 +91,7 @@ cases:
     rows:
       - {id: r1, kind: special_expense, tax_year: 2026, value: {expense_class: donation, amount: "450.00", recipient_label: Tierhilfe Nord e.V.}}
     expect:
-      - {group: donation, payee: Kinderhilfe Sued, booked: "30.00", typed: "0.00", difference: "30.00", allocations: [d2], ask_party: true, value: {expense_class: donation, amount: "30.00", recipient_label: Kinderhilfe Sued}}
+      - {group: donation, payee: Kinderhilfe Sued, booked: "30.00", typed: "0.00", difference: "30.00", allocations: [d2], value: {expense_class: donation, amount: "30.00", recipient_label: Kinderhilfe Sued}}
     gap: {donation: "30.00"}
 
   - name: donation typed by hand under another name covers the payees in order
@@ -104,7 +104,7 @@ cases:
       - {id: r1, kind: special_expense, tax_year: 2026, value: {expense_class: donation, amount: "60.00", recipient_label: Spenden 2026}}
       - {id: r2, kind: special_expense, tax_year: 2025, value: {expense_class: donation, amount: "80.00", recipient_label: Kinderhilfe Sued}}
     expect:
-      - {group: donation, payee: Kinderhilfe Sued, booked: "30.00", typed: "10.00", difference: "20.00", allocations: [d2], ask_party: true, value: {expense_class: donation, amount: "20.00", recipient_label: Kinderhilfe Sued}}
+      - {group: donation, payee: Kinderhilfe Sued, booked: "30.00", typed: "10.00", difference: "20.00", allocations: [d2], value: {expense_class: donation, amount: "20.00", recipient_label: Kinderhilfe Sued}}
     gap: {donation: "20.00"}
 
   - name: a donation paid back in full proposes nothing
@@ -125,7 +125,7 @@ cases:
       - {id: r1, kind: special_expense, tax_year: 2026, value: {expense_class: donation, amount: "75.00", recipient_label: Tierhilfe Nord e.V.}}
       - {id: r2, kind: special_expense, tax_year: 2026, value: {expense_class: donation, amount: "75.00", recipient_label: Tierhilfe Nord e.V.}, supersedes: r1, withdrawn: true}
     expect:
-      - {group: donation, payee: Tierhilfe Nord e.V., booked: "75.00", typed: "0.00", difference: "75.00", allocations: [d1], ask_party: true, value: {expense_class: donation, amount: "75.00", recipient_label: Tierhilfe Nord e.V.}}
+      - {group: donation, payee: Tierhilfe Nord e.V., booked: "75.00", typed: "0.00", difference: "75.00", allocations: [d1], value: {expense_class: donation, amount: "75.00", recipient_label: Tierhilfe Nord e.V.}}
     gap: {donation: "75.00"}
 
   # --- Kita und Tagesmutter ------------------------------------------------------------------
@@ -229,7 +229,7 @@ cases:
       - {id: c1, kind: child, tax_year: 2025, value: {born_on: 2021-01-01}}
     expect:
       - {group: benefit, owner: A, booked: "300.00", typed: "0.00", difference: "300.00", allocations: [l1], benefit: elterngeld, blocking: true, value: {benefit: elterngeld, amount: "300.00"}}
-      - {group: donation, payee: Kinderhilfe Sued, booked: "20.00", typed: "0.00", difference: "20.00", allocations: [d1], ask_party: true, value: {expense_class: donation, amount: "20.00", recipient_label: Kinderhilfe Sued}}
+      - {group: donation, payee: Kinderhilfe Sued, booked: "20.00", typed: "0.00", difference: "20.00", allocations: [d1], value: {expense_class: donation, amount: "20.00", recipient_label: Kinderhilfe Sued}}
       - {group: childcare, payee: Kita Sonnenblume, booked: "100.00", typed: "0.00", difference: "100.00", allocations: [k1], child: c1, value: {child_id: c1, amount: "100.00", paid_to_account: true}}
       - {group: household_services, payee: Reinigung Blitz, booked: "90.00", typed: "0.00", difference: "90.00", allocations: [h1], needs: [labour_cost, service_class], value: {paid_to_account: true, source: own_invoice}}
     gap: {benefit: "300.00", donation: "20.00", childcare: "100.00"}

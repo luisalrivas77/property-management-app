@@ -80,7 +80,6 @@ class ProposalExpect(Schema):
     needs: list[BookedNeed] = Field(default_factory=list)
     benefit: str | None = None
     receipt_needed: bool = False
-    ask_party: bool = False
     blocking: bool = False
     child: str | None = None
     choices: list[str] = Field(default_factory=list)

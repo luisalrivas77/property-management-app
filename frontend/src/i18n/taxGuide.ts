@@ -177,7 +177,7 @@ export const taxGuide = defineMessages({
     proposalBenefitText:
       "Auf dem Konto ist eine Lohnersatzleistung eingegangen (Elterngeld, Mutterschaftsgeld, Krankengeld oder Arbeitslosengeld), die noch nicht eingetragen ist. Sie ist steuerfrei, hebt aber den Steuersatz auf das übrige Einkommen (Progressionsvorbehalt). Vorgeschlagen wird der Betrag vom Konto; bei Krankengeld zeigt die Bescheinigung der Krankenkasse einen höheren Betrag: diesen eintragen.",
     proposalDonationText:
-      "Als Spende gebucht und noch nicht eingetragen. Eine Spende zählt als Sonderausgabe. Für eine Zahlung über 300 € braucht es die Zuwendungsbestätigung des Empfängers. Spenden an Parteien rechnet die App nicht (§ 34g EStG).",
+      "Als Spende gebucht und noch nicht eingetragen. Eine Spende zählt als Sonderausgabe. Für eine Zahlung über 300 € braucht es die Zuwendungsbestätigung des Empfängers.",
     proposalChildcareText:
       "Als Kinderbetreuung gebucht und noch nicht eingetragen. Ein Teil der Kosten zählt, bis zu einem Höchstbetrag je Kind und Jahr, bis zum 14. Geburtstag, und nur bei Zahlung aufs Konto; die Berechnung macht die App. Essen, Schulgeld und Nachhilfe zählen nicht: diese Anteile vom Betrag abziehen.",
     proposalServicesText:
@@ -202,11 +202,6 @@ export const taxGuide = defineMessages({
     saving: "Speichern …",
     saved: "Übernommen.",
     cancel: "Abbrechen",
-    partyAsk: "An eine Partei?",
-    partyYes: "Ja",
-    partyNoHint: "Sonst: Betrag prüfen und übernehmen.",
-    partyLeftOut: "Spenden an Parteien rechnet die App nicht (§ 34g EStG). Dieser Vorschlag bleibt deshalb weg.",
-    partyUndo: "Doch keine Partei",
     uploadReceipt: "Zuwendungsbestätigung hochladen",
     uploadInvoice: "Rechnung hochladen",
     refusedTitle: "Eine Angabe zählt nicht",
@@ -376,7 +371,7 @@ export const taxGuide = defineMessages({
     proposalBenefitText:
       "A wage-replacement benefit (Elterngeld, Mutterschaftsgeld, Krankengeld or Arbeitslosengeld) came into the account and is not entered yet. It is tax-free but raises the tax rate on the other income (Progressionsvorbehalt, progression clause). The amount from the account is proposed; for Krankengeld the health insurer's certificate shows a higher amount: enter that one.",
     proposalDonationText:
-      "Booked as a donation and not entered yet. A donation counts as a special expense (Sonderausgabe). A single payment above €300 needs the recipient's donation receipt (Zuwendungsbestätigung). The app does not compute donations to political parties (§ 34g EStG).",
+      "Booked as a donation and not entered yet. A donation counts as a special expense (Sonderausgabe). A single payment above €300 needs the recipient's donation receipt (Zuwendungsbestätigung).",
     proposalChildcareText:
       "Booked as childcare and not entered yet. A share of the costs counts, up to a ceiling per child and year, up to the 14th birthday, and only when paid to an account; the app does the arithmetic. Meals, school fees and tutoring do not count: take those parts off the amount.",
     proposalServicesText:
@@ -401,11 +396,6 @@ export const taxGuide = defineMessages({
     saving: "Saving …",
     saved: "Applied.",
     cancel: "Cancel",
-    partyAsk: "To a political party?",
-    partyYes: "Yes",
-    partyNoHint: "Otherwise: check the amount and apply.",
-    partyLeftOut: "The app does not compute donations to political parties (§ 34g EStG). This suggestion is therefore left out.",
-    partyUndo: "Not a party after all",
     uploadReceipt: "Upload donation receipt (Zuwendungsbestätigung)",
     uploadInvoice: "Upload invoice",
     refusedTitle: "An entry does not count",
