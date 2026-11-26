@@ -29,6 +29,7 @@ from .history import (
     coin_returns,
     funds_returns,
     pegged_returns,
+    q4_returns,
     usd_per_eur,
 )
 
@@ -50,8 +51,8 @@ FX_ATTRIBUTION = "Source: ECB statistics; Source: Deutsche Bundesbank"
 def committed() -> dict[str, Any]:
     text = (files("hausbuch.rules.goal") / "history.yaml").read_text("utf-8")
     data = yaml.safe_load(text)
-    if not isinstance(data, dict) or "fx" not in data or "coins" not in data:
-        raise ValueError("rules/goal/history.yaml: fx and coins expected")
+    if not isinstance(data, dict) or not {"fx", "coins", "house_prices"} <= data.keys():
+        raise ValueError("rules/goal/history.yaml: fx, coins and house_prices expected")
     return data
 
 
@@ -134,4 +135,46 @@ def history(
     )
 
 
-__all__ = ["FUNDS_URL", "coin_series", "committed", "funds_series", "fx", "history"]
+HOUSE_PRICES = "house_prices"  # the house price series' key (§7.9 (e) items 1, 2)
+HOUSE_PRICES_NOTE = "nur Preise, ohne Miete und Kosten; Jahresrenditen Q4 zu Q4, eigene Berechnung"
+
+
+@cache
+def house_price_q4() -> dict[int, Decimal]:
+    """Each year's fourth-quarter value of Eurostat's German house price index (2015 = 100)
+    as committed; a year whose Q4 is not published yet is absent."""
+    block = committed()[HOUSE_PRICES]
+    out = {}
+    for quarter, value in block["values"].items():
+        year, q = str(quarter).split("-Q")
+        if q == "4":
+            out[int(year)] = Decimal(str(value))
+    return dict(sorted(out.items()))
+
+
+def house_price_series(q4: Mapping[int, Decimal] | None = None) -> Series:
+    """The house price series: Q4 of Y ÷ Q4 of Y−1 − 1 for each year with both (§7.9 (e) 2).
+    `q4` replaces the committed values (the fixtures' invented index); the source stays."""
+    block = committed()[HOUSE_PRICES]
+    return Series(
+        key=HOUSE_PRICES,
+        returns=q4_returns(house_price_q4() if q4 is None else q4),
+        source=str(block["source"]),
+        url=str(block["url"]),
+        licence=str(block["licence"]),
+        attribution=f"{block['attribution']}; {HOUSE_PRICES_NOTE}",
+        read_on=_read_on(block),
+    )
+
+
+__all__ = [
+    "FUNDS_URL",
+    "HOUSE_PRICES",
+    "coin_series",
+    "committed",
+    "funds_series",
+    "fx",
+    "history",
+    "house_price_q4",
+    "house_price_series",
+]

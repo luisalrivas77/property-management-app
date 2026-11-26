@@ -16,8 +16,9 @@ follow-up rate comes from the scenario only. A sale year not after today's year 
 (`scenario.sale_year_before_today`).
 """
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import date
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -121,6 +122,39 @@ def performance_projection(
         scenario_id=used_id,
         contexts=tax_contexts(conn),
     )
+
+
+def growth_projector(
+    conn: Connection, property_id: UUID, *, today: date, scenario_id: UUID
+) -> tuple[Levers, Decimal, Callable[[Decimal], Projection]]:
+    """Phase 10 §7.9 (e) items 1, 2 (the goal's property scenario): the saved scenario's
+    levers, the value its growth compounds from (its value today, else the price, as
+    rules/performance/projection's `_value`), and its projection with only the yearly value
+    growth replaced. The growth is not validated, so a fall in value (down to −50 %) can be
+    projected; the scenario's own bounds still hold for what a person saves. The facts are read
+    once and each growth projected once."""
+    facts = _facts(conn, property_id, today)
+    levers, used_id = _levers(conn, facts, today, scenario_id, {})
+    loans = {loan.id: loan.terms for loan in list_loans(conn, property_id)}
+    owners, inputs, contexts = owner_profiles(conn), income_facts(conn), tax_contexts(conn)
+    base = levers.today_value if levers.today_value is not None else facts.property.purchase_price
+    done: dict[Decimal, Projection] = {}
+
+    def at(growth: Decimal) -> Projection:
+        if growth not in done:
+            done[growth] = project(
+                facts,
+                levers.model_copy(update={"value_growth": growth}),
+                owners,
+                inputs,
+                today,
+                loans,
+                scenario_id=used_id,
+                contexts=contexts,
+            )
+        return done[growth]
+
+    return levers, base, at
 
 
 def property_flat_rate_check(conn: Connection, property_id: UUID, *, today: date) -> FlatRateCheck:

@@ -7586,6 +7586,34 @@
         }
       }
     },
+    "/api/household-goal/properties": {
+      "get": {
+        "summary": "Household Goal Properties",
+        "operationId": "household_goal_properties_api_household_goal_properties_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoalProperties"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/household-goal/plan": {
       "get": {
         "summary": "Household Goal Plan",
@@ -23149,6 +23177,173 @@
         ],
         "title": "GoalPoint",
         "description": "One point of the goal's chart (mockup 19f „So wie jetzt“): the goal's value at a month's\nend on the walk without change, and on the balanced route's walk while it closes. The\npoints are the first walked month, each December before the due month, and the due month."
+      },
+      "GoalProperties": {
+        "properties": {
+          "shown": {
+            "type": "boolean",
+            "title": "Shown"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalPropertiesReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "properties": {
+            "items": {
+              "$ref": "#/components/schemas/GoalPropertyGrowth"
+            },
+            "type": "array",
+            "title": "Properties"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "shown"
+        ],
+        "title": "GoalProperties",
+        "description": "`GET /household-goal/properties`: one card per property the goal's walk values at the\ndue month with its default scenario (none for a property kept without one, none for one\nsold before the due month). Computed on read, never stored; own use only."
+      },
+      "GoalPropertiesReason": {
+        "type": "string",
+        "enum": [
+          "generic_mode",
+          "no_goal",
+          "not_net_worth",
+          "goal_issue"
+        ],
+        "title": "GoalPropertiesReason",
+        "description": "Why no property card is shown."
+      },
+      "GoalPropertyGrowth": {
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Property Id"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available",
+            "default": false
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalRouteReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "typed_growth": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,6})?$",
+            "title": "Typed Growth"
+          },
+          "needed_growth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Needed Growth"
+          },
+          "sale_year": {
+            "type": "integer",
+            "title": "Sale Year"
+          },
+          "window_years": {
+            "type": "integer",
+            "title": "Window Years"
+          },
+          "windows": {
+            "type": "integer",
+            "title": "Windows"
+          },
+          "reached_windows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reached Windows"
+          },
+          "median": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median"
+          },
+          "best": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalVerdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thin": {
+            "type": "boolean",
+            "title": "Thin",
+            "default": false
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalReferenceSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "property_id",
+          "typed_growth",
+          "sale_year",
+          "window_years",
+          "windows"
+        ],
+        "title": "GoalPropertyGrowth",
+        "description": "One property's card on Anlagen › Immobilie: the yearly value growth this property alone\nwould need for the goal to be reached at the due month at today's saving (the typed fund\nand crypto rates kept; smallest to 0.1 % between −50 % and +100 %), beside the German house\nprice index over every window of `window_years` (Q4 to Q4 from 2005; prices only, no rent\nand no costs): `reached_windows` of `windows` reached it, their `median` and `best`\nannualised (each floored to 0.1 %), and the `verdict` as route 3 gives it. Under 5 windows\n`thin`. `available` false with `reason` out_of_range (no growth in range reaches it, the\nwindows still shown) or history_short (no window: the growth still shown)."
       },
       "GoalReferenceSource": {
         "properties": {
