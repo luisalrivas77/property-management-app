@@ -852,9 +852,9 @@ function AssumptionCard({ href, action }: { href: string; action: string }) {
 
 // --- the side panels (19f panels 4 and 5) ------------------------------------------------------
 
-function Footnote() {
+function Footnote({ follows = false }: { follows?: boolean }) {
   const t = useT(goalText);
-  return <p className="goal-note">{t.footnote}</p>;
+  return <p className="goal-note">{follows ? t.footnoteFollow : t.footnote}</p>;
 }
 
 /** The route the household follows, and the write that follows or stops following one. */
@@ -865,38 +865,42 @@ interface Follow {
 }
 
 /** „Diesem Weg folgen“ / „Nicht mehr folgen“ in a route's side panel (§7.9 (e) 3). `offered`:
- * the route has a return to follow today; stopping is always offered while it is followed. */
+ * the route has a return to follow today; stopping is always offered while it is followed. Ends
+ * the panel with its footnote, which names the one thing saved while the block is shown. */
 function FollowRoute({ route, offered, follow }: { route: GoalInvestment; offered: boolean; follow: Follow }) {
   const t = useT(goalText);
   const p = usePlanFormat();
   const { mode } = useGoalPlan();
   const { busy, error, run } = useRun();
   const following = follow.route === route;
-  if (mode === "generic" || (!offered && !following)) return null;
+  if (mode === "generic" || (!offered && !following)) return <Footnote />;
   return (
-    <div className="goal-c goal-follow" data-testid={`goal-follow-${route}`}>
-      <CardHead title={t.followTitle} tag={following ? <span className="goal-tag goal-tag-yes">{t.followingTag}</span> : null} />
-      <p className="goal-note">
-        {following && follow.since ? t.followingSince(p.date(follow.since)) : follow.route && !following ? t.followReplaces : t.followText}
-      </p>
-      <div className="row">
-        {following ? (
-          <>
-            <Link href="/assets" className="button-link secondary">
-              {t.followToAssets} ›
-            </Link>
-            <button type="button" className="secondary" disabled={busy} onClick={() => run(() => follow.write(null))}>
-              {t.unfollow}
+    <>
+      <div className="goal-c goal-follow" data-testid={`goal-follow-${route}`}>
+        <CardHead title={t.followTitle} tag={following ? <span className="goal-tag goal-tag-yes">{t.followingTag}</span> : null} />
+        <p className="goal-note">
+          {following && follow.since ? t.followingSince(p.date(follow.since)) : follow.route && !following ? t.followReplaces : t.followText}
+        </p>
+        <div className="row">
+          {following ? (
+            <>
+              <Link href="/assets" className="button-link secondary">
+                {t.followToAssets} ›
+              </Link>
+              <button type="button" className="secondary" disabled={busy} onClick={() => run(() => follow.write(null))}>
+                {t.unfollow}
+              </button>
+            </>
+          ) : (
+            <button type="button" disabled={busy} onClick={() => run(() => follow.write(route))}>
+              {t.follow}
             </button>
-          </>
-        ) : (
-          <button type="button" disabled={busy} onClick={() => run(() => follow.write(route))}>
-            {t.follow}
-          </button>
-        )}
+          )}
+        </div>
+        <ErrorNotice error={error} />
       </div>
-      <ErrorNotice error={error} />
-    </div>
+      <Footnote follows />
+    </>
   );
 }
 
@@ -915,7 +919,6 @@ function BalancedPanel({ goal, follow }: { goal: HouseholdGoal; follow: Follow }
       {balanced.saving != null ? <p>{t.balancedSaving(p.euro(balanced.saving))}</p> : null}
       <p>{balanced.closes && balanced.reached ? t.balancedReached(p.month(balanced.reached)) : t.balancedNotCloses}</p>
       <FollowRoute route="balanced" offered={balanced.return_rate != null && balanced.saving_extra != null} follow={follow} />
-      <Footnote />
     </div>
   );
 }
@@ -1018,7 +1021,6 @@ function MoreReturnPanel({ goal, follow }: { goal: HouseholdGoal; follow: Follow
         </div>
       ) : null}
       <FollowRoute route="more_return" offered={ret.available && ret.needed_return != null} follow={follow} />
-      <Footnote />
     </div>
   );
 }

@@ -111,6 +111,12 @@ function Overview({
               <Link href="/accounts">{t.openAccounts}</Link> <Link href="/documents">{t.openDocuments}</Link>
             </p>
           </section>
+          {/* A followed route with nothing invested yet still says how far it is (§7.9 (e) 3). */}
+          {tracking?.shown ? (
+            <div className="planning-kpis">
+              <GoalTrackingCard tracking={tracking} />
+            </div>
+          ) : null}
         </div>
       </DetailLayout>
     );

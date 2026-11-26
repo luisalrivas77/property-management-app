@@ -155,6 +155,7 @@ export const goalText = defineMessages({
       )[reason] ?? "",
     onTrackTitle: "Ihr seid auf Kurs",
     footnote: "Eine Rechnung aus euren Zahlen, kein Rat. Nichts wird gespeichert.",
+    footnoteFollow: "Eine Rechnung aus euren Zahlen, kein Rat. Gespeichert wird nur, welchem Weg ihr folgt.",
     // „Diesem Weg folgen“ (§7.9 (e) 3)
     followTitle: "Diesem Weg folgen",
     followingTag: "ihr folgt ihm",
@@ -430,6 +431,7 @@ export const goalText = defineMessages({
       )[reason] ?? "",
     onTrackTitle: "You are on track",
     footnote: "A calculation from your figures, not advice. Nothing is saved.",
+    footnoteFollow: "A calculation from your figures, not advice. Only the route you follow is saved.",
     followTitle: "Follow this route",
     followingTag: "you follow it",
     followText:
