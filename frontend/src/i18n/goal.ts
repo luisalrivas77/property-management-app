@@ -34,27 +34,11 @@ export const goalText = defineMessages({
         } as Record<string, string>
       )[issue] ?? "",
     percentReached: (percent: string) => `${percent} erreicht`,
-    tileLine: (percent: string, need: string, today: string) => `${percent} erreicht · nötig ${need} im Monat, heute ${today}`,
     today: (value: string) => `heute ${value}`,
-    targetIs: (value: string) => `Ziel: ${value}`,
-    left: (years: number, months: number) =>
-      [years > 0 ? `${years} ${years === 1 ? "Jahr" : "Jahre"}` : "", months > 0 || years === 0 ? `${months} ${months === 1 ? "Monat" : "Monate"}` : ""]
-        .filter(Boolean)
-        .join(" "),
-    stillLeft: (text: string) => `noch ${text}`,
-    needed: "Nötig im Monat",
-    neededSub: "gespart oder angelegt",
     saving: "Heute im Monat",
     savingSub: "Schnitt der abgeschlossenen Monate",
-    reachedAsIs: (month: string) => `Ohne Änderung erreicht ihr das Ziel im ${month}.`,
-    notReachedAsIs: "Ohne Änderung erreicht ihr das Ziel innerhalb der Rechnung nicht.",
     reachedWithBudget: (name: string, month: string) => `Mit eurem Budget „${name}“ erreicht ihr es im ${month}.`,
     notReachedWithBudget: (name: string) => `Mit eurem Budget „${name}“ reicht es in der Rechnung noch nicht.`,
-    unreachableTitle: "Kaum erreichbar",
-    unreachableByDue: (month: string, value: string) => `Bis ${month} kommt ihr ohne Änderung auf ${value}.`,
-    unreachableLater: (month: string) => `Das Ziel selbst erreicht ihr ohne Änderung erst im ${month}.`,
-    unreachableNever: "Das Ziel selbst erreicht ihr ohne Änderung innerhalb der Rechnung nicht.",
-    unreachableWhat: "Kein Ausgaben-Szenario schließt die Lücke bis dahin. Ihr könnt den Monat später oder den Betrag kleiner setzen, unter „Ziel ändern“.",
     // why there is no word yet
     issueNoProjection:
       "Ob ihr auf Kurs seid, rechnet Hausbuch aus, sobald es die kommenden Monate rechnen kann. Dafür fehlt noch, was unten steht; danach steht hier euer Weg zum Ziel.",
@@ -261,6 +245,10 @@ export const goalText = defineMessages({
     needMore: (count: number) => `${count} weitere`,
     aboveTarget: "Anlegbar jetzt",
     aboveTargetLine: "über dem Reserveziel",
+    atGoalBalanced: "am Ziel, ausgewogen",
+    aboveTargetText:
+      "Das Geld auf euren Reservekonten über eurem Reserveziel. Die Rechnung zum Ziel legt es an, zu den Renditen, die ihr eingetragen habt.",
+    toReserve: "Zur Reserve",
   },
   en: {
     title: "Your goal",
@@ -288,27 +276,11 @@ export const goalText = defineMessages({
         } as Record<string, string>
       )[issue] ?? "",
     percentReached: (percent) => `${percent} reached`,
-    tileLine: (percent, need, today) => `${percent} reached · needed ${need} a month, today ${today}`,
     today: (value) => `today ${value}`,
-    targetIs: (value) => `Goal: ${value}`,
-    left: (years, months) =>
-      [years > 0 ? `${years} ${years === 1 ? "year" : "years"}` : "", months > 0 || years === 0 ? `${months} ${months === 1 ? "month" : "months"}` : ""]
-        .filter(Boolean)
-        .join(" "),
-    stillLeft: (text) => `${text} left`,
-    needed: "Needed per month",
-    neededSub: "saved or invested",
     saving: "Today per month",
     savingSub: "mean of the closed months",
-    reachedAsIs: (month) => `Without a change you reach the goal in ${month}.`,
-    notReachedAsIs: "Without a change you do not reach the goal within the projection.",
     reachedWithBudget: (name, month) => `With your budget “${name}” you reach it in ${month}.`,
     notReachedWithBudget: (name) => `With your budget “${name}” it is not yet enough within the projection.`,
-    unreachableTitle: "Hardly reachable",
-    unreachableByDue: (month, value) => `By ${month} you get to ${value} without a change.`,
-    unreachableLater: (month) => `The goal itself you reach without a change only in ${month}.`,
-    unreachableNever: "The goal itself you do not reach without a change within the projection.",
-    unreachableWhat: "No spending scenario closes the gap by then. You can set a later month or a smaller amount, under “Change goal”.",
     issueNoProjection:
       "Whether you are on track, Hausbuch works out as soon as it can project the coming months. What it still needs for that is listed below; then your path to the goal appears here.",
     issueDuePassed: "Your goal's month has come or passed. Set a later month or a new goal.",
@@ -509,5 +481,9 @@ export const goalText = defineMessages({
     needMore: (count) => `${count} more`,
     aboveTarget: "Investable now",
     aboveTargetLine: "above the reserve target",
+    atGoalBalanced: "goal reached, balanced",
+    aboveTargetText:
+      "The money on your reserve accounts above your reserve target. The goal's calculation invests it at the returns you entered.",
+    toReserve: "To the reserve",
   },
 });

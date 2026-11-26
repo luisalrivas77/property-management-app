@@ -30,6 +30,7 @@ import {
   loadInbox,
   loadPaidIn,
   loadPayback,
+  loadPlanToday,
   loadMonthCashflow,
   loadNetWorthToday,
 } from "@/components/overviewTiles";
@@ -105,9 +106,13 @@ export default function OverviewPage() {
   const reminders = useLoad(loadReminders);
   const loadList = useCallback(() => gate.promise.then(loadProperties), [gate]);
   const propertyList = useLoad(loadList);
+  // „Anlegbar jetzt“ (mockup 19f panel 1) reads the household plan after the tiles; its tile
+  // appears once the plan says money sits above the reserve target.
+  const loadPlan = useCallback(() => gate.promise.then(loadPlanToday), [gate]);
+  const plan = useLoad(loadPlan);
   const detail = useDetail("kachel");
   const today = todayIso();
-  const tiles = { netWorth, health, goal, cashflow, inbox, paidIn, payback };
+  const tiles = { netWorth, health, goal, cashflow, inbox, paidIn, payback, plan };
   const properties = (propertyList.data ?? []).map((property) => ({ id: property.id, label: property.label }));
 
   const panel = isTileId(detail.id) ? <TilePanel id={detail.id} data={tiles} detail={detail} properties={properties} /> : null;

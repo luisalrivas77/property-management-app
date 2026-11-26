@@ -49,7 +49,6 @@ import { ALLOCATION_CATEGORY } from "./labels";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
 import { Loading } from "./ui";
 import { type Loaded, useLoad } from "./useLoad";
-import { type Mark, VerdictDot } from "./verdict";
 
 import "./householdGoal.css";
 
@@ -97,10 +96,6 @@ async function loadNoGoal(): Promise<GoalData | null> {
   return null;
 }
 
-// The tile's dot (D303): three marks only, so „Machbar“ and „Ehrgeizig“ share amber there; the
-// word pills on Haushalt › Ziel give each word its own colour (WordPill).
-const WORD_MARK: Record<GoalWord, Mark> = { none: "none", on_track: "green", feasible: "amber", ambitious: "amber", hardly: "red" };
-
 const SCENARIO_ORDER: GoalSpending[] = ["wants_only", "all_equal"];
 
 function isScenarioKind(id: string | null): id is "wants_only" | "all_equal" {
@@ -140,10 +135,6 @@ function scenarioName(t: GT, kind: GoalSpending): string {
   return kind === "wants_only" ? t.wantsOnly : kind === "all_equal" ? t.allEqual : t.own;
 }
 
-function leftText(t: GT, months: number): string {
-  return t.stillLeft(t.left(Math.floor(months / 12), months % 12));
-}
-
 /** The bar's width: the server's percent, at most full. A display width, never a figure. */
 function barWidth(percent: string): string {
   const value = Number(percent);
@@ -156,29 +147,32 @@ function categoryName(code: AllocationCategory): string {
 
 // --- Übersicht's tile ------------------------------------------------------------------------
 
-/** The tile's body under „Euer Ziel“ (a set goal): the word with its dot, the target, the bar
- * and „nötig … heute …“ in one line. Spans only: it sits inside the tile's link. */
+/** The tile's body under „Euer Ziel“ (mockup 19f panel 1): the target and its month, the word as
+ * its pill, the bar, and two figures (today, the month the balanced route reaches it). Every
+ * figure is the server's. */
 export function GoalTileBody({ goal }: { goal: HouseholdGoal }) {
   const t = useT(goalText);
   const p = usePlanFormat();
-  const mark = goal.word ? WORD_MARK[goal.word] : "none";
-  const percent = goal.percent != null ? p.percentValue(goal.percent) : null;
+  if (!goal.goal) return null;
+  const reached = goal.balanced?.reached ?? null;
   return (
     <>
-      <span className="tile-value tile-value-big tile-verdict">
-        <span className="tile-dot" data-mark={mark} aria-hidden="true" />
-        {goalWordText(t, goal)}
-      </span>
-      {goal.goal ? <span className="tile-sub">{goalTargetText(t, p, goal.goal)}</span> : null}
+      <GoalHeadline goal={goal} goalSet={goal.goal} />
+      {goal.word && goal.word !== "none" ? <WordPill word={goal.word} text={goalWordText(t, goal)} /> : <span className="tile-sub">{goalWordText(t, goal)}</span>}
       {goal.percent != null ? (
-        <span className="goal-bar goal-bar-tile" aria-hidden="true">
+        <span className="goal-bar goal-bar-tile" role="img" aria-label={t.percentReached(p.percentValue(goal.percent))}>
           <span style={{ width: barWidth(goal.percent) }} />
         </span>
       ) : null}
-      {percent != null ? (
-        <span className="tile-sub">
-          {goal.noetig != null && goal.heute != null ? t.tileLine(percent, p.euro(goal.noetig), p.euro(goal.heute)) : t.percentReached(percent)}
-        </span>
+      {goal.word && goal.word !== "none" ? (
+        <Stats count={2}>
+          <Stat value={p.euro(goal.value_today)} label={t.reserveToday} />
+          {reached ? (
+            <Stat value={p.month(reached)} label={t.atGoalBalanced} />
+          ) : (
+            <Stat value={goal.reached ? p.month(goal.reached) : "–"} label={t.atGoal} />
+          )}
+        </Stats>
       ) : null}
     </>
   );
@@ -201,79 +195,24 @@ function FormLink({ href, children, className }: { href: string; children: React
   );
 }
 
-/** The goal's word, target, progress and figures, its sentences and, while it has no word, why
- * and what to do (principle 7: every gap with its button). */
-export function GoalSummary({ goal, formHref, onChanged }: { goal: HouseholdGoal; formHref: string; onChanged: () => void }) {
+/** Übersicht's panel for „Euer Ziel“: the same card, and while the goal has no word, why and
+ * what to do (principle 7: every gap with its button). The rest is on Haushalt › Ziel. */
+export function GoalOverviewPanel({ goal, formHref, onChanged }: { goal: HouseholdGoal; formHref: string; onChanged: () => void }) {
   const t = useT(goalText);
   const p = usePlanFormat();
   if (!goal.goal) return null;
-  const mark = goal.word ? WORD_MARK[goal.word] : "none";
-  const budgetName = goal.choice?.spending ? scenarioName(t, goal.choice.spending) : null;
-  const due = p.month(goal.goal.due_month);
   return (
-    <div className="stack goal-summary">
-      <div className="verdict-word verdict-word-big">
-        <p className="verdict-word-text">
-          <VerdictDot mark={mark} />
-          {goalWordText(t, goal)}
-        </p>
-        <p className="muted">{goalTargetText(t, p, goal.goal)}</p>
+    <div className="stack">
+      <div className="goal-c">
+        <div className="goal-ch">
+          <h3>{t.title}</h3>
+          <FormLink href={formHref} className="goal-lnk">
+            {t.change}
+          </FormLink>
+        </div>
+        <GoalTileBody goal={goal} />
+        {goal.percent != null ? <p className="goal-one">{t.percentReached(p.percentValue(goal.percent))}</p> : null}
       </div>
-      {goal.percent != null ? (
-        <div className="goal-progress">
-          <p className="goal-progress-line">
-            <strong>{t.percentReached(p.percentValue(goal.percent))}</strong>
-            <span className="muted">
-              {t.today(p.euro(goal.value_today))}
-              {goal.target != null ? ` · ${t.targetIs(p.euro(goal.target))}` : ""}
-              {goal.months_left != null ? ` · ${leftText(t, goal.months_left)}` : ""}
-            </span>
-          </p>
-          <div className="goal-bar" role="presentation">
-            <span style={{ width: barWidth(goal.percent) }} />
-          </div>
-        </div>
-      ) : null}
-      {goal.noetig != null || goal.heute != null ? (
-        <div className="goal-figures">
-          {goal.noetig != null ? (
-            <div className="goal-figure">
-              <span className="goal-figure-label">{t.needed}</span>
-              <span className="goal-figure-value">{p.euro(goal.noetig)}</span>
-              <span className="muted goal-figure-sub">{t.neededSub}</span>
-            </div>
-          ) : null}
-          {goal.heute != null ? (
-            <div className="goal-figure">
-              <span className="goal-figure-label">{t.saving}</span>
-              <span className="goal-figure-value">{p.euro(goal.heute)}</span>
-              <span className="muted goal-figure-sub">{t.savingSub}</span>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-      {goal.word != null && goal.word !== "none" ? (
-        <p>{goal.reached ? t.reachedAsIs(p.month(goal.reached)) : t.notReachedAsIs}</p>
-      ) : null}
-      {budgetName && goal.word != null && goal.word !== "none" ? (
-        <p>{goal.reached_with_budget ? t.reachedWithBudget(budgetName, p.month(goal.reached_with_budget)) : t.notReachedWithBudget(budgetName)}</p>
-      ) : null}
-      {goal.word === "hardly" && goal.unreachable ? (
-        <div className="notice notice-warn goal-unreachable">
-          <p>
-            <strong>{t.unreachableTitle}</strong>
-          </p>
-          <p>{t.unreachableByDue(due, p.euro(goal.unreachable.reaches_by_due))}</p>
-          <p>{goal.unreachable.later ? t.unreachableLater(p.month(goal.unreachable.later)) : t.unreachableNever}</p>
-          <p>{t.unreachableWhat}</p>
-        </div>
-      ) : null}
-      {(goal.assumptions ?? []).map((a) => (
-        <p key={a.text} className="muted goal-assumption">
-          {a.text}{" "}
-          <Link href={a.href}>{a.action}</Link>
-        </p>
-      ))}
       <GoalIssue goal={goal} formHref={formHref} onChanged={onChanged} />
     </div>
   );
