@@ -1,0 +1,206 @@
+/* „Euer Plan“ (phase 10 §7.11 (h), D306; mockup 19i). The cards reuse householdGoal.css's
+ * `.goal-*` classes; here only the page head, the view toggle, the shared view's bar, the
+ * assumption chips, this month's ticks and the switches of „Was geteilt wird“. */
+
+.planp {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.planp-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.planp-head h1 {
+  margin: 0;
+}
+
+.planp-back {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-strong);
+  text-decoration: none;
+}
+
+.planp-views {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+
+.planp-views button {
+  min-height: 40px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-2);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.planp-views button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.planp-sharebar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--info-bg);
+  color: var(--text);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.planp-sharebar-go {
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+
+.planp-goal-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.planp-goal-foot b {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.planp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.planp-chips li {
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-tint);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.planp-steps {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.planp-steps li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--divider);
+  font-size: 14.5px;
+}
+
+.planp-steps li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.planp-step-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.planp-tick {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+}
+
+.planp-tick[data-done] {
+  border-color: var(--accent);
+  background: var(--accent) radial-gradient(circle, #fff 0 3px, transparent 3.5px);
+}
+
+.planp-panel p {
+  margin: 0;
+}
+
+.planp-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 14px;
+}
+
+.planp-sources {
+  font-size: 13px;
+}
+
+.planp-verdict {
+  margin-left: 6px;
+}
+
+.planp-switches {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.planp-switches li {
+  border-top: 1px solid var(--divider);
+}
+
+.planp-switches li:first-child {
+  border-top: 0;
+}
+
+.planp-switches label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 6px 0;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.planp-switch-sub {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.planp-switches input[type="checkbox"] {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+
+.planp-never {
+  font-size: 13px;
+  color: var(--text-2);
+}

@@ -37,6 +37,8 @@ export type HouseholdTab = (typeof HOUSEHOLD_TABS)[number];
 export const HOUSEHOLD_BUDGET = "/household?tab=budget";
 export const HOUSEHOLD_RESERVE = "/household?tab=reserve";
 export const HOUSEHOLD_GOAL = "/household?tab=ziel";
+/** „Euer Plan“ under Haushalt › Ziel (phase 10 §7.11 (h), D306). */
+export const HOUSEHOLD_PLAN_PAGE = "/household/plan";
 /** Haushalt › Durchspielen, the what-if (§7.10 (a), D299). */
 export const HOUSEHOLD_PLAY = "/household?tab=durchspielen";
 /** The foot of Haushalt › Budget, what was Planung › Anlegen. */
