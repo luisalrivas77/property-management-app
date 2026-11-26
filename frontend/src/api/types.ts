@@ -3661,12 +3661,35 @@ export interface paths {
         };
         /**
          * Get Tax Guide
-         * @description The year's five steps with their states, „Jetzt dran“, the Belege with their sender and
+         * @description The year's four steps with their states, „Jetzt dran“, the Belege with their sender and
          *     usual month, every open point with the step and form it belongs to, each form's result and
          *     the whole-return estimate's. A source that cannot be read for the year is named in
          *     `unavailable`; the rest is served.
          */
         get: operations["get_tax_guide_api_tax__tax_year__guide_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tax/{tax_year}/field-help": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Tax Field Help
+         * @description Per form and field of „Eure Angaben“ what it is, where to find it and an invented
+         *     example, in German and English, with the documents it points into (D294). A year without
+         *     its own file gets the latest earlier one with `reused_from`; before every file 422
+         *     tax.no_rule_set. The same for every household: no workspace data is read.
+         */
+        get: operations["get_tax_field_help_api_tax__tax_year__field_help_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8585,6 +8608,68 @@ export interface components {
             msg: string;
             /** Type */
             type: string;
+        };
+        /**
+         * FieldHelp
+         * @description The year's field help. reused_from: set by registry.field_help when the year has no
+         *     file of its own; the help is then the latest earlier year's.
+         */
+        FieldHelp: {
+            /** Tax Year */
+            tax_year: number;
+            /** Reused From */
+            reused_from?: number | null;
+            /** Sources */
+            sources: {
+                [key: string]: components["schemas"]["FieldHelpSource"];
+            };
+            /** Forms */
+            forms: {
+                [key: string]: {
+                    [key: string]: components["schemas"]["FieldHelpEntry"];
+                };
+            };
+        };
+        /**
+         * FieldHelpEntry
+         * @description One field's help. rare: the screen shows the field behind „Weitere Angaben“ unless it
+         *     is filled. source: a key of FieldHelp.sources, the document `where` points into.
+         */
+        FieldHelpEntry: {
+            /** Rare */
+            rare: boolean;
+            /** Source */
+            source: string;
+            de: components["schemas"]["FieldHelpText"];
+            en: components["schemas"]["FieldHelpText"];
+        };
+        /**
+         * FieldHelpSource
+         * @description A document the help points into. official: an official sample or instruction (a line
+         *     number in `where` was read from it); false for a paper with no official sample (a
+         *     payslip), whose labels differ by issuer.
+         */
+        FieldHelpSource: {
+            /** Official */
+            official: boolean;
+            /** Url */
+            url?: string | null;
+            /** De */
+            de: string;
+            /** En */
+            en: string;
+        };
+        /**
+         * FieldHelpText
+         * @description One language's help for one field. `example` uses invented numbers only.
+         */
+        FieldHelpText: {
+            /** What */
+            what: string;
+            /** Where */
+            where: string;
+            /** Example */
+            example: string;
         };
         /**
          * FieldOption
@@ -25354,6 +25439,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaxGuide"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_tax_field_help_api_tax__tax_year__field_help_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tax_year: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FieldHelp"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

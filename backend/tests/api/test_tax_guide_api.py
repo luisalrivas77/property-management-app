@@ -431,3 +431,20 @@ def test_booked_childcare_and_services_payloads_post_with_the_cards_fields(clien
     saved = create(client_a, "/api/return-inputs", body)
     assert saved["value"]["payee_label"] == proposal["payee"]
     assert _proposal_points(client_a, "return.services_booked") == []
+
+
+# --- Phase 10 §7.8 (b), D294: the field help of „Eure Angaben“ -------------------------------
+
+
+def test_the_field_help_is_served_per_form_and_field_in_both_languages(client_a, anonymous):
+    got = ok(client_a.get("/api/tax/2026/field-help"))
+    assert (got["tax_year"], got["reused_from"]) == (2026, None)
+    gross = got["forms"]["wage_certificate"]["gross"]
+    assert gross["source"] == "lstb_2026" and gross["rare"] is False
+    assert "Nr. 3" in gross["de"]["where"] and gross["en"]["what"]
+    assert got["sources"]["lstb_2026"]["official"] is True
+    later = ok(client_a.get("/api/tax/2027/field-help"))
+    assert (later["tax_year"], later["reused_from"]) == (2027, 2026)
+    refused = client_a.get("/api/tax/2025/field-help")
+    assert refused.status_code == 422 and refused.json()["code"] == "tax.no_rule_set"
+    assert anonymous.get("/api/tax/2026/field-help").status_code == 401

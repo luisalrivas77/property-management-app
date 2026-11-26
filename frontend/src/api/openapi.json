@@ -9517,7 +9517,7 @@
     "/api/tax/{tax_year}/guide": {
       "get": {
         "summary": "Get Tax Guide",
-        "description": "The year's five steps with their states, „Jetzt dran“, the Belege with their sender and\nusual month, every open point with the step and form it belongs to, each form's result and\nthe whole-return estimate's. A source that cannot be read for the year is named in\n`unavailable`; the rest is served.",
+        "description": "The year's four steps with their states, „Jetzt dran“, the Belege with their sender and\nusual month, every open point with the step and form it belongs to, each form's result and\nthe whole-return estimate's. A source that cannot be read for the year is named in\n`unavailable`; the rest is served.",
         "operationId": "get_tax_guide_api_tax__tax_year__guide_get",
         "parameters": [
           {
@@ -9539,6 +9539,48 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TaxGuide"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tax/{tax_year}/field-help": {
+      "get": {
+        "summary": "Get Tax Field Help",
+        "description": "Per form and field of „Eure Angaben“ what it is, where to find it and an invented\nexample, in German and English, with the documents it points into (D294). A year without\nits own file gets the latest earlier one with `reused_from`; before every file 422\ntax.no_rule_set. The same for every household: no workspace data is read.",
+        "operationId": "get_tax_field_help_api_tax__tax_year__field_help_get",
+        "parameters": [
+          {
+            "name": "tax_year",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 2100,
+              "minimum": 2000,
+              "title": "Tax Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldHelp"
                 }
               }
             }
@@ -22271,6 +22313,179 @@
         ],
         "title": "FieldError",
         "description": "One validation error, whitelisted to these three keys: never input, ctx or url (§3.6)."
+      },
+      "FieldHelp": {
+        "properties": {
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "reused_from": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2100.0,
+                "minimum": 2000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reused From"
+          },
+          "sources": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FieldHelpSource"
+            },
+            "type": "object",
+            "minProperties": 1,
+            "title": "Sources"
+          },
+          "forms": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/FieldHelpEntry"
+              },
+              "type": "object"
+            },
+            "propertyNames": {
+              "enum": [
+                "wage_certificate",
+                "payslip",
+                "commute",
+                "home_office",
+                "work_room",
+                "work_equipment",
+                "telecom",
+                "professional_association",
+                "training",
+                "other_expense",
+                "other_insurance",
+                "replacement_income",
+                "vorsorge_override",
+                "child",
+                "childcare_cost",
+                "household_services",
+                "special_expense",
+                "expected_gross_pay",
+                "owner"
+              ]
+            },
+            "type": "object",
+            "minProperties": 1,
+            "title": "Forms"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tax_year",
+          "sources",
+          "forms"
+        ],
+        "title": "FieldHelp",
+        "description": "The year's field help. reused_from: set by registry.field_help when the year has no\nfile of its own; the help is then the latest earlier year's."
+      },
+      "FieldHelpEntry": {
+        "properties": {
+          "rare": {
+            "type": "boolean",
+            "title": "Rare"
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Source"
+          },
+          "de": {
+            "$ref": "#/components/schemas/FieldHelpText"
+          },
+          "en": {
+            "$ref": "#/components/schemas/FieldHelpText"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rare",
+          "source",
+          "de",
+          "en"
+        ],
+        "title": "FieldHelpEntry",
+        "description": "One field's help. rare: the screen shows the field behind „Weitere Angaben“ unless it\nis filled. source: a key of FieldHelp.sources, the document `where` points into."
+      },
+      "FieldHelpSource": {
+        "properties": {
+          "official": {
+            "type": "boolean",
+            "title": "Official"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "de": {
+            "type": "string",
+            "minLength": 1,
+            "title": "De"
+          },
+          "en": {
+            "type": "string",
+            "minLength": 1,
+            "title": "En"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "official",
+          "de",
+          "en"
+        ],
+        "title": "FieldHelpSource",
+        "description": "A document the help points into. official: an official sample or instruction (a line\nnumber in `where` was read from it); false for a paper with no official sample (a\npayslip), whose labels differ by issuer."
+      },
+      "FieldHelpText": {
+        "properties": {
+          "what": {
+            "type": "string",
+            "maxLength": 400,
+            "minLength": 1,
+            "title": "What"
+          },
+          "where": {
+            "type": "string",
+            "maxLength": 400,
+            "minLength": 1,
+            "title": "Where"
+          },
+          "example": {
+            "type": "string",
+            "maxLength": 400,
+            "minLength": 1,
+            "title": "Example"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "what",
+          "where",
+          "example"
+        ],
+        "title": "FieldHelpText",
+        "description": "One language's help for one field. `example` uses invented numbers only."
       },
       "FieldOption": {
         "properties": {
