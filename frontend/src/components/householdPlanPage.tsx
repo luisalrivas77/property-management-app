@@ -121,7 +121,8 @@ export function PlanPageView() {
     router.replace(`${pathname}${query ? `?${query}` : ""}${window.location.hash}`, { scroll: false });
   };
 
-  const data = state.data;
+  // Only an answer of the view asked for is shown: never „Für euch“'s figures under „Zum Teilen“.
+  const data = state.data?.view === (share ? "share" : "own") ? state.data : undefined;
   const panel = data && detail.id ? <Panel data={data} id={detail.id} share={share} code={code} onClose={detail.close} onWritten={state.reload} /> : null;
 
   return (
@@ -147,7 +148,7 @@ export function PlanPageView() {
         </a>
       ) : null}
       <DetailLayout panel={panel}>
-        <Loading state={state}>{(plan) => <Cards plan={plan} />}</Loading>
+        <Loading state={{ ...state, data }}>{(plan) => <Cards plan={plan} />}</Loading>
       </DetailLayout>
     </section>
   );
@@ -779,15 +780,19 @@ function OtherPanel({ plan }: { plan: PlanPage }) {
 }
 
 /** „Übernehmen“: the balanced route's spending changes as the default scenario's budget, read
- * from GET /household-goal at the moment of the write (the plan's answer carries no changes). */
-async function adoptBalanced(): Promise<void> {
+ * from GET /household-goal at the moment of the write (the plan's answer carries no changes).
+ * Without a balanced route with changes at that moment nothing is written, so the household's
+ * saved spending changes are never replaced by none. */
+async function adoptBalanced(noRoute: string): Promise<void> {
   const goal = await loadGoal();
+  const changes = goal.balanced?.spending_changes ?? [];
+  if (changes.length === 0) throw new Error(noRoute);
   const current = currentDefault(await loadScenarioHistory());
   const levers = fillLevers(current?.levers);
   await saveDefaultScenario(
     {
       ...levers,
-      spending_changes: goal.balanced?.spending_changes ?? [],
+      spending_changes: changes,
       goal_choice: { ...(levers.goal_choice ?? {}), spending: "own", spending_chosen_on: todayIso() },
     },
     current,
@@ -807,7 +812,7 @@ function MonthPanel({ plan, onWritten, onDone }: { plan: PlanPage; onWritten: ()
     setBusy(true);
     setError(null);
     try {
-      await adoptBalanced();
+      await adoptBalanced(t.adoptNoRoute);
       onWritten();
       onDone();
     } catch (caught) {

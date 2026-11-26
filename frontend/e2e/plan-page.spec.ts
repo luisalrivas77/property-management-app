@@ -308,6 +308,33 @@ test("Zum Teilen: the shared view with the default switches; a switch asks again
   await expect(main.getByRole("link", { name: /^Wenn es schlechter läuft$/ })).toBeVisible();
 });
 
+test("while the shared answer loads, „Für euch“'s exact figures and account names are gone", async ({ page, signedIn }) => {
+  void signedIn;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route(
+    (url) => url.pathname === "/api/household-goal/plan",
+    async (route: Route) => {
+      const query = new URL(route.request().url()).searchParams;
+      if (query.get("view") !== "share") return route.fulfill({ json: ownPlan() });
+      await held;
+      return route.fulfill({ json: sharedPlan(query) });
+    },
+  );
+  await page.goto("/household/plan#d-plan-heute");
+  await expect(detail(page, "Heute")).toContainText(GIRO);
+  await expect(page.locator(".planp-cards")).toContainText("312.400");
+
+  await page.getByRole("button", { name: "Zum Teilen" }).click();
+  await expect(page).toHaveURL(/\?ansicht=teilen/);
+  await expect(page.locator("body")).not.toContainText("312.400");
+  await expect(page.locator("body")).not.toContainText(GIRO);
+
+  release();
+  await expect(page.locator(".planp-cards")).toContainText("rund 310.000 €");
+  await expect(page.locator("body")).not.toContainText(GIRO);
+});
+
 test("Übernehmen posts the balanced route's spending changes after the in-page confirmation", async ({ page, signedIn }) => {
   void signedIn;
   const goal: Goal = { kind: "net_worth", target: "500000.00", due_month: monthsAhead(62), set_on: TODAY };
