@@ -349,7 +349,7 @@ test("a booked Lohnersatz line is proposed under Eure Angaben and taken over onc
   const dialog = page.getByRole("dialog", { name: "Vorschlag übernehmen" });
   await expect(dialog.getByLabel("Betrag", { exact: true })).toHaveValue(euroInput(line.amount));
   // The sample's purpose text names no benefit, so the person picks it.
-  await dialog.getByLabel("Art der Leistung", { exact: true }).selectOption("elterngeld");
+  await dialog.getByRole("combobox", { name: "Art der Leistung" }).selectOption("elterngeld");
   await dialog.getByRole("button", { name: "Übernehmen" }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByRole("listitem").filter({ hasText: "Lohnersatzleistung aus dem Konto" })).toHaveCount(0);
