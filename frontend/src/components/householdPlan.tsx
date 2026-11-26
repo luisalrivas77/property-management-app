@@ -35,14 +35,15 @@ import {
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { useT } from "@/i18n";
-import { goalText } from "@/i18n/goal";
 import { monthBudget } from "@/i18n/monthBudget";
+import { goalText } from "@/i18n/goal";
 import { lineLabel, planning, type PlanningText } from "@/i18n/planning";
 import { playText } from "@/i18n/play";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import {
   ASSUMPTIONS,
   BUFFER_LEVER,
+  HOUSEHOLD_BUDGET,
   HOUSEHOLD_PLAY,
   HOUSEHOLD_RESERVE,
   planTodoTarget,
@@ -54,7 +55,7 @@ import {
   staleAssumptionsTarget,
 } from "@/lib/planningRoutes";
 
-import { DetailLayout, useDetail } from "./DetailPanel";
+import { DetailLayout, DetailPanel, useDetail } from "./DetailPanel";
 import { Field } from "./form";
 import { todayIso } from "./format";
 import { HealthTodoItem } from "./healthFigures";
@@ -75,7 +76,7 @@ import {
 } from "./healthShared";
 import { percentInput, toSignedMoneyString } from "./input";
 import { ALLOCATION_CATEGORY } from "./labels";
-import { type GoalView, useGoalView } from "./householdGoal";
+import { CardHead, type GoalView, Stat, Stats, useGoalView } from "./householdGoal";
 import { PlanExplanationPanel } from "./planExplanation";
 import { applyPlay, NO_PLAY, plannedCount, type PlayChanges } from "./playDraft";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
@@ -283,7 +284,9 @@ const NO_PLAN = {} as HouseholdPlan;
 const EMPTY_LEVERS = fillLevers(undefined);
 
 /** What each lever beside its figure saves (§7.10 (a) 7). */
-const RESERVE_KEYS = ["reserve_target_months", "reserve_accounts"] as const;
+// The reserve target, its accounts and the reserve's yearly rate (D304, typed in the same form;
+// the form changes only `value_change.reserve`, the depot and crypto rates are kept as read).
+const RESERVE_KEYS = ["reserve_target_months", "reserve_accounts", "value_change"] as const;
 const BUFFER_KEYS = ["buffer_percent", "plan_overrides"] as const;
 const RATE_KEYS = ["value_change", "net_worth_years"] as const;
 
@@ -332,6 +335,7 @@ export function PlanProvider({
   const [playRound, setPlayRound] = useState(0);
   const goals = useDetail("goals");
   const budgetClass = useDetail("budget");
+  const reserveCard = useDetail(RESERVE_CARD);
 
   const data = state.data;
   const enough = data !== undefined && data.health.window.enough && data.plan.surplus != null;
@@ -357,6 +361,20 @@ export function PlanProvider({
         setDraftState(null);
         setEpoch((value) => value + 1);
       }
+    },
+    info: {
+      plan: data?.plan ?? null,
+      mode: data?.mode,
+      // „In Durchspielen ansehen“ (mockup 19f): the balanced route's cuts as Durchspielen's draft.
+      playSpending: enough
+        ? (spending) => {
+            setPlay((previous) => ({
+              ...previous,
+              spending: { ...previous.spending, ...Object.fromEntries(spending.map((change) => [change.code, change])) },
+            }));
+            setPlayRound((n) => n + 1);
+          }
+        : null,
     },
   });
 
@@ -555,6 +573,8 @@ export function PlanProvider({
           footer={dirty ? saveBar : null}
         />
       );
+    } else if (isReserveCard(reserveCard.id)) {
+      panel = <ReserveCardPanel id={reserveCard.id} data={ready.shown} backLabel={backLabel} onClose={reserveCard.close} />;
     }
   }
   if (panel === null && goalView.panel) panel = goalView.panel;
@@ -812,32 +832,25 @@ function BudgetTab({ ready }: { ready: PlanReady }) {
 function ReserveTab({ ready }: { ready: PlanReady }) {
   const t = useT(planning);
   const p = useT(playText);
-  const f = usePlanFormat();
   const { shown, onChanged } = ready;
-  const closedMonths = shown.health.window.months ?? [];
-  const newest = shown.plan.newest_closed ?? closedMonths[closedMonths.length - 1] ?? "";
   const todos = (shown.plan.todos ?? []).filter((todo) => todo.code !== "rate_missing");
+  // Only the three cards of 19f panel 6 (cards, not text, 25 Nov 2026): the base months sit in
+  // „Bedarf im Monat“'s panel, the paths to the reserve target in the Reserve card's panel.
   return (
     <>
       <PlannedChanges levers={ready.data.plan.levers} />
-      <p className="muted">
-        {t.baseLine(closedMonths.length, f.monthRange(closedMonths))}
-        {t.basePaths(f.longDate(newest ? monthEnd(newest) : null))}{" "}
-        <Link href={`/household?monat=${newest}`}>{t.baseMonths}</Link>
-      </p>
       <PlanTodos todos={todos} onChanged={onChanged} />
       <DirtyNotice text={t.dirtyNotice} />
-      <ReserveKpis data={shown} />
+      <ReserveCards data={shown} />
       <InlineLever anchor={RESERVE_LEVER} title={p.changeReserve} keys={RESERVE_KEYS} ready={ready}>
-        {(levers, setLevers) => (
+        {(levers, setLevers, setInvalid) => (
           <>
             <ReserveLever data={ready.data} draft={levers} setDraft={setLevers} />
             <ReserveAccountsBlock data={ready.data} draft={levers} setDraft={setLevers} />
+            <ReserveRateField draft={levers} setDraft={setLevers} onValidity={setInvalid} />
           </>
         )}
       </InlineLever>
-      <Paths data={shown} />
-      <ReserveAccountsCard data={shown} />
     </>
   );
 }
@@ -998,62 +1011,239 @@ function unsigned(value: string): string {
   return value.startsWith("-") ? value.slice(1) : value;
 }
 
-function ReserveKpis({ data }: { data: PlanData }) {
+// --- Haushalt › Reserve as mockup 19f panel 6 --------------------------------------------------
+
+/** The detail kind of the Reserve tab's cards; each card's head opens its explanation. */
+const RESERVE_CARD = "reservekarte";
+const RESERVE_CARDS = ["reserve", "anlegbar", "bedarf"] as const;
+type ReserveCardId = (typeof RESERVE_CARDS)[number];
+
+function isReserveCard(id: string | null): id is ReserveCardId {
+  return id !== null && (RESERVE_CARDS as readonly string[]).includes(id);
+}
+
+/** The reserve's need codes, largest first: an order for display, never a figure. */
+function needRows(codes: Record<string, string> | undefined): [string, string][] {
+  return Object.entries(codes ?? {}).sort((a, b) => Number(b[1]) - Number(a[1]));
+}
+
+/** The flat's shortfall in the need (the rental cash's mean while it is below 0), or null. */
+function flatShortfall(plan: HouseholdPlan): string | null {
+  const rental = surplusRow(plan, "mean_rental_cash");
+  return rental && rental.amount.startsWith("-") ? unsigned(rental.amount) : null;
+}
+
+/** Three cards (19f panel 6): the reserve with its accounts, what can be invested now and each
+ * month, and the monthly need it is measured in. Every figure is the server's (D269); each card's
+ * head opens its explanation in the side panel (cards, not text, 25 Nov 2026). */
+function ReserveCards({ data }: { data: PlanData }) {
+  const t = useT(goalText);
+  const p = useT(playText);
+  const f = usePlanFormat();
   const { plan } = data;
   const reserve = plan.reserve;
-  const t = useT(planning);
-  const f = usePlanFormat();
+  const rate = plan.levers.value_change?.reserve ?? null;
+  const counted = (reserve?.accounts ?? []).filter((account) => account.origin !== "removed");
+  const label = (id: string) => data.accounts.find((account) => account.id === id)?.label ?? id;
+  const investable = surplusRow(plan, "investable")?.amount ?? null;
+  const needs = needRows(reserve?.need_codes);
+  const shown = needs.slice(0, 3);
+  const more = needs.length - shown.length;
+  const needsOnly = reserve?.need_basis === "needs";
   return (
-    <div className="planning-kpis">
-      <div className="planning-kpi planning-kpi-main">
-        <p className="planning-kpi-label">{t.kpiReserve}</p>
-        <p className="planning-kpi-value">{f.euro(reserve?.amount)}</p>
-        <p className="planning-kpi-sub">{reserve?.months != null ? t.kpiReserveMonths(f.short(reserve.months)) : t.kpiReserveNoNeed}</p>
+    <div className="goal-cards">
+      <div className="goal-c">
+        <CardHead kind={RESERVE_CARD} id="reserve" title={t.reserveTitle} />
+        <Stats count={3}>
+          <Stat value={f.euro(reserve?.amount)} label={t.reserveToday} />
+          <Stat
+            value={reserve?.months != null ? t.reserveMonths(f.short(reserve.months)) : "–"}
+            label={t.reserveTarget(f.short(reserve?.target_months ?? plan.levers.reserve_target_months))}
+            warn={reserve?.state === "below"}
+          />
+          <Stat value={rate != null ? f.ratio(rate) : t.reserveNoRate} label={t.reserveRateLabel} />
+        </Stats>
+        {counted.length > 0 ? (
+          <div className="goal-rows">
+            {counted.map((account) => (
+              <div key={account.account_id} className="goal-rw">
+                <span>
+                  {label(account.account_id)}
+                  {account.kind === "depot" ? <span className="goal-tag goal-tag-yes">{t.reserveCounts}</span> : null}
+                </span>
+                <b>{f.signedEuro(account.balance)}</b>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <a className="goal-lnk" href={`#${RESERVE_LEVER}`}>
+          {p.changeReserve} ›
+        </a>
       </div>
-      <div className="planning-kpi">
-        <p className="planning-kpi-label">{t.kpiGap}</p>
-        <p className="planning-kpi-value">{f.euro(reserve?.gap)}</p>
-        <p className="planning-kpi-sub">
-          {t.kpiTarget(f.euro(reserve?.target), f.short(plan.levers.reserve_target_months))}{" "}
-          <LeverLink anchor={RESERVE_LEVER}>{t.change}</LeverLink>
-        </p>
+      <div className="goal-c goal-c-excess">
+        <CardHead kind={RESERVE_CARD} id="anlegbar" title={t.investableTitle} />
+        <Stats count={2}>
+          <Stat value={plan.above_target != null ? f.euro(plan.above_target) : "–"} label={t.investableNow} />
+          <Stat value={investable != null ? f.signedEuro(investable) : "–"} label={t.investableMonthly} />
+        </Stats>
       </div>
-      <div className="planning-kpi">
-        <p className="planning-kpi-label">{t.kpiNeed}</p>
-        <p className="planning-kpi-value">{f.euro(reserve?.need)}</p>
-        <p className="planning-kpi-sub">{t.kpiNeedSub}</p>
+      <div className="goal-c">
+        <CardHead
+          kind={RESERVE_CARD}
+          id="bedarf"
+          title={t.needTitle}
+          tag={needsOnly ? <span className="goal-tag goal-tag-no">{t.needOnly}</span> : undefined}
+        />
+        <span className="goal-n">{f.euro(reserve?.need)}</span>
+        {shown.length > 0 ? (
+          <div className="goal-rows">
+            {shown.map(([code, amount]) => (
+              <div key={code} className="goal-rw">
+                <span>{categoryName(code)}</span>
+                <b>{f.euro(amount)}</b>
+              </div>
+            ))}
+            {more > 0 ? (
+              <div className="goal-rw">
+                <span className="muted">{t.needMore(more)}</span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
-/** The accounts the reserve counts today, each with the balance the server counted. */
-function ReserveAccountsCard({ data }: { data: PlanData }) {
-  const t = useT(planning);
+/** A Reserve card's side panel: what the figures are, every row behind them and where to change
+ * them. */
+function ReserveCardPanel({ id, data, backLabel, onClose }: { id: ReserveCardId; data: PlanData; backLabel: string; onClose: () => void }) {
+  const t = useT(goalText);
+  const pl = useT(planning);
+  const p = useT(playText);
   const f = usePlanFormat();
-  const accounts = data.plan.reserve?.accounts ?? [];
-  const label = (id: string) => data.accounts.find((account) => account.id === id)?.label ?? id;
-  return (
-    <section className="card stack" aria-labelledby="reserve-accounts-title">
-      <div className="planning-card-head">
-        <h2 id="reserve-accounts-title">{t.reserveAccountsTitle}</h2>
-        <span className="spacer" />
-        <LeverLink anchor={RESERVE_LEVER}>
-          {t.change} <span aria-hidden="true">›</span>
-        </LeverLink>
-      </div>
-      {accounts.length > 0 ? (
-        <ul className="household-rows">
-          {accounts.map((account) => (
-            <li key={account.account_id}>
-              <span>{label(account.account_id)}</span>
-              <span>{f.signedEuro(account.balance)}</span>
-            </li>
+  const { plan } = data;
+  const reserve = plan.reserve;
+  const label = (accountId: string) => data.accounts.find((account) => account.id === accountId)?.label ?? accountId;
+  let title: string;
+  let body: ReactNode;
+  if (id === "reserve") {
+    const accounts = reserve?.accounts ?? [];
+    const depot = accounts.find((account) => account.kind === "depot" && account.origin !== "removed");
+    title = t.reserveTitle;
+    body = (
+      <>
+        <div className="goal-rows">
+          <div className="goal-rw">
+            <span>{t.reserveToday}</span>
+            <b>{f.euro(reserve?.amount)}</b>
+          </div>
+          <div className="goal-rw">
+            <span>{reserve ? t.reserveTargetOf(f.short(reserve.target_months)) : t.reserveTargetAmount}</span>
+            <b>{f.euro(reserve?.target)}</b>
+          </div>
+          <div className="goal-rw">
+            <span>{t.reserveGap}</span>
+            <b>{f.euro(reserve?.gap)}</b>
+          </div>
+        </div>
+        <p>{t.reserveWhatText}</p>
+        {accounts.length > 0 ? (
+          <>
+            <p className="goal-kicker">{t.reserveAccountsHead}</p>
+            <div className="goal-rows">
+              {accounts.map((account) => (
+                <div key={account.account_id} className="goal-rw">
+                  <span>
+                    {label(account.account_id)}
+                    {account.origin === "removed" ? (
+                      <span className="goal-tag goal-tag-no">{t.reserveNotCounted}</span>
+                    ) : account.kind === "depot" ? (
+                      <span className="goal-tag goal-tag-yes">{t.reserveCounts}</span>
+                    ) : null}
+                  </span>
+                  <b>{f.signedEuro(account.balance)}</b>
+                </div>
+              ))}
+            </div>
+            {depot ? <p>{t.reserveDepotText(f.date(depot.as_of))}</p> : null}
+          </>
+        ) : null}
+        <p>{t.reserveRateText}</p>
+        <p>
+          <a href={`#${RESERVE_LEVER}`} className="button-link secondary">
+            {p.changeReserve} ›
+          </a>
+        </p>
+        <Paths data={data} />
+      </>
+    );
+  } else if (id === "anlegbar") {
+    const investable = surplusRow(plan, "investable")?.amount ?? null;
+    title = t.investableTitle;
+    body = (
+      <>
+        <div className="goal-rows">
+          <div className="goal-rw">
+            <span>{t.investableNow}</span>
+            <b>{plan.above_target != null ? f.euro(plan.above_target) : "–"}</b>
+          </div>
+          <div className="goal-rw">
+            <span>{t.investableMonthly}</span>
+            <b>{investable != null ? f.signedEuro(investable) : "–"}</b>
+          </div>
+        </div>
+        <p>{t.investableNowText}</p>
+        <p>{t.investableMonthlyText}</p>
+        <p>
+          <Link href={HOUSEHOLD_BUDGET} className="button-link secondary">
+            {t.toBudget} ›
+          </Link>
+        </p>
+      </>
+    );
+  } else {
+    const shortfall = flatShortfall(plan);
+    const closedMonths = data.health.window.months ?? [];
+    const newest = plan.newest_closed ?? closedMonths[closedMonths.length - 1] ?? "";
+    title = t.needTitle;
+    body = (
+      <>
+        <p className="goal-n">{f.euro(reserve?.need)}</p>
+        <p>{reserve?.need_basis === "needs" ? t.needText : t.needTextRegular}</p>
+        {reserve?.need_basis === "needs" && reserve.need_basis_from ? <p>{t.needSince(f.month(reserve.need_basis_from))}</p> : null}
+        <div className="goal-rows">
+          {needRows(reserve?.need_codes).map(([code, amount]) => (
+            <div key={code} className="goal-rw">
+              <span>{categoryName(code)}</span>
+              <b>{f.euro(amount)}</b>
+            </div>
           ))}
-        </ul>
-      ) : null}
-      <p className="muted">{t.reserveWhat}</p>
-    </section>
+          {shortfall ? (
+            <div className="goal-rw">
+              <span>{t.needFlat}</span>
+              <b>{f.euro(shortfall)}</b>
+            </div>
+          ) : null}
+        </div>
+        <p className="muted">{pl.kpiNeedSub}</p>
+        <p>
+          {pl.baseLine(closedMonths.length, f.monthRange(closedMonths))}{" "}
+          <Link href={`/household?monat=${newest}`}>{pl.baseMonths}</Link>
+        </p>
+        <p>{t.needMoveText}</p>
+        <p>
+          <Link href={HOUSEHOLD_BUDGET} className="button-link secondary">
+            {t.toBudget} ›
+          </Link>
+        </p>
+      </>
+    );
+  }
+  return (
+    <DetailPanel title={title} backLabel={backLabel} onClose={onClose}>
+      <div className="stack goal-panel">{body}</div>
+    </DetailPanel>
   );
 }
 
@@ -1091,6 +1281,53 @@ function ReserveLever({ data, draft, setDraft }: { data: PlanData; draft: Househ
         {t.leverReserveSub(f.euro(reserve?.need), f.euro(regular?.amount))}
         {flatShortfall ? t.leverFlat(f.euro(flatShortfall)) : ""}
       </p>
+    </div>
+  );
+}
+
+/** The reserve's yearly rate (D304): the household's own assumption, the app proposing none;
+ * empty means none (the reserve does not grow in the goal's walk), a typed 0 is a rate. */
+function ReserveRateField({ draft, setDraft, onValidity }: { draft: HouseholdLevers; setDraft: SetDraft; onValidity: (invalid: boolean) => void }) {
+  const t = useT(planning);
+  const tg = useT(goalText);
+  const id = useId();
+  const [text, setText] = useState(() => percentText(draft.value_change?.reserve));
+  const [error, setError] = useState<string | undefined>(undefined);
+  // An invalid entry left when the form closes must not keep blocking a save elsewhere.
+  useEffect(() => () => onValidity(false), [onValidity]);
+
+  function fail(message: string | undefined) {
+    setError(message);
+    onValidity(message !== undefined);
+  }
+
+  function apply(raw: string) {
+    setText(raw);
+    if (raw.trim() === "") {
+      fail(undefined);
+      setDraft((previous) => ({ ...previous, value_change: { ...previous.value_change, reserve: null } }));
+      return;
+    }
+    const parsed = toSignedRate(raw, 3);
+    if (!parsed.ok) {
+      fail(parsed.message);
+      return;
+    }
+    const value = parsed.value;
+    if (Math.abs(Number(value)) > 0.5) {
+      fail(t.rateRange);
+      return;
+    }
+    fail(undefined);
+    setDraft((previous) => ({ ...previous, value_change: { ...previous.value_change, reserve: value } }));
+  }
+
+  return (
+    <div className="stack">
+      <Field id={id} label={tg.reserveRateField} errors={error ? [error] : []}>
+        <input type="text" inputMode="decimal" className="health-limit-input" value={text} onChange={(event) => apply(event.target.value)} />
+      </Field>
+      <p className="planning-lever-sub">{tg.reserveRateHint}</p>
     </div>
   );
 }
@@ -1491,73 +1728,61 @@ function Paths({ data }: { data: PlanData }) {
     return { title: t.pathPaused(name(key.slice("pause:".length))), sub: runningText };
   }
 
+  const newest = plan.newest_closed;
   return (
-    <section className="card stack" aria-labelledby="paths-title">
-      <h2 id="paths-title">{t.pathsTitle}</h2>
-      <p className="muted">
-        {t.pathsIntro(f.euro(target), f.euro(plan.reserve?.amount), f.longDate(plan.newest_closed ? monthEnd(plan.newest_closed) : null))}
+    <section className="stack" aria-labelledby="paths-title">
+      <h3 id="paths-title" className="goal-kicker">
+        {t.pathsTitle}
+      </h3>
+      <p>
+        {t.pathsIntro(f.euro(target), f.euro(plan.reserve?.amount), f.longDate(newest ? monthEnd(newest) : null))}
       </p>
-      <div className="table-wrap">
-        <table className="planning-table">
-          <thead>
-            <tr>
-              <th scope="col">{t.pathCol}</th>
-              <th scope="col" className="num">
-                {t.toReserveCol}
-              </th>
-              <th scope="col">{t.reachedCol}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paths.map((path) => {
-              const { title, sub } = label(path.key, path.paused ?? []);
-              const after = later?.paths.find((p) => p.key === path.key);
-              return (
-                <tr key={path.key}>
-                  <th scope="row">
-                    {title}
-                    {sub ? <span className="muted"> · {sub}</span> : null}
-                  </th>
-                  <td className="num">
-                    {t.perMonth(f.euro(path.to_reserve_first_month))}
-                    {after && later ? (
-                      <span className="muted">
-                        <br />
-                        {t.from(f.month(later.month))}: {t.perMonth(f.euro(after.to_reserve))}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td>
-                    {path.reached ? (
-                      <>
-                        {f.month(path.reached)}
-                        {path.months_needed != null ? <span className="muted"> · {t.inMonths(path.months_needed)}</span> : null}
-                      </>
-                    ) : path.used_up ? (
-                      <>{t.pathUsedUp(f.month(path.used_up))}</>
-                    ) : (
-                      <>{t.pathNotIn(Math.round(plan.levers.horizon_months / 12), f.euro(path.reserve_at_horizon))}</>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="goal-rows">
+        {paths.map((path) => {
+          const { title, sub } = label(path.key, path.paused ?? []);
+          const after = later?.paths.find((p) => p.key === path.key);
+          return (
+            <div key={path.key} className="goal-path" data-path={path.key}>
+              <div className="goal-rw">
+                <span>
+                  {title}
+                  {sub ? <span className="goal-note">{sub}</span> : null}
+                </span>
+                <b>
+                  {path.reached
+                    ? f.month(path.reached)
+                    : path.used_up
+                      ? t.pathUsedUp(f.month(path.used_up))
+                      : t.pathNotIn(Math.round(plan.levers.horizon_months / 12), f.euro(path.reserve_at_horizon))}
+                </b>
+              </div>
+              <div className="goal-rw goal-rw-sub">
+                <span>{t.toReserveCol}</span>
+                <b>{t.perMonth(f.euro(path.to_reserve_first_month))}</b>
+              </div>
+              {after && later ? (
+                <div className="goal-rw goal-rw-sub">
+                  <span>{t.from(f.month(later.month))}</span>
+                  <b>{t.perMonth(f.euro(after.to_reserve))}</b>
+                </div>
+              ) : null}
+              {path.reached && path.months_needed != null ? (
+                <div className="goal-rw goal-rw-sub">
+                  <span>{t.reachedCol}</span>
+                  <b>{t.inMonths(path.months_needed)}</b>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
-      {others.length > 0 && data.mode !== "generic" ? <p className="muted">{t.pathsOthers(others.map(name).join(", "))}</p> : null}
-      {plan.paths_on_rental_account ? (
-        <p className="muted">
-          {t.pathsRental(f.euro(plan.paths_on_rental_account))}
-        </p>
-      ) : null}
-      {later ? (
-        <p className="muted">
-          {t.pathsLater(f.month(later.month), f.signedEuro(later.flat), f.signedEuro(later.before), later.before_is_mean)} {t.pathsAssume}
-        </p>
-      ) : (
-        <p className="muted">{t.pathsAssume}</p>
-      )}
+      {others.length > 0 && data.mode !== "generic" ? <p className="goal-note">{t.pathsOthers(others.map(name).join(", "))}</p> : null}
+      {plan.paths_on_rental_account ? <p className="goal-note">{t.pathsRental(f.euro(plan.paths_on_rental_account))}</p> : null}
+      <p className="goal-note">
+        {later
+          ? `${t.pathsLater(f.month(later.month), f.signedEuro(later.flat), f.signedEuro(later.before), later.before_is_mean)} ${t.pathsAssume}`
+          : t.pathsAssume}
+      </p>
     </section>
   );
 }

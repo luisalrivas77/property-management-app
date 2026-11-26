@@ -22437,6 +22437,18 @@
               }
             ],
             "title": "Return Rate"
+          },
+          "reached": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reached"
           }
         },
         "additionalProperties": false,
@@ -22760,6 +22772,40 @@
         "title": "GoalMoreSaving",
         "description": "Route 2 „Mehr anlegen“ (D302): the smallest whole-euro `extra` a month from next month\nto the due month that reaches the target on the walk; `noetig` = Heute + extra, None when\nthe extra is above the mean income. It never decides the word."
       },
+      "GoalPoint": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Month"
+          },
+          "as_is": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "As Is"
+          },
+          "balanced": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balanced"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month",
+          "as_is"
+        ],
+        "title": "GoalPoint",
+        "description": "One point of the goal's chart (mockup 19f „So wie jetzt“): the goal's value at a month's\nend on the walk without change, and on the balanced route's walk while it closes. The\npoints are the first walked month, each December before the due month, and the due month."
+      },
       "GoalReferenceSource": {
         "properties": {
           "key": {
@@ -22833,6 +22879,27 @@
         ],
         "title": "GoalRouteReason",
         "description": "Why route 3 has no count (§7.11 „Route 3 as decided for the build“ 5, 6; D310\namended). `not_built` went with route 3's build."
+      },
+      "GoalSale": {
+        "properties": {
+          "year": {
+            "type": "integer",
+            "title": "Year"
+          },
+          "net_proceeds": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Net Proceeds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "year",
+          "net_proceeds"
+        ],
+        "title": "GoalSale",
+        "description": "A property walked to its own sale year (D301 (a) 4): the year and phase 4's net\nproceeds, which the walk puts on the reserve row in its December (mockup 19f „Verkauf“)."
       },
       "GoalScenario": {
         "properties": {
@@ -24693,6 +24760,32 @@
               }
             ],
             "title": "Used Up"
+          },
+          "short_at_due": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short At Due"
+          },
+          "sales": {
+            "items": {
+              "$ref": "#/components/schemas/GoalSale"
+            },
+            "type": "array",
+            "title": "Sales"
+          },
+          "path": {
+            "items": {
+              "$ref": "#/components/schemas/GoalPoint"
+            },
+            "type": "array",
+            "title": "Path"
           },
           "scenarios": {
             "items": {

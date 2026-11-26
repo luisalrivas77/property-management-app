@@ -191,6 +191,9 @@ class GoalBalanced(Schema):
     # The yearly return walked for funds and crypto: route 3's median when it decides the word
     # (D302: „the invested mix at its median-window return“), None for the typed rates.
     return_rate: GoalReturn | None = None
+    # The first month the walk with these cuts and `saving_extra` reaches the target, up to the
+    # due month (mockup 19f „am Ziel“); None while it does not close.
+    reached: YearMonth | None = None
 
 
 class GoalAssumption(Schema):
@@ -200,6 +203,24 @@ class GoalAssumption(Schema):
     text: str
     action: str
     href: str
+
+
+class GoalSale(Schema):
+    """A property walked to its own sale year (D301 (a) 4): the year and phase 4's net
+    proceeds, which the walk puts on the reserve row in its December (mockup 19f „Verkauf“)."""
+
+    year: int
+    net_proceeds: Money
+
+
+class GoalPoint(Schema):
+    """One point of the goal's chart (mockup 19f „So wie jetzt“): the goal's value at a month's
+    end on the walk without change, and on the balanced route's walk while it closes. The
+    points are the first walked month, each December before the due month, and the due month."""
+
+    month: YearMonth
+    as_is: Money
+    balanced: Money | None = None
 
 
 class GoalUnreachable(Schema):
@@ -228,6 +249,10 @@ class HouseholdGoal(Schema):
     reached: YearMonth | None = None  # without change; None when not within the projection
     reached_with_budget: YearMonth | None = None  # with the adopted budget
     used_up: YearMonth | None = None
+    # target − projected when the walk without change misses (mockup 19f „fehlen“), else None
+    short_at_due: NonNegativeMoney | None = None
+    sales: list[GoalSale] = Field(default_factory=list)  # each property sold in the walk
+    path: list[GoalPoint] = Field(default_factory=list)  # up to the due month
     scenarios: list[GoalScenario] = Field(default_factory=list)  # route 4
     more_saving: GoalMoreSaving | None = None  # route 2
     more_return: GoalMoreReturn | None = None  # route 3

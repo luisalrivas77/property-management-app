@@ -486,7 +486,7 @@ test("a budget target and the reserve target, each saved in its place, keep Durc
   // only itself over the stored default: the target stays and the spending draft stays a draft.
   await tabs.getByRole("link", { name: "Reserve", exact: true }).click();
   await expect(page).toHaveURL("/household?tab=reserve");
-  await page.locator('.planning-kpi a[href="#reserve-ziel"]').click();
+  await page.locator('.goal-c a[href="#reserve-ziel"]').click();
   const lever = page.getByRole("form", { name: "Reserve-Ziel ändern" });
   await lever.getByRole("button", { name: "Reserveziel erhöhen" }).click();
   await lever.getByRole("button", { name: "Speichern" }).click();
@@ -613,7 +613,7 @@ test("a rate left invalid on Anlagen does not block a save from Haushalt › Res
   // Each lever saves its own keys: the invalid rate left on Anlagen does not reach Reserve's.
   await navigateTo(page, "Haushalt");
   await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Reserve", exact: true }).click();
-  await page.locator('.planning-kpi a[href="#reserve-ziel"]').click();
+  await page.locator('.goal-c a[href="#reserve-ziel"]').click();
   const lever = page.getByRole("form", { name: "Reserve-Ziel ändern" });
   await lever.getByRole("button", { name: "Reserveziel erhöhen" }).click();
   const save = lever.getByRole("button", { name: "Speichern" });
@@ -622,6 +622,47 @@ test("a rate left invalid on Anlagen does not block a save from Haushalt › Res
   await expect.poll(() => posted.length).toBe(1);
   expect(posted[0]?.levers?.reserve_target_months).toBe("6.5");
   expect(posted[0]?.levers?.value_change?.depot).toBe("0.05");
+});
+
+test("the reserve's own rate is typed in „Reserve-Ziel ändern“: out of range blocks the save, a rate and an empty field are saved with the depot's rate kept (D304)", async ({
+  page,
+  signedIn,
+}) => {
+  void signedIn;
+  const { posted } = await planWithScenarios(page);
+  await serve(page, "/api/household-budget", () => budget({}));
+
+  await page.goto("/household?tab=reserve#reserve-ziel");
+  let lever = page.getByRole("form", { name: "Reserve-Ziel ändern" });
+  let rate = lever.getByLabel("Rendite der Reserve (% pro Jahr)");
+  await expect(rate).toHaveValue("");
+  await rate.fill("80");
+  await expect(lever.getByText("Zwischen −50 % und 50 % pro Jahr.")).toBeVisible();
+  await expect(lever.getByRole("button", { name: "Speichern" })).toBeDisabled();
+  expect(posted).toHaveLength(0);
+
+  await rate.fill("2");
+  await expect(lever.getByText("Zwischen −50 % und 50 % pro Jahr.")).toHaveCount(0);
+  await lever.getByRole("button", { name: "Speichern" }).click();
+  await expect.poll(() => posted.length).toBe(1);
+  expect(typeof posted[0]?.levers?.value_change?.reserve).toBe("string");
+  expect(Number(posted[0]?.levers?.value_change?.reserve)).toBe(0.02);
+  // The form changes the reserve's rate only.
+  expect(posted[0]?.levers?.value_change?.depot).toBe("0.05");
+  expect(posted[0]?.levers?.value_change?.crypto ?? null).toBeNull();
+  // The card shows the saved rate as the household's assumption.
+  await expect(page.locator(".goal-c").filter({ hasText: "eure Annahme" })).toContainText("2");
+
+  // Emptied, the reserve has no rate again (it does not grow in the goal's walk).
+  await page.goto("/household?tab=reserve#reserve-ziel");
+  lever = page.getByRole("form", { name: "Reserve-Ziel ändern" });
+  rate = lever.getByLabel("Rendite der Reserve (% pro Jahr)");
+  await expect(rate).toHaveValue("2");
+  await rate.fill("");
+  await lever.getByRole("button", { name: "Speichern" }).click();
+  await expect.poll(() => posted.length).toBe(2);
+  expect(posted[1]?.levers?.value_change?.reserve ?? null).toBeNull();
+  expect(posted[1]?.levers?.value_change?.depot).toBe("0.05");
 });
 
 // --- Phone width, light and dark (phase 10 §7.9 (a)) -------------------------------------------
@@ -672,7 +713,14 @@ for (const scheme of ["light", "dark"] as const) {
     await page.screenshot({ path: test.info().outputPath(`durchspielen-planned-${scheme}.png`) });
 
     await page.goto("/household?tab=reserve");
+    // 19f panel 6: the tab holds the three cards only; the paths open in the Reserve card's panel.
+    await expect(page.getByRole("region", { name: "Wege zum Reserveziel" })).toHaveCount(0);
+    await expect(page.getByText("Basis: ", { exact: false })).toHaveCount(0);
+    await page.locator('a[href="#d-reservekarte-reserve"]').click();
     await expect(page.getByRole("region", { name: "Wege zum Reserveziel" })).toBeVisible();
+    expect(await pageWidth()).toBeLessThanOrEqual(390);
+    await page.goto("/household?tab=reserve#d-reservekarte-bedarf");
+    await expect(page.getByRole("link", { name: "Monate ansehen" })).toBeVisible();
     // The saved plan's change is named on Reserve, Ziel and Anlagen too (§7.10 (a) 6).
     await expect(page.getByTestId("planned-changes").first()).toContainText("mit 1 geplanten Änderung");
     expect(await pageWidth()).toBeLessThanOrEqual(390);

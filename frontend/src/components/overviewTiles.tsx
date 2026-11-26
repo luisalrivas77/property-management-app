@@ -23,8 +23,8 @@ import type { components } from "@/api/types";
 import { CashflowCard, lastFullMonth, loadCashflow, type HouseholdCashflow } from "@/components/cashflow";
 import { DetailPanel, type Detail } from "@/components/DetailPanel";
 import { HealthTodoList } from "@/components/healthFigures";
-import { GOAL_FORM_HREF, GOAL_PAGE, GoalSummary, GoalTileBody, type HouseholdGoal } from "@/components/householdGoal";
-import type { Health } from "@/components/healthShared";
+import { GOAL_FORM_HREF, GOAL_PAGE, GoalOverviewPanel, GoalTileBody, type HouseholdGoal } from "@/components/householdGoal";
+import type { Health, HouseholdPlan } from "@/components/healthShared";
 import { NetWorthSection } from "@/components/netWorth";
 import { payInputsHref } from "@/components/taxYear";
 import { Loading } from "@/components/ui";
@@ -36,7 +36,7 @@ import { overview as catalogue } from "@/i18n/overview";
 import { verdictText } from "@/i18n/verdict";
 import { Icon } from "@/lib/icons";
 import { recentInbox } from "@/lib/inboxCount";
-import { propertyPlanningHref } from "@/lib/planningRoutes";
+import { HOUSEHOLD_RESERVE, propertyPlanningHref } from "@/lib/planningRoutes";
 
 import "./overviewTiles.css";
 
@@ -49,7 +49,7 @@ type PropertiesPayback = components["schemas"]["PropertiesPayback"];
 type PropertyPayback = components["schemas"]["PropertyPayback"];
 type T = (typeof catalogue)["de"];
 
-export type TileId = "nettovermoegen" | "gesundheit" | "ziel" | "cashflow" | "immobilie" | "depot" | "krypto" | "bank" | "pruefen";
+export type TileId = "nettovermoegen" | "gesundheit" | "ziel" | "anlegbar" | "cashflow" | "immobilie" | "depot" | "krypto" | "bank" | "pruefen";
 
 export interface MonthCashflow {
   month: string;
@@ -87,6 +87,14 @@ export const loadPaidIn = (): Promise<PropertiesPaidIn> => ok(api.GET("/api/prop
 /** The cash back against the own money put in, the break-even year and a sale today, per property
  * and in total, all computed by the server (Luis, 21 Nov 2026: „Both“). */
 export const loadPayback = (): Promise<PropertiesPayback> => ok(api.GET("/api/properties/payback"));
+/** „Anlegbar jetzt“ (phase 10 §7.11 (d), D301): the plan's money above the reserve target. */
+export const loadPlanToday = (): Promise<HouseholdPlan> => ok(api.GET("/api/household-plan"));
+
+/** The money above the reserve target while it is above 0, else null (the tile is not shown). */
+function aboveTarget(plan: Loaded<HouseholdPlan> | undefined): string | null {
+  const value = plan?.data?.above_target;
+  return value != null && Number(value) > 0 ? value : null;
+}
 
 export interface TileData {
   netWorth: Loaded<NetWorth>;
@@ -96,6 +104,8 @@ export interface TileData {
   inbox: Loaded<InboxItem[]>;
   paidIn: Loaded<PropertiesPaidIn>;
   payback: Loaded<PropertiesPayback>;
+  /** Read after the tiles (Übersicht's gate); only „Anlegbar jetzt“ reads it. */
+  plan?: Loaded<HouseholdPlan>;
 }
 
 /** The server's percent points with one decimal ("-0.3") as de „-0,3 %“, en „-0.3%“; unlike
@@ -221,6 +231,7 @@ export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail
   const tg = useT(goalText);
   const noGoal = goal.data !== undefined && (goal.data.word === "none" || !goal.data.goal);
   const items = inbox.data ?? [];
+  const excess = aboveTarget(data.plan);
 
   return (
     <section className="tiles" aria-label={t.tilesLabel}>
@@ -260,10 +271,23 @@ export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail
             <span className="tile-sub">{tg.noGoal}</span>
           </Link>
         ) : (
-          <Tile id="ziel" detail={detail} className="tile-wide tile-goal" name={tg.title}>
-            <Wait state={goal}>{(value) => <GoalTileBody goal={value} />}</Wait>
-          </Tile>
+          // Mockup 19f panel 1: the card opens its summary; „Zum Ziel ›“ goes to Haushalt › Ziel.
+          <div className="tile tile-wide tile-goal">
+            <a {...detail.linkProps("ziel")} className="tile-goal-open">
+              <span className="tile-name">{tg.title}</span>
+              <Wait state={goal}>{(value) => <GoalTileBody goal={value} />}</Wait>
+            </a>
+            <Link href={GOAL_PAGE} className="tile-goal-go">
+              {tg.toGoal} ›
+            </Link>
+          </div>
         )}
+        {excess != null ? (
+          <Tile id="anlegbar" detail={detail} className="tile-wide tile-excess" name={tg.aboveTarget}>
+            <span className="tile-value">{f.money(excess)}</span>
+            <span className="tile-sub">{tg.aboveTargetLine}</span>
+          </Tile>
+        ) : null}
         <Tile id="cashflow" detail={detail} className="tile-wide tile-cashflow" name={t.cashflow(f.month(cashflow.data?.month ?? lastFullMonth()))}>
           <Wait state={cashflow}>
             {({ cashflow: month, householdRate }) =>
@@ -579,6 +603,7 @@ const TITLES: Record<TileId, (t: T) => string> = {
   nettovermoegen: (t) => t.netWorth,
   gesundheit: (t) => t.health,
   ziel: (t) => t.goal,
+  anlegbar: () => "",
   cashflow: (t) => t.cashflow(""),
   immobilie: (t) => t.property,
   depot: (t) => t.depot,
@@ -607,7 +632,8 @@ export function TilePanel({
   const { netWorth, health, goal, cashflow, inbox, paidIn, payback } = data;
   const tv = useT(verdictText);
   const tg = useT(goalText);
-  const title = id === "cashflow" ? t.cashflow(f.month(cashflow.data?.month ?? lastFullMonth())) : TITLES[id](t);
+  const title =
+    id === "cashflow" ? t.cashflow(f.month(cashflow.data?.month ?? lastFullMonth())) : id === "anlegbar" ? tg.aboveTarget : TITLES[id](t);
   const single = properties.length === 1 ? properties[0] : undefined;
 
   let body: ReactNode;
@@ -650,7 +676,7 @@ export function TilePanel({
           {(value) => (
             <>
               {value.goal ? (
-                <GoalSummary goal={value} formHref={GOAL_FORM_HREF} onChanged={goal.reload} />
+                <GoalOverviewPanel goal={value} formHref={GOAL_FORM_HREF} onChanged={goal.reload} />
               ) : (
                 <p className="muted">{tg.noGoalText}</p>
               )}
@@ -660,6 +686,17 @@ export function TilePanel({
         </Loading>
       );
       break;
+    case "anlegbar": {
+      const excess = aboveTarget(data.plan);
+      body = (
+        <>
+          <p className="tile-value tile-value-big">{excess != null ? f.money(excess) : "–"}</p>
+          <p className="muted">{tg.aboveTargetText}</p>
+          <Go href={HOUSEHOLD_RESERVE}>{tg.toReserve}</Go>
+        </>
+      );
+      break;
+    }
     case "cashflow": {
       const month = cashflow.data?.month ?? lastFullMonth();
       body = (
