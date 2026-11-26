@@ -65,6 +65,13 @@ def facts(
     )
 
 
+# Three of A's owner questions, unanswered.
+OWNER_QUESTIONS_A = [
+    OpenQuestion(key=f"owner.{key}", scope="owner", owner_id=A)
+    for key in ("tax_class", "commute", "telecom")
+]
+
+
 def kinds(result: rule.GuideResult) -> list[str]:
     return [s.kind for s in result.steps]
 
@@ -127,13 +134,14 @@ def test_the_stored_rule_version_does_not_read_this_module():
 # --- the steps ------------------------------------------------------------------------------
 
 
-def test_five_steps_in_order_and_a_second_property_adds_a_second_immobilie_step():
+def test_four_steps_in_order_and_a_second_property_adds_a_second_immobilie_step():
+    """Phase 10 §7.8 (b), D294: the Jahresfragen are no step of their own any more."""
     one = rule.guide(facts())
-    assert kinds(one) == ["angaben", "property", "questions", "documents", "review"]
+    assert kinds(one) == ["angaben", "property", "documents", "review"]
     two = rule.guide(
         facts(properties=[rule.PropertyFacts(P1, [], []), rule.PropertyFacts(P2, [], [])])
     )
-    assert kinds(two) == ["angaben", "property", "property", "questions", "documents", "review"]
+    assert kinds(two) == ["angaben", "property", "property", "documents", "review"]
     assert [s.property_id for s in two.steps if s.kind == "property"] == [P1, P2]
 
 
@@ -155,6 +163,7 @@ def test_the_review_step_is_done_only_when_every_other_step_is():
             owners=[rule.OwnerFacts(A, None, (), no_pay=True)],
             answered=5,
             total=8,
+            open_questions=OWNER_QUESTIONS_A,
         )
     )
     review = result.steps[-1]
@@ -164,7 +173,8 @@ def test_the_review_step_is_done_only_when_every_other_step_is():
         0,
         None,
     )
-    assert [s.state for s in result.steps] == ["open", "done", "open", "open", "waiting"]
+    assert [s.state for s in result.steps] == ["open", "done", "open", "waiting"]
+    assert result.steps[0].open == 4  # the no-pay point and the three questions
     assert result.steps_done == 1  # the Immobilie step only
     assert result.ready is False
     assert result.next_step == 0
@@ -178,7 +188,12 @@ def test_the_review_step_waits_with_a_month_only_for_belege_still_to_come():
         date(2027, 1, 1),
     )
     with_questions = rule.guide(
-        facts(properties=[rule.PropertyFacts(P1, [zins], [])], answered=5, total=8)
+        facts(
+            properties=[rule.PropertyFacts(P1, [zins], [])],
+            answered=7,
+            total=8,
+            open_questions=[OpenQuestion(key="household.donations", scope="household")],
+        )
     )
     assert (with_questions.steps[-1].state, with_questions.steps[-1].waiting_from) == (
         "waiting",
@@ -186,30 +201,109 @@ def test_the_review_step_waits_with_a_month_only_for_belege_still_to_come():
     )
 
 
-def test_open_questions_make_jetzt_dran_the_questions_step():
-    result = rule.guide(facts(answered=5, total=8))
-    questions = result.steps[2]
-    assert (questions.state, questions.open, questions.done, questions.total) == ("open", 3, 5, 8)
-    assert result.next_step == 2
+def test_open_questions_count_in_eure_angaben_and_in_their_propertys_step():
+    """Phase 10 §7.8 (b), D294: an owner's or the household's open question is open in Eure
+    Angaben, a property's in that property's step; never a point of its own."""
+    result = rule.guide(
+        facts(
+            properties=[rule.PropertyFacts(P1, [], []), rule.PropertyFacts(P2, [], [])],
+            answered=5,
+            total=8,
+            open_questions=[
+                OpenQuestion(key="owner.commute", scope="owner", owner_id=A),
+                OpenQuestion(key="household.children", scope="household"),
+                OpenQuestion(key="property.trips", scope="property", property_id=P2),
+            ],
+        )
+    )
+    assert [(s.kind, s.state, s.open) for s in result.steps] == [
+        ("angaben", "open", 2),
+        ("property", "done", 0),
+        ("property", "open", 1),
+        ("documents", "done", 0),
+        ("review", "waiting", 0),
+    ]
+    assert result.points == []
+    assert result.next_step == 0
+    assert result.ready is False
+    only_property = rule.guide(
+        facts(
+            answered=7,
+            total=8,
+            open_questions=[OpenQuestion(key="property.trips", scope="property", property_id=P1)],
+        )
+    )
+    assert [s.state for s in only_property.steps] == ["done", "open", "done", "waiting"]
+    assert only_property.next_step == 1
+
+
+def test_a_property_question_without_a_property_step_counts_in_eure_angaben():
+    """A property not owned in the year has no Immobilie step, yet the questionnaire asks about
+    it: its open question holds Eure Angaben, so it still holds „bereit“ as the questions step
+    did."""
+    result = rule.guide(
+        facts(
+            answered=7,
+            total=8,
+            open_questions=[OpenQuestion(key="property.trips", scope="property", property_id=P2)],
+        )
+    )
+    assert [(s.kind, s.state, s.open) for s in result.steps][:2] == [
+        ("angaben", "open", 1),
+        ("property", "done", 0),
+    ]
+    assert result.ready is False
+
+
+def test_an_unreadable_questionnaire_never_lets_angaben_or_a_property_read_done():
+    result = rule.guide(facts(answered=None, total=None, incomplete=True))
+    assert [(s.kind, s.state, s.open) for s in result.steps] == [
+        ("angaben", "waiting", 0),
+        ("property", "waiting", 0),
+        ("documents", "done", 0),
+        ("review", "waiting", 0),
+    ]
+    assert result.next_step is None and result.ready is False
+
+
+def test_the_questionnaires_own_warnings_are_never_points():
+    """return.questionnaire_open and tax_export.questions_open stand for the open questions,
+    which the steps count themselves."""
+    result = rule.guide(
+        facts(
+            estimate_warnings=[warning(WarningCode.RETURN_QUESTIONNAIRE_OPEN, open="1")],
+            answered=7,
+            total=8,
+            open_questions=[OpenQuestion(key="household.children", scope="household")],
+        )
+    )
+    assert result.points == []
+    assert result.steps[0].open == 1
+    assert rule.STEP_OF_WARNING["return.questionnaire_open"] == "angaben"
+    assert rule.STEP_OF_WARNING["tax_export.questions_open"] == "angaben"
 
 
 def test_jetzt_dran_is_the_first_open_step_in_order():
     no_split = warning(WarningCode.AFA_NO_SPLIT)
     proof = warning(WarningCode.PAYMENT_PROOF_MISSING, document=str(uuid4()))
     result = rule.guide(
-        facts(properties=[rule.PropertyFacts(P1, [], [proof, no_split])], answered=5, total=8)
+        facts(
+            properties=[rule.PropertyFacts(P1, [], [proof, no_split])],
+            answered=7,
+            total=8,
+            open_questions=[OpenQuestion(key="property.trips", scope="property", property_id=P1)],
+        )
     )
-    assert [s.state for s in result.steps] == ["done", "open", "open", "done", "open"]
-    assert result.next_step == 1  # the Immobilie step comes before the questions
+    assert [s.state for s in result.steps] == ["done", "open", "done", "open"]
+    assert result.steps[1].open == 2  # the price split and the property's open question
+    assert result.next_step == 1  # the Immobilie step comes before Prüfen
     assert [p.step for p in result.points] == ["property", "review"]
     review = result.steps[-1]
     assert review.open == 1
 
 
 def test_an_owner_without_pay_is_a_point_of_eure_angaben_first():
-    result = rule.guide(
-        facts(owners=[rule.OwnerFacts(A, None, (), no_pay=True)], answered=5, total=8)
-    )
+    result = rule.guide(facts(owners=[rule.OwnerFacts(A, None, (), no_pay=True)]))
     assert result.steps[0].state == "open"
     assert result.next_step == 0
     assert result.points[0].code == "anlage_n.no_pay"
@@ -248,7 +342,7 @@ def test_angaben_warnings_from_anlage_n_and_the_estimate_route_to_eure_angaben()
             ],
             estimate_warnings=[
                 warning(WarningCode.RETURN_KINDERGELD_APPLY),
-                warning(WarningCode.RETURN_QUESTIONNAIRE_OPEN, open="3"),  # the questions step's
+                warning(WarningCode.RETURN_QUESTIONNAIRE_OPEN, open="3"),  # counted as questions
                 warning(WarningCode.RETURN_FILING_REQUIRED),  # a note, no point
             ],
         )
@@ -271,7 +365,7 @@ def test_a_waiting_beleg_says_from_when_and_nothing_is_jetzt_dran():
             ],
         )
     )
-    documents = result.steps[3]
+    documents = result.steps[2]
     assert (documents.state, documents.open, documents.waiting) == ("waiting", 0, 2)
     assert (documents.done, documents.total) == (1, 3)
     assert documents.waiting_from == date(2027, 1, 1)  # the bank's January before the employer
@@ -300,9 +394,9 @@ def test_a_beleg_past_its_due_day_is_missing_and_open():
             owners=[rule.OwnerFacts(A, "estimate", [])],
         )
     )
-    documents = result.steps[3]
+    documents = result.steps[2]
     assert (documents.state, documents.open, documents.waiting_from) == ("open", 2, None)
-    assert result.next_step == 3
+    assert result.next_step == 2
 
 
 def test_waiting_from_is_never_before_this_month():
@@ -351,18 +445,14 @@ def test_a_property_without_a_draft_still_has_its_step_and_belege():
             incomplete=True,
         )
     )
-    assert kinds(result) == ["angaben", "property", "questions", "documents", "review"]
-    # The questionnaire could not be read: not done, nothing to do in it.
-    assert (result.steps[2].state, result.steps[2].open, result.steps[2].total) == (
-        "waiting",
-        0,
-        None,
-    )
+    assert kinds(result) == ["angaben", "property", "documents", "review"]
+    # The questionnaire could not be read: neither Eure Angaben nor the Immobilie step is done.
+    assert [(s.state, s.open) for s in result.steps[:2]] == [("waiting", 0), ("waiting", 0)]
     assert (result.steps[-1].state, result.steps[-1].waiting_from) == ("waiting", None)
     assert result.ready is False
     assert [d.kind for d in result.documents] == ["grundsteuerbescheid"]
     assert result.documents[0].sender == "municipality"
-    assert result.next_step == 3
+    assert result.next_step == 2
 
 
 def test_the_same_warning_twice_is_one_point():
@@ -418,6 +508,8 @@ def test_a_forms_open_count_holds_its_belege_and_its_jahresfragen():
         )
     )
     assert not any(p.code == "anlage_n.certificate_missing" for p in result.points)
+    # Eure Angaben: A's and the household's question; P1's step: its price split and question
+    assert [s.open for s in result.steps if s.kind in ("angaben", "property")] == [2, 2, 0]
     assert result.form_open("anlage_n", owner_id=A) == 2  # the certificate, the question
     assert result.form_open("anlage_n", owner_id=B) == 0
     assert result.form_open("anlage_v", property_id=P1) == 3  # Beleg, price split, question
@@ -428,10 +520,10 @@ def test_a_year_that_cannot_be_computed_is_never_ready():
     """Nothing open, every Beleg there, but a source could not be read (no rule set): Prüfen
     waits without a month and the year is not ready."""
     result = rule.guide(facts(incomplete=True))
-    assert [s.state for s in result.steps] == ["done", "done", "done", "done", "waiting"]
+    assert [s.state for s in result.steps] == ["done", "done", "done", "waiting"]
     assert result.steps[-1].waiting_from is None
     assert result.ready is False
-    assert result.steps_done == 4
+    assert result.steps_done == 3
     assert result.next_step is None
     assert rule.guide(facts()).ready is True
 

@@ -1,4 +1,4 @@
-"""GET /tax/{tax_year}/guide over HTTP (phase 10 §7.6, D290): the five steps, one Immobilie
+"""GET /tax/{tax_year}/guide over HTTP (phase 10 §7.6, D290): the four steps, one Immobilie
 step per property owned in the year, the forms' results copied from their drafts, and a year
 without a rule set served in part instead of a 422. Invented owners and properties only."""
 
@@ -47,7 +47,6 @@ def test_the_guide_lists_the_steps_and_copies_each_forms_result(client_a):
         "angaben",
         "property",
         "property",
-        "questions",
         "documents",
         "review",
     ]
@@ -87,13 +86,7 @@ def test_a_year_before_any_rule_set_is_served_in_part(client_a):
     got = _guide(client_a, 2024)
     assert got["estimate"] is None
     assert {"estimate:tax.no_rule_set", "anlage_v:tax.no_rule_set"} <= set(got["unavailable"])
-    assert [s["kind"] for s in got["steps"]] == [
-        "angaben",
-        "property",
-        "questions",
-        "documents",
-        "review",
-    ]
+    assert [s["kind"] for s in got["steps"]] == ["angaben", "property", "documents", "review"]
     form = next(f for f in got["forms"] if f["form"] == "anlage_v")
     assert (form["property_id"], form["result"], form["reason"]) == (
         prop["id"],
@@ -102,7 +95,10 @@ def test_a_year_before_any_rule_set_is_served_in_part(client_a):
     )
     assert got["ready"] is False
     assert got["steps"][-1]["state"] != "done"
-    assert got["steps"][2]["state"] != "done"  # the Jahresfragen could not be read
+    # the Jahresfragen could not be read: neither Eure Angaben nor the Immobilie step is done
+    assert got["steps"][0]["state"] != "done"
+    assert got["steps"][1]["state"] != "done"
+    assert got["topics"] is None
 
 
 def test_a_year_without_its_rules_is_not_ready(client_a):
@@ -113,20 +109,20 @@ def test_a_year_without_its_rules_is_not_ready(client_a):
     assert got["ready"] is False
     # Eure Angaben waits too: the estimate, whose points it lists, cannot be computed (wave 2's
     # open point, phase 10 §7.6; it read „erledigt“ until then).
-    assert [s["state"] for s in got["steps"]] == ["waiting", "waiting", "done", "waiting"]
+    assert [s["state"] for s in got["steps"]] == ["waiting", "done", "waiting"]
     assert got["steps_done"] == 1
 
 
 def test_a_property_not_owned_in_the_year_has_no_step(client_a):
     new_property(client_a, purchase_date="2026-06-01", notarized_on="2026-03-01")
     got = _guide(client_a, 2025)
-    assert [s["kind"] for s in got["steps"]] == ["angaben", "questions", "documents", "review"]
+    assert [s["kind"] for s in got["steps"]] == ["angaben", "documents", "review"]
 
 
 def test_another_workspace_sees_none_of_it(client_a, client_b):
     new_property(client_a)
     got = _guide(client_b, 2026)
-    assert [s["kind"] for s in got["steps"]] == ["angaben", "questions", "documents", "review"]
+    assert [s["kind"] for s in got["steps"]] == ["angaben", "documents", "review"]
     assert got["forms"] == [] and got["documents"] == []
 
 
@@ -211,6 +207,54 @@ def test_a_benefit_announced_but_not_typed_keeps_eure_angaben_open(client_a):
     ]
     assert got["steps"][0]["state"] == "open"
     assert got["ready"] is False
+    # ... and it is open in the benefits topic, the choice shown as the owner's fact (D294)
+    topics = {t["topic"]: t for t in got["topics"]}
+    assert [t["topic"] for t in got["topics"]] == [
+        "couple",
+        "pay",
+        "work_costs",
+        "insurance",
+        "benefits",
+        "children",
+        "household",
+    ]
+    benefits = topics["benefits"]
+    assert (benefits["state"], benefits["open"], benefits["questions_open"]) == ("open", 1, 0)
+    (mine,) = benefits["owners"]
+    assert (mine["owner_id"], mine["benefit"], mine["open"]) == (
+        owner["id"],
+        "arbeitslosengeld",
+        1,
+    )
+
+
+def test_an_open_question_is_open_in_eure_angaben_and_its_topic(client_a):
+    """No Jahresfragen step any more (D294): an owner's open question holds Eure Angaben, and
+    answering it lowers the step's and its topic's count by one."""
+    owner = _owner_with_pay(client_a)
+    before = _guide(client_a, 2026)
+    assert "questions" not in [s["kind"] for s in before["steps"]]
+    work = {t["topic"]: t for t in before["topics"]}["work_costs"]
+    assert work["questions_open"] == work["questions_total"] == 12
+    ok(
+        client_a.post(
+            "/api/tax/questionnaire/answers",
+            json={
+                "answer": {
+                    "question_key": "owner.telecom",
+                    "tax_year": 2026,
+                    "owner_id": owner["id"],
+                    "answer": "no",
+                }
+            },
+        ),
+        201,
+    )
+    after = _guide(client_a, 2026)
+    assert after["steps"][0]["open"] == before["steps"][0]["open"] - 1
+    work = {t["topic"]: t for t in after["topics"]}["work_costs"]
+    assert (work["questions_open"], work["open"]) == (11, 11)
+    assert "owner.telecom" not in work["owners"][0]["open_questions"]
 
 
 # --- Phase 10 §7.8 (a), D293: bookings propose tax inputs -----------------------------------

@@ -1,0 +1,218 @@
+# Phase 10 §7.8 (b), D294: the topics of „Eure Angaben“ (rules/tax/angaben_topics.py), in the
+# order couple, pay, work_costs, insurance, benefits, children, household. Invented owners
+# only (the repo is public). Labels A and B become fixed UUIDs in the runner.
+#
+# The questions are the 2026 questionnaire's (rules/tax/questionnaire/2026.yaml), each owner and
+# household question with its `topic`: per owner couple 1 (tax_class), pay 1 (pay_documents),
+# work_costs 12, insurance 2, benefits 1 (replacement_income); for the household children 2 and
+# household 4. A property question belongs to no topic.
+#
+# Input:
+#   owners     one per owner: church_tax, tax_state (null: not set), the Anlage N status,
+#              gross_source and gross (null: no draft)
+#   answer_all every slot not named in `answers` answered with this (yes, no, not_applicable);
+#              absent: unanswered
+#   answers    {key, owner, answer, choice}
+#   rows       the year's current return_input rows: {kind, owner} (owner absent: household)
+#   points     the guide's points: {code, owner, refused, blocking (default true), step
+#              (default angaben)}
+#   proposals  the booked proposals (§7.8 (a)): {group, owner, blocking}
+#
+# Expected per topic: state, open (open questions + blocking points that are no proposal + for
+# couple each owner without a Bundesland), proposals (every booked proposal of the topic),
+# questions_open and questions_total. `owner_facts` (optional) checks per-owner facts per topic,
+# `household_rows` the household's rows per topic.
+#
+# The rules:
+#   open        open > 0 or proposals > 0
+#   not_needed  otherwise, for every topic but couple and pay, when every slot of the topic is
+#               answered "no" or "not_applicable" (or with a choice that means none: the
+#               benefit "none", the insurance "statutory") and the topic has no row in the
+#               year; a topic without any slot (no owner) and no row is not_needed too
+#   done        otherwise
+
+cases:
+  - name: nothing answered yet, two owners, no Bundesland
+    owners:
+      - {id: A, church_tax: false, tax_state: null, status: estimate, gross_source: expected, gross: "54000.00"}
+      - {id: B, church_tax: false, tax_state: null, status: estimate, gross_source: expected, gross: "41500.00"}
+    expect:
+      couple: {state: open, open: 4, proposals: 0, questions_open: 2, questions_total: 2}
+      pay: {state: open, open: 2, proposals: 0, questions_open: 2, questions_total: 2}
+      work_costs: {state: open, open: 24, proposals: 0, questions_open: 24, questions_total: 24}
+      insurance: {state: open, open: 4, proposals: 0, questions_open: 4, questions_total: 4}
+      benefits: {state: open, open: 2, proposals: 0, questions_open: 2, questions_total: 2}
+      children: {state: open, open: 2, proposals: 0, questions_open: 2, questions_total: 2}
+      household: {state: open, open: 4, proposals: 0, questions_open: 4, questions_total: 4}
+    owner_facts:
+      couple:
+        - {id: A, open: 2, church_tax: false, tax_state: null, tax_class: null}
+        - {id: B, open: 2, church_tax: false, tax_state: null, tax_class: null}
+      pay:
+        - {id: A, open: 1, pay_status: estimate, gross_source: expected, gross: "54000.00"}
+        - {id: B, open: 1, pay_status: estimate, gross_source: expected, gross: "41500.00"}
+
+  - name: everything answered no, Bundesland set, certified pay
+    owners:
+      - {id: A, church_tax: true, tax_state: HE, status: certified, gross_source: certificate, gross: "54000.00"}
+    answer_all: "no"
+    answers:
+      - {key: owner.tax_class, owner: A, answer: "yes", choice: iii}
+      - {key: owner.pay_documents, owner: A, answer: "yes"}
+      - {key: owner.replacement_income, owner: A, answer: "yes", choice: none}
+      - {key: owner.insurance_status, owner: A, answer: "yes", choice: statutory}
+    rows:
+      - {kind: wage_certificate, owner: A}
+    expect:
+      couple: {state: done, open: 0, proposals: 0, questions_open: 0, questions_total: 1}
+      pay: {state: done, open: 0, proposals: 0, questions_open: 0, questions_total: 1}
+      work_costs: {state: not_needed, open: 0, proposals: 0, questions_open: 0, questions_total: 12}
+      insurance: {state: not_needed, open: 0, proposals: 0, questions_open: 0, questions_total: 2}
+      benefits: {state: not_needed, open: 0, proposals: 0, questions_open: 0, questions_total: 1}
+      children: {state: not_needed, open: 0, proposals: 0, questions_open: 0, questions_total: 2}
+      household: {state: not_needed, open: 0, proposals: 0, questions_open: 0, questions_total: 4}
+    owner_facts:
+      couple:
+        - {id: A, open: 0, church_tax: true, tax_state: HE, tax_class: iii}
+      pay:
+        - {id: A, open: 0, pay_status: certified, gross_source: certificate, gross: "54000.00", rows: {wage_certificate: 1}}
+      insurance:
+        - {id: A, open: 0, insurance_status: statutory}
+      benefits:
+        - {id: A, open: 0, benefit: none}
+
+  - name: a row makes the topic done, never not_needed
+    owners:
+      - {id: A, church_tax: false, tax_state: HE, status: certified, gross_source: certificate, gross: "54000.00"}
+    answer_all: "no"
+    answers:
+      - {key: owner.commute, owner: A, answer: "yes"}
+      - {key: household.children, answer: "yes"}
+      - {key: owner.insurance_status, owner: A, answer: "yes", choice: statutory}
+      - {key: owner.replacement_income, owner: A, answer: "not_applicable"}
+    rows:
+      - {kind: commute, owner: A}
+      - {kind: home_office, owner: A}
+      - {kind: child}
+      - {kind: special_expense}
+    expect:
+      couple: {state: done, open: 0, proposals: 0, questions_open: 0, questions_total: 1}
+      pay: {state: done, open: 0, proposals: 0, questions_open: 0, questions_total: 1}
+      work_costs: {state: done, open: 0, proposals: 0, questions_open: 0, questions_total: 12}
+      insurance: {state: not_needed, open: 0, proposals: 0, questions_open: 0, questions_total: 2}
+      benefits: {state: not_needed, open: 0, proposals: 0, questions_open: 0, questions_total: 1}
+      children: {state: done, open: 0, proposals: 0, questions_open: 0, questions_total: 2}
+      household: {state: done, open: 0, proposals: 0, questions_open: 0, questions_total: 4}
+    owner_facts:
+      work_costs:
+        - {id: A, open: 0, rows: {commute: 1, home_office: 1}}
+    household_rows:
+      children: {child: 1}
+      household: {special_expense: 1}
+
+  - name: private insurance or a civil servant is no "none" answer
+    owners:
+      - {id: A, church_tax: false, tax_state: BY, status: certified, gross_source: certificate, gross: "54000.00"}
+    answer_all: "no"
+    answers:
+      - {key: owner.insurance_status, owner: A, answer: "yes", choice: private}
+    expect:
+      insurance: {state: done, open: 0, proposals: 0, questions_open: 0, questions_total: 2}
+
+  - name: a benefit answered yes without its amount is open in benefits
+    owners:
+      - {id: A, church_tax: false, tax_state: BY, status: certified, gross_source: certificate, gross: "54000.00"}
+    answer_all: "no"
+    answers:
+      - {key: owner.replacement_income, owner: A, answer: "yes", choice: elterngeld}
+    points:
+      - {code: anlage_n.benefit_letter, owner: A}
+    expect:
+      benefits: {state: open, open: 1, proposals: 0, questions_open: 0, questions_total: 1}
+    owner_facts:
+      benefits:
+        - {id: A, open: 1, benefit: elterngeld}
+
+  - name: booked proposals open their topics, a blocking one counted once
+    owners:
+      - {id: A, church_tax: false, tax_state: BY, status: certified, gross_source: certificate, gross: "54000.00"}
+      - {id: B, church_tax: false, tax_state: BY, status: certified, gross_source: certificate, gross: "41500.00"}
+    answer_all: "no"
+    points:
+      - {code: return.benefit_booked, owner: B, proposal: benefit}
+    proposals:
+      - {group: benefit, owner: B, blocking: true}
+      - {group: donation, blocking: false}
+      - {group: household_services, blocking: false}
+      - {group: childcare, blocking: false}
+    expect:
+      benefits: {state: open, open: 0, proposals: 1, questions_open: 0, questions_total: 2}
+      children: {state: open, open: 0, proposals: 1, questions_open: 0, questions_total: 2}
+      household: {state: open, open: 0, proposals: 2, questions_open: 0, questions_total: 4}
+      insurance: {state: not_needed, open: 0, proposals: 0, questions_open: 0, questions_total: 4}
+
+  - name: blocking points open their topic, notes and other steps do not
+    owners:
+      - {id: A, church_tax: true, tax_state: HE, status: certified, gross_source: certificate, gross: "54000.00"}
+    answer_all: "no"
+    points:
+      - {code: anlage_n.church_mismatch, owner: A}
+      - {code: anlage_n.days_implausible, owner: A}
+      - {code: return.kindergeld_apply}
+      - {code: return_input.refused, refused: return.household_services_cash}
+      - {code: anlage_n.work_room_centre, owner: A, blocking: false}
+      - {code: afa.no_split, step: property}
+    expect:
+      couple: {state: open, open: 1, proposals: 0, questions_open: 0, questions_total: 1}
+      pay: {state: done, open: 0, proposals: 0, questions_open: 0, questions_total: 1}
+      work_costs: {state: open, open: 1, proposals: 0, questions_open: 0, questions_total: 12}
+      children: {state: open, open: 1, proposals: 0, questions_open: 0, questions_total: 2}
+      household: {state: open, open: 1, proposals: 0, questions_open: 0, questions_total: 4}
+
+  - name: an owner without any pay is open in pay
+    owners:
+      - {id: A, church_tax: false, tax_state: NW, status: null, gross_source: null, gross: null}
+    answer_all: "no"
+    answers:
+      - {key: owner.pay_documents, owner: A, answer: "no"}
+    points:
+      - {code: anlage_n.no_pay, owner: A}
+    expect:
+      pay: {state: open, open: 1, proposals: 0, questions_open: 0, questions_total: 1}
+    owner_facts:
+      pay:
+        - {id: A, open: 1, pay_status: null, gross_source: null, gross: null}
+
+  - name: no pay declared for the year is done
+    owners:
+      - {id: A, church_tax: false, tax_state: NW, status: none, gross_source: declared_none, gross: "0.00"}
+    answer_all: "no"
+    rows:
+      - {kind: no_pay, owner: A}
+    expect:
+      pay: {state: done, open: 0, proposals: 0, questions_open: 0, questions_total: 1}
+
+  - name: one owner's open question keeps a topic open for both
+    owners:
+      - {id: A, church_tax: false, tax_state: SN, status: certified, gross_source: certificate, gross: "54000.00"}
+      - {id: B, church_tax: false, tax_state: SN, status: certified, gross_source: certificate, gross: "41500.00"}
+    answer_all: "no"
+    answers:
+      - {key: owner.telecom, owner: B, answer: null}
+    expect:
+      work_costs: {state: open, open: 1, proposals: 0, questions_open: 1, questions_total: 24}
+    owner_facts:
+      work_costs:
+        - {id: A, open: 0}
+        - {id: B, open: 1}
+
+  - name: no owner yet, only the household asks
+    owners: []
+    expect:
+      couple: {state: not_needed, open: 0, proposals: 0, questions_open: 0, questions_total: 0}
+      pay: {state: not_needed, open: 0, proposals: 0, questions_open: 0, questions_total: 0}
+      work_costs: {state: not_needed, open: 0, proposals: 0, questions_open: 0, questions_total: 0}
+      insurance: {state: not_needed, open: 0, proposals: 0, questions_open: 0, questions_total: 0}
+      benefits: {state: not_needed, open: 0, proposals: 0, questions_open: 0, questions_total: 0}
+      children: {state: open, open: 2, proposals: 0, questions_open: 2, questions_total: 2}
+      household: {state: open, open: 4, proposals: 0, questions_open: 4, questions_total: 4}
