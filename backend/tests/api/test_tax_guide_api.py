@@ -332,7 +332,10 @@ def test_booked_childcare_and_services_payloads_post_with_the_cards_fields(clien
         body["value"]["child_id"] = proposal["child_choices"][0]["id"]
     else:  # the one child under 14 is pre-selected, so nothing is offered to pick
         assert body["value"]["child_id"] and proposal["child_choices"] == []
-    create(client_a, "/api/return-inputs", body)
+    # The payee is pre-set on the row, so the row covers its own payee's card first.
+    assert proposal["payee"] and body["value"]["payee_label"] == proposal["payee"]
+    saved = create(client_a, "/api/return-inputs", body)
+    assert saved["value"]["payee_label"] == proposal["payee"]
     assert _proposal_points(client_a, "return.childcare_booked") == []
 
     _allocate(client_a, line, "hh_household_services")
@@ -342,6 +345,8 @@ def test_booked_childcare_and_services_payloads_post_with_the_cards_fields(clien
     assert {"labour_cost", "service_class"} <= set(proposal["needs"])
     body = proposal["payload"]
     assert "labour_cost" not in body["value"]  # never the bank line's amount
+    assert "amount" not in body["value"] and body["value"]["payee_label"] == proposal["payee"]
     body["value"] |= {"labour_cost": "100.00", "service_class": "handwerker"}
-    create(client_a, "/api/return-inputs", body)
+    saved = create(client_a, "/api/return-inputs", body)
+    assert saved["value"]["payee_label"] == proposal["payee"]
     assert _proposal_points(client_a, "return.services_booked") == []

@@ -17239,6 +17239,19 @@
           "paid_to_account": {
             "type": "boolean",
             "title": "Paid To Account"
+          },
+          "payee_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payee Label"
           }
         },
         "additionalProperties": false,
@@ -26110,6 +26123,19 @@
               "nebenkostenabrechnung"
             ],
             "title": "Source"
+          },
+          "payee_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payee Label"
           }
         },
         "additionalProperties": false,

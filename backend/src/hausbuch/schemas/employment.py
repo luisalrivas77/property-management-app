@@ -504,6 +504,11 @@ class ChildcareFact(Schema):
     child_id: UUID  # the child's return_input row
     amount: NonNegativeMoney
     paid_to_account: bool
+    # The payee a proposal from the bookings named (phase 10 D293): the row covers that
+    # payee's payments first. None for a row typed by hand or saved before.
+    payee_label: str | None = Field(
+        default=None, min_length=1, max_length=120, exclude_if=lambda v: v is None
+    )
 
 
 class HouseholdServicesFact(Schema):
@@ -511,6 +516,9 @@ class HouseholdServicesFact(Schema):
     labour_cost: NonNegativeMoney
     paid_to_account: bool  # §35a Abs. 5 S. 3: required true (return.household_services_cash)
     source: Literal["own_invoice", "nebenkostenabrechnung"]
+    payee_label: str | None = Field(
+        default=None, min_length=1, max_length=120, exclude_if=lambda v: v is None
+    )
 
 
 class SpecialExpenseFact(Schema):

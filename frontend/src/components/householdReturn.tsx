@@ -170,10 +170,15 @@ export function HouseholdReturnBlocks({ year }: { year: number }) {
         empty={t.noServices(year)}
         describe={(row) => {
           const v = row.value as HouseholdServicesFact;
-          return t.servicesRow(
-            HOUSEHOLD_SERVICE_CLASS[v.service_class],
-            f.money(v.labour_cost),
-            HOUSEHOLD_SERVICE_SOURCE[v.source],
+          // The payee a card from the bookings named (phase 10 D293), when the row has one.
+          const payee = v.payee_label ? `${v.payee_label} · ` : "";
+          return (
+            payee +
+            t.servicesRow(
+              HOUSEHOLD_SERVICE_CLASS[v.service_class],
+              f.money(v.labour_cost),
+              HOUSEHOLD_SERVICE_SOURCE[v.source],
+            )
           );
         }}
         form={(done) => <ServicesForm year={year} onDone={done} />}
@@ -202,7 +207,8 @@ export function HouseholdReturnBlocks({ year }: { year: number }) {
               const v = row.value as ChildcareFact;
               const index = list.findIndex((child) => child.id === v.child_id);
               const child = list[index];
-              return `${child ? childName(child, index) : t.child} · ${f.money(v.amount)}`;
+              const payee = v.payee_label ? ` · ${v.payee_label}` : "";
+              return `${child ? childName(child, index) : t.child}${payee} · ${f.money(v.amount)}`;
             }}
             form={(done) =>
               list.length === 0 ? (

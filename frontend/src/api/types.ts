@@ -6625,6 +6625,8 @@ export interface components {
             amount: string;
             /** Paid To Account */
             paid_to_account: boolean;
+            /** Payee Label */
+            payee_label?: string | null;
         };
         /** ChildrenResult */
         ChildrenResult: {
@@ -10060,6 +10062,8 @@ export interface components {
              * @enum {string}
              */
             source: "own_invoice" | "nebenkostenabrechnung";
+            /** Payee Label */
+            payee_label?: string | null;
         };
         /**
          * HouseholdTaxContext

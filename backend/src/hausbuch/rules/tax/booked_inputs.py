@@ -53,15 +53,21 @@ rules/matching.payee from the counterparty name, so two spellings of one payee a
   Zuwendungsbestätigung (§50 Abs. 4 EStDV). A line without a payee name asks for the
   recipient. A donation is an ordinary §10b donation; a party donation (§34g) is not modelled
   and, since 26 Nov 2026, not asked about either (Luis: no feature for it).
-- Childcare (`childcare_cost`): the same gate over the year's childcare rows, which name no
-  payee, so the rows cover the payees in order. The child is pre-selected when exactly one
+- Childcare (`childcare_cost`): the same gate over the year's childcare rows. A row that names
+  its payee (`payee_label`, which the proposal pre-sets) covers that payee first, as a donation
+  row does; a row without one (typed by hand, or saved before the label) covers the payees in
+  order. So a Kita lowered for meals keeps its rest on its own card and never leaves a
+  remainder under the Tagesmutter taken in full. The child is pre-selected when exactly one
   current child was under `childcare_max_age` when the year began (the rule the write refuses
   otherwise, `return.childcare_age`), else the card picks from those children.
 - §35a (`household_services`): only the labour share of an invoice counts (§35a Abs. 5 S. 2),
   and the bank line holds the whole bill, so no amount is ever taken from it: the card asks
   for the labour cost and the kind of service. The labour share cannot be compared with the
   bill, so each current row of the year paid to an account from an own invoice covers one
-  payee, in order; a Nebenkostenabrechnung's row covers no payment of the household's own.
+  payee: a row naming its payee (`payee_label`, pre-set by the proposal) that payee's card, so
+  cards taken out of date order close the right one; a row naming a payee with no open card
+  covers nothing; a row without a label the earliest payee still open (first booking date).
+  A Nebenkostenabrechnung's row covers no payment of the household's own, labelled or not.
 
 These three are not `blocking`: an amount the person lowers (meals at the Kita) or a labour
 share below its bill would otherwise stay open for ever, since the rule reads only
@@ -89,6 +95,7 @@ from hausbuch.schemas.booked_inputs import (
 )
 from hausbuch.schemas.employment import (
     BookedBenefit,
+    ChildcareFact,
     ChildFact,
     HouseholdServicesFact,
     OwnerReturnFacts,
@@ -372,6 +379,11 @@ def _covered_by_amount(
     return covered
 
 
+def _label(g: _Payee) -> dict[str, str]:
+    """The payee's name for a childcare or §35a row (`payee_label`), when the lines name one."""
+    return {"payee_label": g.label} if g.label else {}
+
+
 def _of_kind(rows: Sequence[ReturnInputFact], kind: ReturnInputKind, tax_year: int):
     return [r for r in current(rows) if r.kind is kind and r.tax_year == tax_year]
 
@@ -452,7 +464,11 @@ def _donations(tax_year, rows, lines) -> list[BookedProposal]:
 
 def _childcare(tax_year, rows, lines, max_age) -> list[BookedProposal]:
     groups = _payees(lines)
-    typed = [(r.value.amount, None) for r in _of_kind(rows, K.CHILDCARE_COST, tax_year)]
+    typed = [
+        (r.value.amount, r.value.payee_label)
+        for r in _of_kind(rows, K.CHILDCARE_COST, tax_year)
+        if isinstance(r.value, ChildcareFact)
+    ]
     children = _eligible_children(rows, tax_year, max_age)
     child = str(children[0].id) if len(children) == 1 else None
     out = []
@@ -463,6 +479,7 @@ def _childcare(tax_year, rows, lines, max_age) -> list[BookedProposal]:
             "child_id": child,
             "amount": str(cents(g.booked - covered)),
             "paid_to_account": True,
+            **_label(g),
         }
         out.append(
             _household_proposal(
@@ -487,17 +504,29 @@ def _services(tax_year, rows, lines) -> list[BookedProposal]:
         and r.value.paid_to_account
         and r.value.source == "own_invoice"
     ]
-    value = {"paid_to_account": True, "source": "own_invoice"}
+    open_ = list(groups)
+    unlabelled = 0
+    for r in own:
+        label = r.value.payee_label
+        if label is None:
+            unlabelled += 1
+            continue
+        for g in open_:
+            if g.label and same_payee(label, g.label, None, g.purpose):
+                open_.remove(g)
+                break
+    # A row without a label closes the earliest payee still open, as before the label.
+    open_ = open_[unlabelled:]
     return [
         _household_proposal(
             "household_services",
             tax_year,
             g,
             ZERO,
-            dict(value),
+            {"paid_to_account": True, "source": "own_invoice", **_label(g)},
             ["labour_cost", "service_class"],
         )
-        for g in groups[len(own) :]
+        for g in open_
     ]
 
 
