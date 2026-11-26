@@ -360,7 +360,7 @@ const de = {
   growthValue: (rate: string) => `${rate} im Jahr`,
   growthNone: "Keiner reicht",
   growthLine: (verdict: string) =>
-    (({ within_history: "Hauspreise: oft erreicht", good_times: "Hauspreise: nur in guten Zeiten", never: "Hauspreise: nie erreicht" }) as Record<string, string>)[verdict] ??
+    (({ within_history: "Hauspreise: oft erreicht", good_times: "Hauspreise: gute Zeiten", never: "Hauspreise: nie erreicht" }) as Record<string, string>)[verdict] ??
     "",
   growthText: (label: string, rate: string, typed: string) =>
     `Mit eurem heutigen Sparen wäre euer Ziel erreicht, wenn ${label} jedes Jahr ${rate} an Wert gewinnt. Eingetragen sind ${typed}; Fonds und Krypto bleiben bei euren Raten.`,
@@ -740,7 +740,7 @@ const en: Messages = {
   growthValue: (rate) => `${rate} a year`,
   growthNone: "None is enough",
   growthLine: (verdict) =>
-    (({ within_history: "House prices: often reached", good_times: "House prices: good times only", never: "House prices: never reached" }) as Record<string, string>)[verdict] ??
+    (({ within_history: "House prices: often reached", good_times: "House prices: good times", never: "House prices: never reached" }) as Record<string, string>)[verdict] ??
     "",
   growthText: (label, rate, typed) =>
     `At today's saving your goal would be reached if ${label} gained ${rate} in value every year. You typed ${typed}; funds and crypto keep your rates.`,
