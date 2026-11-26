@@ -169,6 +169,7 @@ def household_figures(
     turning: set[UUID] = set()
     if care_rows:
         assert care is not None, "the tariff's childcare figures (D112)"
+        per_child: dict[UUID, Decimal] = {}
         for r in care_rows:
             child = child_rows.get(r.value.child_id)
             if child is None:
@@ -183,7 +184,10 @@ def household_figures(
                 )
             if born.year == tax_year - care.max_age:
                 turning.add(child.id)
-            childcare += min(cents(r.value.amount * care.share), care.cap_per_child)
+            per_child[child.id] = per_child.get(child.id, ZERO) + r.value.amount
+        # D112 (e): Σ per child, so two rows of one child (Kita and Tagesmutter) share one cap.
+        for paid in per_child.values():
+            childcare += min(cents(paid * care.share), care.cap_per_child)
         cite("childcare", row_sources(care_rows))
     warnings += [
         warning(WarningCode.RETURN_CHILDCARE_UNTIL_14, row_sources([child_rows[c]]))

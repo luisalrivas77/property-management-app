@@ -46,6 +46,7 @@ import {
   type Parsed,
 } from "./input";
 import { NoPayMarker } from "./noPay";
+import { useReturnInputsSync } from "./returnInputsSync";
 import { Loading } from "./ui";
 import { payInputsHref } from "./taxYear";
 import { useLoad } from "./useLoad";
@@ -233,10 +234,15 @@ export function IncomeSection({ owners, fixedYear }: { owners: Owner[]; fixedYea
   const t = useT(income);
   const f = useFormat();
 
-  function changed() {
-    rows.reload();
-    rate.reload();
-  }
+  const reloadRows = rows.reload;
+  const reloadRate = rate.reload;
+  const reloadBoth = useCallback(() => {
+    reloadRows();
+    reloadRate();
+  }, [reloadRows, reloadRate]);
+  // A pay input moves the guide's points on Eure Angaben (anlage_n.no_pay), so a write there
+  // reloads them too (components/returnInputsSync.ts).
+  const changed = useReturnInputsSync(reloadBoth);
 
   return (
     <div className="stack">

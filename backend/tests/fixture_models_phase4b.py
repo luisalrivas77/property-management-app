@@ -776,11 +776,15 @@ def _estimate(case: EstimateCase) -> dict:
     childcare = ZERO
     care = tariff.childcare
     assert care is not None
+    per_child: dict = {}
     for v in _values(household_rows, K.CHILDCARE_COST):
         child = child_rows[v.child_id]
         if child.born_on <= date(year - care.max_age, 1, 1):  # 14 before the year began
             raise Refused("return.childcare_age")
-        childcare += min(cents(v.amount * care.share), care.cap_per_child)
+        per_child[v.child_id] = per_child.get(v.child_id, ZERO) + v.amount
+    # D112 (e): Σ per child, so the share and the cap apply once per child, not per row
+    for paid in per_child.values():
+        childcare += min(cents(paid * care.share), care.cap_per_child)
     # 14 during the year: the yearly cap stands (BMF 14 Mar 2012 Rn. 18), only costs up to the
     # birthday count, which the app cannot check; one note per child (F6)
     turning = {

@@ -201,11 +201,22 @@ def itemise(facts: OwnerReturnFacts, tax_year: int, rs: AnlageNRuleSet, tariff: 
         warnings.append(warning(WarningCode.ANLAGE_N_CHURCH_MISMATCH, row_sources(pay.real_rows)))
     if any(c.tax_class == 6 for c in certs):
         warnings.append(warning(WarningCode.ANLAGE_N_TAX_CLASS_6))
-    main = [c for c in real if c.tax_class != 6]
-    for i, a in enumerate(main):
-        for b in main[i + 1 :]:
+    # One warning per overlapping pair, with its two periods and certificates, so two pairs are
+    # two points of the Steuern guide (phase 10 §7.6, wave 2's open point). real_rows lines up
+    # with real when the certificates come from rows (pay_of_rows), else it is empty.
+    cert_rows = pay.real_rows if len(pay.real_rows) == len(real) else [None] * len(real)
+    main = [(c, r) for c, r in zip(real, cert_rows, strict=True) if c.tax_class != 6]
+    for i, (a, a_row) in enumerate(main):
+        for b, b_row in main[i + 1 :]:
             if a.period_from <= b.period_to and b.period_from <= a.period_to:
-                warnings.append(warning(WarningCode.ANLAGE_N_PERIODS_OVERLAP))
+                warnings.append(
+                    warning(
+                        WarningCode.ANLAGE_N_PERIODS_OVERLAP,
+                        row_sources([r for r in (a_row, b_row) if r is not None]),
+                        first=f"{a.period_from.isoformat()}/{a.period_to.isoformat()}",
+                        second=f"{b.period_from.isoformat()}/{b.period_to.isoformat()}",
+                    )
+                )
     if room is not None and not routes:
         warnings.append(warning(WarningCode.ANLAGE_N_FIRST_WORKPLACE_CHECK, row_sources(rooms)))
 

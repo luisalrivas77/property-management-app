@@ -165,6 +165,48 @@ export const taxGuide = defineMessages({
     benefitLetterText:
       "In den Jahresfragen steht, dass im Jahr eine Lohnersatzleistung kam (Elterngeld, Krankengeld, Arbeitslosengeld …). Den Betrag aus dem Bescheid eintragen: er ist steuerfrei, hebt aber den Steuersatz auf das übrige Einkommen (Progressionsvorbehalt).",
     benefitLetterAction: "Lohnersatzleistung eintragen",
+    // bookings that propose a tax input (phase 10 §7.8 (a), D293): a card is a title and a
+    // number; the explanation is behind „Warum?“
+    suggestionsTitle: "Vorschläge und Hinweise",
+    proposalBenefit: (amount: string) => `Lohnersatzleistung aus dem Konto · ${amount}`,
+    proposalDonation: (payee: string | null, amount: string) => (payee ? `Spende an ${payee} · ${amount}` : `Spende · ${amount}`),
+    proposalChildcare: (payee: string | null, amount: string) =>
+      payee ? `Kinderbetreuung ${payee} · ${amount}` : `Kinderbetreuung · ${amount}`,
+    proposalServices: (payee: string | null, amount: string) =>
+      payee ? `Handwerker oder Dienstleistung ${payee} · ${amount}` : `Handwerker oder Dienstleistung · ${amount}`,
+    proposalBenefitText:
+      "Auf dem Konto ist eine Lohnersatzleistung eingegangen (Elterngeld, Mutterschaftsgeld, Krankengeld oder Arbeitslosengeld), die noch nicht eingetragen ist. Sie ist steuerfrei, hebt aber den Steuersatz auf das übrige Einkommen (Progressionsvorbehalt). Vorgeschlagen wird der Betrag vom Konto; bei Krankengeld zeigt die Bescheinigung der Krankenkasse einen höheren Betrag: diesen eintragen.",
+    proposalDonationText:
+      "Als Spende gebucht und noch nicht eingetragen. Eine Spende zählt als Sonderausgabe. Für eine Zahlung über 300 € braucht es die Zuwendungsbestätigung des Empfängers.",
+    proposalChildcareText:
+      "Als Kinderbetreuung gebucht und noch nicht eingetragen. Ein Teil der Kosten zählt, bis zu einem Höchstbetrag je Kind und Jahr, bis zum 14. Geburtstag, und nur bei Zahlung aufs Konto; die Berechnung macht die App. Essen, Schulgeld und Nachhilfe zählen nicht: diese Anteile vom Betrag abziehen.",
+    proposalServicesText:
+      "Als Handwerker oder haushaltsnahe Dienstleistung gebucht. Abziehbar ist nur der Lohnanteil der Rechnung (Arbeit, Fahrt, Maschinen), nie das Material, und nur bei Zahlung aufs Konto. Der Betrag vom Konto ist die ganze Rechnung: den Lohnanteil aus der Rechnung eintragen.",
+    take: "Übernehmen",
+    takeTitle: "Vorschlag übernehmen",
+    showPayments: (n: number) => (n === 1 ? "1 Zahlung ansehen" : `${n} Zahlungen ansehen`),
+    paymentsTitle: "Zahlungen",
+    noPayee: "ohne Empfänger",
+    amount: "Betrag",
+    labourCost: "Lohnanteil laut Rechnung",
+    billSum: (amount: string) => `Gezahlt laut Konto: ${amount}. Nur den Lohnanteil eintragen.`,
+    ownerAsk: "Wer hat die Leistung bekommen?",
+    benefitAsk: "Art der Leistung",
+    childAsk: "Für welches Kind?",
+    childOption: (n: number, month: string) => `Kind ${n}, geboren ${month}`,
+    serviceClassAsk: "Art der Arbeit",
+    recipientAsk: "Empfänger der Spende",
+    pick: "Bitte wählen",
+    childcareHint: "Essen, Schulgeld und Nachhilfe zählen nicht: diese Anteile abziehen.",
+    missingField: "Bitte jedes Feld ausfüllen.",
+    saving: "Speichern …",
+    saved: "Übernommen.",
+    cancel: "Abbrechen",
+    uploadReceipt: "Zuwendungsbestätigung hochladen",
+    uploadInvoice: "Rechnung hochladen",
+    refusedTitle: "Eine Angabe zählt nicht",
+    refusedText: "Die Berechnung lässt diese Angabe weg. Die Angabe unter Eure Angaben ändern oder entfernen.",
+    refusedAction: "Eure Angaben öffnen",
   },
   en: {
     eyebrow: (year: number) => `Your tax return ${year}`,
@@ -320,5 +362,44 @@ export const taxGuide = defineMessages({
     benefitLetterText:
       "The yearly questions say a wage-replacement benefit came in the year (Elterngeld, Krankengeld, Arbeitslosengeld …). Enter the amount from its notice: it is tax-free but raises the tax rate on the other income (Progressionsvorbehalt, progression clause).",
     benefitLetterAction: "Enter wage-replacement benefit",
+    suggestionsTitle: "Suggestions and notes",
+    proposalBenefit: (amount: string) => `Wage-replacement benefit from the account · ${amount}`,
+    proposalDonation: (payee: string | null, amount: string) => (payee ? `Donation to ${payee} · ${amount}` : `Donation · ${amount}`),
+    proposalChildcare: (payee: string | null, amount: string) => (payee ? `Childcare ${payee} · ${amount}` : `Childcare · ${amount}`),
+    proposalServices: (payee: string | null, amount: string) =>
+      payee ? `Tradesman or household service ${payee} · ${amount}` : `Tradesman or household service · ${amount}`,
+    proposalBenefitText:
+      "A wage-replacement benefit (Elterngeld, Mutterschaftsgeld, Krankengeld or Arbeitslosengeld) came into the account and is not entered yet. It is tax-free but raises the tax rate on the other income (Progressionsvorbehalt, progression clause). The amount from the account is proposed; for Krankengeld the health insurer's certificate shows a higher amount: enter that one.",
+    proposalDonationText:
+      "Booked as a donation and not entered yet. A donation counts as a special expense (Sonderausgabe). A single payment above €300 needs the recipient's donation receipt (Zuwendungsbestätigung).",
+    proposalChildcareText:
+      "Booked as childcare and not entered yet. A share of the costs counts, up to a ceiling per child and year, up to the 14th birthday, and only when paid to an account; the app does the arithmetic. Meals, school fees and tutoring do not count: take those parts off the amount.",
+    proposalServicesText:
+      "Booked as a tradesman or household service. Only the labour share of the invoice counts (work, travel, machines), never the material, and only when paid to an account. The amount on the account is the whole invoice: enter the labour share from the invoice.",
+    take: "Apply",
+    takeTitle: "Apply the suggestion",
+    showPayments: (n: number) => (n === 1 ? "See 1 payment" : `See ${n} payments`),
+    paymentsTitle: "Payments",
+    noPayee: "no payee",
+    amount: "Amount",
+    labourCost: "Labour share on the invoice",
+    billSum: (amount: string) => `Paid according to the account: ${amount}. Enter the labour share only.`,
+    ownerAsk: "Who received the benefit?",
+    benefitAsk: "Kind of benefit",
+    childAsk: "For which child?",
+    childOption: (n: number, month: string) => `Child ${n}, born ${month}`,
+    serviceClassAsk: "Kind of work",
+    recipientAsk: "Recipient of the donation",
+    pick: "Please choose",
+    childcareHint: "Meals, school fees and tutoring do not count: take those parts off.",
+    missingField: "Please fill in every field.",
+    saving: "Saving …",
+    saved: "Applied.",
+    cancel: "Cancel",
+    uploadReceipt: "Upload donation receipt (Zuwendungsbestätigung)",
+    uploadInvoice: "Upload invoice",
+    refusedTitle: "An entry does not count",
+    refusedText: "The calculation leaves this entry out. Change or remove it under Your details (Eure Angaben).",
+    refusedAction: "Open your details",
   },
 });

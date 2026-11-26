@@ -28,7 +28,7 @@ from .checklist import checklist_facts, document_checklist
 from .owners import list_owners
 from .properties import list_properties
 from .questionnaire import questionnaire_progress
-from .return_inputs import anlage_n_draft, household_return_estimate
+from .return_inputs import anlage_n_draft, booked_input_proposals, household_return_estimate
 from .tax import anlage_v_draft
 
 
@@ -54,11 +54,15 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
 
     estimate = None
     estimate_warnings = []
+    estimate_failed = False
+    estimate_refused = None
     benefit_owners: set[UUID] = set()
     try:
         full = household_return_estimate(conn, tax_year=tax_year, today=today)
     except RuleError as exc:
         unavailable.append(f"estimate:{exc.code}")
+        estimate_failed = True
+        estimate_refused = exc.code if exc.code in rule.REFUSAL_CODES else None
     else:
         estimate = GuideEstimate(result=full.result, status=full.status)
         estimate_warnings = full.warnings
@@ -80,7 +84,14 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
             if not no_pay:
                 unavailable.append(f"anlage_n:{exc.code}")
             owners.append(
-                rule.OwnerFacts(owner.id, None, (), no_pay=no_pay, benefit_missing=benefit_missing)
+                rule.OwnerFacts(
+                    owner.id,
+                    None,
+                    (),
+                    no_pay=no_pay,
+                    benefit_missing=benefit_missing,
+                    refused=exc.code if exc.code in rule.REFUSAL_CODES else None,
+                )
             )
         else:
             n_drafts[owner.id] = n
@@ -98,8 +109,19 @@ def tax_guide(conn: Connection, *, tax_year: int, today: date) -> TaxGuide:
         answered, total = progress.answered, progress.total
         open_questions = progress.open
 
+    # The bookings that propose a tax input (phase 10 §7.8 (a), D293): a point of Eure Angaben
+    # each, with the POST /return-inputs payload; nothing is written here.
+    try:
+        proposals = booked_input_proposals(conn, tax_year)
+    except RuleError as exc:
+        unavailable.append(f"proposals:{exc.code}")
+        proposals = None
+
     result = rule.guide(
         rule.GuideInput(
+            proposals=proposals,
+            estimate_failed=estimate_failed,
+            estimate_refused=estimate_refused,
             tax_year=tax_year,
             today=today,
             properties=properties,

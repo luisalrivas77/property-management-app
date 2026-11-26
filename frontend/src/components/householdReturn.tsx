@@ -28,6 +28,7 @@ import { householdReturn } from "@/i18n/income";
 
 import { DocumentPicker } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
+import { useReturnInputsSync } from "./returnInputsSync";
 import { toMoneyString } from "./input";
 import { BelegLink } from "./returnInputEvidence";
 import { GROSS_SOURCE, HOUSEHOLD_SERVICE_CLASS, HOUSEHOLD_SERVICE_SOURCE, options } from "./labels";
@@ -136,6 +137,7 @@ function PayslipChip({ ownerId, year }: { ownerId: string; year: number }) {
 export function HouseholdReturnBlocks({ year }: { year: number }) {
   const loadChildren = useCallback(() => loadRows(year, "child"), [year]);
   const children = useLoad(loadChildren);
+  const childrenChanged = useReturnInputsSync(children.reload);
   const t = useT(householdReturn);
   const f = useFormat();
   return (
@@ -153,9 +155,9 @@ export function HouseholdReturnBlocks({ year }: { year: number }) {
               rows={list}
               empty={t.noChildren(year)}
               describe={(row, index) => childText(row, index)}
-              onChanged={children.reload}
+              onChanged={childrenChanged}
             />
-            <ChildForm year={year} onDone={children.reload} />
+            <ChildForm year={year} onDone={childrenChanged} />
           </>
         )}
       </Loading>
@@ -168,10 +170,15 @@ export function HouseholdReturnBlocks({ year }: { year: number }) {
         empty={t.noServices(year)}
         describe={(row) => {
           const v = row.value as HouseholdServicesFact;
-          return t.servicesRow(
-            HOUSEHOLD_SERVICE_CLASS[v.service_class],
-            f.money(v.labour_cost),
-            HOUSEHOLD_SERVICE_SOURCE[v.source],
+          // The payee a card from the bookings named (phase 10 D293), when the row has one.
+          const payee = v.payee_label ? `${v.payee_label} · ` : "";
+          return (
+            payee +
+            t.servicesRow(
+              HOUSEHOLD_SERVICE_CLASS[v.service_class],
+              f.money(v.labour_cost),
+              HOUSEHOLD_SERVICE_SOURCE[v.source],
+            )
           );
         }}
         form={(done) => <ServicesForm year={year} onDone={done} />}
@@ -200,7 +207,8 @@ export function HouseholdReturnBlocks({ year }: { year: number }) {
               const v = row.value as ChildcareFact;
               const index = list.findIndex((child) => child.id === v.child_id);
               const child = list[index];
-              return `${child ? childName(child, index) : t.child} · ${f.money(v.amount)}`;
+              const payee = v.payee_label ? ` · ${v.payee_label}` : "";
+              return `${child ? childName(child, index) : t.child}${payee} · ${f.money(v.amount)}`;
             }}
             form={(done) =>
               list.length === 0 ? (
@@ -246,6 +254,9 @@ function ItemBlock({
 }) {
   const load = useCallback(() => loadRows(year, kind), [year, kind]);
   const rows = useLoad(load);
+  // A row saved here ends a proposal of the guide above it, and a proposal taken over there adds
+  // a row here (components/returnInputsSync.ts).
+  const changed = useReturnInputsSync(rows.reload);
   return (
     <div className="stack">
       <h4>{title}</h4>
@@ -253,8 +264,8 @@ function ItemBlock({
       <Loading state={rows}>
         {(list) => (
           <>
-            <RowList rows={list} empty={empty} describe={describe} onChanged={rows.reload} />
-            {form(rows.reload)}
+            <RowList rows={list} empty={empty} describe={describe} onChanged={changed} />
+            {form(changed)}
           </>
         )}
       </Loading>

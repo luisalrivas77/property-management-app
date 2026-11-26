@@ -12,22 +12,27 @@
 // ?tab=angaben and the Jahresfragen /tax/<year>/fragen.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { type FormEvent, useCallback, useEffect, useId, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
+import { ApiError, ruleCodeText } from "@/api/errors";
 import type { components } from "@/api/types";
 import type { AllocationFact, AnlageVDraft, DocumentChecklistItem, Owner, Property } from "@/api/schemas";
 import { ChecklistTab } from "@/app/(app)/properties/[id]/ChecklistTab";
-import { translate, useFormat, useT } from "@/i18n";
+import { formatter, translate, useFormat, useT } from "@/i18n";
+import { getLocale } from "@/i18n/locale";
 import { taxGuide as messages } from "@/i18n/taxGuide";
 import { todosText } from "@/i18n/todos";
+import { ErrorNotice } from "@/lib/ErrorNotice";
 import { Icon } from "@/lib/icons";
 
 import { DetailLayout, DetailPanel, useDetail } from "./DetailPanel";
 import { ReadUpload } from "./documents";
-import { WARNING_TEXT } from "./labels";
+import { decimalInput, toMoneyString } from "./input";
+import { HOUSEHOLD_SERVICE_CLASS, REPLACEMENT_BENEFIT, WARNING_TEXT } from "./labels";
 import { NoPayButton, noPayHint } from "./noPay";
 import { isZeroAmount, ReturnEstimateSummary } from "./returnEstimate";
+import { useReturnInputsSync } from "./returnInputsSync";
 import { HandOverCard, LimitCard } from "./tax";
 import {
   GrundsteuerSection,
@@ -40,6 +45,7 @@ import {
   checklistAction,
   checklistEntry,
   type GuideContext,
+  noteEntry,
   requirementGuide,
   type TodoEntry,
   TodoList,
@@ -56,7 +62,7 @@ import {
   taxGuideHref,
   taxStepHref,
 } from "./taxYear";
-import { Loading } from "./ui";
+import { ActionDialog, Loading } from "./ui";
 import { useLoad, type Loaded } from "./useLoad";
 
 import "./tax.css";
@@ -67,6 +73,8 @@ type GuideStep = components["schemas"]["GuideStep"];
 type GuidePoint = components["schemas"]["GuidePoint"];
 type GuideDocument = components["schemas"]["GuideDocument"];
 type GuideFormResult = components["schemas"]["GuideFormResult"];
+type BookedProposal = components["schemas"]["BookedProposal"];
+type ReturnInputCreate = components["schemas"]["ReturnInputCreate"];
 type T = ReturnType<typeof translate<typeof messages.de>>;
 
 const loadProperties = () => ok(api.GET("/api/properties"));
@@ -380,8 +388,14 @@ function pointKey(point: GuidePoint): string {
     property_id: point.property_id,
     owner_id: point.owner_id,
     item_scope_id: point.item?.scope.id,
-    params: point.warning?.params,
-    refs: point.warning?.refs,
+    // A proposal is named by its payments (digested, so no payee lands in the URL) and its
+    // amount: a row that covers part of it gives a new point, and a fresh card.
+    params: point.proposal
+      ? { group: point.proposal.group, difference: point.proposal.difference }
+      : point.refused
+        ? { refused: point.refused }
+        : point.warning?.params,
+    refs: point.proposal ? point.proposal.allocation_ids.map((id) => ({ kind: "allocation", id })) : point.warning?.refs,
   });
 }
 
@@ -426,6 +440,20 @@ function pointEntry(point: GuidePoint, scope: PointScope, t: T): TodoEntry | nul
       context,
     };
   }
+  if (point.proposal) return proposalEntry(point.proposal, key, scope, t, context);
+  if (point.code === "return_input.refused") {
+    // An input the rules refuse (rules/tax_guide.py REFUSAL_CODES): the rule's own sentence,
+    // and the tab where the input is changed.
+    return {
+      key,
+      title: (point.refused ? ruleCodeText(point.refused) : null) ?? t.refusedTitle,
+      text: t.refusedText,
+      action: (
+        <Link href={taxFormHref("angaben", { year: scope.year, propertyId: null, ownerId: point.owner_id ?? null })}>{t.refusedAction}</Link>
+      ),
+      context,
+    };
+  }
   const property = point.property_id ? scope.contexts?.get(point.property_id) : undefined;
   if (point.warning) {
     const ctx: GuideContext = {
@@ -435,8 +463,12 @@ function pointEntry(point: GuidePoint, scope: PointScope, t: T): TodoEntry | nul
       draft: property?.draft ?? undefined,
       payments: property?.payments,
     };
+    // A note of a form that carries an action is listed with it (rules/tax_guide.py NOTE_STEP).
+    const entry = point.note
+      ? noteEntry(point.warning, ctx, key, scope.onChanged, context)
+      : warningEntry(point.warning, ctx, key, scope.onChanged, context);
     return (
-      warningEntry(point.warning, ctx, key, scope.onChanged, context) ?? {
+      entry ?? {
         key,
         title: WARNING_TEXT[point.warning.code](point.warning.params ?? {}),
         text: null,
@@ -465,6 +497,270 @@ function pointEntry(point: GuidePoint, scope: PointScope, t: T): TodoEntry | nul
     );
   }
   return null;
+}
+
+// --- bookings that propose a tax input (phase 10 §7.8 (a), D293) ----------------------------
+
+/** A proposal as a card: what it is and the amount, its explanation behind „Warum?“, and the
+ * buttons. Nothing counts before „Übernehmen“ (principle 3), which posts the server's payload
+ * with the fields the bookings cannot say. */
+function proposalEntry(proposal: BookedProposal, key: string, scope: PointScope, t: T, context: string | undefined): TodoEntry {
+  const amount = formatter(getLocale()).money(proposal.difference);
+  const payee = proposal.payee ?? null;
+  const [title, text] =
+    proposal.group === "benefit"
+      ? [t.proposalBenefit(amount), t.proposalBenefitText]
+      : proposal.group === "donation"
+        ? [t.proposalDonation(payee, amount), t.proposalDonationText]
+        : proposal.group === "childcare"
+          ? [t.proposalChildcare(payee, amount), t.proposalChildcareText]
+          : [t.proposalServices(payee, amount), t.proposalServicesText];
+  return {
+    key,
+    title,
+    text,
+    // Keyed by the point, so the „taken“ state never passes to the proposal that moves into its
+    // place.
+    action: <ProposalAction key={key} proposal={proposal} owners={scope.owners} onChanged={scope.onChanged} />,
+    context,
+  };
+}
+
+/** The benefits a booking can be: Kurzarbeitergeld is on the wage certificate and never
+ * proposed from the account (phase 6 D159 amended (8)). */
+const BOOKED_BENEFITS = (Object.keys(REPLACEMENT_BENEFIT) as (keyof typeof REPLACEMENT_BENEFIT)[]).filter(
+  (b) => b !== "kurzarbeitergeld",
+);
+/** The 409 constraint of a row taken from a card the guide no longer shows (D293 review). */
+const PROPOSAL_STALE = "return_input.proposal_stale";
+const SERVICE_CLASSES = Object.keys(HOUSEHOLD_SERVICE_CLASS) as (keyof typeof HOUSEHOLD_SERVICE_CLASS)[];
+
+function ProposalAction({ proposal, owners, onChanged }: { proposal: BookedProposal; owners: readonly Owner[]; onChanged: () => void }) {
+  const t = useT(messages);
+  // Once saved, „Übernehmen“ stays off until the guide has reloaded without this proposal: the
+  // server takes a second identical row for these kinds, which would count the sum twice.
+  const [taken, setTaken] = useState(false);
+  return (
+    <>
+      <ActionDialog label={taken ? t.saved : t.take} title={t.takeTitle} buttonClass="" disabled={taken}>
+        {(close) => (
+          <ProposalForm
+            proposal={proposal}
+            owners={owners}
+            onDone={() => {
+              setTaken(true);
+              close();
+              onChanged();
+            }}
+            onStale={() => {
+              // The card was out of date (taken already, or the bookings changed): the server
+              // wrote nothing, so reload the guide and show the proposals as they are now.
+              close();
+              onChanged();
+            }}
+            onCancel={close}
+          />
+        )}
+      </ActionDialog>
+      <PaymentsDialog proposal={proposal} />
+      {proposal.receipt_needed ? <ReadUpload label={t.uploadReceipt} onUploaded={onChanged} /> : null}
+      {proposal.group === "household_services" ? <ReadUpload label={t.uploadInvoice} onUploaded={onChanged} /> : null}
+    </>
+  );
+}
+
+/** „Zahlungen ansehen“: the payments the proposal sums, by date, payee and amount (never the
+ * purpose text, which the server does not send). */
+function PaymentsDialog({ proposal }: { proposal: BookedProposal }) {
+  const t = useT(messages);
+  const f = useFormat();
+  const lines = proposal.lines ?? [];
+  if (lines.length === 0) return null;
+  return (
+    <ActionDialog label={t.showPayments(lines.length)} title={t.paymentsTitle} buttonClass="link">
+      {() => (
+        <ul className="tax-guide-payments">
+          {lines.map((line) => (
+            <li key={line.allocation_id} className="row">
+              <span>{f.date(line.booking_date)}</span>
+              <span>{line.payee ?? t.noPayee}</span>
+              <span className="spacer" />
+              <span>{f.money(line.amount)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </ActionDialog>
+  );
+}
+
+function ProposalForm({
+  proposal,
+  owners,
+  onDone,
+  onStale,
+  onCancel,
+}: {
+  proposal: BookedProposal;
+  owners: readonly Owner[];
+  onDone: () => void;
+  onStale: () => void;
+  onCancel: () => void;
+}) {
+  const t = useT(messages);
+  const f = useFormat();
+  const ids = useId();
+  const needs = new Set(proposal.needs ?? []);
+  const services = proposal.group === "household_services";
+  // §35a: the bank line is the whole invoice, so the labour share starts empty and is typed from
+  // the invoice; every other group starts at the booked amount, which the person may change.
+  const [amount, setAmount] = useState(services ? "" : decimalInput(proposal.difference));
+  const [owner, setOwner] = useState(proposal.owner_id ?? "");
+  const [benefit, setBenefit] = useState(proposal.benefit ?? "");
+  const [child, setChild] = useState("");
+  const [serviceClass, setServiceClass] = useState("");
+  const [recipient, setRecipient] = useState("");
+  const [problem, setProblem] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setProblem(null);
+    setError(null);
+    const parsed = toMoneyString(amount);
+    if (!parsed.ok) {
+      setProblem(parsed.message);
+      return;
+    }
+    if (
+      (needs.has("owner") && !owner) ||
+      (needs.has("benefit") && !benefit) ||
+      (needs.has("child") && !child) ||
+      (needs.has("service_class") && !serviceClass) ||
+      (needs.has("recipient") && !recipient.trim())
+    ) {
+      setProblem(t.missingField);
+      return;
+    }
+    const payload = proposal.payload as { value?: Record<string, unknown> } & Record<string, unknown>;
+    const value: Record<string, unknown> = { ...(payload.value ?? {}) };
+    if (services) value.labour_cost = parsed.value;
+    else value.amount = parsed.value;
+    if (needs.has("benefit")) value.benefit = benefit;
+    if (needs.has("child")) value.child_id = child;
+    if (needs.has("service_class")) value.service_class = serviceClass;
+    if (needs.has("recipient")) value.recipient_label = recipient.trim();
+    // What the card showed: the server refuses the row (409) unless the proposal still matches.
+    const from_proposal = {
+      group: proposal.group,
+      allocation_ids: proposal.allocation_ids,
+      difference: proposal.difference,
+    };
+    const body = {
+      ...payload,
+      value,
+      from_proposal,
+      ...(needs.has("owner") ? { owner_id: owner } : {}),
+    } as unknown as ReturnInputCreate;
+    // Off while the request runs; the card's button stays off after it (ProposalAction).
+    setBusy(true);
+    try {
+      await ok(api.POST("/api/return-inputs", { body }));
+      onDone();
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 409 && caught.body?.constraint === PROPOSAL_STALE) {
+        onStale();
+        return;
+      }
+      setError(caught);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="stack" onSubmit={(event) => void submit(event)}>
+      {needs.has("owner") ? (
+        <label htmlFor={`${ids}-owner`}>
+          {t.ownerAsk}
+          <select id={`${ids}-owner`} value={owner} onChange={(event) => setOwner(event.target.value)}>
+            <option value="">{t.pick}</option>
+            {owners.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.full_name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      {needs.has("benefit") ? (
+        <label htmlFor={`${ids}-benefit`}>
+          {t.benefitAsk}
+          <select id={`${ids}-benefit`} value={benefit} onChange={(event) => setBenefit(event.target.value)}>
+            <option value="">{t.pick}</option>
+            {BOOKED_BENEFITS.map((b) => (
+              <option key={b} value={b}>
+                {REPLACEMENT_BENEFIT[b]}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      {needs.has("child") ? (
+        <label htmlFor={`${ids}-child`}>
+          {t.childAsk}
+          <select id={`${ids}-child`} value={child} onChange={(event) => setChild(event.target.value)}>
+            <option value="">{t.pick}</option>
+            {(proposal.child_choices ?? []).map((c, index) => (
+              <option key={c.id} value={c.id}>
+                {t.childOption(index + 1, f.month(c.born_on.slice(0, 7)))}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      {needs.has("service_class") ? (
+        <label htmlFor={`${ids}-class`}>
+          {t.serviceClassAsk}
+          <select id={`${ids}-class`} value={serviceClass} onChange={(event) => setServiceClass(event.target.value)}>
+            <option value="">{t.pick}</option>
+            {SERVICE_CLASSES.map((c) => (
+              <option key={c} value={c}>
+                {HOUSEHOLD_SERVICE_CLASS[c]}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      {needs.has("recipient") ? (
+        <label htmlFor={`${ids}-recipient`}>
+          {t.recipientAsk}
+          <input id={`${ids}-recipient`} value={recipient} maxLength={120} onChange={(event) => setRecipient(event.target.value)} />
+        </label>
+      ) : null}
+      <label htmlFor={`${ids}-amount`}>
+        {services ? t.labourCost : t.amount}
+        <input id={`${ids}-amount`} inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
+      </label>
+      {services ? <p className="muted">{t.billSum(f.money(proposal.difference))}</p> : null}
+      {proposal.group === "childcare" ? <p className="muted">{t.childcareHint}</p> : null}
+      {problem ? (
+        <p className="notice notice-error" role="alert">
+          {problem}
+        </p>
+      ) : null}
+      <ErrorNotice error={error} />
+      <div className="row">
+        <button type="submit" disabled={busy}>
+          {busy ? t.saving : t.take}
+        </button>
+        <button type="button" className="secondary" onClick={onCancel}>
+          {t.cancel}
+        </button>
+      </div>
+    </form>
+  );
 }
 
 /** The ids of the properties whose draft the shown points or Belege need (their to-do actions
@@ -516,10 +812,12 @@ export function AngabenPoints({ year }: { year: number }) {
   const guide = useGuide(year);
   const properties = useLoad(loadProperties);
   const owners = useLoad(loadOwners);
-  const reload = guide.reload;
+  // A proposal taken over here adds a row to the blocks below, and a row typed there ends a
+  // proposal here (components/returnInputsSync.ts).
+  const changed = useReturnInputsSync(guide.reload);
   const data = guide.data;
   if (!data) return null;
-  return <AngabenPointList guide={data} properties={properties.data ?? []} owners={owners.data ?? []} onChanged={reload} empty={t.pointsNone} />;
+  return <AngabenPointList guide={data} properties={properties.data ?? []} owners={owners.data ?? []} onChanged={changed} empty={t.pointsNone} />;
 }
 
 function AngabenPointList({
@@ -957,7 +1255,9 @@ function ReviewStep({
   const keys: string[] = points.map(pointKey);
   const openIndex = detail.id ? keys.indexOf(detail.id) : -1;
   const openSteps = guide.steps.filter((s) => s.kind !== "review" && s.state !== "done");
-  const stillOpen = points.length + openSteps.filter((s) => s.kind === "questions" || s.kind === "documents").reduce((n, s) => n + s.open, 0);
+  // A note or a proposal a person may rightly leave is listed but never counted (GuidePoint.blocking).
+  const blocking = points.filter((p) => p.blocking !== false).length;
+  const stillOpen = blocking + openSteps.filter((s) => s.kind === "questions" || s.kind === "documents").reduce((n, s) => n + s.open, 0);
   // Nothing left to clear, yet a part of the year cannot be computed: say that, not „0 Punkte“.
   const elsterWhy = (stillOpen === 0 ? unavailableText(guide, t) : null) ?? t.elsterNotYet(stillOpen);
   // The open point, remembered: once it is cleared (the guide reloads without it), „Nächster
@@ -997,10 +1297,10 @@ function ReviewStep({
   return (
     <DetailLayout panel={panel}>
       <div className="stack tax-guide">
-        <StepHead guide={guide} kind="review" title={t.stepReview} listed={points.length} />
+        <StepHead guide={guide} kind="review" title={t.stepReview} listed={blocking} />
         <p className="muted">{t.reviewIntro}</p>
         <section aria-labelledby="tax-guide-points" className="stack">
-          <h2 id="tax-guide-points">{points.length > 0 ? t.pointsTitle(points.length) : t.pointsNone}</h2>
+          <h2 id="tax-guide-points">{blocking > 0 ? t.pointsTitle(blocking) : points.length > 0 ? t.suggestionsTitle : t.pointsNone}</h2>
           {points.length > 0 ? (
             <ul className="detail-rows">
               {points.map((point) => {

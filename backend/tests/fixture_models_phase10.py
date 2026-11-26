@@ -28,6 +28,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 import yaml
 from fixture_models import Lenient
+from fixture_models_booked_inputs import BookedInputsFixture
 from pydantic import AfterValidator, Field, model_validator
 
 from hausbuch.rules.health.month import cashflow_rows, household_month, rental_month
@@ -1082,6 +1083,7 @@ MODELS: dict[str, type[Schema]] = {
     "reserve_above": RouteFixture,
     "plan_page": PlanFixture,
     "investment_split": InvestmentSplitFixture,
+    "booked_inputs": BookedInputsFixture,
     "goal_invest": TrackerFixture,
     "goal_property": GrowthFixture,
 }
