@@ -25,7 +25,7 @@
 //
 // No euro figure is computed here: the last screen shows the estimate as the API returns it.
 import Link from "next/link";
-import { useCallback, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
 import { ApiError, ruleCodes } from "@/api/errors";
@@ -51,6 +51,7 @@ import {
   WORK_ROOM_PREFER,
 } from "./labels";
 import type { QuestionTarget } from "./taxYear";
+import { FieldHelpNote, RareFields, useFormHelp } from "./fieldHelp";
 import { type FormField, type HelpForm } from "./returnInputFields";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
@@ -380,10 +381,14 @@ interface Existing {
 
 let itemCounter = 0;
 
+function blankText(spec: FieldSpec, year: number): string {
+  return spec.initial ? spec.initial(year) : spec.type === "bool" ? "false" : "";
+}
+
 function blankItem(target: Target, year: number): Item {
   const kind = target.input_kind ?? "";
   const raw: Record<string, string> = {};
-  for (const spec of FORMS[kind] ?? []) raw[spec.name] = spec.initial ? spec.initial(year) : spec.type === "bool" ? "false" : "";
+  for (const spec of FORMS[kind] ?? []) raw[spec.name] = blankText(spec, year);
   for (const [name, value] of Object.entries(target.value_match ?? {})) raw[name] = value;
   return { key: ++itemCounter, target, kind, raw, carried: null, base: {}, carriedFromId: null, existing: null, originalRaw: null };
 }
@@ -1046,6 +1051,7 @@ function StepScreen({
                   key={item.key}
                   item={item}
                   index={at}
+                  year={year}
                   prefix={prefixOf(items, at)}
                   questions={data.view.questions}
                   childRows={data.children}
@@ -1197,6 +1203,7 @@ function fieldKeys(items: Item[]): string[] {
 function ItemForm({
   item,
   index,
+  year,
   prefix,
   questions,
   childRows,
@@ -1206,6 +1213,7 @@ function ItemForm({
 }: {
   item: Item;
   index: number;
+  year: number;
   prefix: string;
   questions: Question[];
   childRows: ReturnInputFact[];
@@ -1218,6 +1226,18 @@ function ItemForm({
   const fixed = item.target.value_match ?? {};
   const set = (name: string, value: string) => onChange({ ...item.raw, [name]: value });
   const id = (name: string) => `item-${item.key}-${name}`;
+  const help = useFormHelp(item.kind);
+  const visible = (FORMS[item.kind] ?? []).filter((spec) => shown(spec, item));
+  // With one child, a child field starts on that child (22c frame 7, Kita); with more, a person picks.
+  const onlyChild = childRows.length === 1 ? childRows[0]!.id : null;
+  const childSpecs = visible.filter((spec) => spec.type === "child" && (item.raw[spec.name] ?? "") === "").map((spec) => spec.name);
+  const preselect = onlyChild !== null && childSpecs.length > 0;
+  useEffect(() => {
+    if (!preselect || onlyChild === null) return;
+    onChange({ ...item.raw, ...Object.fromEntries(childSpecs.map((name) => [name, onlyChild])) });
+    // once per item: the effect runs again only while a child field is still empty
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preselect, onlyChild]);
   return (
     <fieldset className="fragen-item">
       <legend>
@@ -1225,7 +1245,26 @@ function ItemForm({
         {index + 1}
       </legend>
       <div className="grid">
-        {(FORMS[item.kind] ?? []).filter((spec) => shown(spec, item)).map((spec) => {
+        {visible.filter((spec) => !help.rare(spec.name)).map(renderSpec)}
+        {visible.some((spec) => help.rare(spec.name)) ? (
+          <RareFields
+            open={visible.some(
+              (spec) =>
+                help.rare(spec.name) &&
+                ((item.raw[spec.name] ?? "") !== blankText(spec, year) || errors(`${prefix}.${spec.name}`).length > 0),
+            )}
+          >
+            {visible.filter((spec) => help.rare(spec.name)).map(renderSpec)}
+          </RareFields>
+        ) : null}
+      </div>
+      <button type="button" className="link" onClick={onRemove}>
+        {t.removeItem}
+      </button>
+    </fieldset>
+  );
+
+  function renderSpec(spec: FieldSpec) {
           const raw = item.raw[spec.name] ?? "";
           const carried = item.carried !== null && raw !== "" && raw === item.carried[spec.name];
           const label = (
@@ -1234,6 +1273,9 @@ function ItemForm({
               {carried ? <span className="badge fragen-carried">{t.priorYear}</span> : null}
             </>
           );
+          // The field help of Eure Angaben (phase 10 D294); nothing outside its provider.
+          const note = <FieldHelpNote form={item.kind} field={spec.name} label={fields[spec.label]} />;
+          const hint = spec.hint ? fields[spec.hint] : undefined;
           if (fixed[spec.name] !== undefined) {
             return (
               <p key={spec.name} className="field">
@@ -1246,12 +1288,18 @@ function ItemForm({
             return (
               <label key={spec.name} className="inline">
                 <input type="checkbox" checked={raw === "true"} onChange={(e) => set(spec.name, e.target.checked ? "true" : "false")} />
-                {label}
+                {label} {note}
               </label>
             );
           }
           return (
-            <Field key={spec.name} id={id(spec.name)} label={label} hint={spec.hint ? fields[spec.hint] : undefined} errors={errors(`${prefix}.${spec.name}`)}>
+            <Field
+              key={spec.name}
+              id={id(spec.name)}
+              label={label}
+              hint={help.loaded ? <>{hint}{hint ? " " : null}{note}</> : hint}
+              errors={errors(`${prefix}.${spec.name}`)}
+            >
               {spec.type === "select" ? (
                 <select value={raw} onChange={(e) => set(spec.name, e.target.value)}>
                   {spec.optional ? <option value="">–</option> : null}
@@ -1283,13 +1331,7 @@ function ItemForm({
               )}
             </Field>
           );
-        })}
-      </div>
-      <button type="button" className="link" onClick={onRemove}>
-        {t.removeItem}
-      </button>
-    </fieldset>
-  );
+  }
 }
 
 function Reconfirm({

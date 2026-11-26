@@ -27,6 +27,7 @@ import { getLocale, LOCALE_TAG, translate, useFormat, useT } from "@/i18n";
 import { householdReturn } from "@/i18n/income";
 
 import { DocumentPicker } from "./documents";
+import { useHelpHint } from "./fieldHelp";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { useReturnInputsSync } from "./returnInputsSync";
 import { toMoneyString } from "./input";
@@ -380,6 +381,7 @@ function ChildForm({ year, onDone }: { year: number; onDone: () => void }) {
   const [saved, setSaved] = useState<string | null>(null);
   const t = useT(householdReturn);
   const { form, busy, submit } = useRowSubmit(CHILD_KEYS, {});
+  const help = useHelpHint("child");
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -415,7 +417,7 @@ function ChildForm({ year, onDone }: { year: number; onDone: () => void }) {
         <Field
           id={`${base}-born`}
           label={t.bornOn}
-          hint={t.bornHint}
+          hint={help("born_on", t.bornOn, t.bornHint)}
           description={t.bornDescription}
           errors={form.of("value.born_on")}
         >
@@ -424,7 +426,7 @@ function ChildForm({ year, onDone }: { year: number; onDone: () => void }) {
         <Field
           id={`${base}-kindergeld`}
           label={t.kindergeldFrom}
-          hint={t.kindergeldHint}
+          hint={help("kindergeld_from", t.kindergeldFrom, t.kindergeldHint)}
           description={t.kindergeldDescription}
           errors={form.of("value.kindergeld_from")}
         >
@@ -453,6 +455,7 @@ function ServicesForm({ year, onDone }: { year: number; onDone: () => void }) {
   const { form, busy, submit } = useRowSubmit(SERVICES_KEYS, {
     "return.household_services_cash": ["value.paid_to_account", t.cashNotCounted],
   });
+  const help = useHelpHint("household_services");
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -479,7 +482,7 @@ function ServicesForm({ year, onDone }: { year: number; onDone: () => void }) {
   return (
     <form className="stack" onSubmit={onSubmit} noValidate aria-label={t.addService}>
       <div className="grid">
-        <Field id={`${base}-class`} label={t.serviceKind} errors={form.of("value.service_class")}>
+        <Field id={`${base}-class`} label={t.serviceKind} hint={help("service_class", t.serviceKind)} errors={form.of("value.service_class")}>
           <select value={serviceClass} onChange={(e) => setServiceClass(e.target.value as ServiceClass)}>
             {options(HOUSEHOLD_SERVICE_CLASS).map(([value, text]) => (
               <option key={value} value={value}>
@@ -491,12 +494,13 @@ function ServicesForm({ year, onDone }: { year: number; onDone: () => void }) {
         <Field
           id={`${base}-labour`}
           label={t.labour}
+          hint={help("labour_cost", t.labour)}
           description={t.labourDescription}
           errors={form.of("value.labour_cost")}
         >
           <input type="text" inputMode="decimal" value={labourCost} onChange={(e) => setLabourCost(e.target.value)} autoComplete="off" />
         </Field>
-        <Field id={`${base}-source`} label={t.source} errors={form.of("value.source")}>
+        <Field id={`${base}-source`} label={t.source} hint={help("source", t.source)} errors={form.of("value.source")}>
           <select value={source} onChange={(e) => setSource(e.target.value as ServiceSource)}>
             {options(HOUSEHOLD_SERVICE_SOURCE).map(([value, text]) => (
               <option key={value} value={value}>
@@ -511,7 +515,7 @@ function ServicesForm({ year, onDone }: { year: number; onDone: () => void }) {
       </div>
       <label className="inline">
         <input type="checkbox" checked={paidToAccount} onChange={(e) => setPaidToAccount(e.target.checked)} />
-        {t.paidByTransfer}
+        {t.paidByTransfer} {help("paid_to_account", t.paidByTransfer)}
       </label>
       {form.of("value.paid_to_account").map((message) => (
         <p key={message} className="notice notice-error">
@@ -535,6 +539,7 @@ function DonationForm({ year, onDone }: { year: number; onDone: () => void }) {
   const [documentId, setDocumentId] = useState<string | null>(null);
   const t = useT(householdReturn);
   const { form, busy, submit } = useRowSubmit(DONATION_KEYS, {});
+  const help = useHelpHint("special_expense");
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -557,10 +562,10 @@ function DonationForm({ year, onDone }: { year: number; onDone: () => void }) {
   return (
     <form className="stack" onSubmit={onSubmit} noValidate aria-label={t.addDonation}>
       <div className="grid">
-        <Field id={`${base}-recipient`} label={t.recipient} errors={form.of("value.recipient_label")}>
+        <Field id={`${base}-recipient`} label={t.recipient} hint={help("recipient_label", t.recipient)} errors={form.of("value.recipient_label")}>
           <input type="text" value={recipient} onChange={(e) => setRecipient(e.target.value)} maxLength={120} autoComplete="off" />
         </Field>
-        <Field id={`${base}-amount`} label={t.amount} errors={form.of("value.amount")}>
+        <Field id={`${base}-amount`} label={t.amount} hint={help("amount", t.amount)} errors={form.of("value.amount")}>
           <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoComplete="off" />
         </Field>
         <Field
@@ -591,6 +596,7 @@ function ChildcareForm({ year, childRows, onDone }: { year: number; childRows: R
   const { form, busy, submit } = useRowSubmit(CHILDCARE_KEYS, {
     "return.childcare_age": ["value.child_id", t.childAge],
   });
+  const help = useHelpHint("childcare_cost");
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -612,7 +618,7 @@ function ChildcareForm({ year, childRows, onDone }: { year: number; childRows: R
   return (
     <form className="stack" onSubmit={onSubmit} noValidate aria-label={t.addChildcare}>
       <div className="grid">
-        <Field id={`${base}-child`} label={t.child} errors={form.of("value.child_id")}>
+        <Field id={`${base}-child`} label={t.child} hint={help("child_id", t.child)} errors={form.of("value.child_id")}>
           <select value={childId} onChange={(e) => setChildId(e.target.value)}>
             {childRows.map((row, index) => (
               <option key={row.id} value={row.id}>
@@ -621,7 +627,7 @@ function ChildcareForm({ year, childRows, onDone }: { year: number; childRows: R
             ))}
           </select>
         </Field>
-        <Field id={`${base}-amount`} label={t.costYear} errors={form.of("value.amount")}>
+        <Field id={`${base}-amount`} label={t.costYear} hint={help("amount", t.costYear)} errors={form.of("value.amount")}>
           <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoComplete="off" />
         </Field>
         <Field id={`${base}-document`} label={t.receiptOptional}>
@@ -630,7 +636,7 @@ function ChildcareForm({ year, childRows, onDone }: { year: number; childRows: R
       </div>
       <label className="inline">
         <input type="checkbox" checked={paidToAccount} onChange={(e) => setPaidToAccount(e.target.checked)} />
-        {t.paidByTransfer}
+        {t.paidByTransfer} {help("paid_to_account", t.paidByTransfer)}
       </label>
       <div className="row">
         <Submit busy={busy}>{t.add}</Submit>

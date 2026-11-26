@@ -29,7 +29,7 @@ import { taxGuide as guideText } from "@/i18n/taxGuide";
 
 import { ReadUpload, UploadControl, type Uploaded } from "./documents";
 import { loadDirectory } from "./entities";
-import { FieldHelpProvider } from "./fieldHelp";
+import { FieldHelpNote, FieldHelpProvider } from "./fieldHelp";
 import { FormBanner, useFormErrors } from "./form";
 import { HouseholdReturnBlocks } from "./householdReturn";
 import { IncomeSection } from "./income";
@@ -212,9 +212,13 @@ function useHashTarget(ready: unknown) {
 function TopicList({ year, guide, owners, onChanged }: { year: number; guide: TaxGuide; owners: readonly Owner[]; onChanged: () => void }) {
   const a = useT(messages);
   const proposals = proposalsOf(guide);
+  // Once shown, the box stays on the page, so confirming the last proposal in the walk does not
+  // unmount its dialog before „Alle Vorschläge sind geprüft“.
+  const [shown, setShown] = useState(proposals.length > 0);
+  if (proposals.length > 0 && !shown) setShown(true);
   return (
     <div className="stack angaben">
-      {proposals.length > 0 ? <ProposalsBox proposals={proposals} owners={owners} onChanged={onChanged} /> : null}
+      {shown ? <ProposalsBox proposals={proposals} owners={owners} onChanged={onChanged} /> : null}
       <section className="card stack" aria-labelledby="angaben-topics">
         <h2 id="angaben-topics">{a.topicsLabel}</h2>
         <ul className="angaben-topics">
@@ -290,9 +294,9 @@ function ProposalsBox({ proposals, owners, onChanged }: { proposals: BookedPropo
   const line = proposals.map((p) => `${proposalTexts(p, t)[0]}`).join(" · ");
   return (
     <section className="card stack angaben-proposals" aria-labelledby="angaben-proposals">
-      <h2 id="angaben-proposals">{a.proposalsTitle(proposals.length)}</h2>
-      <p className="muted">{line || a.proposalsLine}</p>
-      <div className="row">
+      <h2 id="angaben-proposals">{proposals.length > 0 ? a.proposalsTitle(proposals.length) : a.proposalsDone}</h2>
+      {proposals.length > 0 ? <p className="muted">{line || a.proposalsLine}</p> : null}
+      <div className="row" hidden={proposals.length === 0}>
         <ActionDialog label={a.proposalsWalk} title={a.proposalsWalk} buttonClass="">
           {(close) => <ProposalWalk proposals={proposals} owners={owners} onChanged={onChanged} onClose={close} money={f.money} />}
         </ActionDialog>
@@ -479,8 +483,12 @@ function SlotProposals({
   const t = useT(guideText);
   const f = useFormat();
   const [taken, setTaken] = useState<readonly string[]>([]);
+  // A benefit booked on a joint account names no owner: it is offered on each owner's question,
+  // and ProposalForm asks whose it is.
   const matching = proposals.filter(
-    (p) => PROPOSAL_QUESTION[p.group] === extra.slot.key && (p.group !== "benefit" || (p.owner_id ?? null) === (extra.slot.owner_id ?? null)),
+    (p) =>
+      PROPOSAL_QUESTION[p.group] === extra.slot.key &&
+      (p.group !== "benefit" || p.owner_id == null || p.owner_id === (extra.slot.owner_id ?? null)),
   );
   const left = matching.filter((p) => !taken.includes(proposalKey(p)));
   const current = left[0];
@@ -515,7 +523,12 @@ function SlotProposals({
           const rest = left.length - 1;
           setTaken((list) => [...list, proposalKey(current)]);
           onChanged();
-          if (rest === 0) extra.answer(null);
+          if (rest > 0) return;
+          // Every row is written, so the question is answered: „Ja“ for a yes/no question; for
+          // the benefit question (a choice) the proposal's benefit when it is one of the choices,
+          // else the person picks it below.
+          if (extra.question.answer_type !== "choice") extra.answer(null);
+          else if (current.benefit && (extra.question.choices ?? []).some((c) => c.code === current.benefit)) extra.answer(current.benefit);
         }}
         onStale={onChanged}
         onCancel={extra.other}
@@ -564,6 +577,7 @@ function OwnerTaxCard({ owner, onSaved }: { owner: Owner; onSaved: () => void })
       <h3 id={`${churchId}-title`}>{a.ownerQuestions(owner.full_name)}</h3>
       <fieldset className="stack">
         <legend id={churchId}>{a.churchAskOwner(owner.full_name)}</legend>
+        <FieldHelpNote form="owner" field="church_tax" label={a.churchAskOwner(owner.full_name)} />
         <div className="fragen-answers" role="group" aria-labelledby={churchId}>
           <button type="button" className={church === true ? "" : "secondary"} aria-pressed={church === true} onClick={() => setChurch(true)}>
             {a.yes}
@@ -574,6 +588,7 @@ function OwnerTaxCard({ owner, onSaved }: { owner: Owner; onSaved: () => void })
         </div>
       </fieldset>
       <label htmlFor={stateId}>{a.stateAsk(owner.full_name)}</label>
+      <FieldHelpNote form="owner" field="tax_state" label={a.stateAsk(owner.full_name)} />
       <select id={stateId} value={state} onChange={(e) => setState(e.target.value as StateCode | "")}>
         <option value="">{a.pick}</option>
         {(Object.entries(STATE_CODE) as [StateCode, string][]).map(([code, label]) => (
@@ -584,7 +599,7 @@ function OwnerTaxCard({ owner, onSaved }: { owner: Owner; onSaved: () => void })
       </select>
       <FormBanner errors={form.errors} />
       <div className="row">
-        <button type="button" disabled={busy || church === null || (church && state === "")} onClick={() => void save()}>
+        <button type="button" disabled={busy || church === null || state === ""} onClick={() => void save()}>
           {busy ? a.saving : a.save}
         </button>
         {saved ? <span className="muted">{a.saved}</span> : null}
@@ -625,6 +640,7 @@ function ReadCertificate({ uploaded, onApplied, onAnother }: { uploaded: Uploade
   const load = useCallback(() => ok(api.GET("/api/documents/{document_id}", { params: { path: { document_id: id } } })), [id]);
   const detail = useLoad(load);
   const directory = useLoad(loadDirectory);
+  // The read runs as a job; ProposalSection polls it and shows its values once it settles.
   return (
     <div className="stack">
       <p className="muted">
@@ -637,7 +653,15 @@ function ReadCertificate({ uploaded, onApplied, onAnother }: { uploaded: Uploade
       ) : (
         <Loading state={detail}>
           {(data: DocumentDetail) => (
-            <ProposalSection detail={data} directory={directory.data ?? null} onApplied={onApplied} applyLabel={a.stimmtSo} />
+            <ProposalSection
+              detail={data}
+              directory={directory.data ?? null}
+              onApplied={() => {
+                detail.reload();
+                onApplied();
+              }}
+              applyLabel={a.stimmtSo}
+            />
           )}
         </Loading>
       )}

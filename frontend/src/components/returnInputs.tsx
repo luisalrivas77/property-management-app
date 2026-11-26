@@ -23,6 +23,7 @@ import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { formatFraction, formatShare } from "./format";
 import { decimalInput, toDecimalString, toFraction, toMoneyString, type Parsed } from "./input";
 import { BelegLink } from "./returnInputEvidence";
+import { FieldHelpNote, RareFields, useFormHelp } from "./fieldHelp";
 import { type FormField, type HelpForm } from "./returnInputFields";
 import {
   COMMUTE_KIND,
@@ -465,6 +466,10 @@ function InputForm({
   const t = useT(returnInputs);
   const kindTexts = kindText[kind.kind];
   const set = (name: string, text: string) => setTexts((current) => ({ ...current, [name]: text }));
+  // A field the help marks rare goes behind „Weitere Angaben (selten nötig)“ (D294).
+  const help = useFormHelp(kind.kind);
+  const common = kind.fields.filter((field) => !help.rare(field.name));
+  const rare = kind.fields.filter((field) => help.rare(field.name));
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -510,12 +515,41 @@ function InputForm({
     <form className="stack tax-input-form" onSubmit={submit} noValidate aria-label={replaces ? t.formChange(RETURN_INPUT_KIND[kind.kind]) : t.formEnter(RETURN_INPUT_KIND[kind.kind])}>
       <p className="muted hint">{kindTexts?.help}</p>
       <div className="grid">
-        {kind.fields.map((field) => (
+        {common.map(renderField)}
+        {rare.length > 0 ? (
+          <RareFields open={rare.some((field) => form.of(`value.${field.name}`).length > 0 || (texts[field.name] ?? "") !== initialText(field, null, year))}>
+            {rare.map(renderField)}
+          </RareFields>
+        ) : null}
+        {kind.document ? (
+          <Field id={`${base}-document`} label={kindTexts?.document ?? ""} errors={form.of("document_id")}>
+            <DocumentPicker value={documentId} onChange={setDocumentId} />
+          </Field>
+        ) : null}
+      </div>
+      {replaces !== null ? <p className="muted hint">{t.kept}</p> : null}
+      <div className="row">
+        <Submit busy={busy}>{t.save}</Submit>
+        <button type="button" className="link" onClick={onCancel}>
+          {t.cancel}
+        </button>
+      </div>
+      {banner ? <p className="notice notice-error">{banner}</p> : null}
+      <FormBanner errors={form.errors} />
+    </form>
+  );
+
+  function renderField(field: FieldSpec) {
+    const label = kindTexts?.labels[field.name] ?? field.name;
+    const hint = kindTexts?.hints?.[field.name];
+    // The field help of Eure Angaben (phase 10 D294) under the label; nothing elsewhere.
+    const note = <FieldHelpNote form={kind.kind} field={field.name} label={label} />;
+    return (
           <Field
             key={field.name}
             id={`${base}-${field.name}`}
-            label={kindTexts?.labels[field.name] ?? field.name}
-            hint={kindTexts?.hints?.[field.name]}
+            label={label}
+            hint={help.loaded ? <>{hint}{hint ? " " : null}{note}</> : hint}
             description={kindTexts?.descriptions?.[field.name]}
             errors={form.of(`value.${field.name}`)}
           >
@@ -546,22 +580,6 @@ function InputForm({
               />
             )}
           </Field>
-        ))}
-        {kind.document ? (
-          <Field id={`${base}-document`} label={kindTexts?.document ?? ""} errors={form.of("document_id")}>
-            <DocumentPicker value={documentId} onChange={setDocumentId} />
-          </Field>
-        ) : null}
-      </div>
-      {replaces !== null ? <p className="muted hint">{t.kept}</p> : null}
-      <div className="row">
-        <Submit busy={busy}>{t.save}</Submit>
-        <button type="button" className="link" onClick={onCancel}>
-          {t.cancel}
-        </button>
-      </div>
-      {banner ? <p className="notice notice-error">{banner}</p> : null}
-      <FormBanner errors={form.errors} />
-    </form>
-  );
+    );
+  }
 }

@@ -61,19 +61,28 @@ export function useFieldHelp(form: string, field: string): ShownHelp | null {
   return context?.help && entry ? shown(context.help, entry, english) : null;
 }
 
-/** Whether the help marks this field rare (behind „Weitere Angaben“); false without help. */
-export function useRareFields(form: string): (field: string) => boolean {
+/** The help of one form for a renderer: whether a field has help and whether it is rare. Without
+ * a provider (or before the help loaded) no field has help and none is rare, so the form renders
+ * as it does elsewhere in the app. */
+export function useFormHelp(form: string): { loaded: boolean; has: (field: string) => boolean; rare: (field: string) => boolean } {
   const context = useContext(Context);
   const fields = context?.help?.forms[form];
-  return (field) => fields?.[field]?.rare ?? false;
+  return {
+    loaded: !!context?.help,
+    has: (field) => fields?.[field] !== undefined,
+    rare: (field) => fields?.[field]?.rare ?? false,
+  };
 }
 
-/** The line under a field's label: what it is, where to find it, and ⓘ for the example. */
+/** The line under a field's label: what it is, where to find it, and ⓘ for the example. Once the
+ * help is loaded, a field it does not name renders an empty marker `data-help-missing`, which
+ * e2e/field-help.spec.ts counts on every topic screen (a form field without help fails it). */
 export function FieldHelpNote({ form, field, label }: { form: string; field: string; label: string }) {
   const context = useContext(Context);
   const help = useFieldHelp(form, field);
   const t = useT(messages);
-  if (!context || !help) return null;
+  if (!context?.help) return null;
+  if (!help) return <span hidden data-help-missing={`${form}.${field}`} />;
   return (
     <span className="field-help">
       <span>{help.what}</span> <span className="muted">{help.where}</span>{" "}
@@ -84,11 +93,28 @@ export function FieldHelpNote({ form, field, label }: { form: string; field: str
   );
 }
 
-/** „Weitere Angaben (selten nötig)“: the rare fields of a form, folded. */
-export function RareFields({ children }: { children: ReactNode }) {
+/** A Field's hint with the field help after it: `hint(field, label, ownHint?)`. Without the help
+ * (no provider, not loaded) only the form's own hint, as elsewhere in the app. */
+export function useHelpHint(form: string): (field: string, label: string, own?: ReactNode) => ReactNode {
+  const help = useFormHelp(form);
+  return function helpHint(field: string, label: string, own?: ReactNode): ReactNode {
+    if (!help.loaded) return own;
+    return (
+      <>
+        {own}
+        {own ? " " : null}
+        <FieldHelpNote form={form} field={field} label={label} />
+      </>
+    );
+  };
+}
+
+/** „Weitere Angaben (selten nötig)“: the rare fields of a form, folded; open when one of them
+ * carries an error or a value, so nothing typed or wrong is hidden. */
+export function RareFields({ open, children }: { open?: boolean; children: ReactNode }) {
   const t = useT(messages);
   return (
-    <details className="field-rare">
+    <details className="field-rare" open={open || undefined}>
       <summary>{t.moreFields}</summary>
       <div className="grid">{children}</div>
     </details>
