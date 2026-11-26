@@ -27,13 +27,13 @@ sources:
   anleitung_n:
     official: false
     url: null
-    de: "Die Unterlagen zur Arbeit (Arbeitsvertrag, Rechnungen, Bescheinigungen) und der Abschnitt der Anlage N, in den der Wert gehört; Abschnittsnamen ohne Zeilennummer, da die Vordrucke 2026 noch nicht veröffentlicht und die Anleitung nicht abgeglichen ist"
-    en: "The papers about the job (employment contract, invoices, certificates) and the section of the Anlage N the value belongs to; section names without a line number, since the 2026 forms are not published yet and the instructions were not checked line by line"
+    de: "Die Unterlagen zur Arbeit (Arbeitsvertrag, Rechnungen, Bescheinigungen) und der Abschnitt der Anlage N, in den der Wert gehört; die Abschnittsnamen am 26.11.2026 mit der Anleitung zur Anlage N 2025 (Stand 25.09.2025, gelesen aus einer Drittkopie) abgeglichen; ohne Zeilennummer, da sich die Zeilen jedes Jahr verschieben und die Vordrucke 2026 noch nicht veröffentlicht sind"
+    en: "The papers about the job (employment contract, invoices, certificates) and the section of the Anlage N the value belongs to; section names checked on 26 Nov 2026 against the Anleitung zur Anlage N 2025 (as of 25 Sep 2025, read from a third-party copy); no line number, since the lines move every year and the 2026 forms are not published yet"
   anleitung_est:
     official: false
     url: null
-    de: "Die eigenen Belege (Rechnungen, Bescheide, Bescheinigungen, Kontoauszüge) und die Anlage der Einkommensteuererklärung, in die der Wert gehört (Anlage Kind, Haushaltsnahe Aufwendungen, Sonderausgaben, Vorsorgeaufwand); ohne Zeilennummer, die Anleitung ist nicht abgeglichen"
-    en: "Your own papers (invoices, notices, certificates, bank statements) and the annex of the income tax return the value belongs to (Anlage Kind, Haushaltsnahe Aufwendungen, Sonderausgaben, Vorsorgeaufwand); no line number, the instructions were not checked line by line"
+    de: "Die eigenen Belege (Rechnungen, Bescheide, Bescheinigungen, Kontoauszüge) und die Anlage der Einkommensteuererklärung, in die der Wert gehört (Anlage Kind, Haushaltsnahe Aufwendungen, Sonderausgaben, Vorsorgeaufwand); die Abschnittsnamen am 26.11.2026 mit den Anleitungen 2025 zu diesen Anlagen abgeglichen (Stand 25.09.2025, gelesen aus Drittkopien); ohne Zeilennummer, da sich die Zeilen jedes Jahr verschieben"
+    en: "Your own papers (invoices, notices, certificates, bank statements) and the annex of the income tax return the value belongs to (Anlage Kind, Haushaltsnahe Aufwendungen, Sonderausgaben, Vorsorgeaufwand); section names checked on 26 Nov 2026 against the 2025 instructions for these annexes (as of 25 Sep 2025, read from third-party copies); no line number, since the lines move every year"
   payslip:
     official: false
     url: null
@@ -330,8 +330,8 @@ forms:
     days_other_workplace:
       rare: false
       source: anleitung_n
-      de: {what: "Tage, an denen überwiegend zu Hause gearbeitet wurde, obwohl beim Arbeitgeber ein Arbeitsplatz da war.", where: "Eigener Homeoffice-Kalender; Anlage N, Abschnitt Tagespauschale für Tätigkeit in der häuslichen Wohnung (siehe Anleitung zur Anlage N).", example: "40"}
-      en: {what: "Days worked mainly at home although a desk at the employer was available.", where: "Your own home office calendar; Anlage N, section on the daily flat rate for work at home (see the instructions for the Anlage N).", example: "40"}
+      de: {what: "Tage, an denen überwiegend zu Hause gearbeitet wurde, obwohl beim Arbeitgeber ein Arbeitsplatz da war.", where: "Eigener Homeoffice-Kalender; Anlage N, Abschnitt Tagespauschale (bei beruflicher Tätigkeit im Homeoffice) (siehe Anleitung zur Anlage N).", example: "40"}
+      en: {what: "Days worked mainly at home although a desk at the employer was available.", where: "Your own home office calendar; Anlage N, section Tagespauschale (daily flat rate for work in the home office) (see the instructions for the Anlage N).", example: "40"}
     days_no_other_workplace:
       rare: true
       source: anleitung_n
@@ -484,8 +484,8 @@ forms:
     amount:
       rare: false
       source: anleitung_est
-      de: {what: "Beiträge zu Haftpflicht-, Unfall- und Berufsunfähigkeitsversicherung im Jahr.", where: "Beitragsrechnungen der Versicherer; Anlage Vorsorgeaufwand, weitere sonstige Vorsorgeaufwendungen (siehe Anleitung).", example: "420,00 €"}
-      en: {what: "The year's premiums for liability, accident and disability insurance.", where: "The insurers' premium notices; Anlage Vorsorgeaufwand, other provident expenses (see the instructions).", example: "€420.00"}
+      de: {what: "Beiträge zu Haftpflicht-, Unfall- und Berufsunfähigkeitsversicherung im Jahr.", where: "Beitragsrechnungen der Versicherer; Anlage Vorsorgeaufwand, Abschnitt Weitere Vorsorgeaufwendungen (siehe Anleitung zur Anlage Vorsorgeaufwand).", example: "420,00 €"}
+      en: {what: "The year's premiums for liability, accident and disability insurance.", where: "The insurers' premium notices; Anlage Vorsorgeaufwand, section Weitere Vorsorgeaufwendungen (further provident expenses; see the instructions for the Anlage Vorsorgeaufwand).", example: "€420.00"}
 
   replacement_income:
     benefit:
