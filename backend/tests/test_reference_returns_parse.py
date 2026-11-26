@@ -6,6 +6,7 @@ January-December“), with INVENTED round values: never a published figure, neve
 
 import io
 import zipfile
+from datetime import date
 from decimal import Decimal
 
 import procrastinate
@@ -71,6 +72,11 @@ def test_the_annual_section_is_read_as_published():
         [*MONTHLY, *annual([GOOD[0], "1992   ,-110.00    ,1.00   ,-1.00    ,2.00"])],
         [*MONTHLY, *annual([GOOD[0], "1992   ,12.00    ,1.00   ,-1.00    ,200.00"])],
         [*MONTHLY, *annual([GOOD[0], "1992   ,12.000001    ,1.00   ,-1.00    ,2.00"])],
+        [*MONTHLY, *annual([*GOOD[:2], "199x   ,12.00    ,1.00   ,-1.00    ,2.00", *GOOD[2:]])],
+        [*MONTHLY, *annual([*GOOD[:2], "", *GOOD[2:]])],  # a break, then more years
+        [*MONTHLY, *annual([*GOOD[:2], "Note", *GOOD[2:]])],
+        [*MONTHLY, *annual(GOOD), "1996" + "x" * 200_000],  # a field over csv's limit
+        [*MONTHLY, " Annual Factors: January-December", ",Mkt-RF" + "x" * 200_000],
     ],
 )
 def test_an_unexpected_file_is_refused(lines):
@@ -135,3 +141,11 @@ def test_both_tasks_are_registered_under_one_lock_without_retry():
     periodic = [p for p in app.periodic_registry.periodic_tasks.values() if p.task is daily]
     assert [p.cron for p in periodic] == [job.FETCH_REFERENCE_CRON] == ["15 6 * * *"]
     assert not [p for p in app.periodic_registry.periodic_tasks.values() if p.task is refresh]
+
+
+def test_a_year_not_over_yet_is_refused():
+    lines = [*MONTHLY, *annual(GOOD)]  # 1991–1995
+    assert sorted(R.parse(zipped(lines), date(1996, 1, 2))) == [1991, 1992, 1993, 1994, 1995]
+    with pytest.raises(SourceError) as refused:
+        R.parse(zipped(lines), date(1995, 12, 31))
+    assert refused.value.kind == "parse"

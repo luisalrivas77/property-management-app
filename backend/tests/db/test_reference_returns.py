@@ -57,6 +57,17 @@ def test_the_newest_download_counts_and_stays_in_its_workspace(run, read, fresh_
     assert read(other, R.newest) is None
 
 
+def test_a_shorter_download_never_replaces_a_longer_one(run, read, fresh_workspaces):
+    ws, _ = fresh_workspaces
+    run(
+        ws, lambda ctx: R.store(ctx.conn, ws, R.parse(zipped(annual(LATER))), datetime.now().date())
+    )
+    with pytest.raises(SourceError) as refused:
+        run(ws, lambda ctx: R.store(ctx.conn, ws, R.parse(FILE), datetime.now().date()))
+    assert refused.value.kind == "shorter"
+    assert sorted(read(ws, R.newest).rows) == [1991, 1992, 1993, 1994, 1995, 1996]
+
+
 def test_a_download_is_due_when_none_is_stored_or_the_newest_is_old_and_lacks_last_year(
     run, read, fresh_workspaces
 ):

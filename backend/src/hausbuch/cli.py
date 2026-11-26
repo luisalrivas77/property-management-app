@@ -1219,6 +1219,8 @@ def fetch_reference_returns(
     try:
         with workspace_transaction(engine, args.workspace) as conn:
             R.store(conn, args.workspace, rows, datetime.now(LOCAL_TIME_ZONE).date())
+    except SourceError as exc:
+        raise CliError(f"the file was refused ({exc.kind}); nothing stored") from None
     except SQLAlchemyError as exc:
         detail = type(getattr(exc, "orig", None) or exc).__name__
         raise CliError(

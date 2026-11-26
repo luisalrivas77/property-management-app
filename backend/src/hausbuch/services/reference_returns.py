@@ -99,20 +99,38 @@ def _csv_text(zip_bytes: bytes) -> str:
     return raw.decode("latin-1")
 
 
-def parse(zip_bytes: bytes) -> dict[int, tuple[Decimal, Decimal]]:
-    """{year: (Mkt−RF, RF)} of the annual section, or SourceError("parse")."""
+def _cells(line: str) -> list[str]:
+    try:
+        return [cell.strip() for cell in next(csv.reader([line]), [])]
+    except csv.Error:  # an over-long field: refused like any other file
+        raise _refuse() from None
+
+
+def _year_like(cells: list[str]) -> bool:
+    return bool(cells) and cells[0][:1].isdigit()
+
+
+def parse(zip_bytes: bytes, today: date | None = None) -> dict[int, tuple[Decimal, Decimal]]:
+    """{year: (Mkt−RF, RF)} of the annual section, or SourceError("parse"). The section ends
+    at a blank line or a note; a row that starts like a year but is not one, a year after the
+    end, or a last year later than the year before `today` (a year not over yet) is refused."""
     lines = _csv_text(zip_bytes).splitlines()
     starts = [i for i, line in enumerate(lines) if line.strip() == _ANNUAL]
     if len(starts) != 1 or starts[0] + 1 >= len(lines):
         raise _refuse()
-    header = [cell.strip() for cell in next(csv.reader([lines[starts[0] + 1]]))]
+    header = _cells(lines[starts[0] + 1])
     if header != _HEADER:
         raise _refuse()
     rows: dict[int, tuple[Decimal, Decimal]] = {}
-    for line in lines[starts[0] + 2 :]:
-        cells = [cell.strip() for cell in next(csv.reader([line]), [])]
-        if not cells or not cells[0].isdigit() or len(cells[0]) != 4:
-            break  # the section ends at a blank line or the copyright note
+    body = lines[starts[0] + 2 :]
+    end = len(body)
+    for n, line in enumerate(body):
+        cells = _cells(line)
+        if not _year_like(cells):
+            end = n  # the section ends at a blank line or the copyright note
+            break
+        if not cells[0].isdigit() or len(cells[0]) != 4:
+            raise _refuse()
         if len(cells) != len(_HEADER):
             raise _refuse()
         year = int(cells[0])
@@ -122,20 +140,27 @@ def parse(zip_bytes: bytes) -> dict[int, tuple[Decimal, Decimal]]:
         if not (-200 < excess < 1000 and -50 < risk_free < 100) or excess + risk_free <= -100:
             raise _refuse()
         rows[year] = (excess, risk_free)
-    if not rows:
-        raise _refuse()
+    if not rows or any(_year_like(_cells(line)) for line in body[end:]):
+        raise _refuse()  # nothing read, or more years after a break in the section
+    if today is not None and max(rows) > today.year - 1:
+        raise _refuse()  # a year not over yet is no yearly return
     return rows
 
 
 def download(fetch: Fetch = urllib_fetch) -> dict[int, tuple[Decimal, Decimal]]:
     """The file, parsed; SourceError when it cannot be read or is refused."""
-    return parse(get(fetch, FUNDS_URL, max_bytes=MAX_ZIP_BYTES))
+    return parse(get(fetch, FUNDS_URL, max_bytes=MAX_ZIP_BYTES), date.today())
 
 
 def store(
     conn: Connection, workspace_id: UUID, rows: dict[int, tuple[Decimal, Decimal]], read_on: date
 ) -> UUID:
-    """One download for the workspace of `conn`, every year as one row; its id."""
+    """One download for the workspace of `conn`, every year as one row; its id.
+    SourceError("shorter") when it lacks a year the newest stored download holds: a file cut
+    short never replaces a longer series."""
+    last = newest(conn)
+    if last is not None and not set(last.rows) <= set(rows):
+        raise SourceError("shorter")
     download_id = uuid4()
     conn.execute(
         insert(T),
