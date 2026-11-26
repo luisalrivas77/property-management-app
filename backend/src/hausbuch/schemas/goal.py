@@ -5,6 +5,7 @@ The goal and what the household chose for it are levers of the default household
 Every figure is computed by code; the app proposes no goal, no date and no amount (D289 (1)).
 """
 
+from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated
@@ -30,9 +31,10 @@ class GoalWord(StrEnum):
 
     NONE = "none"  # no goal set: „Ziel festlegen“
     ON_TRACK = "on_track"  # „Auf Kurs“: the walk without change reaches it
-    FEASIBLE = "feasible"  # „Machbar“: a spending scenario (route 4) closes the gap
-    # „Ehrgeizig“: only through route 3 (more return against the history), not built yet,
-    # never in `generic` mode
+    # „Machbar“: a spending scenario (route 4) closes the gap, or route 3 is within the median
+    FEASIBLE = "feasible"
+    # „Ehrgeizig“: only through route 3, its return reached only in good times while no
+    # spending scenario closes; never in `generic` mode or on a thin history
     AMBITIOUS = "ambitious"
     HARDLY = "hardly"  # „Kaum erreichbar“
 
@@ -82,15 +84,94 @@ class GoalMoreSaving(Schema):
 
 
 class GoalRouteReason(StrEnum):
-    NOT_BUILT = "not_built"  # route 3 waits for the reference series (D310)
+    """Why route 3 has no count (§7.11 „Route 3 as decided for the build“ 5, 6; D310
+    amended). `not_built` went with route 3's build."""
+
     GENERIC_MODE = "generic_mode"  # never offered in `generic` mode (D289)
+    NOTHING_INVESTED = "nothing_invested"  # no fund or coin held and no split
+    SERIES_MISSING = "series_missing"  # the funds series not downloaded, or its download failed
+    HISTORY_SHORT = "history_short"  # the series left cover under half, or give no window
+    OUT_OF_RANGE = "out_of_range"  # no yearly rate in −50 % … +100 % reaches the target
+
+
+class GoalVerdict(StrEnum):
+    """The needed return against the windows (§7.9 (e) 2)."""
+
+    WITHIN_HISTORY = "within_history"  # „im historischen Rahmen“: at or below the median
+    GOOD_TIMES = "good_times"  # „nur in guten Zeiten“: at or below the best
+    NEVER = "never"  # „nie über so lange Zeit erreicht“
+
+
+class GoalLeftOutKind(StrEnum):
+    FUNDS = "funds"
+    COIN = "coin"
+
+
+class GoalLeftOutReason(StrEnum):
+    TOO_SHORT = "too_short"  # a history shorter than the goal's window („zu kurze Geschichte“)
+    NO_SERIES = "no_series"  # a coin with no reference series
+    NO_COIN = "no_coin"  # a split with crypto while no coin is held: no coin is assumed
+
+
+# A yearly return to 0.1 %, as a fraction (0.147 = 14.7 %); signed, and above 100 % for a
+# coin's best window.
+GoalReturn = Annotated[
+    Decimal,
+    Field(max_digits=9, decimal_places=3),
+    _STRING_ONLY,
+    _string_schema(3, signed=True),
+]
+# A share of the invested value, percent with one place.
+GoalShare = Annotated[
+    Decimal, Field(ge=0, le=100, max_digits=4, decimal_places=1), _STRING_ONLY, _string_schema(1)
+]
+
+
+class GoalLeftOut(Schema):
+    """What the mix left out and named, with its share of the invested value (or of the
+    saved split while nothing is held); its weight went to the rest pro rata."""
+
+    kind: GoalLeftOutKind
+    symbol: str | None = None  # the coin; None for crypto in a split with no coin held
+    share: GoalShare
+    reason: GoalLeftOutReason
+
+
+class GoalReferenceSource(Schema):
+    """A series the mix rests on, named in the answer (§7.11 „Route 3 …“ 7)."""
+
+    key: str  # "funds", or the coin's symbol
+    source: str
+    url: str
+    licence: str
+    attribution: str
+    read_on: date | None = None  # the download's day, or the day the archive was read
+    own_calculation: str = "eigene Berechnung"  # converted to euros by the app
+    first_year: int
+    last_year: int
 
 
 class GoalMoreReturn(Schema):
-    """Route 3 „Mehr Rendite“: not available yet; `reason` says why."""
+    """Route 3 „Mehr Rendite“ (§7.11 (c) 3, D303, D310 amended): the one yearly return for
+    funds and crypto together that reaches the target by the due month (`needed_return`,
+    smallest to 0.1 % between −50 % and +100 %), against every window of `window_years` in the
+    mix's history: `reached_windows` of `windows` reached it, their `median` and `best`
+    annualised (each floored to 0.1 %), and the `verdict`. `thin` (under 5 windows) is shown
+    but never decides the word. Without a count `available` is false and `reason` says why;
+    `out_of_range` still shows the windows."""
 
     available: bool = False
-    reason: GoalRouteReason
+    reason: GoalRouteReason | None = None
+    needed_return: GoalReturn | None = None
+    window_years: int | None = None
+    windows: int | None = None
+    reached_windows: int | None = None
+    median: GoalReturn | None = None
+    best: GoalReturn | None = None
+    verdict: GoalVerdict | None = None
+    thin: bool = False
+    left_out: list[GoalLeftOut] = Field(default_factory=list)
+    sources: list[GoalReferenceSource] = Field(default_factory=list)
 
 
 class GoalBalanced(Schema):
@@ -107,6 +188,9 @@ class GoalBalanced(Schema):
     saving: Money | None  # Heute + saving_extra
     closes: bool
     spending_changes: list[SpendingChange] = Field(default_factory=list)
+    # The yearly return walked for funds and crypto: route 3's median when it decides the word
+    # (D302: „the invested mix at its median-window return“), None for the typed rates.
+    return_rate: GoalReturn | None = None
 
 
 class GoalAssumption(Schema):
@@ -146,8 +230,17 @@ class HouseholdGoal(Schema):
     used_up: YearMonth | None = None
     scenarios: list[GoalScenario] = Field(default_factory=list)  # route 4
     more_saving: GoalMoreSaving | None = None  # route 2
-    more_return: GoalMoreReturn | None = None  # route 3, not available yet
+    more_return: GoalMoreReturn | None = None  # route 3
     balanced: GoalBalanced | None = None  # „Ausgewogener Weg“, while route 1 misses
     unreachable: GoalUnreachable | None = None
     assumptions: list[GoalAssumption] = Field(default_factory=list)
     todos: list[HealthTodo] = Field(default_factory=list)
+
+
+class ReferenceRefreshQueued(Schema):
+    """POST /household-goal/reference-returns/refresh, 202 (phase 10 §7.11 (c) 3, point 8):
+    the job that downloads route 3's funds series again for the household; `queued` false
+    when one already waits or runs, its id then that job's."""
+
+    job_id: int
+    queued: bool

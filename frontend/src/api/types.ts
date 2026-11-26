@@ -2852,6 +2852,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/household-goal/reference-returns/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Household Goal Reference Refresh */
+        post: operations["household_goal_reference_refresh_api_household_goal_reference_returns_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts/{account_id}/movement-imports": {
         parameters: {
             query?: never;
@@ -8695,6 +8712,8 @@ export interface components {
             closes: boolean;
             /** Spending Changes */
             spending_changes?: components["schemas"]["SpendingChange"][];
+            /** Return Rate */
+            return_rate?: string | null;
         };
         /**
          * GoalBudget
@@ -8736,8 +8755,37 @@ export interface components {
          */
         GoalKind: "net_worth" | "saved_sum" | "reserve_months";
         /**
+         * GoalLeftOut
+         * @description What the mix left out and named, with its share of the invested value (or of the
+         *     saved split while nothing is held); its weight went to the rest pro rata.
+         */
+        GoalLeftOut: {
+            kind: components["schemas"]["GoalLeftOutKind"];
+            /** Symbol */
+            symbol?: string | null;
+            /** Share */
+            share: string;
+            reason: components["schemas"]["GoalLeftOutReason"];
+        };
+        /**
+         * GoalLeftOutKind
+         * @enum {string}
+         */
+        GoalLeftOutKind: "funds" | "coin";
+        /**
+         * GoalLeftOutReason
+         * @enum {string}
+         */
+        GoalLeftOutReason: "too_short" | "no_series" | "no_coin";
+        /**
          * GoalMoreReturn
-         * @description Route 3 „Mehr Rendite“: not available yet; `reason` says why.
+         * @description Route 3 „Mehr Rendite“ (§7.11 (c) 3, D303, D310 amended): the one yearly return for
+         *     funds and crypto together that reaches the target by the due month (`needed_return`,
+         *     smallest to 0.1 % between −50 % and +100 %), against every window of `window_years` in the
+         *     mix's history: `reached_windows` of `windows` reached it, their `median` and `best`
+         *     annualised (each floored to 0.1 %), and the `verdict`. `thin` (under 5 windows) is shown
+         *     but never decides the word. Without a count `available` is false and `reason` says why;
+         *     `out_of_range` still shows the windows.
          */
         GoalMoreReturn: {
             /**
@@ -8745,7 +8793,29 @@ export interface components {
              * @default false
              */
             available: boolean;
-            reason: components["schemas"]["GoalRouteReason"];
+            reason?: components["schemas"]["GoalRouteReason"] | null;
+            /** Needed Return */
+            needed_return?: string | null;
+            /** Window Years */
+            window_years?: number | null;
+            /** Windows */
+            windows?: number | null;
+            /** Reached Windows */
+            reached_windows?: number | null;
+            /** Median */
+            median?: string | null;
+            /** Best */
+            best?: string | null;
+            verdict?: components["schemas"]["GoalVerdict"] | null;
+            /**
+             * Thin
+             * @default false
+             */
+            thin: boolean;
+            /** Left Out */
+            left_out?: components["schemas"]["GoalLeftOut"][];
+            /** Sources */
+            sources?: components["schemas"]["GoalReferenceSource"][];
         };
         /**
          * GoalMoreSaving
@@ -8760,10 +8830,39 @@ export interface components {
             noetig: string | null;
         };
         /**
+         * GoalReferenceSource
+         * @description A series the mix rests on, named in the answer (§7.11 „Route 3 …“ 7).
+         */
+        GoalReferenceSource: {
+            /** Key */
+            key: string;
+            /** Source */
+            source: string;
+            /** Url */
+            url: string;
+            /** Licence */
+            licence: string;
+            /** Attribution */
+            attribution: string;
+            /** Read On */
+            read_on?: string | null;
+            /**
+             * Own Calculation
+             * @default eigene Berechnung
+             */
+            own_calculation: string;
+            /** First Year */
+            first_year: number;
+            /** Last Year */
+            last_year: number;
+        };
+        /**
          * GoalRouteReason
+         * @description Why route 3 has no count (§7.11 „Route 3 as decided for the build“ 5, 6; D310
+         *     amended). `not_built` went with route 3's build.
          * @enum {string}
          */
-        GoalRouteReason: "not_built" | "generic_mode";
+        GoalRouteReason: "generic_mode" | "nothing_invested" | "series_missing" | "history_short" | "out_of_range";
         /**
          * GoalScenario
          * @description A spending scenario (§7.9 (d) 3). `cut` is what it takes off the spending each month
@@ -8805,6 +8904,12 @@ export interface components {
             /** Reaches By Due */
             reaches_by_due: string;
         };
+        /**
+         * GoalVerdict
+         * @description The needed return against the windows (§7.9 (e) 2).
+         * @enum {string}
+         */
+        GoalVerdict: "within_history" | "good_times" | "never";
         /**
          * GoalWord
          * @description The one word Übersicht shows beside the financial-health verdict (§7.9 (d) 5; D303
@@ -13607,6 +13712,18 @@ export interface components {
             says: string;
             /** Does Not Say */
             does_not_say: string;
+        };
+        /**
+         * ReferenceRefreshQueued
+         * @description POST /household-goal/reference-returns/refresh, 202 (phase 10 §7.11 (c) 3, point 8):
+         *     the job that downloads route 3's funds series again for the household; `queued` false
+         *     when one already waits or runs, its id then that job's.
+         */
+        ReferenceRefreshQueued: {
+            /** Job Id */
+            job_id: number;
+            /** Queued */
+            queued: boolean;
         };
         /**
          * RelatedDocument
@@ -23107,6 +23224,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HouseholdGoal"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_goal_reference_refresh_api_household_goal_reference_returns_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferenceRefreshQueued"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

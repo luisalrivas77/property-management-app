@@ -40,6 +40,10 @@ replaces (supersedes_id); services/household_scenarios.py holds the checks.
   for typed levers, checked and run on the same row as POST /household-plan/preview (same
   422s and 404s); word `none` when the levers hold no goal; stores nothing, so it runs as a
   read („Durchspielen“ shows the goal with the changes beside the saved one).
+- POST /household-goal/reference-returns/refresh (phase 10 §7.11 (c) 3, point 8): 202; queues
+  one refresh_reference_returns job, which downloads route 3's funds series again, due or
+  not; `queued` false and the open job's id while one waits or runs. Writes nothing else:
+  the download's insert moves the data version, so the goal is computed again.
 - POST /household-plan/explanation {scenario} („Neu erklären“): 202 with `queued`; queues one
   explain_plan job, nothing while ai_private_accounts is off (D253); 404 and nothing queued
   for an unknown, superseded or withdrawn scenario.
@@ -57,7 +61,7 @@ from hausbuch.schemas.advice import (
     PlanExplanationRequest,
 )
 from hausbuch.schemas.budget import BudgetView
-from hausbuch.schemas.goal import HouseholdGoal
+from hausbuch.schemas.goal import HouseholdGoal, ReferenceRefreshQueued
 from hausbuch.schemas.plan import (
     HouseholdPlan,
     HouseholdPlanPreview,
@@ -70,6 +74,7 @@ from hausbuch.services import budget as budget_service
 from hausbuch.services import goal as goal_service
 from hausbuch.services import household_scenarios as scenarios
 from hausbuch.services import plan as plan_service
+from hausbuch.services import reference_returns
 from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.services.todo_texts import english
 
@@ -137,3 +142,9 @@ def household_goal_get(cmd: Cmd) -> HouseholdGoal:
 @router.post("/household-goal/preview")
 def household_goal_preview(body: HouseholdPlanPreview, cmd: Cmd) -> HouseholdGoal:
     return english(cmd.read(goal_service.preview_goal, _today(), body.levers, body.scenario_id))
+
+
+@router.post("/household-goal/reference-returns/refresh", status_code=202)
+def household_goal_reference_refresh(cmd: Cmd) -> ReferenceRefreshQueued:
+    job_id, queued = cmd.run(reference_returns.queue_refresh)
+    return ReferenceRefreshQueued(job_id=job_id, queued=queued)

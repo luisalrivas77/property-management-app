@@ -2,6 +2,7 @@
 D298), the monthly walk against phase 9's net-worth projection, and rule_version() unchanged."""
 
 from decimal import Decimal
+from fractions import Fraction
 
 import fixture_models_phase10 as phase10
 import pytest
@@ -9,6 +10,7 @@ from test_phase9_plan import PROJECTION, basis, run_case, scenario_of, start_of
 
 from hausbuch.rules.budget import budget as B
 from hausbuch.rules.goal import GoalInputs, Projection, household_goal, none_set, walk
+from hausbuch.rules.goal import history as H
 from hausbuch.rules.plan import levers as L
 from hausbuch.rules.plan import projection as N
 from hausbuch.schemas.goal import GoalSpending, GoalWord
@@ -275,8 +277,37 @@ def _route_inputs(case) -> tuple[GoalInputs, Projection | None, Decimal]:
         mean_income=m.mean_income,
         wants_max=levers.budget_targets.wants_max,
         mode=case.mode,
+        invested=_invested(case),
+        history=_history(case),
     )
     return inputs, p, target
+
+
+def _invested(case) -> H.Invested:
+    """Route 3's weights: the case's own, else the start's depot less its ticked part."""
+    if case.invested is not None:
+        return H.Invested(funds=case.invested.funds, coins=dict(case.invested.coins))
+    assert case.start.crypto == 0, f"{case.id}: crypto held needs `invested`"
+    return H.Invested(funds=case.start.depot - case.start.reserve_depot, coins={})
+
+
+def _series(key: str, returns) -> H.Series:
+    return H.Series(
+        key=key,
+        returns={y: Fraction(str(r)) for y, r in returns.items()},
+        source=f"invented {key}",
+        url="",
+        licence="",
+        attribution="",
+    )
+
+
+def _history(case) -> H.History:
+    h = case.history
+    return H.History(
+        funds=None if h.funds is None else _series("funds", h.funds),
+        coins={symbol: _series(symbol, r) for symbol, r in h.coins.items()},
+    )
 
 
 @pytest.mark.parametrize("case", ROUTES, ids=lambda c: c.id)
@@ -297,19 +328,39 @@ def test_goal_routes(case) -> None:
         else:
             assert (got.more_saving.extra, got.more_saving.noetig) == (expect.extra, expect.noetig)
     if want.more_return is not None:
-        assert got.more_return.available is False
-        assert got.more_return.reason.value == want.more_return.reason
+        r, expect = got.more_return, want.more_return
+        assert r.available is expect.available
+        assert (r.reason.value if r.reason is not None else None) == expect.reason
+        for name in (
+            "needed_return",
+            "window_years",
+            "windows",
+            "reached_windows",
+            "median",
+            "best",
+            "thin",
+        ):
+            if name in expect.model_fields_set:
+                assert getattr(r, name) == getattr(expect, name), name
+        if "verdict" in expect.model_fields_set:
+            assert (r.verdict.value if r.verdict is not None else None) == expect.verdict
+        assert [(x.kind.value, x.symbol, x.share, x.reason.value) for x in r.left_out] == [
+            (x.kind, x.symbol, x.share, x.reason) for x in expect.left_out
+        ]
+        if "sources" in expect.model_fields_set:
+            assert [x.key for x in r.sources] == expect.sources
     if "balanced" in want.model_fields_set:
         b, expect = got.balanced, want.balanced
         if expect is None:
             assert b is None
         else:
             assert {x.code: x.mean - x.budget for x in b.budgets} == expect.cuts
-            assert (b.cut, b.saving_extra, b.moved_to_saving, b.closes) == (
+            assert (b.cut, b.saving_extra, b.moved_to_saving, b.closes, b.return_rate) == (
                 expect.cut,
                 expect.saving_extra,
                 expect.moved_to_saving,
                 expect.closes,
+                expect.return_rate,
             )
     if "scenarios" in want.model_fields_set:
         scenarios = {s.kind.value: s for s in got.scenarios}
@@ -332,11 +383,39 @@ def test_goal_routes(case) -> None:
             assert w.at(ym).net_worth == value, ym
 
 
-def test_route_3_is_never_the_word() -> None:
-    """D303: „Ehrgeizig“ comes only through route 3, which is not built."""
+def test_ambitious_only_through_route_3() -> None:
+    """D303: „Ehrgeizig“ only when route 3 decides (available, not thin, own use) with the
+    verdict good_times; a thin or unavailable route 3 never sets a word."""
+    seen = set()
     for case in ROUTES:
         inputs, _, _ = _route_inputs(case)
-        assert household_goal(inputs).word is not GoalWord.AMBITIOUS
+        got = household_goal(inputs)
+        if got.word is GoalWord.AMBITIOUS:
+            r = got.more_return
+            assert r.available and not r.thin and r.verdict.value == "good_times", case.id
+            assert case.mode.value == "own_use", case.id
+        seen.add(got.word)
+    assert GoalWord.AMBITIOUS in seen
+
+
+REFERENCE = phase10.load("reference_returns")
+
+
+def _exact(d) -> dict:
+    return {y: Fraction(v) for y, v in d.items()}
+
+
+def test_reference_returns_in_euros() -> None:
+    """D310 amended: the yearly euro returns from the published series, by code."""
+    f = REFERENCE
+    fx = H.usd_per_eur(f.fx.usd_per_eur, f.fx.dem_per_usd)
+    assert fx == _exact(f.expect.usd_per_eur)
+    rows = {y: (r.mkt_rf, r.rf) for y, r in f.funds.items()}
+    assert H.funds_returns(rows, fx) == _exact(f.expect.funds)
+    for symbol, prices in f.coins.items():
+        assert H.coin_returns(prices, fx) == _exact(f.expect.coins[symbol]), symbol
+    for currency, want in f.expect.pegged.items():
+        assert H.pegged_returns(currency, fx) == _exact(want), currency
 
 
 def _kept_at_year_turn(loans_from_year: int) -> N.Projection:

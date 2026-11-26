@@ -18,20 +18,40 @@ Saving a goal and „Als Budget übernehmen“ use the household scenarios' own 
 (POST /household-scenarios, superseding the default): the goal is `levers.goal`, and adopting
 a scenario writes its `spending_changes` as the levers' spending changes and
 `levers.goal_choice` with the day chosen; services.household_scenarios checks the goal.
+
+Route 3 (§7.11 (c) 3, D310 amended) reads two more lever-free parts. `invested`: today's net
+worth, the depot class less today's lines of the depots ticked into the reserve (D304; the
+reserve's own balances are the stored month-end's, so they are not subtracted from today's
+figure) for the funds, and each valued line of the crypto class by its coin's symbol, a token
+priced as a coin (WETH, WSOL, Portal ETH) under that coin's, euros on an exchange or on their
+way to one under „EUR“; a coin not valued today, a spam token and a token without a symbol
+count nowhere in the mix's coins (a symbol-less token has no series to look up). `history`:
+the coins' committed series and the funds series of the workspace's newest download
+(services.reference_returns), none before the first (route 3 then says `series_missing`).
 """
 
 from datetime import date
+from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Connection
+from sqlalchemy import Connection, select
+from sqlalchemy.orm import aliased
 
+from hausbuch.db.tables import asset as asset_table
 from hausbuch.rules.budget import budget as B
 from hausbuch.rules.goal import GoalInputs, current_month, household_goal, none_set
+from hausbuch.rules.goal import history as H
+from hausbuch.rules.goal import series as reference_series
 from hausbuch.rules.plan import spending as SP
 from hausbuch.rules.plan.surplus import mean_cent
+from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.goal import GoalIssue, HouseholdGoal
+from hausbuch.schemas.health import Reserve
+from hausbuch.schemas.household import NetWorthClass
+from hausbuch.schemas.net_worth import NetWorth
 from hausbuch.schemas.plan import GoalKind, HouseholdLevers, HouseholdScenario, SurplusKey
 
+from . import reference_returns
 from .health import MonthRead, _reserve_balances, _window, key_figures, levers_one_off_codes
 from .plan import _net_worth, _scenario, advice_mode, plan_parts, previewed
 from .plan_inputs import PlanInputs
@@ -123,5 +143,72 @@ def _goal(
             mean_income=plan.surplus.amount(SurplusKey.MEAN_INCOME),
             wants_max=levers.budget_targets.wants_max,
             mode=inputs.part(("advice_mode",), advice_mode),
+            invested=_invested(inputs, now, _reserve_depots(parts.reserve)),
+            history=_history(inputs),
         )
     )
+
+
+# --- Route 3's inputs (§7.11 (c) 3, D310 amended) ----------------------------------------------
+
+_EURO = "EUR"  # an exchange's euros and money on its way to one: the euro's series, 0 %
+
+
+def _reserve_depots(reserve: Reserve) -> frozenset[UUID]:
+    """D304: the depots ticked „Zählt zur Reserve“."""
+    return frozenset(
+        a.account_id for a in reserve.accounts if a.counted and a.kind is AccountKind.DEPOT
+    )
+
+
+def _coin_symbols(conn: Connection, ids: tuple[UUID, ...]) -> dict[UUID, str]:
+    """{asset id: the symbol route 3 looks its series up by}: a token priced as a coin by that
+    coin's, else its own; a spam token and a token without a symbol are left out (a name is
+    never a symbol: it could equal a ticker and borrow that coin's history)."""
+    if not ids:
+        return {}
+    twin = aliased(asset_table)
+    a = asset_table.c
+    rows = conn.execute(
+        select(a.id, a.symbol, a.spam, twin.c.symbol.label("twin"))
+        .select_from(asset_table.outerjoin(twin, twin.c.id == a.priced_as_asset_id))
+        .where(a.id.in_(ids))
+    ).all()
+    return {r.id: (r.twin or r.symbol).upper() for r in rows if not r.spam and (r.twin or r.symbol)}
+
+
+def _invested(inputs: PlanInputs, now: NetWorth, reserve_depots: frozenset[UUID]) -> H.Invested:
+    """Today's invested values from today's net worth (`now`), without the depots in the
+    reserve (`reserve_depots`), whose lines are today's too."""
+    in_reserve = sum(
+        (
+            line.value_eur
+            for line in now.lines
+            if line.net_worth_class is NetWorthClass.DEPOT
+            and line.account_id in reserve_depots
+            and line.value_eur is not None
+        ),
+        H.ZERO,
+    )
+    funds = now.by_class.get(NetWorthClass.DEPOT, H.ZERO) - in_reserve
+    lines = [
+        line
+        for line in now.lines
+        if line.net_worth_class is NetWorthClass.CRYPTO and line.value_eur is not None
+    ]
+    ids = tuple(sorted({line.asset_id for line in lines if line.asset_id is not None}, key=str))
+    symbols = inputs.part(("coin_symbols", ids), lambda c: _coin_symbols(c, ids))
+    coins: dict[str, Decimal] = {}
+    for line in lines:
+        symbol = _EURO if line.asset_id is None else symbols.get(line.asset_id)
+        if symbol is not None:
+            coins[symbol] = coins.get(symbol, H.ZERO) + line.value_eur
+    return H.Invested(funds=funds, coins=coins)
+
+
+def _history(inputs: PlanInputs) -> H.History:
+    """The committed coin series and the newest download's funds series, if any."""
+    newest = inputs.part(("reference_returns",), reference_returns.newest)
+    if newest is None:
+        return reference_series.history(None)
+    return reference_series.history(newest.rows, newest.read_on)

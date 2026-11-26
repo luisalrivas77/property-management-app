@@ -5,6 +5,7 @@ written each read afresh; two workspaces never share a part."""
 
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -16,9 +17,19 @@ from db.test_services_health_snapshots import NOW, TODAY
 from sqlalchemy import event
 
 from hausbuch.db.session import workspace_transaction
+from hausbuch.rules.goal import series
 from hausbuch.schemas.allocation import AllocationCategory
+from hausbuch.schemas.goal import GoalRouteReason
 from hausbuch.schemas.plan import GoalChoice, GoalSpending, HouseholdLevers, HouseholdScenarioCreate
-from hausbuch.services import budget, goal, household_scenarios, net_worth, plan, plan_inputs
+from hausbuch.services import (
+    budget,
+    goal,
+    household_scenarios,
+    net_worth,
+    plan,
+    plan_inputs,
+    reference_returns,
+)
 from hausbuch.services.context import new_command
 from hausbuch.services.errors import NotFoundError, RuleViolationError
 
@@ -402,3 +413,24 @@ def test_a_changed_split_or_reserve_rate_after_a_warm_read_gives_the_uncached_an
     assert got["split_40"].not_invested is not None  # nothing bought in crypto
     assert got["split_70"].not_invested != got["split_40"].not_invested
     assert got["reserve_rate"].levers.value_change.reserve is not None
+
+
+def test_a_download_of_the_funds_series_is_seen_by_a_kept_goal(world):
+    """Phase 10 §7.11 (c) 3, point 8: before a download route 3 says `series_missing` (the
+    depot holds funds); the download's insert moves the data version, so the kept goal is
+    computed again with the funds series and equals the store bypassed. The rows are
+    INVENTED round values, never French's."""
+    _projected(world)
+    before = world.query(goal.goal, TODAY)
+    assert before.more_return is not None
+    assert before.more_return.reason is GoalRouteReason.SERIES_MISSING
+    assert _json(world, goal.goal) == before.model_dump_json()  # kept
+
+    rows = {y: (Decimal("6.00"), Decimal("2.00")) for y in range(1991, max(series.fx()) + 1)}
+    world.cmd(lambda ctx: reference_returns.store(ctx.conn, world.ws, rows, date(2027, 3, 1)))
+
+    after = world.query(goal.goal, TODAY)
+    assert after.more_return is not None
+    assert after.more_return.reason is not GoalRouteReason.SERIES_MISSING
+    assert series.FUNDS_SOURCE in {s.source for s in after.more_return.sources}
+    assert after.model_dump_json() == _uncached(world, goal.goal)

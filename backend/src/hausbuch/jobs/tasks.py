@@ -33,6 +33,14 @@ from .enqueue import (
 )
 from .explain_plan import run_explain_plan
 from .fetch_prices import FETCH_PRICES_CRON, FETCH_PRICES_LOCK, FETCH_PRICES_TASK
+from .fetch_reference_returns import (
+    FETCH_REFERENCE_CRON,
+    FETCH_REFERENCE_TASK,
+    REFERENCE_LOCK,
+    REFRESH_REFERENCE_TASK,
+    run_fetch_reference_returns,
+    run_refresh_reference_returns,
+)
 from .follow_accounts import run_follow_accounts
 from .health_daily import HEALTH_DAILY_CRON, HEALTH_DAILY_LOCK, HEALTH_DAILY_TASK
 from .inbound_mail import POLL_CRON, POLL_LOCK, POLL_TASK, run_poll_inbox
@@ -334,6 +342,20 @@ def refresh_crypto(context: JobContext, *, workspace_id: str) -> None:
     run_refresh_crypto(deps, workspace_id=UUID(workspace_id), job_id=context.job.id)
 
 
+def fetch_reference_returns(context: JobContext, *, timestamp: int) -> None:
+    """Phase 10 §7.11 (c) 3, daily at 06:15: the funds series downloaded for every workspace
+    whose newest download is due (services.reference_returns.due)."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    run_fetch_reference_returns(deps)
+
+
+def refresh_reference_returns(context: JobContext, *, workspace_id: str) -> None:
+    """POST /household-goal/reference-returns/refresh: the funds series downloaded again for
+    one workspace, due or not."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    run_refresh_reference_returns(deps, workspace_id=UUID(workspace_id))
+
+
 def register_tasks(app: procrastinate.App) -> procrastinate.App:
     """The queued tasks, plus scrub_proposals as a periodic task: the worker's periodic
     deferrer queues it at SCRUB_CRON. Procrastinate skips a schedule missed by more than
@@ -405,6 +427,15 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
     app.task(name=SYNC_WALLET_TASK, pass_context=True, lock=SYNC_WALLETS_LOCK)(sync_wallet)
     # No retry: the household presses again. The wallet syncs' lock (D291).
     app.task(name=REFRESH_CRYPTO_TASK, pass_context=True, lock=REFRESH_CRYPTO_LOCK)(refresh_crypto)
+    # No retry for either: a failed download stores nothing and the next day's run asks again
+    # (a refresh: the household presses again). One lock, so the two never write at once.
+    reference = app.task(name=FETCH_REFERENCE_TASK, pass_context=True, lock=REFERENCE_LOCK)(
+        fetch_reference_returns
+    )
+    app.periodic(cron=FETCH_REFERENCE_CRON, periodic_id=FETCH_REFERENCE_TASK)(reference)
+    app.task(name=REFRESH_REFERENCE_TASK, pass_context=True, lock=REFERENCE_LOCK)(
+        refresh_reference_returns
+    )
     # The morning chain (jobs.morning). No retry for either: the clock's fallback runs are the
     # backstop. The retry shares the wallets' lock; the gates run one at a time.
     app.task(name=SYNC_WALLETS_RETRY_TASK, pass_context=True, lock=SYNC_WALLETS_LOCK)(

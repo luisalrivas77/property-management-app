@@ -7596,6 +7596,34 @@
         }
       }
     },
+    "/api/household-goal/reference-returns/refresh": {
+      "post": {
+        "summary": "Household Goal Reference Refresh",
+        "operationId": "household_goal_reference_refresh_api_household_goal_reference_returns_refresh_post",
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceRefreshQueued"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/accounts/{account_id}/movement-imports": {
       "post": {
         "summary": "Movement Import Create",
@@ -22397,6 +22425,18 @@
             },
             "type": "array",
             "title": "Spending Changes"
+          },
+          "return_rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return Rate"
           }
         },
         "additionalProperties": false,
@@ -22518,6 +22558,58 @@
         "title": "GoalKind",
         "description": "What a household goal measures (phase 10 §7.9 (d), D289 (1))."
       },
+      "GoalLeftOut": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/GoalLeftOutKind"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "share": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,1})?$",
+            "title": "Share"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/GoalLeftOutReason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "share",
+          "reason"
+        ],
+        "title": "GoalLeftOut",
+        "description": "What the mix left out and named, with its share of the invested value (or of the\nsaved split while nothing is held); its weight went to the rest pro rata."
+      },
+      "GoalLeftOutKind": {
+        "type": "string",
+        "enum": [
+          "funds",
+          "coin"
+        ],
+        "title": "GoalLeftOutKind"
+      },
+      "GoalLeftOutReason": {
+        "type": "string",
+        "enum": [
+          "too_short",
+          "no_series",
+          "no_coin"
+        ],
+        "title": "GoalLeftOutReason"
+      },
       "GoalMoreReturn": {
         "properties": {
           "available": {
@@ -22526,16 +22618,118 @@
             "default": false
           },
           "reason": {
-            "$ref": "#/components/schemas/GoalRouteReason"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalRouteReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "needed_return": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Needed Return"
+          },
+          "window_years": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Years"
+          },
+          "windows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Windows"
+          },
+          "reached_windows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reached Windows"
+          },
+          "median": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median"
+          },
+          "best": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalVerdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thin": {
+            "type": "boolean",
+            "title": "Thin",
+            "default": false
+          },
+          "left_out": {
+            "items": {
+              "$ref": "#/components/schemas/GoalLeftOut"
+            },
+            "type": "array",
+            "title": "Left Out"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/GoalReferenceSource"
+            },
+            "type": "array",
+            "title": "Sources"
           }
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "reason"
-        ],
         "title": "GoalMoreReturn",
-        "description": "Route 3 „Mehr Rendite“: not available yet; `reason` says why."
+        "description": "Route 3 „Mehr Rendite“ (§7.11 (c) 3, D303, D310 amended): the one yearly return for\nfunds and crypto together that reaches the target by the due month (`needed_return`,\nsmallest to 0.1 % between −50 % and +100 %), against every window of `window_years` in the\nmix's history: `reached_windows` of `windows` reached it, their `median` and `best`\nannualised (each floored to 0.1 %), and the `verdict`. `thin` (under 5 windows) is shown\nbut never decides the word. Without a count `available` is false and `reason` says why;\n`out_of_range` still shows the windows."
       },
       "GoalMoreSaving": {
         "properties": {
@@ -22566,13 +22760,79 @@
         "title": "GoalMoreSaving",
         "description": "Route 2 „Mehr anlegen“ (D302): the smallest whole-euro `extra` a month from next month\nto the due month that reaches the target on the walk; `noetig` = Heute + extra, None when\nthe extra is above the mean income. It never decides the word."
       },
+      "GoalReferenceSource": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "licence": {
+            "type": "string",
+            "title": "Licence"
+          },
+          "attribution": {
+            "type": "string",
+            "title": "Attribution"
+          },
+          "read_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read On"
+          },
+          "own_calculation": {
+            "type": "string",
+            "title": "Own Calculation",
+            "default": "eigene Berechnung"
+          },
+          "first_year": {
+            "type": "integer",
+            "title": "First Year"
+          },
+          "last_year": {
+            "type": "integer",
+            "title": "Last Year"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "source",
+          "url",
+          "licence",
+          "attribution",
+          "first_year",
+          "last_year"
+        ],
+        "title": "GoalReferenceSource",
+        "description": "A series the mix rests on, named in the answer (§7.11 „Route 3 …“ 7)."
+      },
       "GoalRouteReason": {
         "type": "string",
         "enum": [
-          "not_built",
-          "generic_mode"
+          "generic_mode",
+          "nothing_invested",
+          "series_missing",
+          "history_short",
+          "out_of_range"
         ],
-        "title": "GoalRouteReason"
+        "title": "GoalRouteReason",
+        "description": "Why route 3 has no count (§7.11 „Route 3 as decided for the build“ 5, 6; D310\namended). `not_built` went with route 3's build."
       },
       "GoalScenario": {
         "properties": {
@@ -22663,6 +22923,16 @@
         ],
         "title": "GoalUnreachable",
         "description": "§7.9 (d) 4: what the household reaches instead. `later` is the month the goal is\nreached without change (None beyond the projection); `reaches_by_due` the value at the due\nmonth without change."
+      },
+      "GoalVerdict": {
+        "type": "string",
+        "enum": [
+          "within_history",
+          "good_times",
+          "never"
+        ],
+        "title": "GoalVerdict",
+        "description": "The needed return against the windows (§7.9 (e) 2)."
       },
       "GoalWord": {
         "type": "string",
@@ -34622,6 +34892,26 @@
           "does_not_say"
         ],
         "title": "ReferencePoint"
+      },
+      "ReferenceRefreshQueued": {
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "title": "Job Id"
+          },
+          "queued": {
+            "type": "boolean",
+            "title": "Queued"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "job_id",
+          "queued"
+        ],
+        "title": "ReferenceRefreshQueued",
+        "description": "POST /household-goal/reference-returns/refresh, 202 (phase 10 §7.11 (c) 3, point 8):\nthe job that downloads route 3's funds series again for the household; `queued` false\nwhen one already waits or runs, its id then that job's."
       },
       "RelatedDocument": {
         "properties": {
