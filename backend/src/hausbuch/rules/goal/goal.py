@@ -278,6 +278,13 @@ def _needed_return(i: GoalInputs, p: Projection, target: Decimal) -> Decimal | N
         month = walk(_at_rate(p, Decimal(k) / 1000), until=due).at(due)
         return month is not None and value_of(i.goal, month) >= target
 
+    return smallest_rate(ok)
+
+
+def smallest_rate(ok: Callable[[int], bool]) -> Decimal | None:
+    """The smallest yearly rate in thousandths between −50 % and +100 % for which `ok` holds
+    (`ok` rising with the rate), by bisection: −50 % when even that holds, None when +100 %
+    does not. Route 3's needed return and the property scenario's needed growth."""
     if ok(RATE_LOW):
         return (Decimal(RATE_LOW) / 1000).quantize(H.RETURN_PLACES)
     if not ok(RATE_HIGH):
