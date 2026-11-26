@@ -713,7 +713,14 @@ for (const scheme of ["light", "dark"] as const) {
     await page.screenshot({ path: test.info().outputPath(`durchspielen-planned-${scheme}.png`) });
 
     await page.goto("/household?tab=reserve");
+    // 19f panel 6: the tab holds the three cards only; the paths open in the Reserve card's panel.
+    await expect(page.getByRole("region", { name: "Wege zum Reserveziel" })).toHaveCount(0);
+    await expect(page.getByText("Basis: ", { exact: false })).toHaveCount(0);
+    await page.locator('a[href="#d-reservekarte-reserve"]').click();
     await expect(page.getByRole("region", { name: "Wege zum Reserveziel" })).toBeVisible();
+    expect(await pageWidth()).toBeLessThanOrEqual(390);
+    await page.goto("/household?tab=reserve#d-reservekarte-bedarf");
+    await expect(page.getByRole("link", { name: "Monate ansehen" })).toBeVisible();
     // The saved plan's change is named on Reserve, Ziel and Anlagen too (§7.10 (a) 6).
     await expect(page.getByTestId("planned-changes").first()).toContainText("mit 1 geplanten Änderung");
     expect(await pageWidth()).toBeLessThanOrEqual(390);

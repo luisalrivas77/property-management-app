@@ -556,3 +556,22 @@ a.goal-word-link {
   gap: 2px;
   font-size: 14px;
 }
+
+/* A path to the reserve target in the Reserve card's panel: its note under the title. */
+.goal-path {
+  border-top: 1px solid var(--divider);
+  padding-top: 4px;
+}
+
+.goal-path:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.goal-path .goal-rw {
+  border-top: 0;
+}
+
+.goal-rw > span > .goal-note {
+  flex-basis: 100%;
+}

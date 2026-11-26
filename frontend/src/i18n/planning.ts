@@ -160,7 +160,6 @@ const de = {
   leverBufferSub: "so viel vom frei verfügbaren Geld bleibt unverplant",
   baseLine: (count: number, range: string) =>
     `Basis: ${count} Monate, ${range}. Die Durchschnitte und der Bedarf kommen aus diesen ${count} abgeschlossenen Monaten.`,
-  basePaths: (on: string) => ` Die Wege zum Reserveziel beginnen beim Monatsabschluss am ${on}.`,
   baseMonths: "Monate ansehen",
   moreTitle: "Weitere Annahmen",
   collapse: "zuklappen ▴",
@@ -457,7 +456,6 @@ export const planning = defineMessages({
     leverBufferSub: "this much of the free cash stays unplanned",
     baseLine: (count: number, range: string) =>
       `Based on ${count} months, ${range}. The averages and the need come from these ${count} closed months.`,
-    basePaths: (on: string) => ` The paths to the reserve target start at the month-end of ${on}.`,
     baseMonths: "View the months",
     moreTitle: "More assumptions",
     collapse: "collapse ▴",

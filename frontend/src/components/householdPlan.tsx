@@ -832,19 +832,13 @@ function BudgetTab({ ready }: { ready: PlanReady }) {
 function ReserveTab({ ready }: { ready: PlanReady }) {
   const t = useT(planning);
   const p = useT(playText);
-  const f = usePlanFormat();
   const { shown, onChanged } = ready;
-  const closedMonths = shown.health.window.months ?? [];
-  const newest = shown.plan.newest_closed ?? closedMonths[closedMonths.length - 1] ?? "";
   const todos = (shown.plan.todos ?? []).filter((todo) => todo.code !== "rate_missing");
+  // Only the three cards of 19f panel 6 (cards, not text, 25 Nov 2026): the base months sit in
+  // „Bedarf im Monat“'s panel, the paths to the reserve target in the Reserve card's panel.
   return (
     <>
       <PlannedChanges levers={ready.data.plan.levers} />
-      <p className="muted">
-        {t.baseLine(closedMonths.length, f.monthRange(closedMonths))}
-        {t.basePaths(f.longDate(newest ? monthEnd(newest) : null))}{" "}
-        <Link href={`/household?monat=${newest}`}>{t.baseMonths}</Link>
-      </p>
       <PlanTodos todos={todos} onChanged={onChanged} />
       <DirtyNotice text={t.dirtyNotice} />
       <ReserveCards data={shown} />
@@ -857,7 +851,6 @@ function ReserveTab({ ready }: { ready: PlanReady }) {
           </>
         )}
       </InlineLever>
-      <Paths data={shown} />
     </>
   );
 }
@@ -1182,6 +1175,7 @@ function ReserveCardPanel({ id, data, backLabel, onClose }: { id: ReserveCardId;
             {p.changeReserve} ›
           </a>
         </p>
+        <Paths data={data} />
       </>
     );
   } else if (id === "anlegbar") {
@@ -1210,6 +1204,8 @@ function ReserveCardPanel({ id, data, backLabel, onClose }: { id: ReserveCardId;
     );
   } else {
     const shortfall = flatShortfall(plan);
+    const closedMonths = data.health.window.months ?? [];
+    const newest = plan.newest_closed ?? closedMonths[closedMonths.length - 1] ?? "";
     title = t.needTitle;
     body = (
       <>
@@ -1231,6 +1227,10 @@ function ReserveCardPanel({ id, data, backLabel, onClose }: { id: ReserveCardId;
           ) : null}
         </div>
         <p className="muted">{pl.kpiNeedSub}</p>
+        <p>
+          {pl.baseLine(closedMonths.length, f.monthRange(closedMonths))}{" "}
+          <Link href={`/household?monat=${newest}`}>{pl.baseMonths}</Link>
+        </p>
         <p>{t.needMoveText}</p>
         <p>
           <Link href={HOUSEHOLD_BUDGET} className="button-link secondary">
@@ -1728,73 +1728,61 @@ function Paths({ data }: { data: PlanData }) {
     return { title: t.pathPaused(name(key.slice("pause:".length))), sub: runningText };
   }
 
+  const newest = plan.newest_closed;
   return (
-    <section className="card stack" aria-labelledby="paths-title">
-      <h2 id="paths-title">{t.pathsTitle}</h2>
-      <p className="muted">
-        {t.pathsIntro(f.euro(target), f.euro(plan.reserve?.amount), f.longDate(plan.newest_closed ? monthEnd(plan.newest_closed) : null))}
+    <section className="stack" aria-labelledby="paths-title">
+      <h3 id="paths-title" className="goal-kicker">
+        {t.pathsTitle}
+      </h3>
+      <p>
+        {t.pathsIntro(f.euro(target), f.euro(plan.reserve?.amount), f.longDate(newest ? monthEnd(newest) : null))}
       </p>
-      <div className="table-wrap">
-        <table className="planning-table">
-          <thead>
-            <tr>
-              <th scope="col">{t.pathCol}</th>
-              <th scope="col" className="num">
-                {t.toReserveCol}
-              </th>
-              <th scope="col">{t.reachedCol}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paths.map((path) => {
-              const { title, sub } = label(path.key, path.paused ?? []);
-              const after = later?.paths.find((p) => p.key === path.key);
-              return (
-                <tr key={path.key}>
-                  <th scope="row">
-                    {title}
-                    {sub ? <span className="muted"> · {sub}</span> : null}
-                  </th>
-                  <td className="num">
-                    {t.perMonth(f.euro(path.to_reserve_first_month))}
-                    {after && later ? (
-                      <span className="muted">
-                        <br />
-                        {t.from(f.month(later.month))}: {t.perMonth(f.euro(after.to_reserve))}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td>
-                    {path.reached ? (
-                      <>
-                        {f.month(path.reached)}
-                        {path.months_needed != null ? <span className="muted"> · {t.inMonths(path.months_needed)}</span> : null}
-                      </>
-                    ) : path.used_up ? (
-                      <>{t.pathUsedUp(f.month(path.used_up))}</>
-                    ) : (
-                      <>{t.pathNotIn(Math.round(plan.levers.horizon_months / 12), f.euro(path.reserve_at_horizon))}</>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="goal-rows">
+        {paths.map((path) => {
+          const { title, sub } = label(path.key, path.paused ?? []);
+          const after = later?.paths.find((p) => p.key === path.key);
+          return (
+            <div key={path.key} className="goal-path" data-path={path.key}>
+              <div className="goal-rw">
+                <span>
+                  {title}
+                  {sub ? <span className="goal-note">{sub}</span> : null}
+                </span>
+                <b>
+                  {path.reached
+                    ? f.month(path.reached)
+                    : path.used_up
+                      ? t.pathUsedUp(f.month(path.used_up))
+                      : t.pathNotIn(Math.round(plan.levers.horizon_months / 12), f.euro(path.reserve_at_horizon))}
+                </b>
+              </div>
+              <div className="goal-rw goal-rw-sub">
+                <span>{t.toReserveCol}</span>
+                <b>{t.perMonth(f.euro(path.to_reserve_first_month))}</b>
+              </div>
+              {after && later ? (
+                <div className="goal-rw goal-rw-sub">
+                  <span>{t.from(f.month(later.month))}</span>
+                  <b>{t.perMonth(f.euro(after.to_reserve))}</b>
+                </div>
+              ) : null}
+              {path.reached && path.months_needed != null ? (
+                <div className="goal-rw goal-rw-sub">
+                  <span>{t.reachedCol}</span>
+                  <b>{t.inMonths(path.months_needed)}</b>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
-      {others.length > 0 && data.mode !== "generic" ? <p className="muted">{t.pathsOthers(others.map(name).join(", "))}</p> : null}
-      {plan.paths_on_rental_account ? (
-        <p className="muted">
-          {t.pathsRental(f.euro(plan.paths_on_rental_account))}
-        </p>
-      ) : null}
-      {later ? (
-        <p className="muted">
-          {t.pathsLater(f.month(later.month), f.signedEuro(later.flat), f.signedEuro(later.before), later.before_is_mean)} {t.pathsAssume}
-        </p>
-      ) : (
-        <p className="muted">{t.pathsAssume}</p>
-      )}
+      {others.length > 0 && data.mode !== "generic" ? <p className="goal-note">{t.pathsOthers(others.map(name).join(", "))}</p> : null}
+      {plan.paths_on_rental_account ? <p className="goal-note">{t.pathsRental(f.euro(plan.paths_on_rental_account))}</p> : null}
+      <p className="goal-note">
+        {later
+          ? `${t.pathsLater(f.month(later.month), f.signedEuro(later.flat), f.signedEuro(later.before), later.before_is_mean)} ${t.pathsAssume}`
+          : t.pathsAssume}
+      </p>
     </section>
   );
 }

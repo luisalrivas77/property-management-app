@@ -359,8 +359,8 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   );
 
   // Phase 10 §7.9 (a): the explanation and the savings plans in „Was übrig bleibt“ on
-  // Haushalt › Budget, the paths on Haushalt › Reserve; the plans' levers open beside the buffer
-  // on Budget (`#puffer`, §7.10 (a) 7, D299).
+  // Haushalt › Budget, the paths on Haushalt › Reserve (since §7.11 (h) in the Reserve card's side
+  // panel); the plans' levers open beside the buffer on Budget (`#puffer`, §7.10 (a) 7, D299).
   await page.goto("/household?tab=budget");
   const panel = await openExplanation(page);
   const paths = page.getByRole("region", { name: "Wege zum Reserveziel" });
@@ -371,7 +371,8 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   await expect(invested).toContainText("450 €");
   await expect(invested).toContainText("Fondsdepot A 300 € · Kryptobörse B 100 € · Fondsdepot C 50 €");
   await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Reserve" }).click();
-  await expect(paths.locator("tbody tr")).toHaveCount(4);
+  await page.locator('a[href="#d-reservekarte-reserve"]').click();
+  await expect(paths.locator("[data-path]")).toHaveCount(4);
   await expect(paths.getByText("Sparplan Fondsdepot A pausiert")).toBeVisible();
   await expect(paths.getByText("Weitere Sparpläne ohne eigene Zeile: Fondsdepot C.")).toBeVisible();
   // Back on Budget, the buffer's „Ändern“ opens the buffer and the savings plans in place.
@@ -398,9 +399,10 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   await expect(invested).toContainText("aus 3 Sparplänen zusammen");
   for (const label of labels) await expect(page.getByText(label)).toHaveCount(0);
   await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Reserve" }).click();
-  await expect(paths.locator("tbody tr")).toHaveCount(2);
-  await expect(paths.locator("tbody tr").nth(0)).toContainText("Reserve zuerst");
-  await expect(paths.locator("tbody tr").nth(1)).toContainText("Alles weiter wie bisher");
+  await page.locator('a[href="#d-reservekarte-reserve"]').click();
+  await expect(paths.locator("[data-path]")).toHaveCount(2);
+  await expect(paths.locator("[data-path]").nth(0)).toContainText("Reserve zuerst");
+  await expect(paths.locator("[data-path]").nth(1)).toContainText("Alles weiter wie bisher");
   await expect(paths.getByText("Weitere Sparpläne ohne eigene Zeile")).toHaveCount(0);
   for (const label of labels) await expect(page.getByText(label)).toHaveCount(0);
   // A cold load of the buffer's link opens the form too.
