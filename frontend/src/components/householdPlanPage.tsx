@@ -163,6 +163,22 @@ function amount(t: PT, p: PlanFormat, plan: PlanPage, value: string | null | und
   return rounded(plan) && value != null ? t.rounded(text) : text;
 }
 
+/** A small figure's amount: „rund“ may wrap onto its own line on a phone, the amount never. */
+function StatAmount({ plan, value }: { plan: PlanPage; value: string | null | undefined }) {
+  const t = useT(planPageText);
+  const p = usePlanFormat();
+  const text = <span className="planp-nowrap">{p.euro(value)}</span>;
+  if (!rounded(plan) || value == null) return text;
+  const [before, after] = t.rounded("|").split("|");
+  return (
+    <>
+      {before}
+      {text}
+      {after}
+    </>
+  );
+}
+
 function Cards({ plan }: { plan: PlanPage }) {
   const t = useT(planPageText);
   if (!plan.goal) {
@@ -274,12 +290,12 @@ function HeuteCard({ plan }: { plan: PlanPage }) {
     <div className="goal-c">
       <CardHead kind={KIND} id={P.heute} title={t.heute} />
       <Stats count={3}>
-        <Stat value={amount(t, p, plan, heute.net_worth)} label={t.netWorth} />
+        <Stat value={<StatAmount plan={plan} value={heute.net_worth} />} label={t.netWorth} />
         <Stat
-          value={heute.reserve_months != null ? p.short(heute.reserve_months) : amount(t, p, plan, heute.reserve)}
+          value={heute.reserve_months != null ? p.short(heute.reserve_months) : <StatAmount plan={plan} value={heute.reserve} />}
           label={heute.reserve_months != null ? t.reserveMonths("", heute.reserve_full === true).trim() : t.reserveNone}
         />
-        <Stat value={amount(t, p, plan, heute.saved_mean)} label={t.savedMean} />
+        <Stat value={<StatAmount plan={plan} value={heute.saved_mean} />} label={t.savedMean} />
       </Stats>
     </div>
   );

@@ -71,6 +71,17 @@
   color: var(--accent-strong);
 }
 
+/* A figure is never cut off: in the shared view „rund“ wraps onto its own line on a phone, the
+ * amount stays whole (.planp-nowrap). */
+.planp .goal-v {
+  white-space: normal;
+  overflow: visible;
+}
+
+.planp-nowrap {
+  white-space: nowrap;
+}
+
 .planp-goal-foot {
   display: flex;
   justify-content: space-between;
