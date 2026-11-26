@@ -375,7 +375,9 @@ function ProposalExtras({ proposal, onChanged }: { proposal: BookedProposal; onC
     <>
       <PaymentsDialog proposal={proposal} />
       {proposal.group === "donation" ? <p className="muted">{proposal.receipt_needed ? a.receiptAbove : a.receiptBelow}</p> : null}
-      {proposal.receipt_needed ? <ReadUpload label={t.uploadReceipt} onUploaded={onChanged} /> : null}
+      {proposal.receipt_needed ? (
+        <ReadUpload label={proposal.group === "donation" ? a.receiptUpload : t.uploadReceipt} onUploaded={onChanged} />
+      ) : null}
       {proposal.group === "household_services" ? (
         <>
           <p className="muted">{a.servicesLabour}</p>
