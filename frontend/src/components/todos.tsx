@@ -39,13 +39,13 @@ import { centsToString, toCents } from "./allocations";
 import { ReadUpload } from "./documents";
 import { formatDate, formatMoney } from "./format";
 import { toDecimalString } from "./input";
-import { ACQUISITION_COST_KIND, ALLOCATION_CATEGORY, PRICE_SPLIT_SOURCE, proofBill } from "./labels";
+import { ACQUISITION_COST_KIND, ALLOCATION_CATEGORY, PRICE_SPLIT_SOURCE, proofBill, WARNING_TEXT } from "./labels";
 import { WithdrawNoPayButton } from "./noPay";
 import { type PropertyCard, propertyCardHref } from "./propertySections";
 import { LABEL_EN, REMINDER_EN, REQUIREMENT_EN, WARNING_EN } from "./todosEn";
 import { ActionDialog } from "./ui";
 import { useLoad } from "./useLoad";
-import { questionnaireHref, taxFormHref, withBenefitPrefill } from "./taxYear";
+import { questionnaireHref, taxFormHref } from "./taxYear";
 
 import "./tax.css";
 
@@ -181,17 +181,16 @@ function anlageN(anchor: string, label: string) {
 const owners = (anchor: string, label: string) => (_: DraftWarning, ctx: GuideContext) =>
   link(`${taxFormHref("angaben", { year: ctx.year, propertyId: null, ownerId: null })}#${anchor}`, label);
 
-/** return.benefit_booked (phase 6 D159 amended (8)): the Lohnersatzleistungen form of the
- * Eure Angaben tab (on Anlage N until phase 10 D281), pre-filled with the difference and the benefit kind the payments name. The
- * owner is the warning's suggestion (the one whose own account's lines are not covered; the
- * spouses are assessed jointly, so the person may save it on the other); a joint account's
- * to-do names none, so the tab asks the person to pick the owner before the form opens. */
+/** return.benefit_booked (phase 6 D159 amended (8)): since phase 10 §7.8 (a) (D293) the
+ * proposal of Eure Angaben, at the top of that tab, whose „Übernehmen“ saves the benefit (the
+ * owner picked there for a joint account). Until then a link carried the amount in the URL
+ * into the typing form. */
 function benefitBooked(warning: DraftWarning, ctx: GuideContext): GuideAction {
-  const params = warning.params ?? {};
-  const ownerId = params.owner_id ?? null;
-  const href = taxFormHref("angaben", { year: ctx.year, propertyId: null, ownerId });
-  const prefill = params.difference ? { amount: params.difference, benefit: params.benefit ?? null } : null;
-  return link(`${withBenefitPrefill(href, prefill)}#eingabe-replacement_income`, "Lohnersatzleistung eintragen");
+  const ownerId = warning.params?.owner_id ?? null;
+  return link(
+    `${taxFormHref("angaben", { year: ctx.year, propertyId: null, ownerId })}#tax-angaben-points`,
+    "Vorschlag ansehen",
+  );
 }
 const questions = (_: DraftWarning, ctx: GuideContext) => link(questionnaireHref(ctx.year), "Jahresfragen beantworten");
 
@@ -570,8 +569,8 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
     title: (p) => `Lohnersatzleistungen ${p.tax_year ?? ""} eintragen`,
     text: (p) =>
       p.owner_id
-        ? `Auf dem Konto sind ${formatMoney(p.difference)} Elterngeld, Mutterschaftsgeld, Krankengeld oder Arbeitslosengeld eingegangen, die noch nicht als Lohnersatzleistung eingetragen sind. Sie erhöhen den Steuersatz auf das übrige Einkommen. Vorgeschlagen wird der Betrag, der auf dem Konto eingegangen ist. Bei Krankengeld zeigt die Bescheinigung der Krankenkasse einen höheren Betrag: diesen eintragen. Den Betrag prüfen und bei den Lohnersatzleistungen speichern.`
-        : `Auf einem gemeinsamen Konto sind ${formatMoney(p.difference)} Elterngeld, Mutterschaftsgeld, Krankengeld oder Arbeitslosengeld eingegangen, die noch nicht als Lohnersatzleistung eingetragen sind. Sie erhöhen den Steuersatz auf das übrige Einkommen. Vorgeschlagen wird der Betrag, der auf dem Konto eingegangen ist. Bei Krankengeld zeigt die Bescheinigung der Krankenkasse einen höheren Betrag: diesen eintragen. Zuerst die Person wählen, die die Leistung bekommen hat, dann den Betrag prüfen und speichern.`,
+        ? `Auf dem Konto sind ${formatMoney(p.difference)} Elterngeld, Mutterschaftsgeld, Krankengeld oder Arbeitslosengeld eingegangen, die noch nicht als Lohnersatzleistung eingetragen sind. Sie erhöhen den Steuersatz auf das übrige Einkommen. Vorgeschlagen wird der Betrag, der auf dem Konto eingegangen ist. Bei Krankengeld zeigt die Bescheinigung der Krankenkasse einen höheren Betrag: diesen eintragen. Den Betrag prüfen und übernehmen.`
+        : `Auf einem gemeinsamen Konto sind ${formatMoney(p.difference)} Elterngeld, Mutterschaftsgeld, Krankengeld oder Arbeitslosengeld eingegangen, die noch nicht als Lohnersatzleistung eingetragen sind. Sie erhöhen den Steuersatz auf das übrige Einkommen. Vorgeschlagen wird der Betrag, der auf dem Konto eingegangen ist. Bei Krankengeld zeigt die Bescheinigung der Krankenkasse einen höheren Betrag: diesen eintragen. Zuerst die Person wählen, die die Leistung bekommen hat, dann den Betrag prüfen und übernehmen.`,
     action: benefitBooked,
   },
   "return.children_mismatch": {
@@ -1789,6 +1788,27 @@ export function warningEntry(
     title: guide.title?.(warning.params ?? {}) ?? translate(todosText).openItem,
     text: guide.text(warning.params ?? {}, warning),
     action: <WarningActionView warning={warning} ctx={ctx} onChanged={onChanged} />,
+    context,
+  };
+}
+
+/** A note (todo false) that carries an action as an entry of the tax guide (phase 10 §7.6,
+ * wave 2's open points): the warning's own sentence as its title, the note's text behind
+ * „Warum?“ and its action. Null for a to-do or a note without an action. */
+export function noteEntry(
+  warning: DraftWarning,
+  ctx: GuideContext,
+  key: string,
+  onChanged?: () => void,
+  context?: string,
+): TodoEntry | null {
+  const guide = guideFor(warning.code);
+  if (!guide || guide.todo) return null;
+  return {
+    key,
+    title: WARNING_TEXT[warning.code](warning.params ?? {}),
+    text: guide.text(warning.params ?? {}, warning),
+    action: guide.action ? <WarningActionView warning={warning} ctx={ctx} onChanged={onChanged} /> : null,
     context,
   };
 }

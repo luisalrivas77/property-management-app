@@ -3,12 +3,14 @@ dran“, the Belege and the routing of each to-do warning to its step. Invented 
 properties only."""
 
 import re
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from uuid import uuid4
 
 from hausbuch.rules import tax_guide as rule
 from hausbuch.rules.tax._common import warning
+from hausbuch.schemas.booked_inputs import BookedProposal
 from hausbuch.schemas.checklist import (
     ChecklistScope,
     ChecklistScopeType,
@@ -78,9 +80,30 @@ def _todo_codes() -> set[str]:
     return {code for code, todo in entries if todo == "true"}
 
 
+def _notes_with_an_action() -> set[str]:
+    source = TODOS_TSX.read_text(encoding="utf-8")
+    block = re.search(r"export const WARNING_GUIDE\b[^=]*=\s*\{(.*?)\n\};", source, re.S)
+    assert block is not None
+    parts = re.split(r'^  "?([a-z0-9_.]+)"?: \{', block.group(1), flags=re.M)
+    entries = dict(zip(parts[1::2], parts[2::2], strict=True))
+    return {
+        code
+        for code, body in entries.items()
+        if re.match(r"\s*todo: false", body) and re.search(r"^    action:", body, re.M)
+    }
+
+
 def test_every_to_do_warning_has_a_step_and_notes_have_none():
     assert set(rule.STEP_OF_WARNING) == _todo_codes()
     assert set(rule.STEP_OF_WARNING) <= {c.value for c in WarningCode}
+
+
+def test_every_note_with_an_action_is_a_point_of_its_step():
+    """Wave 2's open point: the notes that carry something to check are guide points (never
+    blocking); return.child_over_18 joins them without a button (its place is ELSTER)."""
+    assert set(rule.NOTE_STEP) == _notes_with_an_action() | {"return.child_over_18"}
+    assert set(rule.NOTE_STEP) <= {c.value for c in WarningCode}
+    assert not set(rule.NOTE_STEP) & set(rule.STEP_OF_WARNING)
 
 
 def test_every_requirement_has_its_sender_and_month_data():
@@ -411,3 +434,160 @@ def test_a_year_that_cannot_be_computed_is_never_ready():
     assert result.steps_done == 4
     assert result.next_step is None
     assert rule.guide(facts()).ready is True
+
+
+# --- phase 10 §7.8 (a), D293: bookings propose tax inputs -------------------------------------
+
+_KIND_OF_GROUP = {
+    "benefit": "replacement_income",
+    "donation": "special_expense",
+    "childcare": "childcare_cost",
+    "household_services": "household_services",
+}
+
+
+def _proposal(group: str, *, blocking: bool, owner=None) -> BookedProposal:
+    kind = _KIND_OF_GROUP[group]
+    return BookedProposal.model_validate(
+        {
+            "group": group,
+            "kind": kind,
+            "tax_year": YEAR,
+            "owner_id": owner,
+            "booked": "50.00",
+            "typed": "0.00",
+            "difference": "50.00",
+            "payments": 1,
+            "allocation_ids": [uuid4()],
+            "payload": {"kind": kind, "tax_year": YEAR, "value": {}},
+            "blocking": blocking,
+        }
+    )
+
+
+def test_proposals_are_points_and_only_the_blocking_ones_hold_the_step():
+    donation = _proposal("donation", blocking=False)
+    result = rule.guide(replace(facts(), proposals=[donation]))
+    (point,) = result.points
+    assert (point.step, point.form, point.code, point.blocking) == (
+        "angaben",
+        "return",
+        "return.donation_booked",
+        False,
+    )
+    assert point.proposal == donation
+    assert (result.steps[0].state, result.steps[0].open) == ("done", 0)
+    assert result.ready is True
+
+    benefit = _proposal("benefit", blocking=True, owner=A)
+    result = rule.guide(replace(facts(), proposals=[benefit, donation]))
+    assert [p.code for p in result.points] == ["return.benefit_booked", "return.donation_booked"]
+    assert (result.steps[0].state, result.steps[0].open) == ("open", 1)
+    assert result.ready is False
+
+
+def test_the_benefit_warning_gives_way_to_its_proposal():
+    """With the proposals read, the estimate's `return.benefit_booked` warning is no second
+    point; without them (None) it stays a point as before."""
+    todo = warning(WarningCode.RETURN_BENEFIT_BOOKED, difference="50.00")
+    base = facts(estimate_warnings=[todo])
+    assert [p.code for p in rule.guide(base).points] == ["return.benefit_booked"]
+    assert rule.guide(replace(base, proposals=[])).points == []
+    result = rule.guide(replace(base, proposals=[_proposal("benefit", blocking=True)]))
+    assert [(p.code, p.proposal is not None) for p in result.points] == [
+        ("return.benefit_booked", True)
+    ]
+
+
+# --- wave 2's open points (phase 10 §7.6) ----------------------------------------------------
+
+
+def test_a_note_is_a_point_of_its_step_that_never_blocks():
+    result = rule.guide(
+        facts(
+            properties=[
+                rule.PropertyFacts(P1, [], [warning(WarningCode.AFA_PURCHASE_PRICE_MISMATCH)])
+            ],
+            owners=[
+                rule.OwnerFacts(A, "certified", [warning(WarningCode.ANLAGE_N_RECEIPT_MISSING)])
+            ],
+            estimate_warnings=[warning(WarningCode.RETURN_CHILDREN_MISMATCH)],
+        )
+    )
+    assert [(p.step, p.code, p.note, p.blocking) for p in result.points] == [
+        ("angaben", "return.children_mismatch", True, False),
+        ("property", "afa.purchase_price_mismatch", True, False),
+        ("review", "anlage_n.receipt_missing", True, False),
+    ]
+    assert all(s.state == "done" for s in result.steps)
+    assert result.ready is True
+    assert result.form_open("anlage_v", property_id=P1) == 0
+
+
+def test_a_refused_input_is_a_point_naming_it_and_the_step_holds():
+    refused = rule.OwnerFacts(A, None, (), refused="anlage_n.useful_life_missing")
+    result = rule.guide(
+        replace(
+            facts(owners=[refused], incomplete=True),
+            estimate_failed=True,
+            estimate_refused="anlage_n.useful_life_missing",  # the same refusal, read twice
+        )
+    )
+    assert [(p.step, p.form, p.code, p.owner_id, p.refused) for p in result.points] == [
+        ("angaben", "anlage_n", "return_input.refused", A, "anlage_n.useful_life_missing")
+    ]
+    assert (result.steps[0].state, result.steps[0].open) == ("open", 1)
+    assert result.ready is False
+
+    household = rule.guide(
+        replace(
+            facts(incomplete=True),
+            estimate_failed=True,
+            estimate_refused="return.household_services_cash",
+        )
+    )
+    assert [(p.form, p.owner_id, p.refused) for p in household.points] == [
+        ("return", None, "return.household_services_cash")
+    ]
+
+
+def test_a_step_whose_draft_failed_never_reads_done():
+    failed = rule.guide(
+        facts(
+            properties=[rule.PropertyFacts(P1, [], None)],
+            owners=[rule.OwnerFacts(A, None, ())],
+            incomplete=True,
+        )
+    )
+    assert [s.state for s in failed.steps][:2] == ["waiting", "waiting"]
+    no_pay = rule.guide(facts(owners=[rule.OwnerFacts(A, None, (), no_pay=True)]))
+    assert no_pay.steps[0].state == "open"  # the no-pay point, as before
+    estimate = rule.guide(replace(facts(incomplete=True), estimate_failed=True))
+    assert estimate.steps[0].state == "waiting"
+
+
+def test_two_overlapping_pairs_and_twins_are_one_point_each():
+    def overlap(first: str, second: str):
+        return warning(WarningCode.ANLAGE_N_PERIODS_OVERLAP, first=first, second=second)
+
+    def kindergeld(child: str):
+        return warning(WarningCode.RETURN_KINDERGELD_APPLY, born_month="2026-05", child=child)
+
+    result = rule.guide(
+        facts(
+            owners=[
+                rule.OwnerFacts(
+                    A,
+                    "certified",
+                    [
+                        overlap("2026-01-01/2026-06-30", "2026-03-01/2026-12-31"),
+                        overlap("2026-01-01/2026-06-30", "2026-05-01/2026-08-31"),
+                    ],
+                )
+            ],
+            estimate_warnings=[kindergeld("1"), kindergeld("2")],
+        )
+    )
+    codes = [p.code for p in result.points]
+    assert codes.count("anlage_n.periods_overlap") == 2
+    assert codes.count("return.kindergeld_apply") == 2

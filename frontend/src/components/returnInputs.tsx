@@ -15,7 +15,7 @@ import { useId, useMemo, useState, type FormEvent } from "react";
 import { api, ok } from "@/api/client";
 import { ApiError, ruleCodes } from "@/api/errors";
 import type { components } from "@/api/types";
-import { formatter, translate, useFormat, useT } from "@/i18n";
+import { formatter, translate, useT } from "@/i18n";
 import { kindText, returnInputs, workRoomChoice } from "@/i18n/returnInputs";
 
 import { DocumentPicker } from "./documents";
@@ -23,7 +23,6 @@ import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { formatFraction, formatShare } from "./format";
 import { decimalInput, toDecimalString, toFraction, toMoneyString, type Parsed } from "./input";
 import { BelegLink } from "./returnInputEvidence";
-import type { BenefitPrefill } from "./taxYear";
 import {
   COMMUTE_KIND,
   EQUIPMENT_CLASS,
@@ -292,16 +291,6 @@ function record(body: ReturnInputCreate): Promise<ReturnInput> {
 
 // --- the panel ------------------------------------------------------------------------------
 
-/** The Lohnersatzleistungen form pre-filled from the to-do return.benefit_booked (phase 6 D159
- * amended (8)): `open` when the URL names this owner (or there is only one), else the block
- * asks to pick the owner first; `clear` drops the pre-fill from the URL after a save or a
- * cancel, so a reload never offers the same amount again. */
-export interface BenefitForm {
-  prefill: BenefitPrefill;
-  open: boolean;
-  clear: () => void;
-}
-
 /**
  * Eingaben: one block per kind with its current rows (as typed), "ändern" and "Entfernen",
  * and a form to add one. `rows` are the owner's current rows of the year (GET
@@ -313,13 +302,11 @@ export function InputsPanel({
   year,
   rows,
   onChanged,
-  benefitForm = null,
 }: {
   ownerId: string;
   year: number;
   rows: ReturnInput[];
   onChanged: () => void;
-  benefitForm?: BenefitForm | null;
 }) {
   const t = useT(returnInputs);
   return (
@@ -328,25 +315,16 @@ export function InputsPanel({
       <p className="muted">{t.inputsIntro}</p>
       {KINDS.map((kind) => (
         <KindBlock
-          // A new or newly opened pre-fill remounts its block, so the form opens with it even
-          // when the to-do's button names the owner already on screen (same page, no remount).
-          key={
-            kind.kind === "replacement_income" && benefitForm ? `${kind.kind}:${benefitKey(benefitForm)}` : kind.kind
-          }
+          key={kind.kind}
           spec={kind}
           ownerId={ownerId}
           year={year}
           rows={rows.filter((row) => row.kind === kind.kind)}
           onChanged={onChanged}
-          benefitForm={kind.kind === "replacement_income" ? benefitForm : null}
         />
       ))}
     </section>
   );
-}
-
-function benefitKey(form: BenefitForm): string {
-  return `${form.open ? "open" : "ask"}:${form.prefill.amount}:${form.prefill.benefit ?? ""}`;
 }
 
 function KindBlock({
@@ -355,26 +333,20 @@ function KindBlock({
   year,
   rows,
   onChanged,
-  benefitForm,
 }: {
   spec: KindSpec;
   ownerId: string;
   year: number;
   rows: ReturnInput[];
   onChanged: () => void;
-  benefitForm: BenefitForm | null;
 }) {
-  // null: no form open; "new": adding; a row id: changing that row. A pre-fill for this owner
-  // opens the new form at once (the block is keyed by the pre-fill, so this runs again when it
-  // arrives or changes).
-  const [editing, setEditing] = useState<string | null>(benefitForm?.open ? "new" : null);
-  const prefilled = benefitForm?.open ? benefitForm : null;
+  // null: no form open; "new": adding; a row id: changing that row.
+  const [editing, setEditing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const title = RETURN_INPUT_KIND[kind.kind];
   const headingId = useId();
   const t = useT(returnInputs);
-  const f = useFormat();
 
   async function withdraw(row: ReturnInput) {
     setBusy(true);
@@ -404,14 +376,6 @@ function KindBlock({
   const done = () => {
     setEditing(null);
     onChanged();
-  };
-  const doneNew = () => {
-    done();
-    prefilled?.clear();
-  };
-  const cancelNew = () => {
-    setEditing(null);
-    prefilled?.clear();
   };
   const canAdd = !kind.single || rows.length === 0;
 
@@ -445,21 +409,8 @@ function KindBlock({
           )}
         </ul>
       ) : null}
-      {benefitForm && !benefitForm.open ? (
-        <p className="notice notice-info" role="status">
-          {t.benefitAsk(f.money(benefitForm.prefill.amount))}
-        </p>
-      ) : null}
       {editing === "new" ? (
-        <InputForm
-          spec={kind}
-          ownerId={ownerId}
-          year={year}
-          replaces={null}
-          prefill={prefilled ? { amount: decimalInput(prefilled.prefill.amount), benefit: prefilled.prefill.benefit ?? "" } : null}
-          onDone={doneNew}
-          onCancel={cancelNew}
-        />
+        <InputForm spec={kind} ownerId={ownerId} year={year} replaces={null} onDone={done} onCancel={() => setEditing(null)} />
       ) : canAdd ? (
         <button type="button" className="secondary" onClick={() => setEditing("new")} disabled={busy || editing !== null}>
           {kind.single ? t.addSingle(title) : t.addMany(title)}
@@ -481,7 +432,6 @@ function InputForm({
   ownerId,
   year,
   replaces,
-  prefill = null,
   onDone,
   onCancel,
 }: {
@@ -489,16 +439,12 @@ function InputForm({
   ownerId: string;
   year: number;
   replaces: ReturnInput | null;
-  /** Texts a new form starts with instead of the defaults (the booked benefit, D159 (8)). */
-  prefill?: Record<string, string> | null;
   onDone: () => void;
   onCancel: () => void;
 }) {
   const old = (replaces?.value as Record<string, unknown> | undefined) ?? null;
   const [texts, setTexts] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      kind.fields.map((field) => [field.name, prefill?.[field.name] ?? initialText(field, old, year)]),
-    ),
+    Object.fromEntries(kind.fields.map((field) => [field.name, initialText(field, old, year)])),
   );
   const [documentId, setDocumentId] = useState<string | null>(replaces?.document_id ?? null);
   const [busy, setBusy] = useState(false);
@@ -553,11 +499,6 @@ function InputForm({
   return (
     <form className="stack tax-input-form" onSubmit={submit} noValidate aria-label={replaces ? t.formChange(RETURN_INPUT_KIND[kind.kind]) : t.formEnter(RETURN_INPUT_KIND[kind.kind])}>
       <p className="muted hint">{kindTexts?.help}</p>
-      {prefill ? (
-        <p className="notice notice-info" role="status">
-          {t.prefilled}
-        </p>
-      ) : null}
       <div className="grid">
         {kind.fields.map((field) => (
           <Field

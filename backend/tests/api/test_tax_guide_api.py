@@ -111,8 +111,10 @@ def test_a_year_without_its_rules_is_not_ready(client_a):
     got = _guide(client_a, 2025)
     assert {"estimate:tax.no_rule_set", "questionnaire:tax.no_rule_set"} <= set(got["unavailable"])
     assert got["ready"] is False
-    assert [s["state"] for s in got["steps"]] == ["done", "waiting", "done", "waiting"]
-    assert got["steps_done"] == 2
+    # Eure Angaben waits too: the estimate, whose points it lists, cannot be computed (wave 2's
+    # open point, phase 10 §7.6; it read „erledigt“ until then).
+    assert [s["state"] for s in got["steps"]] == ["waiting", "waiting", "done", "waiting"]
+    assert got["steps_done"] == 1
 
 
 def test_a_property_not_owned_in_the_year_has_no_step(client_a):
@@ -209,3 +211,179 @@ def test_a_benefit_announced_but_not_typed_keeps_eure_angaben_open(client_a):
     ]
     assert got["steps"][0]["state"] == "open"
     assert got["ready"] is False
+
+
+# --- Phase 10 §7.8 (a), D293: bookings propose tax inputs -----------------------------------
+
+
+def _booked_line(client, *, debit: bool) -> dict:
+    """A private account with the camt fixture's lines; one debit (or credit) line of 2026."""
+    from test_bank_parsers import CAMT, build
+
+    case = next(c for c in CAMT.cases if c.id == "sparkasse_zip_of_daily_reports")
+    account = create(
+        client,
+        "/api/accounts",
+        {
+            "label": "Girokonto",
+            "bank": "Testbank",
+            "iban": "DE50100000000000000001",  # the fixture file's own
+            "purpose": "private",
+            "opening_balance": "0.00",
+            "opening_balance_on": "2026-03-31",
+        },
+    )
+    files = {"file": ("umsaetze.zip", build(case.input), "application/zip")}
+    ok(client.post(f"/api/accounts/{account['id']}/imports", files=files), 201)
+    lines = ok(client.get(f"/api/accounts/{account['id']}/transactions"))
+    return next(
+        t
+        for t in lines
+        if t["amount"].startswith("-") == debit
+        and t["amount"] != "0.00"
+        and t["booking_date"].startswith("2026-")
+    )
+
+
+def _allocate(client, line: dict, category: str) -> None:
+    body = {
+        "allocation_set": {
+            "transaction_id": line["id"],
+            "allocations": [{"amount": line["amount"], "category": category}],
+            "method": "user",
+            "confidence": "1.000",
+        },
+        "learn_rule": False,
+    }
+    ok(client.put(f"/api/transactions/{line['id']}/allocations", json=body))
+
+
+def _proposal_points(client, code: str) -> list[dict]:
+    return [p for p in _guide(client, 2026)["points"] if p["code"] == code]
+
+
+def test_a_booked_donation_is_a_proposal_whose_payload_posts_verbatim(client_a, client_b):
+    """The guide's donation point carries the exact POST /return-inputs body; posting it (with
+    the recipient filled when the line names none) ends the point. It never blocks the year."""
+    create(client_a, "/api/owners", {"full_name": "Person A"})
+    line = _booked_line(client_a, debit=True)
+    assert _proposal_points(client_a, "return.donation_booked") == []
+    _allocate(client_a, line, "hh_donation")
+
+    (point,) = _proposal_points(client_a, "return.donation_booked")
+    proposal = point["proposal"]
+    assert (point["step"], point["form"], point["blocking"]) == ("angaben", "return", False)
+    assert proposal["difference"] == line["amount"].lstrip("-")
+    assert proposal["allocation_ids"]
+    assert "ask_party" not in proposal  # no party question (Luis, 26 Nov 2026)
+    # The purpose text never leaves the server: the payee's name only („Zahlungen ansehen“).
+    assert not {"purpose", "text"} & set(proposal)
+    (shown,) = proposal["lines"]
+    assert set(shown) == {"allocation_id", "booking_date", "amount", "payee"}
+    assert (shown["booking_date"], shown["amount"]) == (line["booking_date"], line["amount"])
+    assert [shown["allocation_id"]] == proposal["allocation_ids"]
+    assert _proposal_points(client_b, "return.donation_booked") == []  # RLS
+
+    body = proposal["payload"]
+    if "recipient" in proposal["needs"]:
+        body["value"]["recipient_label"] = "Empfänger"
+    create(client_a, "/api/return-inputs", body)
+    assert _proposal_points(client_a, "return.donation_booked") == []
+
+
+def test_a_proposal_posted_twice_is_refused_the_second_time(client_a):
+    """The card sends what it showed (`from_proposal`): the first post saves, the same post again
+    is a 409 return_input.proposal_stale (the proposal is gone, so a second row would count the
+    sum twice), and nothing is written. The origin is never stored. A row typed by hand sends
+    none and still saves, duplicate or not: rows have no uniqueness rule."""
+    create(client_a, "/api/owners", {"full_name": "Person A"})
+    line = _booked_line(client_a, debit=True)
+    _allocate(client_a, line, "hh_donation")
+    (point,) = _proposal_points(client_a, "return.donation_booked")
+    proposal = point["proposal"]
+    body = proposal["payload"]
+    if "recipient" in proposal["needs"]:
+        body["value"]["recipient_label"] = "Empfänger"
+    origin = {
+        "group": proposal["group"],
+        "allocation_ids": proposal["allocation_ids"],
+        "difference": proposal["difference"],
+    }
+    saved = create(client_a, "/api/return-inputs", body | {"from_proposal": origin})
+    assert "from_proposal" not in saved
+    assert _proposal_points(client_a, "return.donation_booked") == []
+
+    rows = ok(client_a.get("/api/return-inputs", params={"tax_year": 2026}))
+    again = client_a.post("/api/return-inputs", json=body | {"from_proposal": origin})
+    assert again.status_code == 409, again.text
+    assert again.json()["constraint"] == "return_input.proposal_stale"
+    assert ok(client_a.get("/api/return-inputs", params={"tax_year": 2026})) == rows
+
+    # An origin no current proposal matches (another difference) is refused the same way.
+    stale = origin | {"difference": "0.01"}
+    refused = client_a.post("/api/return-inputs", json=body | {"from_proposal": stale})
+    assert refused.status_code == 409, refused.text
+
+    # Typed by hand (no origin): the same row saves again.
+    create(client_a, "/api/return-inputs", body)
+
+
+def test_a_booked_benefit_is_one_point_with_its_payload(client_a):
+    """`return.benefit_booked` is the proposal's point, no longer a second point from the
+    estimate's warning; typing the payload ends it."""
+    owner = create(client_a, "/api/owners", {"full_name": "Person A"})["id"]
+    line = _booked_line(client_a, debit=False)
+    _allocate(client_a, line, "hh_wage_replacement")
+    (point,) = _proposal_points(client_a, "return.benefit_booked")
+    assert point["blocking"] is True and point["proposal"]["group"] == "benefit"
+    assert _guide(client_a, 2026)["steps"][0]["state"] == "open"
+
+    body = point["proposal"]["payload"]
+    if "owner" in point["proposal"]["needs"]:
+        body["owner_id"] = owner
+    if "benefit" in point["proposal"]["needs"]:
+        body["value"]["benefit"] = "elterngeld"
+    create(client_a, "/api/return-inputs", body)
+    assert _proposal_points(client_a, "return.benefit_booked") == []
+
+
+def test_booked_childcare_and_services_payloads_post_with_the_cards_fields(client_a):
+    """The Kita and §35a cards post their proposal's payload with only the fields the bookings
+    cannot say (the frontend's ProposalForm): the child when none is pre-selected, and for
+    §35a the labour share and its class, typed from the invoice (never the bank amount). Each
+    then ends its point; neither blocks the year."""
+    create(client_a, "/api/owners", {"full_name": "Person A"})
+    create(
+        client_a,
+        "/api/return-inputs",
+        {"kind": "child", "tax_year": 2026, "value": {"born_on": "2022-05-01"}},
+    )
+    line = _booked_line(client_a, debit=True)
+    _allocate(client_a, line, "hh_childcare")
+    (point,) = _proposal_points(client_a, "return.childcare_booked")
+    proposal = point["proposal"]
+    assert point["blocking"] is False and proposal["group"] == "childcare"
+    body = proposal["payload"]
+    assert body["value"]["paid_to_account"] is True
+    if "child" in proposal["needs"]:
+        body["value"]["child_id"] = proposal["child_choices"][0]["id"]
+    else:  # the one child under 14 is pre-selected, so nothing is offered to pick
+        assert body["value"]["child_id"] and proposal["child_choices"] == []
+    # The payee is pre-set on the row, so the row covers its own payee's card first.
+    assert proposal["payee"] and body["value"]["payee_label"] == proposal["payee"]
+    saved = create(client_a, "/api/return-inputs", body)
+    assert saved["value"]["payee_label"] == proposal["payee"]
+    assert _proposal_points(client_a, "return.childcare_booked") == []
+
+    _allocate(client_a, line, "hh_household_services")
+    (point,) = _proposal_points(client_a, "return.services_booked")
+    proposal = point["proposal"]
+    assert point["blocking"] is False and proposal["group"] == "household_services"
+    assert {"labour_cost", "service_class"} <= set(proposal["needs"])
+    body = proposal["payload"]
+    assert "labour_cost" not in body["value"]  # never the bank line's amount
+    assert "amount" not in body["value"] and body["value"]["payee_label"] == proposal["payee"]
+    body["value"] |= {"labour_cost": "100.00", "service_class": "handwerker"}
+    saved = create(client_a, "/api/return-inputs", body)
+    assert saved["value"]["payee_label"] == proposal["payee"]
+    assert _proposal_points(client_a, "return.services_booked") == []
