@@ -519,7 +519,9 @@ function proposalEntry(proposal: BookedProposal, key: string, scope: PointScope,
     key,
     title,
     text,
-    action: <ProposalAction proposal={proposal} owners={scope.owners} onChanged={scope.onChanged} />,
+    // Keyed by the point, so the „taken“ state never passes to the proposal that moves into its
+    // place.
+    action: <ProposalAction key={key} proposal={proposal} owners={scope.owners} onChanged={scope.onChanged} />,
     context,
   };
 }
@@ -571,6 +573,9 @@ function ProposalAction({ proposal, owners, onChanged }: { proposal: BookedPropo
   // „An eine Partei? Ja“ is kept in this browser (nothing is stored for a proposal); false during
   // the server render and hydration.
   const party = useSyncExternalStore(subscribeParty, () => readParty(proposal), () => false);
+  // Once saved, „Übernehmen“ stays off until the guide has reloaded without this proposal: the
+  // server takes a second identical row for these kinds, which would count the sum twice.
+  const [taken, setTaken] = useState(false);
   if (proposal.group === "donation" && proposal.ask_party && party) {
     return (
       <>
@@ -589,7 +594,7 @@ function ProposalAction({ proposal, owners, onChanged }: { proposal: BookedPropo
   }
   return (
     <>
-      <ActionDialog label={t.take} title={t.takeTitle} buttonClass="">
+      <ActionDialog label={taken ? t.saved : t.take} title={t.takeTitle} buttonClass="" disabled={taken}>
         {(close) => (
           <ProposalForm
             proposal={proposal}
@@ -599,6 +604,7 @@ function ProposalAction({ proposal, owners, onChanged }: { proposal: BookedPropo
               close();
             }}
             onDone={() => {
+              setTaken(true);
               close();
               onChanged();
             }}
@@ -697,8 +703,7 @@ function ProposalForm({
     if (needs.has("service_class")) value.service_class = serviceClass;
     if (needs.has("recipient")) value.recipient_label = recipient.trim();
     const body = { ...payload, value, ...(needs.has("owner") ? { owner_id: owner } : {}) } as unknown as ReturnInputCreate;
-    // Disabled until the guide has reloaded without this proposal: a second tap would count it
-    // twice.
+    // Off while the request runs; the card's button stays off after it (ProposalAction).
     setBusy(true);
     try {
       await ok(api.POST("/api/return-inputs", { body }));

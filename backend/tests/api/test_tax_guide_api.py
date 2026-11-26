@@ -308,3 +308,40 @@ def test_a_booked_benefit_is_one_point_with_its_payload(client_a):
         body["value"]["benefit"] = "elterngeld"
     create(client_a, "/api/return-inputs", body)
     assert _proposal_points(client_a, "return.benefit_booked") == []
+
+
+def test_booked_childcare_and_services_payloads_post_with_the_cards_fields(client_a):
+    """The Kita and §35a cards post their proposal's payload with only the fields the bookings
+    cannot say (the frontend's ProposalForm): the child when none is pre-selected, and for
+    §35a the labour share and its class, typed from the invoice (never the bank amount). Each
+    then ends its point; neither blocks the year."""
+    create(client_a, "/api/owners", {"full_name": "Person A"})
+    create(
+        client_a,
+        "/api/return-inputs",
+        {"kind": "child", "tax_year": 2026, "value": {"born_on": "2022-05-01"}},
+    )
+    line = _booked_line(client_a, debit=True)
+    _allocate(client_a, line, "hh_childcare")
+    (point,) = _proposal_points(client_a, "return.childcare_booked")
+    proposal = point["proposal"]
+    assert point["blocking"] is False and proposal["group"] == "childcare"
+    body = proposal["payload"]
+    assert body["value"]["paid_to_account"] is True
+    if "child" in proposal["needs"]:
+        body["value"]["child_id"] = proposal["child_choices"][0]["id"]
+    else:  # the one child under 14 is pre-selected, so nothing is offered to pick
+        assert body["value"]["child_id"] and proposal["child_choices"] == []
+    create(client_a, "/api/return-inputs", body)
+    assert _proposal_points(client_a, "return.childcare_booked") == []
+
+    _allocate(client_a, line, "hh_household_services")
+    (point,) = _proposal_points(client_a, "return.services_booked")
+    proposal = point["proposal"]
+    assert point["blocking"] is False and proposal["group"] == "household_services"
+    assert {"labour_cost", "service_class"} <= set(proposal["needs"])
+    body = proposal["payload"]
+    assert "labour_cost" not in body["value"]  # never the bank line's amount
+    body["value"] |= {"labour_cost": "100.00", "service_class": "handwerker"}
+    create(client_a, "/api/return-inputs", body)
+    assert _proposal_points(client_a, "return.services_booked") == []
