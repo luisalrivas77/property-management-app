@@ -93,10 +93,12 @@ from hausbuch.rules.plan.levers import add_months, one_offs_outside
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import AccountKind, EntityType
 from hausbuch.schemas.events import EventType, HouseholdScenarioRecorded
+from hausbuch.schemas.goal import GoalInvestment
 from hausbuch.schemas.health import month_of
 from hausbuch.schemas.household import BudgetClass
 from hausbuch.schemas.plan import (
     Goal,
+    GoalChoice,
     HouseholdLevers,
     HouseholdScenario,
     HouseholdScenarioCreate,
@@ -185,6 +187,7 @@ def create_scenario(ctx: CommandContext, data: HouseholdScenarioCreate) -> House
             previous=previous,
             previous_overrides=carried_overrides(data.levers, old, default_scenario(ctx.conn)),
             previous_goal=None if old is None else old.levers.goal,
+            previous_choice=None if old is None else old.levers.goal_choice,
         )
         if data.is_default:
             _check_one_default(ctx.conn, data)
@@ -218,6 +221,7 @@ def check_levers(
     previous: Sequence[SpendingChange] = (),
     previous_overrides: Mapping[AllocationCategory, BudgetClass] | None = None,
     previous_goal: Goal | None = None,
+    previous_choice: GoalChoice | None = None,
     account_kinds: Mapping[UUID, AccountKind] | None = None,
 ) -> dict[AllocationCategory, Decimal]:
     """The checks of a scenario's levers beyond HouseholdLevers' own (the module doc), for a
@@ -229,10 +233,13 @@ def check_levers(
     nothing (§7.6 (1) amended). `previous_overrides`: the overrides counted as carried
     (`carried_overrides`); one carried unaltered is not refused (phase 10 D272 (2), as a
     carried spending change). `previous_goal`: the goal of that row; only a goal new or
-    altered against it is checked (phase 10 §7.9 (d)). `account_kinds`: every account's
+    altered against it is checked (phase 10 §7.9 (d)). `previous_choice`: that row's goal
+    choice; only a followed return new or altered against it is checked (§7.9 (e)).
+    `account_kinds`: every account's
     kind, when the caller has them (the preview's kept reads, phase 10 §7.10 (b))."""
     _check_accounts(conn, levers, account_kinds)
     _check_goal(levers, today, previous_goal)
+    _check_investment(levers, previous_choice)
     _check_budget_classes(levers, previous_overrides or {})
     _check_one_off_switches(levers, previous)
     if not levers.one_offs and not levers.spending_changes:
@@ -263,6 +270,22 @@ def _check_goal(levers: HouseholdLevers, today: date, previous: Goal | None) -> 
         raise RuleViolationError(
             [HOUSEHOLD_SCENARIO_GOAL_INVALID],
             f"a goal due in {goal.due_month}, which is not after the current month",
+        )
+
+
+def _check_investment(levers: HouseholdLevers, previous: GoalChoice | None) -> None:
+    """Phase 10 §7.9 (e): a return followed („Diesem Weg folgen“) names route 3
+    (`more_return`) or the balanced route (`balanced`); checked only when new or altered
+    against `previous`, so a carried value never blocks saving the other levers."""
+    choice = levers.goal_choice
+    if choice is None or choice.investment is None:
+        return
+    if previous is not None and previous.investment == choice.investment:
+        return
+    if choice.investment not in {r.value for r in GoalInvestment}:
+        raise RuleViolationError(
+            [HOUSEHOLD_SCENARIO_GOAL_INVALID],
+            f"a followed return {choice.investment!r}, which is neither more_return nor balanced",
         )
 
 

@@ -680,6 +680,7 @@ def previewed(
         previous=previous,
         previous_overrides=carried_overrides(levers, row),
         previous_goal=None if row is None else row.levers.goal,
+        previous_choice=None if row is None else row.levers.goal_choice,
         account_kinds=_kinds(inputs),
     )
     if row is not None:

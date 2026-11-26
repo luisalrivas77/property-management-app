@@ -7558,6 +7558,34 @@
         }
       }
     },
+    "/api/household-goal/tracking": {
+      "get": {
+        "summary": "Household Goal Tracking",
+        "operationId": "household_goal_tracking_api_household_goal_tracking_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoalTracking"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/household-goal/plan": {
       "get": {
         "summary": "Household Goal Plan",
@@ -22637,6 +22665,15 @@
         "title": "GoalChoice",
         "description": "What the household chose for its goal, each with the day chosen (§7.9 (d), (e)). The\nadopted budget itself is the scenario's `spending_changes` („Als Budget übernehmen“\nsupersedes the default scenario with them); `investment` is a placeholder for §7.9 (e)."
       },
+      "GoalInvestment": {
+        "type": "string",
+        "enum": [
+          "more_return",
+          "balanced"
+        ],
+        "title": "GoalInvestment",
+        "description": "The return the household follows (`goal_choice.investment`, „Diesem Weg folgen“)."
+      },
       "GoalIssue": {
         "type": "string",
         "enum": [
@@ -23050,6 +23087,235 @@
         ],
         "title": "GoalSpending",
         "description": "The spending scenario the household adopted for its goal (§7.9 (d))."
+      },
+      "GoalTracking": {
+        "properties": {
+          "shown": {
+            "type": "boolean",
+            "title": "Shown"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalTrackingReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "route": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalInvestment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chosen_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chosen On"
+          },
+          "days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "planned_per_year": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Per Year"
+          },
+          "planned_by_now": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned By Now"
+          },
+          "paid_in": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid In"
+          },
+          "value_then": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Then"
+          },
+          "value_now": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Now"
+          },
+          "value_change": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Change"
+          },
+          "implied_change": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Implied Change"
+          },
+          "yearly_return": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,6})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Yearly Return"
+          },
+          "no_rate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NoRateReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "word": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalTrackingWord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "short": {
+            "items": {
+              "$ref": "#/components/schemas/GoalTrackingShort"
+            },
+            "type": "array",
+            "title": "Short"
+          },
+          "reserve_depots": {
+            "type": "integer",
+            "title": "Reserve Depots",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "shown"
+        ],
+        "title": "GoalTracking",
+        "description": "`GET /household-goal/tracking`: „Für euer Ziel“ on Anlagen › Übersicht. Since the day\nthe household chose to follow a return: the money put into its funds and crypto accounts\n(a depot counted in the reserve left out, D304) against what the walk of that route plans\nto invest by now, and the value change of those accounts against the change the return\nimplies by now; one word by code. Every figure computed on read, never stored."
+      },
+      "GoalTrackingReason": {
+        "type": "string",
+        "enum": [
+          "generic_mode",
+          "no_goal",
+          "not_following",
+          "route_gone",
+          "goal_issue",
+          "no_plan",
+          "unpriced",
+          "unvalued"
+        ],
+        "title": "GoalTrackingReason",
+        "description": "Why the card is not shown (the first three) or shows no word."
+      },
+      "GoalTrackingShort": {
+        "type": "string",
+        "enum": [
+          "paid",
+          "value"
+        ],
+        "title": "GoalTrackingShort"
+      },
+      "GoalTrackingWord": {
+        "type": "string",
+        "enum": [
+          "on_path",
+          "behind"
+        ],
+        "title": "GoalTrackingWord"
       },
       "GoalUnreachable": {
         "properties": {
