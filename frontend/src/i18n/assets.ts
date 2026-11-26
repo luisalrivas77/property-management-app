@@ -381,6 +381,10 @@ const de = {
     )[reason] ?? "",
   growthShort: (reason: string) =>
     (({ out_of_range: "Allein nicht erreichbar", history_short: "Hauspreise: Reihe zu kurz" }) as Record<string, string>)[reason] ?? "",
+  growthFallingLine: "Darf an Wert verlieren",
+  growthFallingText: (label: string, rate: string, typed: string) =>
+    `Ihr seid auf Kurs: euer Ziel wäre mit eurem heutigen Sparen auch erreicht, wenn ${label} jedes Jahr bis zu ${rate} an Wert verliert. Eingetragen sind ${typed}; Fonds und Krypto bleiben bei euren Raten.`,
+  growthFallingVerdict: (reached: number, windows: number) => `Die deutschen Hauspreise liefen in ${reached} von ${windows} Zeiträumen besser.`,
   growthNeeded: "nötig im Jahr",
   growthTyped: "eingetragen",
   growthWindows: (reached: number, windows: number) => `${reached} von ${windows}`,
@@ -761,6 +765,10 @@ const en: Messages = {
     )[reason] ?? "",
   growthShort: (reason) =>
     (({ out_of_range: "Not reachable on its own", history_short: "House prices: series too short" }) as Record<string, string>)[reason] ?? "",
+  growthFallingLine: "May lose value",
+  growthFallingText: (label, rate, typed) =>
+    `You are on track: at today's saving your goal would be reached even if ${label} lost up to ${rate} in value every year. You typed ${typed}; funds and crypto keep your rates.`,
+  growthFallingVerdict: (reached, windows) => `German house prices did better in ${reached} of ${windows} periods.`,
   growthNeeded: "needed a year",
   growthTyped: "typed",
   growthWindows: (reached, windows) => `${reached} of ${windows}`,

@@ -31,11 +31,15 @@ export function growthOf(growth: GoalProperties | null, propertyId: string): Goa
   return (growth.properties ?? []).find((card) => card.property_id === propertyId) ?? null;
 }
 
+/** A goal reached even with the property losing value: the needed growth is below 0, so the card
+ * says how much it may lose instead of a negative gain. */
+const isFalling = (card: GoalPropertyGrowth): boolean => card.needed_growth != null && card.needed_growth.startsWith("-");
+
 export function PropertyGrowthCard({ card, label }: { card: GoalPropertyGrowth; label: string }) {
   const t = useT(assets);
   const p = usePlanFormat();
   const detail = useDetail(GROWTH_DETAIL);
-  const line = card.available && card.verdict ? t.growthLine(card.verdict) : t.growthShort(card.reason ?? "");
+  const line = isFalling(card) ? t.growthFallingLine : card.available && card.verdict ? t.growthLine(card.verdict) : t.growthShort(card.reason ?? "");
   return (
     <a {...detail.linkProps(card.property_id)} className="planning-kpi asset-kind-card" data-testid="property-growth" aria-label={t.growthAria(label)}>
       <p className="planning-kpi-label">{t.growthTitle} ›</p>
@@ -50,12 +54,21 @@ export function PropertyGrowthPanel({ card, label, backLabel }: { card: GoalProp
   const p = usePlanFormat();
   const detail = useDetail(GROWTH_DETAIL);
   const counted = card.windows > 0;
+  const falling = isFalling(card);
   const source = card.source;
   return (
     <DetailPanel title={t.growthTitle} backLabel={backLabel} onClose={detail.close}>
       <div className="stack goal-panel" data-testid="property-growth-panel">
-        {card.needed_growth != null ? <p>{t.growthText(label, p.ratio(card.needed_growth), p.ratio(card.typed_growth))}</p> : null}
-        {card.available && card.verdict ? <p>{t.growthVerdict(card.verdict)}</p> : null}
+        {card.needed_growth != null && falling ? (
+          <p>{t.growthFallingText(label, p.ratio(card.needed_growth.slice(1)), p.ratio(card.typed_growth))}</p>
+        ) : card.needed_growth != null ? (
+          <p>{t.growthText(label, p.ratio(card.needed_growth), p.ratio(card.typed_growth))}</p>
+        ) : null}
+        {falling && card.reached_windows != null && card.windows > 0 ? (
+          <p>{t.growthFallingVerdict(card.reached_windows, card.windows)}</p>
+        ) : card.available && card.verdict ? (
+          <p>{t.growthVerdict(card.verdict)}</p>
+        ) : null}
         {!card.available && card.reason ? <p>{t.growthReason(card.reason)}</p> : null}
         <div className="goal-c">
           <Stats count={2}>
