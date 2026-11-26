@@ -624,6 +624,47 @@ test("a rate left invalid on Anlagen does not block a save from Haushalt › Res
   expect(posted[0]?.levers?.value_change?.depot).toBe("0.05");
 });
 
+test("the reserve's own rate is typed in „Reserve-Ziel ändern“: out of range blocks the save, a rate and an empty field are saved with the depot's rate kept (D304)", async ({
+  page,
+  signedIn,
+}) => {
+  void signedIn;
+  const { posted } = await planWithScenarios(page);
+  await serve(page, "/api/household-budget", () => budget({}));
+
+  await page.goto("/household?tab=reserve#reserve-ziel");
+  let lever = page.getByRole("form", { name: "Reserve-Ziel ändern" });
+  let rate = lever.getByLabel("Rendite der Reserve (% pro Jahr)");
+  await expect(rate).toHaveValue("");
+  await rate.fill("80");
+  await expect(lever.getByText("Zwischen −50 % und 50 % pro Jahr.")).toBeVisible();
+  await expect(lever.getByRole("button", { name: "Speichern" })).toBeDisabled();
+  expect(posted).toHaveLength(0);
+
+  await rate.fill("2");
+  await expect(lever.getByText("Zwischen −50 % und 50 % pro Jahr.")).toHaveCount(0);
+  await lever.getByRole("button", { name: "Speichern" }).click();
+  await expect.poll(() => posted.length).toBe(1);
+  expect(typeof posted[0]?.levers?.value_change?.reserve).toBe("string");
+  expect(Number(posted[0]?.levers?.value_change?.reserve)).toBe(0.02);
+  // The form changes the reserve's rate only.
+  expect(posted[0]?.levers?.value_change?.depot).toBe("0.05");
+  expect(posted[0]?.levers?.value_change?.crypto ?? null).toBeNull();
+  // The card shows the saved rate as the household's assumption.
+  await expect(page.locator(".goal-c").filter({ hasText: "eure Annahme" })).toContainText("2");
+
+  // Emptied, the reserve has no rate again (it does not grow in the goal's walk).
+  await page.goto("/household?tab=reserve#reserve-ziel");
+  lever = page.getByRole("form", { name: "Reserve-Ziel ändern" });
+  rate = lever.getByLabel("Rendite der Reserve (% pro Jahr)");
+  await expect(rate).toHaveValue("2");
+  await rate.fill("");
+  await lever.getByRole("button", { name: "Speichern" }).click();
+  await expect.poll(() => posted.length).toBe(2);
+  expect(posted[1]?.levers?.value_change?.reserve ?? null).toBeNull();
+  expect(posted[1]?.levers?.value_change?.depot).toBe("0.05");
+});
+
 // --- Phone width, light and dark (phase 10 §7.9 (a)) -------------------------------------------
 
 // One test per colour scheme, so each stays inside the test timeout.
