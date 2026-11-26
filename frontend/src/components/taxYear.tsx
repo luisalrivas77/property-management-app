@@ -5,7 +5,8 @@
 // and the way into the Jahresfragen. Each tab is a URL: /tax/2026?tab=angaben (?eigentuemer=…),
 // /tax/2026?tab=anlage-v (Anlage V, ?immobilie=…; /tax/2026 alone is the guided start page since
 // phase 10 D290), /tax/2026?tab=anlage-n (?eigentuemer=…), and
-// /tax/2026/fragen for the questionnaire. The chosen property and owner travel along, so
+// /tax/2026/fragen, which forwards to Eure Angaben's topics since phase 10 §7.8 (b) (no tab any
+// more; ?thema=… opens a topic). The chosen property and owner travel along, so
 // switching back keeps them.
 import Link from "next/link";
 
@@ -46,7 +47,14 @@ export function taxStepHref(year: number, step: GuideStepParam, propertyId: stri
 
 /** The anchors of the property's tax inputs, on the Anlage V page until D290 and on the
  * Immobilie step since: a to-do link or an old bookmark to one of them opens that step. */
-export const PROPERTY_STEP_ANCHORS: readonly string[] = ["tax-useful-life", "tax-movable-asset", "tax-grundsteuer", "tax-limit"];
+export const PROPERTY_STEP_ANCHORS: readonly string[] = [
+  "tax-useful-life",
+  "tax-movable-asset",
+  "tax-grundsteuer",
+  "tax-limit",
+  // the seller's renovation inside the price, on Eure Angaben until phase 10 §7.8 (b) part 2
+  "tax-price-renovation",
+];
 
 /** The Immobilie step's URL for a `#…` link to one of PROPERTY_STEP_ANCHORS, else null. */
 export function propertyAnchorHref(year: number, propertyId: string | null, href: string): string | null {
@@ -127,6 +135,61 @@ export function taxFormHref(form: TaxForm, state: TaxYearState): string {
   ])}`;
 }
 
+/** ?thema=… opens one topic of Eure Angaben (phase 10 §7.8 (b), D294, 22c frames 3–7). */
+export const TOPIC_PARAM = "thema";
+export type AngabenTopic = "couple" | "pay" | "work_costs" | "insurance" | "benefits" | "children" | "household";
+
+/** One topic of Eure Angaben, at one question (`frage`, `ownerId`) when given. */
+export function angabenTopicHref(
+  year: number,
+  topic: AngabenTopic,
+  at: { ownerId?: string | null; frage?: string | null } = {},
+): string {
+  return `/tax/${year}${query([
+    ["tab", ANGABEN_PARAM],
+    [TOPIC_PARAM, topic],
+    ["frage", at.frage ?? null],
+    ["eigentuemer", at.ownerId ?? null],
+  ])}`;
+}
+
+/** The topic each return-input kind is entered in (rules/angaben_topics.py TOPIC_KINDS, a
+ * copy for the old `#eingabe-<kind>` links; e2e/field-help.spec.ts compares it with the
+ * server's topics). */
+export const TOPIC_OF_KIND: Readonly<Record<string, AngabenTopic>> = {
+  wage_certificate: "pay",
+  payslip: "pay",
+  no_pay: "pay",
+  commute: "work_costs",
+  home_office: "work_costs",
+  work_room: "work_costs",
+  work_equipment: "work_costs",
+  telecom: "work_costs",
+  professional_association: "work_costs",
+  training: "work_costs",
+  other_expense: "work_costs",
+  other_insurance: "insurance",
+  vorsorge_override: "insurance",
+  replacement_income: "benefits",
+  child: "children",
+  childcare_cost: "children",
+  household_services: "household",
+  special_expense: "household",
+};
+
+/** The topic an old anchor of Eure Angaben (before the topics) names, else null: `#eingabe-<kind>`
+ * (the input blocks), `#arbeitslohn` (the pay card), `#kinder`, `#haushalt` (the household
+ * blocks) and `#tax-inputs-title` (the inputs' heading, the Werbungskosten). */
+export function topicOfAnchor(hash: string): AngabenTopic | null {
+  const id = hash.replace(/^#/, "");
+  if (id.startsWith("eingabe-")) return TOPIC_OF_KIND[id.slice("eingabe-".length)] ?? null;
+  if (id === "arbeitslohn") return "pay";
+  if (id === "kinder") return "children";
+  if (id === "haushalt") return "household";
+  if (id === "tax-inputs-title") return "work_costs";
+  return null;
+}
+
 /** Steuern › Eure Angaben › Arbeitslohn of a year (phase 10 D281): where the expected gross pay,
  * a Bescheid's zvE, a typed rate and „Kein Arbeitslohn“ are entered (Eigentümer › Einkommen until
  * then), on the given owner when the caller knows one. */
@@ -142,7 +205,10 @@ export interface QuestionTarget {
 }
 
 /** The Jahresfragen flow of the year (built in the questionnaire step, phase-4b.md §10), opened
- * at one question when `target` is given (?frage=…&eigentuemer=…&immobilie=…). */
+ * at one question when `target` is given (?frage=…&eigentuemer=…&immobilie=…). Since phase 10
+ * §7.8 (b) the address only forwards (app/(app)/tax/[year]/fragen): to the question's topic of
+ * Eure Angaben, a property's question to its Immobilie step, without a target to the first open
+ * topic. */
 export function questionnaireHref(year: number, target?: QuestionTarget): string {
   const base = `/tax/${year}/fragen`;
   if (!target) return base;
@@ -174,9 +240,6 @@ export function TaxTabs({ current, state }: { current: TaxForm; state: TaxYearSt
       <span className="tab-disabled" aria-disabled="true">
         SO <span className="tab-note">{t.fromPhase8}</span>
       </span>
-      <Link href={questionnaireHref(state.year)} className="tax-tab-questions">
-        {t.questionnaire}
-      </Link>
     </nav>
   );
 }

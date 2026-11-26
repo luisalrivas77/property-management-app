@@ -134,7 +134,9 @@ function PayslipChip({ ownerId, year }: { ownerId: string; year: number }) {
 // --- the Kinder and Haushalt blocks -----------------------------------------------------------
 
 /** The household's return facts for the year, under the Einkommen section. */
-export function HouseholdReturnBlocks({ year }: { year: number }) {
+/** `part` shows only the children's blocks (child, childcare) or the household's (services,
+ * donations), each a topic of Eure Angaben (phase 10 D294); both without it. */
+export function HouseholdReturnBlocks({ year, part }: { year: number; part?: "children" | "household" }) {
   const loadChildren = useCallback(() => loadRows(year, "child"), [year]);
   const children = useLoad(loadChildren);
   const childrenChanged = useReturnInputsSync(children.reload);
@@ -142,10 +144,14 @@ export function HouseholdReturnBlocks({ year }: { year: number }) {
   const f = useFormat();
   return (
     <div className="stack">
-      <p className="row">
-        <Link href={`/tax/${year}?tab=anlage-n`}>{t.viewAnlageN(year)}</Link>
-        <Link href={`/tax/${year}/fragen`}>{t.answerQuestions(year)}</Link>
-      </p>
+      {part ? null : (
+        <p className="row">
+          <Link href={`/tax/${year}?tab=anlage-n`}>{t.viewAnlageN(year)}</Link>
+          <Link href={`/tax/${year}/fragen`}>{t.answerQuestions(year)}</Link>
+        </p>
+      )}
+      {part === "household" ? null : (
+        <>
       <h3 id="kinder">{t.children}</h3>
       <p className="muted">{t.childrenIntro}</p>
       <Loading state={children}>
@@ -161,6 +167,10 @@ export function HouseholdReturnBlocks({ year }: { year: number }) {
           </>
         )}
       </Loading>
+        </>
+      )}
+      {part === "children" ? null : (
+        <>
       <h3 id="haushalt">{t.household}</h3>
       <ItemBlock
         year={year}
@@ -195,6 +205,9 @@ export function HouseholdReturnBlocks({ year }: { year: number }) {
         }}
         form={(done) => <DonationForm year={year} onDone={done} />}
       />
+        </>
+      )}
+      {part === "household" ? null : (
       <Loading state={children}>
         {(list) => (
           <ItemBlock
@@ -220,6 +233,7 @@ export function HouseholdReturnBlocks({ year }: { year: number }) {
           />
         )}
       </Loading>
+      )}
     </div>
   );
 }

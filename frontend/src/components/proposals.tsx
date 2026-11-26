@@ -63,6 +63,8 @@ import {
 } from "@/i18n/proposals";
 
 import { DocumentExplanationBox, ImportStoredStatement, NO_TAX_YEAR } from "./documents";
+import { FieldHelpNote } from "./fieldHelp";
+import { isHelpForm } from "./returnInputFields";
 import type { Directory } from "./entities";
 import { targets, tenantName } from "./entities";
 import { FieldDescription, FormBanner, InfoToggle, useFormErrors, type FieldMessages } from "./form";
@@ -933,10 +935,13 @@ export function ProposalSection({
   onApplied,
   onPendingChange,
   onPendingLinksChange,
+  applyLabel,
 }: {
   detail: DocumentDetail;
   directory: Directory | null;
   onApplied: () => void;
+  /** Eure Angaben's Arbeitslohn says „Stimmt so“ (phase 10 D294, 22c frame 4b). */
+  applyLabel?: string;
   onPendingChange?: (pending: boolean | undefined) => void;
   onPendingLinksChange?: (pending: boolean | undefined) => void;
 }) {
@@ -1039,6 +1044,7 @@ export function ProposalSection({
         {applied && applied.proposal.id !== proposal.id ? <AppliedSummary result={applied} /> : null}
         <ProposalReview
         key={proposal.id}
+        applyLabel={applyLabel}
         proposal={proposal}
         detail={detail}
         directory={directory}
@@ -1081,6 +1087,7 @@ export function ProposalSection({
             <p className="muted">{t.typingOnly}</p>
             <ProposalReview
               key={proposal.id}
+              applyLabel={applyLabel}
               proposal={proposal}
               detail={detail}
               directory={directory}
@@ -1382,6 +1389,7 @@ function ProposalReview({
   onDecided,
   onRerun,
   busy: rerunBusy,
+  applyLabel,
 }: {
   proposal: Proposal;
   detail: DocumentDetail;
@@ -1389,6 +1397,7 @@ function ProposalReview({
   onDecided: (result: Decided) => void;
   onRerun: (() => void) | null;
   busy: boolean;
+  applyLabel?: string;
 }) {
   const t = useT(proposalsText);
   const records = useMemo(() => proposal.records ?? [], [proposal.records]);
@@ -1471,7 +1480,7 @@ function ProposalReview({
       <FormBanner errors={form.errors} />
       <div className="row proposal-foot">
         <button type="submit" disabled={busy !== null}>
-          {busy === "apply" ? t.applying : t.apply}
+          {busy === "apply" ? t.applying : (applyLabel ?? t.apply)}
         </button>
         <button type="button" className="secondary" disabled={busy !== null} onClick={() => void reject()}>
           {busy === "reject" ? t.rejecting : t.reject}
@@ -1744,6 +1753,8 @@ function FieldRow({
     undefined;
   const inputDisabled = disabled || (existing && !take);
   const offered = record.options?.[name];
+  const helpKind = record.key.startsWith("return_input:") ? record.key.slice("return_input:".length) : "";
+  const helpForm = isHelpForm(helpKind) ? helpKind : null;
 
   let input: ReactNode;
   if (unchanged || spec.kind === "fixed") {
@@ -1832,6 +1843,9 @@ function FieldRow({
     <div className={errors.length > 0 ? "proposal-row field-invalid" : "proposal-row"}>
       <div className="proposal-row-head">
         <label htmlFor={id}>{spec.label}</label>
+        {/* On Steuern › Eure Angaben a return input's read value says where it stands (its line
+            of the paper, the field help of phase 10 D294); nothing without the help provider. */}
+        {helpForm ? <FieldHelpNote form={helpForm} field={name.replace(/^value\./, "")} label={spec.label} /> : null}
         {spec.description ? (
           <InfoToggle
             open={descriptionOpen}

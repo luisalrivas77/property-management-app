@@ -89,7 +89,7 @@ function angabenYears(thisYear: number, ruleYears: readonly number[], shown: num
 }
 
 /** „Steuern 2026“, the year chips and the tabs. */
-function TaxInputsHead({ state }: { state: TaxYearState }) {
+export function TaxInputsHead({ state }: { state: TaxYearState }) {
   const t = useT(messages);
   const years = useLoad(loadYears);
   const choices = angabenYears(Number(todayIso().slice(0, 4)), years.data ?? [], state.year);

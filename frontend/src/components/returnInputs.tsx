@@ -309,18 +309,21 @@ export function InputsPanel({
   year,
   rows,
   onChanged,
+  kinds,
 }: {
   ownerId: string;
   year: number;
   rows: ReturnInput[];
   onChanged: () => void;
+  /** Only these kinds' blocks (one topic of Eure Angaben, phase 10 D294); all without it. */
+  kinds?: readonly string[];
 }) {
   const t = useT(returnInputs);
   return (
     <section className="card stack tax-inputs" aria-labelledby="tax-inputs-title">
       <h2 id="tax-inputs-title">{t.inputs}</h2>
       <p className="muted">{t.inputsIntro}</p>
-      {KINDS.map((kind) => (
+      {KINDS.filter((kind) => !kinds || kinds.includes(kind.kind)).map((kind) => (
         <KindBlock
           key={kind.kind}
           spec={kind}

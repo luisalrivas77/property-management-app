@@ -45,7 +45,7 @@ import { type PropertyCard, propertyCardHref } from "./propertySections";
 import { LABEL_EN, REMINDER_EN, REQUIREMENT_EN, WARNING_EN } from "./todosEn";
 import { ActionDialog } from "./ui";
 import { useLoad } from "./useLoad";
-import { questionnaireHref, taxFormHref } from "./taxYear";
+import { angabenTopicHref, questionnaireHref, taxFormHref, taxStepHref } from "./taxYear";
 
 import "./tax.css";
 
@@ -187,16 +187,15 @@ const owners = (anchor: string, label: string) => (_: DraftWarning, ctx: GuideCo
  * into the typing form. */
 function benefitBooked(warning: DraftWarning, ctx: GuideContext): GuideAction {
   const ownerId = warning.params?.owner_id ?? null;
-  return link(
-    `${taxFormHref("angaben", { year: ctx.year, propertyId: null, ownerId })}#tax-angaben-points`,
-    "Vorschlag ansehen",
-  );
+  // Since §7.8 (b) (D294) the proposal is the pre-filled answer of the topic Lohnersatzleistungen.
+  return link(angabenTopicHref(ctx.year, "benefits", { ownerId }), "Vorschlag ansehen");
 }
 const questions = (_: DraftWarning, ctx: GuideContext) => link(questionnaireHref(ctx.year), "Jahresfragen beantworten");
 
-/** The card „Renovierung im Kaufpreis“ on Steuern › Eure Angaben (phase 3 D287). */
+/** The card „Renovierung im Kaufpreis“ (phase 3 D287): on the property's Immobilie step since
+ * phase 10 §7.8 (b) (D294; on Eure Angaben until then). */
 const priceRenovationCard = (label: string) => (_: DraftWarning, ctx: GuideContext) =>
-  link(`${taxFormHref("angaben", { year: ctx.year, propertyId: ctx.propertyId ?? null, ownerId: null })}#tax-price-renovation`, label);
+  link(`${taxStepHref(ctx.year, "immobilie", ctx.propertyId ?? null)}#tax-price-renovation`, label);
 
 /** tax.price_renovation_ask: the buttons need the property and the claim the warning cites. */
 const priceRenovationAnswer = (warning: DraftWarning, ctx: GuideContext): GuideAction | null => {
