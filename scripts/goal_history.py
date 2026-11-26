@@ -17,6 +17,10 @@ Sources:
 - The Deutsche Bundesbank's daily Frankfurt fixing BBEX3.D.USD.DEM.AA.AC.000: DM per US
   dollar on the last day of each year with a rate, 1990–1998.
 
+The block `house_prices` (Eurostat's prc_hpi_q, phase 10 §7.9 (e) items 1, 2) is not written
+here: it was appended once from the JSON-stat download, so copy it over after a regeneration
+(rules/goal/series.committed() refuses a file without it).
+
 Stdlib only; the output is deterministic for the same files. Kenneth French's file is not read
 here: it is downloaded into the database (`reference_return`) and never committed.
 """

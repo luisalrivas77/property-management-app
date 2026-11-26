@@ -101,6 +101,16 @@ def pegged_returns(currency: str, fx: Mapping[int, Fraction]) -> dict[int, Fract
     return out
 
 
+def q4_returns(q4: Mapping[int, Decimal]) -> dict[int, Fraction]:
+    """An index's yearly returns, fourth quarter to fourth quarter: Q4_Y ÷ Q4_{Y−1} − 1 for
+    each year with both values (the house price index, §7.9 (e) item 2)."""
+    return {
+        y: Fraction(v) / Fraction(q4[y - 1]) - 1
+        for y, v in sorted(q4.items())
+        if y - 1 in q4 and q4[y - 1] > 0 and v > 0
+    }
+
+
 # --- The mix ---------------------------------------------------------------------------------
 
 
@@ -283,6 +293,7 @@ __all__ = [
     "Mix",
     "NoCount",
     "Series",
+    "q4_returns",
     "annualised",
     "coin_returns",
     "funds_returns",

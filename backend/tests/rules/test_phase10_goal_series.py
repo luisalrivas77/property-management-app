@@ -54,3 +54,29 @@ def test_the_funds_series_is_built_from_the_download_only():
 
 def test_the_committed_data_does_not_move_the_rule_version():
     assert rule_version() == WALK_RULE_VERSION
+
+
+def test_the_house_price_index_is_eurostats_contiguous_q4_series():
+    """§7.9 (e) item 2: Eurostat's prc_hpi_q for Germany, every quarter from 2005-Q1 committed
+    with its source and licence; the Q4 to Q4 returns run 2006–2025 without a gap. A
+    regeneration of history.yaml by scripts/goal_history.py must keep this block."""
+    block = series.committed()[series.HOUSE_PRICES]
+    assert "prc_hpi_q" in block["url"] and "geo=DE" in block["url"]
+    assert block["licence"] == "CC BY 4.0"
+    assert block["attribution"] == "Eurostat (prc_hpi_q), Statistisches Bundesamt"
+    assert block["repo_allowed"] is True and block["commercial_use"] is True
+    quarters = sorted(block["values"])
+    assert quarters[0] == "2005-Q1"
+    years = sorted({int(q[:4]) for q in quarters})
+    assert years == list(range(2005, years[-1] + 1))
+    for p in block["provisional"]:
+        assert p in block["values"]
+    q4 = series.house_price_q4()
+    assert sorted(q4) == list(range(2005, max(q4) + 1)) and max(q4) >= 2025
+    s = series.house_price_series()
+    assert sorted(s.returns) == list(range(2006, max(q4) + 1))
+    assert s.read_on is not None and "Eurostat" in s.source
+    assert "eigene Berechnung" in s.attribution
+    # the fixtures' invented index replaces the values, never the source
+    invented = series.house_price_series({2020: Decimal("100"), 2021: Decimal("110")})
+    assert invented.returns == {2021: Decimal("0.1")} and invented.source == s.source
