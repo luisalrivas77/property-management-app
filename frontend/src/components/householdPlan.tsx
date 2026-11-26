@@ -35,14 +35,15 @@ import {
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { useT } from "@/i18n";
-import { goalText } from "@/i18n/goal";
 import { monthBudget } from "@/i18n/monthBudget";
+import { goalText } from "@/i18n/goal";
 import { lineLabel, planning, type PlanningText } from "@/i18n/planning";
 import { playText } from "@/i18n/play";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import {
   ASSUMPTIONS,
   BUFFER_LEVER,
+  HOUSEHOLD_BUDGET,
   HOUSEHOLD_PLAY,
   HOUSEHOLD_RESERVE,
   planTodoTarget,
@@ -54,7 +55,7 @@ import {
   staleAssumptionsTarget,
 } from "@/lib/planningRoutes";
 
-import { DetailLayout, useDetail } from "./DetailPanel";
+import { DetailLayout, DetailPanel, useDetail } from "./DetailPanel";
 import { Field } from "./form";
 import { todayIso } from "./format";
 import { HealthTodoItem } from "./healthFigures";
@@ -75,7 +76,7 @@ import {
 } from "./healthShared";
 import { percentInput, toSignedMoneyString } from "./input";
 import { ALLOCATION_CATEGORY } from "./labels";
-import { type GoalView, useGoalView } from "./householdGoal";
+import { CardHead, type GoalView, Stat, Stats, useGoalView } from "./householdGoal";
 import { PlanExplanationPanel } from "./planExplanation";
 import { applyPlay, NO_PLAY, plannedCount, type PlayChanges } from "./playDraft";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
@@ -332,6 +333,7 @@ export function PlanProvider({
   const [playRound, setPlayRound] = useState(0);
   const goals = useDetail("goals");
   const budgetClass = useDetail("budget");
+  const reserveCard = useDetail(RESERVE_CARD);
 
   const data = state.data;
   const enough = data !== undefined && data.health.window.enough && data.plan.surplus != null;
@@ -569,6 +571,8 @@ export function PlanProvider({
           footer={dirty ? saveBar : null}
         />
       );
+    } else if (isReserveCard(reserveCard.id)) {
+      panel = <ReserveCardPanel id={reserveCard.id} data={ready.shown} backLabel={backLabel} onClose={reserveCard.close} />;
     }
   }
   if (panel === null && goalView.panel) panel = goalView.panel;
@@ -841,7 +845,7 @@ function ReserveTab({ ready }: { ready: PlanReady }) {
       </p>
       <PlanTodos todos={todos} onChanged={onChanged} />
       <DirtyNotice text={t.dirtyNotice} />
-      <ReserveKpis data={shown} />
+      <ReserveCards data={shown} />
       <InlineLever anchor={RESERVE_LEVER} title={p.changeReserve} keys={RESERVE_KEYS} ready={ready}>
         {(levers, setLevers) => (
           <>
@@ -851,7 +855,6 @@ function ReserveTab({ ready }: { ready: PlanReady }) {
         )}
       </InlineLever>
       <Paths data={shown} />
-      <ReserveAccountsCard data={shown} />
     </>
   );
 }
@@ -1012,62 +1015,219 @@ function unsigned(value: string): string {
   return value.startsWith("-") ? value.slice(1) : value;
 }
 
-function ReserveKpis({ data }: { data: PlanData }) {
+// --- Haushalt › Reserve as mockup 19f panel 6 --------------------------------------------------
+
+/** The detail kind of the Reserve tab's cards; each card's head opens its explanation. */
+const RESERVE_CARD = "reserve-karte";
+const RESERVE_CARDS = ["reserve", "anlegbar", "bedarf"] as const;
+type ReserveCardId = (typeof RESERVE_CARDS)[number];
+
+function isReserveCard(id: string | null): id is ReserveCardId {
+  return id !== null && (RESERVE_CARDS as readonly string[]).includes(id);
+}
+
+/** The reserve's need codes, largest first: an order for display, never a figure. */
+function needRows(codes: Record<string, string> | undefined): [string, string][] {
+  return Object.entries(codes ?? {}).sort((a, b) => Number(b[1]) - Number(a[1]));
+}
+
+/** The flat's shortfall in the need (the rental cash's mean while it is below 0), or null. */
+function flatShortfall(plan: HouseholdPlan): string | null {
+  const rental = surplusRow(plan, "mean_rental_cash");
+  return rental && rental.amount.startsWith("-") ? unsigned(rental.amount) : null;
+}
+
+/** Three cards (19f panel 6): the reserve with its accounts, what can be invested now and each
+ * month, and the monthly need it is measured in. Every figure is the server's (D269); each card's
+ * head opens its explanation in the side panel (cards, not text, 25 Nov 2026). */
+function ReserveCards({ data }: { data: PlanData }) {
+  const t = useT(goalText);
+  const f = usePlanFormat();
   const { plan } = data;
   const reserve = plan.reserve;
-  const t = useT(planning);
-  const f = usePlanFormat();
+  const rate = plan.levers.value_change?.reserve ?? null;
+  const counted = (reserve?.accounts ?? []).filter((account) => account.origin !== "removed");
+  const label = (id: string) => data.accounts.find((account) => account.id === id)?.label ?? id;
+  const investable = surplusRow(plan, "investable")?.amount ?? null;
+  const needs = needRows(reserve?.need_codes);
+  const shown = needs.slice(0, 3);
+  const more = needs.length - shown.length;
+  const needsOnly = reserve?.need_basis === "needs";
   return (
-    <div className="planning-kpis">
-      <div className="planning-kpi planning-kpi-main">
-        <p className="planning-kpi-label">{t.kpiReserve}</p>
-        <p className="planning-kpi-value">{f.euro(reserve?.amount)}</p>
-        <p className="planning-kpi-sub">{reserve?.months != null ? t.kpiReserveMonths(f.short(reserve.months)) : t.kpiReserveNoNeed}</p>
+    <div className="goal-cards">
+      <div className="goal-c">
+        <CardHead kind={RESERVE_CARD} id="reserve" title={t.reserveTitle} />
+        <Stats count={3}>
+          <Stat value={f.euro(reserve?.amount)} label={t.reserveToday} />
+          <Stat
+            value={reserve?.months != null ? t.reserveMonths(f.short(reserve.months)) : "–"}
+            label={t.reserveTarget(f.short(reserve?.target_months ?? plan.levers.reserve_target_months))}
+            warn={reserve?.state === "below"}
+          />
+          <Stat value={rate != null ? f.ratio(rate) : t.reserveNoRate} label={t.reserveRateLabel} />
+        </Stats>
+        {counted.length > 0 ? (
+          <div className="goal-rows">
+            {counted.map((account) => (
+              <div key={account.account_id} className="goal-rw">
+                <span>
+                  {label(account.account_id)}
+                  {account.kind === "depot" ? <span className="goal-tag goal-tag-yes">{t.reserveCounts}</span> : null}
+                </span>
+                <b>{f.signedEuro(account.balance)}</b>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
-      <div className="planning-kpi">
-        <p className="planning-kpi-label">{t.kpiGap}</p>
-        <p className="planning-kpi-value">{f.euro(reserve?.gap)}</p>
-        <p className="planning-kpi-sub">
-          {t.kpiTarget(f.euro(reserve?.target), f.short(plan.levers.reserve_target_months))}{" "}
-          <LeverLink anchor={RESERVE_LEVER}>{t.change}</LeverLink>
-        </p>
+      <div className="goal-c goal-c-excess">
+        <CardHead kind={RESERVE_CARD} id="anlegbar" title={t.investableTitle} />
+        <Stats count={2}>
+          <Stat value={plan.above_target != null ? f.euro(plan.above_target) : "–"} label={t.investableNow} />
+          <Stat value={investable != null ? f.signedEuro(investable) : "–"} label={t.investableMonthly} />
+        </Stats>
       </div>
-      <div className="planning-kpi">
-        <p className="planning-kpi-label">{t.kpiNeed}</p>
-        <p className="planning-kpi-value">{f.euro(reserve?.need)}</p>
-        <p className="planning-kpi-sub">{t.kpiNeedSub}</p>
+      <div className="goal-c">
+        <CardHead
+          kind={RESERVE_CARD}
+          id="bedarf"
+          title={t.needTitle}
+          tag={needsOnly ? <span className="goal-tag goal-tag-no">{t.needOnly}</span> : undefined}
+        />
+        <span className="goal-n">{f.euro(reserve?.need)}</span>
+        {shown.length > 0 ? (
+          <div className="goal-rows">
+            {shown.map(([code, amount]) => (
+              <div key={code} className="goal-rw">
+                <span>{categoryName(code)}</span>
+                <b>{f.euro(amount)}</b>
+              </div>
+            ))}
+            {more > 0 ? (
+              <div className="goal-rw">
+                <span className="muted">{t.needMore(more)}</span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
-/** The accounts the reserve counts today, each with the balance the server counted. */
-function ReserveAccountsCard({ data }: { data: PlanData }) {
-  const t = useT(planning);
+/** A Reserve card's side panel: what the figures are, every row behind them and where to change
+ * them. */
+function ReserveCardPanel({ id, data, backLabel, onClose }: { id: ReserveCardId; data: PlanData; backLabel: string; onClose: () => void }) {
+  const t = useT(goalText);
+  const pl = useT(planning);
+  const p = useT(playText);
   const f = usePlanFormat();
-  const accounts = data.plan.reserve?.accounts ?? [];
-  const label = (id: string) => data.accounts.find((account) => account.id === id)?.label ?? id;
-  return (
-    <section className="card stack" aria-labelledby="reserve-accounts-title">
-      <div className="planning-card-head">
-        <h2 id="reserve-accounts-title">{t.reserveAccountsTitle}</h2>
-        <span className="spacer" />
-        <LeverLink anchor={RESERVE_LEVER}>
-          {t.change} <span aria-hidden="true">›</span>
-        </LeverLink>
-      </div>
-      {accounts.length > 0 ? (
-        <ul className="household-rows">
-          {accounts.map((account) => (
-            <li key={account.account_id}>
-              <span>{label(account.account_id)}</span>
-              <span>{f.signedEuro(account.balance)}</span>
-            </li>
+  const { plan } = data;
+  const reserve = plan.reserve;
+  const label = (accountId: string) => data.accounts.find((account) => account.id === accountId)?.label ?? accountId;
+  let title: string;
+  let body: ReactNode;
+  if (id === "reserve") {
+    const accounts = reserve?.accounts ?? [];
+    title = t.reserveTitle;
+    body = (
+      <>
+        <dl className="tile-panel-rows">
+          <div>
+            <dt>{t.reserveToday}</dt>
+            <dd>{f.euro(reserve?.amount)}</dd>
+          </div>
+          <div>
+            <dt>{t.reserveTargetAmount}</dt>
+            <dd>{reserve ? pl.kpiTarget(f.euro(reserve.target), f.short(reserve.target_months)) : "–"}</dd>
+          </div>
+          <div>
+            <dt>{t.reserveGap}</dt>
+            <dd>{f.euro(reserve?.gap)}</dd>
+          </div>
+        </dl>
+        <p>{t.reserveWhatText}</p>
+        {accounts.length > 0 ? (
+          <>
+            <p className="tile-panel-kicker">{t.reserveAccountsHead}</p>
+            <div className="goal-rows">
+              {accounts.map((account) => (
+                <div key={account.account_id} className="goal-rw">
+                  <span>
+                    {label(account.account_id)}
+                    {account.origin === "removed" ? (
+                      <span className="goal-tag goal-tag-no">{t.reserveNotCounted}</span>
+                    ) : account.kind === "depot" ? (
+                      <span className="goal-tag goal-tag-yes">{t.reserveCounts}</span>
+                    ) : null}
+                  </span>
+                  <b>{f.signedEuro(account.balance)}</b>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : null}
+        <p>{t.reserveRateText}</p>
+        <p>
+          <a href={`#${RESERVE_LEVER}`} className="button-link secondary">
+            {p.changeReserve} ›
+          </a>
+        </p>
+      </>
+    );
+  } else if (id === "anlegbar") {
+    const investable = surplusRow(plan, "investable")?.amount ?? null;
+    title = t.investableTitle;
+    body = (
+      <>
+        <dl className="tile-panel-rows">
+          <div>
+            <dt>{t.investableNow}</dt>
+            <dd>{plan.above_target != null ? f.euro(plan.above_target) : "–"}</dd>
+          </div>
+          <div>
+            <dt>{t.investableMonthly}</dt>
+            <dd>{investable != null ? f.signedEuro(investable) : "–"}</dd>
+          </div>
+        </dl>
+        <p>{t.investableNowText}</p>
+        <p>{t.investableMonthlyText}</p>
+        <p>
+          <Link href={HOUSEHOLD_BUDGET} className="button-link secondary">
+            {t.toBudget} ›
+          </Link>
+        </p>
+      </>
+    );
+  } else {
+    const shortfall = flatShortfall(plan);
+    title = t.needTitle;
+    body = (
+      <>
+        <p className="goal-n">{f.euro(reserve?.need)}</p>
+        <p>{reserve?.need_basis === "needs" ? t.needText : t.needTextRegular}</p>
+        <div className="goal-rows">
+          {needRows(reserve?.need_codes).map(([code, amount]) => (
+            <div key={code} className="goal-rw">
+              <span>{categoryName(code)}</span>
+              <b>{f.euro(amount)}</b>
+            </div>
           ))}
-        </ul>
-      ) : null}
-      <p className="muted">{t.reserveWhat}</p>
-    </section>
+          {shortfall ? (
+            <div className="goal-rw">
+              <span>{t.needFlat}</span>
+              <b>{f.euro(shortfall)}</b>
+            </div>
+          ) : null}
+        </div>
+        <p className="muted">{pl.kpiNeedSub}</p>
+      </>
+    );
+  }
+  return (
+    <DetailPanel title={title} backLabel={backLabel} onClose={onClose}>
+      <div className="stack goal-panel">{body}</div>
+    </DetailPanel>
   );
 }
 

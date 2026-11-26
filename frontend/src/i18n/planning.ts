@@ -27,10 +27,7 @@ const de = {
   toAssets: "Anlagen",
   explain: "Erklärung",
   // Haushalt › Reserve
-  kpiNeed: "Bedarf",
   kpiNeedSub: "im Monat, aus den abgeschlossenen Monaten",
-  reserveWhat:
-    "Was als Reserve zählt: Giro- und Tagesgeldkonten abzüglich der offenen Kreditkarten. Das Mietkonto zählt nur, wenn ihr es dazunehmt; sein Geld ist für die nächsten Zahlungen der Wohnung.",
   // the scenario: unsaved changes and the save bar
   changesTitle: "Nicht gespeicherte Änderungen",
   noChanges: "Keine Änderung: die Zahlen rechnen mit der gespeicherten Fassung.",
@@ -150,10 +147,6 @@ const de = {
   kpiInvestable: "Anlegbar pro Monat",
   kpiNoPlan: "kein Sparplan erkannt",
   kpiPlansTogether: (count: number) => (count === 1 ? "aus einem Sparplan" : `aus ${count} Sparplänen zusammen`),
-  kpiReserve: "Reserve heute",
-  kpiReserveMonths: (months: string) => `reicht für ${months} Monate`,
-  kpiReserveNoNeed: "ohne Bedarf keine Monate",
-  kpiGap: "Bis zum Reserveziel fehlen",
   kpiTarget: (amount: string, months: string) => `Ziel ${amount} = ${months} Monate Bedarf`,
   leverReserve: "Reserveziel",
   leverReserveDown: "Reserveziel verringern",
@@ -333,10 +326,7 @@ export const planning = defineMessages({
     toReserve: "Reserve",
     toAssets: "Assets",
     explain: "Explanation",
-    kpiNeed: "Need",
     kpiNeedSub: "per month, from the closed months",
-    reserveWhat:
-      "What counts as the reserve: current and savings accounts less the open credit cards. The rental account counts only if you add it; its money is for the flat's next payments.",
     changesTitle: "Unsaved changes",
     noChanges: "No change: the figures use the saved version.",
     discard: "Discard",
@@ -454,10 +444,6 @@ export const planning = defineMessages({
     kpiInvestable: "Investable per month",
     kpiNoPlan: "no savings plan found",
     kpiPlansTogether: (count: number) => (count === 1 ? "from one savings plan" : `from ${count} savings plans together`),
-    kpiReserve: "Reserve today",
-    kpiReserveMonths: (months: string) => `lasts ${months} months`,
-    kpiReserveNoNeed: "no months without a need",
-    kpiGap: "Still missing to the reserve target",
     kpiTarget: (amount: string, months: string) => `Target ${amount} = ${months} months of need`,
     leverReserve: "Reserve target",
     leverReserveDown: "Lower the reserve target",

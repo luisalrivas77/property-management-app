@@ -540,7 +540,7 @@ export function WordPill({ word, text }: { word: GoalWord; text: string }) {
 }
 
 /** A small figure with its label (19f's `.st`). */
-function Stat({ value, label, warn }: { value: ReactNode; label: ReactNode; warn?: boolean }) {
+export function Stat({ value, label, warn }: { value: ReactNode; label: ReactNode; warn?: boolean }) {
   return (
     <div>
       <span className={warn ? "goal-v goal-v-warn" : "goal-v"}>{value}</span>
@@ -549,7 +549,7 @@ function Stat({ value, label, warn }: { value: ReactNode; label: ReactNode; warn
   );
 }
 
-function Stats({ children, count }: { children: ReactNode; count: number }) {
+export function Stats({ children, count }: { children: ReactNode; count: number }) {
   return (
     <div className="goal-st" style={{ "--k": String(Math.max(1, Math.min(3, count))) } as CSSProperties}>
       {children}
@@ -557,9 +557,9 @@ function Stats({ children, count }: { children: ReactNode; count: number }) {
   );
 }
 
-/** A card's head that opens its side panel. */
-function CardHead({ title, id, tag }: { title: string; id?: string; tag?: ReactNode }) {
-  const detail = useDetail(GOAL_DETAIL);
+/** A card's head that opens its side panel (`kind`: the panel's detail kind, Haushalt › Ziel's by default). */
+export function CardHead({ title, id, tag, kind = GOAL_DETAIL }: { title: string; id?: string; tag?: ReactNode; kind?: string }) {
+  const detail = useDetail(kind);
   if (!id)
     return (
       <div className="goal-ch">

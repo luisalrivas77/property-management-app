@@ -243,6 +243,25 @@ export const goalText = defineMessages({
     needTitle: "Bedarf im Monat",
     needOnly: "nur Notwendiges",
     needMore: (count: number) => `${count} weitere`,
+    reserveNotCounted: "zählt nicht",
+    reserveNoRate: "–",
+    reserveTargetAmount: "Reserveziel",
+    reserveGap: "Bis zum Ziel fehlen",
+    reserveAccountsHead: "Konten",
+    reserveWhatText:
+      "Die Reserve ist Geld, an das ihr innerhalb eines Tages kommt: Giro- und Tagesgeldkonten abzüglich offener Kreditkarten. Ein Depot zählt zu seinem Wert, wenn ihr es als „Zählt zur Reserve“ markiert; das Mietkonto nur, wenn ihr es dazunehmt.",
+    reserveRateText:
+      "Die Rendite der Reserve ist eure Annahme pro Jahr. Die Rechnung zum Ziel lässt die Reserve damit wachsen; ohne Eintrag wächst sie nicht.",
+    investableNowText:
+      "Jetzt: das Geld auf euren Reservekonten über eurem Reserveziel. Die Rechnung zum Ziel legt es an, zu den Renditen, die ihr eingetragen habt.",
+    investableMonthlyText:
+      "Jeden Monat: was im Schnitt der abgeschlossenen Monate nach allen Ausgaben frei bleibt, abzüglich eures Puffers und erst, wenn die Reserve ihr Ziel erreicht hat. Wie die Zahl entsteht, zeigt Haushalt › Budget.",
+    toBudget: "Zum Budget",
+    needText:
+      "Was ihr im Monat zum Leben braucht: der Schnitt eurer notwendigen Ausgaben aus den abgeschlossenen Monaten, dazu ein Fehlbetrag der Wohnung. Wünsche zählen nicht, weil ihr sie in einer Notlage zuerst streichen würdet.",
+    needTextRegular:
+      "Was ihr im Monat braucht: der Schnitt eurer regelmäßigen Ausgaben aus den abgeschlossenen Monaten, dazu ein Fehlbetrag der Wohnung.",
+    needFlat: "Wohnung nach Zins und Tilgung",
     aboveTarget: "Anlegbar jetzt",
     aboveTargetLine: "über dem Reserveziel",
     atGoalBalanced: "am Ziel, ausgewogen",
@@ -479,6 +498,24 @@ export const goalText = defineMessages({
     needTitle: "Need a month",
     needOnly: "needs only",
     needMore: (count) => `${count} more`,
+    reserveNotCounted: "not counted",
+    reserveNoRate: "–",
+    reserveTargetAmount: "Reserve target",
+    reserveGap: "Still missing",
+    reserveAccountsHead: "Accounts",
+    reserveWhatText:
+      "The reserve is money you can reach within a day: current and instant-access accounts less open credit cards. A depot counts at its value when you mark it “Counts towards the reserve”; the rental account only when you add it.",
+    reserveRateText:
+      "The reserve's return is your assumption per year. The goal's calculation grows the reserve with it; without an entry it does not grow.",
+    investableNowText:
+      "Now: the money on your reserve accounts above your reserve target. The goal's calculation invests it at the returns you entered.",
+    investableMonthlyText:
+      "Each month: what stays free on average over the closed months after all spending, less your buffer, and only once the reserve has reached its target. Household › Budget shows how the figure comes about.",
+    toBudget: "To the budget",
+    needText:
+      "What you need to live each month: the average of your necessary spending over the closed months, plus a shortfall of the flat. Wants do not count, since you would cut them first in an emergency.",
+    needTextRegular: "What you need each month: the average of your regular spending over the closed months, plus a shortfall of the flat.",
+    needFlat: "Flat after interest and repayment",
     aboveTarget: "Investable now",
     aboveTargetLine: "above the reserve target",
     atGoalBalanced: "goal reached, balanced",
