@@ -284,7 +284,9 @@ const NO_PLAN = {} as HouseholdPlan;
 const EMPTY_LEVERS = fillLevers(undefined);
 
 /** What each lever beside its figure saves (§7.10 (a) 7). */
-const RESERVE_KEYS = ["reserve_target_months", "reserve_accounts"] as const;
+// The reserve target, its accounts and the reserve's yearly rate (D304, typed in the same form;
+// the form changes only `value_change.reserve`, the depot and crypto rates are kept as read).
+const RESERVE_KEYS = ["reserve_target_months", "reserve_accounts", "value_change"] as const;
 const BUFFER_KEYS = ["buffer_percent", "plan_overrides"] as const;
 const RATE_KEYS = ["value_change", "net_worth_years"] as const;
 
@@ -847,10 +849,11 @@ function ReserveTab({ ready }: { ready: PlanReady }) {
       <DirtyNotice text={t.dirtyNotice} />
       <ReserveCards data={shown} />
       <InlineLever anchor={RESERVE_LEVER} title={p.changeReserve} keys={RESERVE_KEYS} ready={ready}>
-        {(levers, setLevers) => (
+        {(levers, setLevers, setInvalid) => (
           <>
             <ReserveLever data={ready.data} draft={levers} setDraft={setLevers} />
             <ReserveAccountsBlock data={ready.data} draft={levers} setDraft={setLevers} />
+            <ReserveRateField draft={levers} setDraft={setLevers} onValidity={setInvalid} />
           </>
         )}
       </InlineLever>
@@ -1018,7 +1021,7 @@ function unsigned(value: string): string {
 // --- Haushalt › Reserve as mockup 19f panel 6 --------------------------------------------------
 
 /** The detail kind of the Reserve tab's cards; each card's head opens its explanation. */
-const RESERVE_CARD = "reserve-karte";
+const RESERVE_CARD = "reservekarte";
 const RESERVE_CARDS = ["reserve", "anlegbar", "bedarf"] as const;
 type ReserveCardId = (typeof RESERVE_CARDS)[number];
 
@@ -1042,6 +1045,7 @@ function flatShortfall(plan: HouseholdPlan): string | null {
  * head opens its explanation in the side panel (cards, not text, 25 Nov 2026). */
 function ReserveCards({ data }: { data: PlanData }) {
   const t = useT(goalText);
+  const p = useT(playText);
   const f = usePlanFormat();
   const { plan } = data;
   const reserve = plan.reserve;
@@ -1079,6 +1083,9 @@ function ReserveCards({ data }: { data: PlanData }) {
             ))}
           </div>
         ) : null}
+        <a className="goal-lnk" href={`#${RESERVE_LEVER}`}>
+          {p.changeReserve} ›
+        </a>
       </div>
       <div className="goal-c goal-c-excess">
         <CardHead kind={RESERVE_CARD} id="anlegbar" title={t.investableTitle} />
@@ -1129,27 +1136,28 @@ function ReserveCardPanel({ id, data, backLabel, onClose }: { id: ReserveCardId;
   let body: ReactNode;
   if (id === "reserve") {
     const accounts = reserve?.accounts ?? [];
+    const depot = accounts.find((account) => account.kind === "depot" && account.origin !== "removed");
     title = t.reserveTitle;
     body = (
       <>
-        <dl className="tile-panel-rows">
-          <div>
-            <dt>{t.reserveToday}</dt>
-            <dd>{f.euro(reserve?.amount)}</dd>
+        <div className="goal-rows">
+          <div className="goal-rw">
+            <span>{t.reserveToday}</span>
+            <b>{f.euro(reserve?.amount)}</b>
           </div>
-          <div>
-            <dt>{t.reserveTargetAmount}</dt>
-            <dd>{reserve ? pl.kpiTarget(f.euro(reserve.target), f.short(reserve.target_months)) : "–"}</dd>
+          <div className="goal-rw">
+            <span>{reserve ? t.reserveTargetOf(f.short(reserve.target_months)) : t.reserveTargetAmount}</span>
+            <b>{f.euro(reserve?.target)}</b>
           </div>
-          <div>
-            <dt>{t.reserveGap}</dt>
-            <dd>{f.euro(reserve?.gap)}</dd>
+          <div className="goal-rw">
+            <span>{t.reserveGap}</span>
+            <b>{f.euro(reserve?.gap)}</b>
           </div>
-        </dl>
+        </div>
         <p>{t.reserveWhatText}</p>
         {accounts.length > 0 ? (
           <>
-            <p className="tile-panel-kicker">{t.reserveAccountsHead}</p>
+            <p className="goal-kicker">{t.reserveAccountsHead}</p>
             <div className="goal-rows">
               {accounts.map((account) => (
                 <div key={account.account_id} className="goal-rw">
@@ -1165,6 +1173,7 @@ function ReserveCardPanel({ id, data, backLabel, onClose }: { id: ReserveCardId;
                 </div>
               ))}
             </div>
+            {depot ? <p>{t.reserveDepotText(f.date(depot.as_of))}</p> : null}
           </>
         ) : null}
         <p>{t.reserveRateText}</p>
@@ -1180,16 +1189,16 @@ function ReserveCardPanel({ id, data, backLabel, onClose }: { id: ReserveCardId;
     title = t.investableTitle;
     body = (
       <>
-        <dl className="tile-panel-rows">
-          <div>
-            <dt>{t.investableNow}</dt>
-            <dd>{plan.above_target != null ? f.euro(plan.above_target) : "–"}</dd>
+        <div className="goal-rows">
+          <div className="goal-rw">
+            <span>{t.investableNow}</span>
+            <b>{plan.above_target != null ? f.euro(plan.above_target) : "–"}</b>
           </div>
-          <div>
-            <dt>{t.investableMonthly}</dt>
-            <dd>{investable != null ? f.signedEuro(investable) : "–"}</dd>
+          <div className="goal-rw">
+            <span>{t.investableMonthly}</span>
+            <b>{investable != null ? f.signedEuro(investable) : "–"}</b>
           </div>
-        </dl>
+        </div>
         <p>{t.investableNowText}</p>
         <p>{t.investableMonthlyText}</p>
         <p>
@@ -1206,6 +1215,7 @@ function ReserveCardPanel({ id, data, backLabel, onClose }: { id: ReserveCardId;
       <>
         <p className="goal-n">{f.euro(reserve?.need)}</p>
         <p>{reserve?.need_basis === "needs" ? t.needText : t.needTextRegular}</p>
+        {reserve?.need_basis === "needs" && reserve.need_basis_from ? <p>{t.needSince(f.month(reserve.need_basis_from))}</p> : null}
         <div className="goal-rows">
           {needRows(reserve?.need_codes).map(([code, amount]) => (
             <div key={code} className="goal-rw">
@@ -1221,6 +1231,12 @@ function ReserveCardPanel({ id, data, backLabel, onClose }: { id: ReserveCardId;
           ) : null}
         </div>
         <p className="muted">{pl.kpiNeedSub}</p>
+        <p>{t.needMoveText}</p>
+        <p>
+          <Link href={HOUSEHOLD_BUDGET} className="button-link secondary">
+            {t.toBudget} ›
+          </Link>
+        </p>
       </>
     );
   }
@@ -1265,6 +1281,53 @@ function ReserveLever({ data, draft, setDraft }: { data: PlanData; draft: Househ
         {t.leverReserveSub(f.euro(reserve?.need), f.euro(regular?.amount))}
         {flatShortfall ? t.leverFlat(f.euro(flatShortfall)) : ""}
       </p>
+    </div>
+  );
+}
+
+/** The reserve's yearly rate (D304): the household's own assumption, the app proposing none;
+ * empty means none (the reserve does not grow in the goal's walk), a typed 0 is a rate. */
+function ReserveRateField({ draft, setDraft, onValidity }: { draft: HouseholdLevers; setDraft: SetDraft; onValidity: (invalid: boolean) => void }) {
+  const t = useT(planning);
+  const tg = useT(goalText);
+  const id = useId();
+  const [text, setText] = useState(() => percentText(draft.value_change?.reserve));
+  const [error, setError] = useState<string | undefined>(undefined);
+  // An invalid entry left when the form closes must not keep blocking a save elsewhere.
+  useEffect(() => () => onValidity(false), [onValidity]);
+
+  function fail(message: string | undefined) {
+    setError(message);
+    onValidity(message !== undefined);
+  }
+
+  function apply(raw: string) {
+    setText(raw);
+    if (raw.trim() === "") {
+      fail(undefined);
+      setDraft((previous) => ({ ...previous, value_change: { ...previous.value_change, reserve: null } }));
+      return;
+    }
+    const parsed = toSignedRate(raw, 3);
+    if (!parsed.ok) {
+      fail(parsed.message);
+      return;
+    }
+    const value = parsed.value;
+    if (Math.abs(Number(value)) > 0.5) {
+      fail(t.rateRange);
+      return;
+    }
+    fail(undefined);
+    setDraft((previous) => ({ ...previous, value_change: { ...previous.value_change, reserve: value } }));
+  }
+
+  return (
+    <div className="stack">
+      <Field id={id} label={tg.reserveRateField} errors={error ? [error] : []}>
+        <input type="text" inputMode="decimal" className="health-limit-input" value={text} onChange={(event) => apply(event.target.value)} />
+      </Field>
+      <p className="planning-lever-sub">{tg.reserveRateHint}</p>
     </div>
   );
 }

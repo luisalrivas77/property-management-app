@@ -486,7 +486,7 @@ test("a budget target and the reserve target, each saved in its place, keep Durc
   // only itself over the stored default: the target stays and the spending draft stays a draft.
   await tabs.getByRole("link", { name: "Reserve", exact: true }).click();
   await expect(page).toHaveURL("/household?tab=reserve");
-  await page.locator('.planning-kpi a[href="#reserve-ziel"]').click();
+  await page.locator('.goal-c a[href="#reserve-ziel"]').click();
   const lever = page.getByRole("form", { name: "Reserve-Ziel ändern" });
   await lever.getByRole("button", { name: "Reserveziel erhöhen" }).click();
   await lever.getByRole("button", { name: "Speichern" }).click();
@@ -613,7 +613,7 @@ test("a rate left invalid on Anlagen does not block a save from Haushalt › Res
   // Each lever saves its own keys: the invalid rate left on Anlagen does not reach Reserve's.
   await navigateTo(page, "Haushalt");
   await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Reserve", exact: true }).click();
-  await page.locator('.planning-kpi a[href="#reserve-ziel"]').click();
+  await page.locator('.goal-c a[href="#reserve-ziel"]').click();
   const lever = page.getByRole("form", { name: "Reserve-Ziel ändern" });
   await lever.getByRole("button", { name: "Reserveziel erhöhen" }).click();
   const save = lever.getByRole("button", { name: "Speichern" });

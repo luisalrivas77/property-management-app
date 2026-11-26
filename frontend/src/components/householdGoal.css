@@ -291,6 +291,17 @@ a.goal-ch-link {
   color: var(--muted);
 }
 
+/* A small heading inside a side panel (the same look as Übersicht's panels, whose stylesheet
+ * Haushalt does not load). */
+.goal-kicker {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .goal-st {
   display: grid;
   grid-template-columns: repeat(var(--k, 3), minmax(0, 1fr));

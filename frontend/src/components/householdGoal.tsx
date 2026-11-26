@@ -180,16 +180,16 @@ export function GoalTileBody({ goal }: { goal: HouseholdGoal }) {
 
 // --- the summary (Übersicht's panel and the Ziel tab) ------------------------------------------
 
-function FormLink({ href, children, className }: { href: string; children: ReactNode; className?: string }) {
+function FormLink({ href, children, className, ariaLabel }: { href: string; children: ReactNode; className?: string; ariaLabel?: string }) {
   // A hash of this page opens the panel in place; a path is another page.
   if (href.startsWith("#"))
     return (
-      <a href={href} className={className}>
+      <a href={href} className={className} aria-label={ariaLabel}>
         {children}
       </a>
     );
   return (
-    <Link href={href} className={className}>
+    <Link href={href} className={className} aria-label={ariaLabel}>
       {children}
     </Link>
   );
@@ -206,7 +206,7 @@ export function GoalOverviewPanel({ goal, formHref, onChanged }: { goal: Househo
       <div className="goal-c">
         <div className="goal-ch">
           <h3>{t.title}</h3>
-          <FormLink href={formHref} className="goal-lnk">
+          <FormLink href={formHref} className="goal-lnk" ariaLabel={t.changeGoal}>
             {t.change}
           </FormLink>
         </div>
@@ -228,7 +228,7 @@ function GoalIssue({ goal, formHref, onChanged }: { goal: HouseholdGoal; formHre
           <p>{t.issueNoProjection}</p>
           {(goal.todos ?? []).length > 0 ? (
             <>
-              <p className="tile-panel-kicker">{t.waiting}</p>
+              <p className="tile-panel-kicker goal-kicker">{t.waiting}</p>
               <HealthTodoList todos={goal.todos ?? []} onChanged={onChanged} />
             </>
           ) : null}
@@ -474,13 +474,16 @@ function hasGap(goal: HouseholdGoal): boolean {
 
 function GoalCards({ goal, goalSet, onChanged }: { goal: HouseholdGoal; goalSet: Goal; onChanged: () => void }) {
   const t = useT(goalText);
+  const p = usePlanFormat();
   const detail = useDetail(GOAL_DETAIL);
+  const ids = useId();
+  const chosen = goal.choice?.spending ?? null;
   return (
-    <div className="goal-cards">
+    <section className="goal-cards" aria-labelledby={`${ids}-title`}>
       <div className="goal-c">
         <div className="goal-ch">
-          <h3>{t.title}</h3>
-          <a {...detail.linkProps(GOAL_FORM)} className="goal-lnk">
+          <h3 id={`${ids}-title`}>{t.title}</h3>
+          <a {...detail.linkProps(GOAL_FORM)} className="goal-lnk" aria-label={t.changeGoal}>
             {t.change}
           </a>
         </div>
@@ -492,6 +495,13 @@ function GoalCards({ goal, goalSet, onChanged }: { goal: HouseholdGoal; goalSet:
         ) : (
           <WordPill word="none" text={goalWordText(t, goal)} />
         )}
+        {chosen && goal.issue == null ? (
+          <p className="goal-one">
+            {goal.reached_with_budget
+              ? t.reachedWithBudget(scenarioName(t, chosen), p.month(goal.reached_with_budget))
+              : t.notReachedWithBudget(scenarioName(t, chosen))}
+          </p>
+        ) : null}
       </div>
       {goal.issue != null ? (
         <div className="goal-c">
@@ -513,7 +523,7 @@ function GoalCards({ goal, goalSet, onChanged }: { goal: HouseholdGoal; goalSet:
           ))}
         </>
       )}
-    </div>
+    </section>
   );
 }
 

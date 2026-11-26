@@ -251,7 +251,7 @@ export const goalText = defineMessages({
     reserveWhatText:
       "Die Reserve ist Geld, an das ihr innerhalb eines Tages kommt: Giro- und Tagesgeldkonten abzüglich offener Kreditkarten. Ein Depot zählt zu seinem Wert, wenn ihr es als „Zählt zur Reserve“ markiert; das Mietkonto nur, wenn ihr es dazunehmt.",
     reserveRateText:
-      "Die Rendite der Reserve ist eure Annahme pro Jahr. Die Rechnung zum Ziel lässt die Reserve damit wachsen; ohne Eintrag wächst sie nicht.",
+      "Die Rendite der Reserve ist eure eigene Annahme pro Jahr. Die Rechnung zum Ziel lässt die Reserve damit wachsen; ohne Eintrag wächst sie nicht. Ihr tragt sie unter „Reserve-Ziel ändern“ ein.",
     investableNowText:
       "Jetzt: das Geld auf euren Reservekonten über eurem Reserveziel. Die Rechnung zum Ziel legt es an, zu den Renditen, die ihr eingetragen habt.",
     investableMonthlyText:
@@ -262,6 +262,14 @@ export const goalText = defineMessages({
     needTextRegular:
       "Was ihr im Monat braucht: der Schnitt eurer regelmäßigen Ausgaben aus den abgeschlossenen Monaten, dazu ein Fehlbetrag der Wohnung.",
     needFlat: "Wohnung nach Zins und Tilgung",
+    reserveTargetOf: (months: string) => `Reserveziel, ${months} Monate Bedarf`,
+    reserveDepotText: (date: string) =>
+      `Ein Depot zählt mit seinem Wert vom ${date}. Fonds zu verkaufen dauert ein paar Tage, bis das Geld auf dem Konto ist.`,
+    reserveRateField: "Rendite der Reserve (% pro Jahr)",
+    reserveRateHint:
+      "Eure eigene Annahme, Hausbuch schlägt keine vor. Ein Geldmarkt- oder Tagesgeld-Zins folgt dem Leitzins der Zentralbank. Leer: die Reserve wächst in der Rechnung zum Ziel nicht.",
+    needSince: (month: string) => `Seit ${month}: Bedarf nur aus notwendigen Ausgaben.`,
+    needMoveText: "Ob eine Kategorie als notwendig zählt, legt ihr im Budget fest; dort verschiebt ihr sie zwischen Notwendiges und Wünsche.",
     aboveTarget: "Anlegbar jetzt",
     aboveTargetLine: "über dem Reserveziel",
     atGoalBalanced: "am Ziel, ausgewogen",
@@ -506,7 +514,7 @@ export const goalText = defineMessages({
     reserveWhatText:
       "The reserve is money you can reach within a day: current and instant-access accounts less open credit cards. A depot counts at its value when you mark it “Counts towards the reserve”; the rental account only when you add it.",
     reserveRateText:
-      "The reserve's return is your assumption per year. The goal's calculation grows the reserve with it; without an entry it does not grow.",
+      "The reserve's return is your own assumption per year. The goal's calculation grows the reserve with it; without an entry it does not grow. You enter it under “Change reserve target”.",
     investableNowText:
       "Now: the money on your reserve accounts above your reserve target. The goal's calculation invests it at the returns you entered.",
     investableMonthlyText:
@@ -516,6 +524,13 @@ export const goalText = defineMessages({
       "What you need to live each month: the average of your necessary spending over the closed months, plus a shortfall of the flat. Wants do not count, since you would cut them first in an emergency.",
     needTextRegular: "What you need each month: the average of your regular spending over the closed months, plus a shortfall of the flat.",
     needFlat: "Flat after interest and repayment",
+    reserveTargetOf: (months) => `Reserve target, ${months} months of need`,
+    reserveDepotText: (date) => `A depot counts at its value of ${date}. Selling funds takes a few days until the money is on the account.`,
+    reserveRateField: "Reserve return (% a year)",
+    reserveRateHint:
+      "Your own assumption; Hausbuch proposes none. A money-market or instant-access rate follows the central bank's rate. Empty: the reserve does not grow in the goal's calculation.",
+    needSince: (month) => `Since ${month}: need from necessary spending only.`,
+    needMoveText: "Whether a category counts as a need you set in the budget; there you move it between needs and wants.",
     aboveTarget: "Investable now",
     aboveTargetLine: "above the reserve target",
     atGoalBalanced: "goal reached, balanced",

@@ -1,5 +1,6 @@
 // The household goal on Übersicht and Haushalt › Ziel (phase 10 §7.9 (d), D289, D298; mockups
-// 19b, 19c). GET /household-goal and the household scenarios (GET and POST
+// 19b, 19c; since §7.11 (h) the cards of mockup 19f, the spending scenarios in the side panel of
+// „Nur weniger ausgeben“). GET /household-goal and the household scenarios (GET and POST
 // /household-scenarios) are mocked: a goal's word needs months of bookings and the projection,
 // and the writes are checked by what the page posts. Every other read is the real API of a fresh
 // workspace. Invented figures only.
@@ -223,14 +224,14 @@ test("no goal: Übersicht leads to the form, saving the goal shows its word ther
   await expect(form).toHaveCount(0);
   const card = page.getByRole("region", { name: "Euer Ziel" });
   await expect(card).toContainText("Auf Kurs");
-  await expect(card).toContainText("Nötig im Monat");
-  await expect(card).toContainText("Heute im Monat");
+  await expect(card).toContainText("Ihr seid auf Kurs");
+  await expect(card).toContainText("am Ziel");
   await expect(card.getByRole("link", { name: "Ziel ändern" })).toBeVisible();
 
   await page.goto("/");
   const tile = page.getByRole("region", { name: "Auf einen Blick" }).getByRole("link", { name: /Euer Ziel/ });
   await expect(tile).toContainText("Auf Kurs");
-  await expect(tile.locator(".tile-dot")).toHaveAttribute("data-mark", "green");
+  await expect(tile.locator(".goal-word")).toHaveAttribute("data-word", "on_track");
   await tile.click();
   const panel = detail(page, "Euer Ziel");
   await expect(panel).toContainText("Auf Kurs");
@@ -274,7 +275,7 @@ test("a goal the projection cannot reach yet says why, and its to-do leads to An
   await page.goto("/");
   const tile = page.getByRole("region", { name: "Auf einen Blick" }).getByRole("link", { name: /Euer Ziel/ });
   await expect(tile).toContainText("Noch nicht berechnet");
-  await expect(tile.locator(".tile-dot")).toHaveAttribute("data-mark", "none");
+  await expect(tile.locator(".goal-word")).toHaveCount(0);
   await tile.click();
   const panel = detail(page, "Euer Ziel");
   await expect(panel.getByRole("link", { name: "Szenario anlegen" })).toHaveAttribute("href", "/assets?tab=immobilie");
@@ -300,7 +301,8 @@ test("a spending scenario is adopted as the budget after the in-page confirmatio
   await page.goto("/household?tab=ziel");
   const card = page.getByRole("region", { name: "Euer Ziel" });
   await expect(card).toContainText("Machbar");
-  const scenarios = page.getByRole("region", { name: "Ausgaben-Szenarien" });
+  await card.getByRole("link", { name: /^Nur weniger ausgeben/ }).click();
+  const scenarios = detail(page, "Nur weniger ausgeben");
   await expect(scenarios.getByRole("link", { name: /^Nur Wünsche kürzen/ })).toContainText("schließt die Lücke");
   await expect(scenarios.getByRole("link", { name: /^Alles gleich kürzen/ })).toContainText("reicht nicht");
 
@@ -323,6 +325,7 @@ test("a spending scenario is adopted as the budget after the in-page confirmatio
 
   await expect(panel).toHaveCount(0);
   await expect(card).toContainText("Mit eurem Budget „Nur Wünsche kürzen“ erreicht ihr es");
+  await card.getByRole("link", { name: /^Nur weniger ausgeben/ }).click();
   await expect(scenarios.getByRole("link", { name: /^Nur Wünsche kürzen/ })).toContainText("Euer Budget");
 });
 
@@ -332,7 +335,7 @@ test("the goal at phone width, light and dark", async ({ page, signedIn }) => {
   await goalApi(page, { goal: feasible(goal, null) }, () => feasible(goal, null));
   await phoneScreens(page, "goal-tab", async () => {
     await page.goto("/household?tab=ziel");
-    await expect(page.getByRole("region", { name: "Ausgaben-Szenarien" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Euer Ziel" })).toContainText("Andere Wege");
   });
   await phoneScreens(page, "goal-form", async () => {
     await page.goto("/household?tab=ziel#d-ziel-festlegen");
@@ -355,8 +358,9 @@ test("on the computer the goal sits under Finanzielle Gesundheit, without a side
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/");
   const tiles = page.getByRole("region", { name: "Auf einen Blick" });
-  const goalTile = tiles.getByRole("link", { name: /Euer Ziel/ });
-  await expect(goalTile).toContainText("Auf Kurs");
+  await expect(tiles.getByRole("link", { name: /Euer Ziel/ })).toContainText("Auf Kurs");
+  // The card (19f panel 1: the summary link and „Zum Ziel ›“ inside it).
+  const goalTile = tiles.locator(".tile-goal");
   const health = await tiles.getByRole("link", { name: /Finanzielle Gesundheit/ }).boundingBox();
   const own = await goalTile.boundingBox();
   expect(health).not.toBeNull();
