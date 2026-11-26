@@ -67,8 +67,10 @@ from hausbuch.schemas.goal import (
     GoalIssue,
     GoalMoreReturn,
     GoalMoreSaving,
+    GoalPoint,
     GoalReferenceSource,
     GoalRouteReason,
+    GoalSale,
     GoalScenario,
     GoalUnreachable,
     GoalVerdict,
@@ -193,6 +195,8 @@ def household_goal(i: GoalInputs) -> HouseholdGoal:
     noetig = None if extra is None or extra > i.mean_income else i.heute + extra
     known |= {
         "projected": projected,
+        "short_at_due": target - projected if projected < target else None,
+        "sales": _sales(p),
         "noetig": noetig,
         "reached": reached_in(goal, as_is, target),
         "used_up": as_is.used_up,
@@ -209,17 +213,31 @@ def household_goal(i: GoalInputs) -> HouseholdGoal:
     known["reached_with_budget"] = with_budget
     on_track = projected >= target or (with_budget is not None and with_budget <= goal.due_month)
     scenarios: list[GoalScenario] = []
+    balanced_walk: Walk | None = None
     if projected < target:
         scenarios = _scenarios(i, p, target, extra, first)
         if rate is None:
-            known["balanced"] = _balanced(i, reaches, extra, first)
+            bp, balanced = p, _balanced(i, reaches, extra, first)
         else:  # route 3 decides: the invested mix at its median-window return (D302)
-            at_rate = _reaches(i, _at_rate(p, rate), target, first)
+            bp = _at_rate(p, rate)
+            at_rate = _reaches(i, bp, target, first)
             extra_at = _smallest(lambda e: at_rate(e, ()), EXTRA_CEILING, grow=True)
             balanced = _balanced(i, at_rate, extra_at, first)
-            known["balanced"] = (
-                None if balanced is None else balanced.model_copy(update={"return_rate": rate})
+            if balanced is not None:
+                balanced = balanced.model_copy(update={"return_rate": rate})
+        if balanced is not None and balanced.saving_extra is not None:
+            balanced_walk = walk(
+                bp,
+                balanced.spending_changes,
+                until=goal.due_month,
+                extra=balanced.saving_extra,
+                extra_from=first,
             )
+            balanced = balanced.model_copy(
+                update={"reached": reached_in(goal, balanced_walk, target, goal.due_month)}
+            )
+        known["balanced"] = balanced
+    known["path"] = _path(goal, as_is, balanced_walk)
     decides = rate is not None and i.mode is AdviceMode.OWN_USE
     if on_track:
         word = GoalWord.ON_TRACK
@@ -321,6 +339,42 @@ def _more_return(
         **shown,
     )
     return route, None if thin else median
+
+
+def _sales(p: Projection) -> list[GoalSale]:
+    """Each property the walk sells, by its sale year (D301 (a) 4)."""
+    return sorted(
+        (
+            GoalSale(year=f.sale_year, net_proceeds=f.net_proceeds)
+            for f in p.flats.values()
+            if f.sale_year is not None
+        ),
+        key=lambda s: s.year,
+    )
+
+
+def _path(goal: Goal, as_is: Walk, balanced: Walk | None) -> list[GoalPoint]:
+    """The chart's points up to the due month: the first walked month, each December before
+    the due month and the due month, from the walk without change and the balanced route's."""
+    due = goal.due_month
+    months = [
+        m
+        for k, m in enumerate(as_is.months)
+        if m.month <= due and (k == 0 or m.month == due or m.month.endswith("-12"))
+    ]
+    out: list[GoalPoint] = []
+    for m in months:
+        other = None if balanced is None else balanced.at(m.month)
+        out.append(
+            GoalPoint(
+                month=m.month,
+                as_is=value_of(goal, m).quantize(CENT, ROUND_HALF_UP),
+                balanced=None
+                if other is None
+                else value_of(goal, other).quantize(CENT, ROUND_HALF_UP),
+            )
+        )
+    return out
 
 
 def _assumptions(p: Projection) -> list[GoalAssumption]:

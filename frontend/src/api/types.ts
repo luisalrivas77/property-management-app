@@ -8714,6 +8714,8 @@ export interface components {
             spending_changes?: components["schemas"]["SpendingChange"][];
             /** Return Rate */
             return_rate?: string | null;
+            /** Reached */
+            reached?: string | null;
         };
         /**
          * GoalBudget
@@ -8830,6 +8832,20 @@ export interface components {
             noetig: string | null;
         };
         /**
+         * GoalPoint
+         * @description One point of the goal's chart (mockup 19f „So wie jetzt“): the goal's value at a month's
+         *     end on the walk without change, and on the balanced route's walk while it closes. The
+         *     points are the first walked month, each December before the due month, and the due month.
+         */
+        GoalPoint: {
+            /** Month */
+            month: string;
+            /** As Is */
+            as_is: string;
+            /** Balanced */
+            balanced?: string | null;
+        };
+        /**
          * GoalReferenceSource
          * @description A series the mix rests on, named in the answer (§7.11 „Route 3 …“ 7).
          */
@@ -8863,6 +8879,17 @@ export interface components {
          * @enum {string}
          */
         GoalRouteReason: "generic_mode" | "nothing_invested" | "series_missing" | "history_short" | "out_of_range";
+        /**
+         * GoalSale
+         * @description A property walked to its own sale year (D301 (a) 4): the year and phase 4's net
+         *     proceeds, which the walk puts on the reserve row in its December (mockup 19f „Verkauf“).
+         */
+        GoalSale: {
+            /** Year */
+            year: number;
+            /** Net Proceeds */
+            net_proceeds: string;
+        };
         /**
          * GoalScenario
          * @description A spending scenario (§7.9 (d) 3). `cut` is what it takes off the spending each month
@@ -9570,6 +9597,12 @@ export interface components {
             reached_with_budget?: string | null;
             /** Used Up */
             used_up?: string | null;
+            /** Short At Due */
+            short_at_due?: string | null;
+            /** Sales */
+            sales?: components["schemas"]["GoalSale"][];
+            /** Path */
+            path?: components["schemas"]["GoalPoint"][];
             /** Scenarios */
             scenarios?: components["schemas"]["GoalScenario"][];
             more_saving?: components["schemas"]["GoalMoreSaving"] | null;

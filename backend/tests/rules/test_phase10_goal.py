@@ -475,3 +475,39 @@ def test_percent_of_a_tiny_target_stays_inside_the_schema():
 
     assert percent(Decimal("307315.00"), Decimal("1.00")) == PERCENT_CAP
     assert percent(Decimal("51000.00"), Decimal("100000.00")) == Decimal("51.0")
+
+
+def test_the_screens_read_fields_follow_the_walks() -> None:
+    """Mockup 19f's read-only fields: „fehlen“ is target − projected, the balanced route's month
+    is the first its own walk reaches the target (never after the due month), the chart's
+    points end at the due month with the projected value there, and each sold property is
+    named by its year and net proceeds."""
+    checked = set()
+    for case in ROUTES:
+        inputs, p, _ = _route_inputs(case)
+        got = household_goal(inputs)
+        if got.projected is None:
+            assert got.path == [] and got.short_at_due is None, case.id
+            continue
+        target = got.target
+        due = inputs.goal.due_month
+        missed = got.projected < target
+        assert got.short_at_due == (target - got.projected if missed else None), case.id
+        assert got.path[-1].month == due and got.path[-1].as_is == got.projected, case.id
+        assert all(x.month <= due for x in got.path), case.id
+        assert [s.year for s in got.sales] == sorted(
+            f.sale_year for f in p.flats.values() if f.sale_year is not None
+        ), case.id
+        b = got.balanced
+        if b is not None and b.closes:
+            assert b.reached is not None and b.reached <= due, case.id
+            assert got.path[-1].balanced is not None, case.id
+            assert got.path[-1].balanced >= target, case.id
+            checked.add("balanced")
+        else:
+            assert all(x.balanced is None for x in got.path), case.id
+        if got.sales:
+            checked.add("sales")
+        if missed:
+            checked.add("short")
+    assert checked == {"balanced", "sales", "short"}
