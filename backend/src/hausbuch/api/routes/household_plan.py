@@ -43,6 +43,10 @@ replaces (supersedes_id); services/household_scenarios.py holds the checks.
   and assumptions shown), a part a switch leaves out absent from the JSON and the to-dos and the
   properties' labels never in it. Word `none` without a default scenario or a goal. The
   switches change nothing stored.
+- GET /household-goal/tracking (phase 10 §7.9 (e), D298 (5)–(7)): „Für euer Ziel“ on Anlagen ›
+  Übersicht, the return followed against the money put in and the value change since the day
+  chosen (services.goal_tracking); `shown` false in `generic` mode, without a goal or without
+  a return followed.
 - POST /household-goal/preview {levers, scenario_id?} (phase 10 §7.10 (a), D299): the goal
   for typed levers, checked and run on the same row as POST /household-plan/preview (same
   422s and 404s); word `none` when the levers hold no goal; stores nothing, so it runs as a
@@ -68,7 +72,7 @@ from hausbuch.schemas.advice import (
     PlanExplanationRequest,
 )
 from hausbuch.schemas.budget import BudgetView
-from hausbuch.schemas.goal import HouseholdGoal, ReferenceRefreshQueued
+from hausbuch.schemas.goal import GoalTracking, HouseholdGoal, ReferenceRefreshQueued
 from hausbuch.schemas.plan import (
     HouseholdPlan,
     HouseholdPlanPreview,
@@ -80,10 +84,10 @@ from hausbuch.schemas.plan_page import PlanPage, PlanSwitches, PlanView
 from hausbuch.services import advice as advice_service
 from hausbuch.services import budget as budget_service
 from hausbuch.services import goal as goal_service
+from hausbuch.services import goal_tracking, reference_returns
 from hausbuch.services import household_scenarios as scenarios
 from hausbuch.services import plan as plan_service
 from hausbuch.services import plan_page as plan_page_service
-from hausbuch.services import reference_returns
 from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.services.todo_texts import english
 
@@ -146,6 +150,11 @@ def household_budget_get(cmd: Cmd, scenario_id: UUID | None = None) -> BudgetVie
 @router.get("/household-goal")
 def household_goal_get(cmd: Cmd) -> HouseholdGoal:
     return english(cmd.read(goal_service.goal, _today()))
+
+
+@router.get("/household-goal/tracking")
+def household_goal_tracking(cmd: Cmd) -> GoalTracking:
+    return cmd.read(goal_tracking.goal_tracking, _today())
 
 
 @router.get("/household-goal/plan")

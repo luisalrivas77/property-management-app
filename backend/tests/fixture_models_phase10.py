@@ -49,7 +49,7 @@ from hausbuch.schemas.common import _STRING_ONLY, Money, Schema
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.health import HealthTodoCode, HouseholdMonth, MonthLine, YearMonth
 from hausbuch.schemas.household import BudgetClass
-from hausbuch.schemas.plan import HouseholdLevers, PlanClass
+from hausbuch.schemas.plan import HouseholdLevers, PlanClass, SpendingChange
 from hausbuch.schemas.recurring import RecurringInterval, RecurringState, SpendingMarkAnswer
 
 FIXTURES = Path(__file__).parent / "fixtures" / "phase10"
@@ -859,6 +859,90 @@ class InvestmentSplitFixture(Schema):
     not_invested: list[NotInvestedCase]
 
 
+# --- goal_invest.yaml (§7.9 (e), „(e) as decided for the build“ 3, 4; D298 (5)–(7)) -----------
+
+TrackerRoute = Literal["more_return", "balanced"]
+TrackerReason = Literal[
+    "generic_mode",
+    "no_goal",
+    "not_following",
+    "route_gone",
+    "goal_issue",
+    "no_plan",
+    "unpriced",
+    "unvalued",
+]
+
+
+class TrackerFollowedIn(Schema):
+    """Today's answer of the route followed: its return and, for the balanced route, what it
+    changes from next month (the saving extra and the spending changes)."""
+
+    route: TrackerRoute
+    rate: Annotated[Decimal, _STRING_ONLY]
+    saving_extra: Money = ZERO
+    spending_changes: list[SpendingChange] = Field(default_factory=list)
+
+
+class TrackerFlowIn(Schema):
+    day: date  # `on` reads as a YAML boolean
+    amount: Money | None  # + in, − out; None: no price that day
+
+
+class TrackerActualIn(Schema):
+    """The funds and crypto accounts (no reserve depot): their value at the end of the day
+    chosen and today, the external flows after the day chosen, and the positions without a
+    value."""
+
+    value_then: Money
+    flows: list[TrackerFlowIn] = Field(default_factory=list)
+    value_now: Money
+    unvalued: int = 0
+
+
+class TrackerExpect(Schema):
+    shown: bool
+    reason: TrackerReason | None = None
+    route: TrackerRoute | None = None
+    chosen_on: date | None = None
+    days: int | None = None
+    rate: Annotated[Decimal, _STRING_ONLY] | None = None
+    planned_per_year: Money | None = None
+    planned_by_now: Money | None = None
+    paid_in: Money | None = None
+    value_then: Money | None = None
+    value_now: Money | None = None
+    value_change: Money | None = None
+    implied_change: Money | None = None
+    yearly_return: Annotated[Decimal, _STRING_ONLY] | None = None
+    no_rate: Literal["short_history", "unpriced", "unvalued", "no_flows", "no_rate"] | None = None
+    word: Literal["on_path", "behind"] | None = None
+    short: list[Literal["paid", "value"]] = Field(default_factory=list)
+
+
+class TrackerCase(RouteCase):
+    """The walk's household (RouteCase's inputs), the route followed today (or why none
+    counts) and the accounts' actual figures."""
+
+    followed: TrackerFollowedIn | Literal["route_gone", "goal_issue"] | None = None
+    actual: TrackerActualIn | None = None
+    expect: TrackerExpect  # type: ignore[assignment]
+
+    @model_validator(mode="after")
+    def _followed(self) -> Self:
+        choice = self.levers.goal_choice
+        if isinstance(self.followed, TrackerFollowedIn) and (
+            choice is None or choice.investment != self.followed.route
+        ):
+            raise ValueError(f"{self.id}: the route followed is the one chosen")
+        return self
+
+
+class TrackerFixture(Schema):
+    bases: dict[str, Any] = Field(default_factory=dict)  # YAML anchors only
+    cases: list[TrackerCase]
+
+
 # --- reference_returns.yaml (§7.11 (c) 3, D310 amended) -------------------------------------
 
 
@@ -910,6 +994,7 @@ MODELS: dict[str, type[Schema]] = {
     "plan_page": PlanFixture,
     "investment_split": InvestmentSplitFixture,
     "booked_inputs": BookedInputsFixture,
+    "goal_invest": TrackerFixture,
 }
 
 

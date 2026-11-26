@@ -305,6 +305,56 @@ const de = {
   taxFreeSaleSub: "zehn Jahre nach dem notariellen Kauf (§ 23 EStG)",
   noProperty: "Noch keine Immobilie angelegt.",
   openProperties: "Immobilien öffnen",
+  // „Für euer Ziel“ (phase 10 §7.9 (e) 3): the return the household follows, from GET
+  // /household-goal/tracking; every figure is the server's.
+  goalTitle: "Für euer Ziel",
+  goalOnPath: "Auf dem Pfad",
+  goalBehind: "Dahinter",
+  goalNoWord: (reason: string) =>
+    (
+      {
+        route_gone: "Weg nicht mehr berechnet",
+        goal_issue: "Ziel noch ohne Rechnung",
+        no_plan: "Noch kein Plan",
+        unpriced: "Zahlung ohne Kurs",
+        unvalued: "Position ohne Wert",
+      } as Record<string, string>
+    )[reason] ?? "",
+  goalRoute: (route: string) => (({ more_return: "Mehr Rendite", balanced: "Ausgewogener Weg" }) as Record<string, string>)[route] ?? route,
+  goalPaidOf: (paid: string, planned: string) => `${paid} von ${planned} eingezahlt`,
+  goalSince: (route: string, day: string) => `${route} · seit ${day}`,
+  goalWordOnPath: "Ihr zahlt so viel ein, wie der Weg bis heute plant, und euer Fonds- und Kryptowert wächst so, wie seine Rendite es braucht.",
+  goalWordBehindPaid: "Ihr habt bis heute weniger eingezahlt, als der Weg plant.",
+  goalWordBehindValue: "Euer Fonds- und Kryptowert ist weniger gewachsen, als die Rendite des Wegs braucht.",
+  goalReasonText: (reason: string) =>
+    (
+      {
+        route_gone:
+          "Der Weg, dem ihr folgt, wird heute nicht mehr berechnet (zum Beispiel fehlen die Vergleichsdaten oder er schließt die Lücke nicht mehr). Wählt auf Haushalt › Ziel einen Weg neu.",
+        goal_issue: "Euer Ziel hat gerade keine Rechnung; Haushalt › Ziel sagt, was fehlt.",
+        no_plan: "Die Rechnung des Wegs reicht nicht über die nächsten zwölf Monate; es gibt noch keinen Plan zum Vergleichen.",
+        unpriced: "Eine Ein- oder Auszahlung hat keinen Eurobetrag; sobald ihr Kurs da ist, wird verglichen.",
+        unvalued: "Eine Position hat keinen Wert; sobald ihr Kurs da ist, wird verglichen.",
+      } as Record<string, string>
+    )[reason] ?? "",
+  goalFollowed: "Gefolgter Weg",
+  goalRateLabel: "Rendite des Wegs",
+  goalSinceDay: (day: string) => `Gewählt am ${day}; verglichen wird ab diesem Tag.`,
+  goalRate: (rate: string) => `${rate} im Jahr`,
+  goalPaidIn: "Eingezahlt",
+  goalPlannedByNow: "Geplant bis heute",
+  goalPlannedPerYear: (amount: string) => `Der Weg plant ${amount} in den nächsten zwölf Monaten.`,
+  goalValueChange: "Wertänderung",
+  goalImpliedChange: "Nötig bei der Rendite",
+  goalValueThen: (day: string) => `Wert am ${day}`,
+  goalValueNow: "Wert heute",
+  goalYearly: "Jahresrendite",
+  goalCounted:
+    "Gezählt werden eure Depots, Börsen und Wallets: Einzahlungen und Auszahlungen ab dem Tag nach eurer Wahl, ohne Umbuchungen zwischen ihnen. Die Wertänderung ist der Wert heute minus dem Wert am Tag der Wahl minus dem Eingezahlten.",
+  goalReserveLeftOut: (n: number) =>
+    n === 1 ? "Ein Depot zählt zur Reserve und ist hier nicht mitgezählt." : `${n} Depots zählen zur Reserve und sind hier nicht mitgezählt.`,
+  goalOpenRoute: "Weg ansehen",
+  goalFootnote: "Ein Vergleich aus euren Zahlen, kein Rat.",
 };
 
 type Messages = typeof de;
@@ -599,6 +649,54 @@ const en: Messages = {
   taxFreeSaleSub: "ten years after the notarised purchase (§ 23 EStG)",
   noProperty: "No property yet.",
   openProperties: "Open properties",
+  goalTitle: "For your goal",
+  goalOnPath: "On the path",
+  goalBehind: "Behind",
+  goalNoWord: (reason) =>
+    (
+      {
+        route_gone: "Route no longer computed",
+        goal_issue: "Goal not computed yet",
+        no_plan: "No plan yet",
+        unpriced: "Payment without a price",
+        unvalued: "Position without a value",
+      } as Record<string, string>
+    )[reason] ?? "",
+  goalRoute: (route) => (({ more_return: "More return", balanced: "Balanced route" }) as Record<string, string>)[route] ?? route,
+  goalPaidOf: (paid, planned) => `${paid} of ${planned} paid in`,
+  goalSince: (route, day) => `${route} · since ${day}`,
+  goalWordOnPath: "You pay in as much as the route plans by today, and your funds and crypto grow as its return needs.",
+  goalWordBehindPaid: "By today you have paid in less than the route plans.",
+  goalWordBehindValue: "Your funds and crypto have grown less than the route's return needs.",
+  goalReasonText: (reason) =>
+    (
+      {
+        route_gone:
+          "The route you follow is no longer computed today (for example the reference data is missing, or it no longer closes the gap). Choose a route again under Household › Goal.",
+        goal_issue: "Your goal has no calculation at the moment; Household › Goal says what is missing.",
+        no_plan: "The route's calculation does not reach over the next twelve months; there is no plan to compare with yet.",
+        unpriced: "A payment in or out has no euro amount; it is compared once its price is there.",
+        unvalued: "A position has no value; it is compared once its price is there.",
+      } as Record<string, string>
+    )[reason] ?? "",
+  goalFollowed: "Route followed",
+  goalRateLabel: "The route's return",
+  goalSinceDay: (day) => `Chosen on ${day}; the comparison starts that day.`,
+  goalRate: (rate) => `${rate} a year`,
+  goalPaidIn: "Paid in",
+  goalPlannedByNow: "Planned by today",
+  goalPlannedPerYear: (amount) => `The route plans ${amount} over the next twelve months.`,
+  goalValueChange: "Change in value",
+  goalImpliedChange: "Needed at the return",
+  goalValueThen: (day) => `Value on ${day}`,
+  goalValueNow: "Value today",
+  goalYearly: "Yearly return",
+  goalCounted:
+    "Your securities accounts, exchanges and wallets are counted: payments in and out from the day after your choice, without moves between them. The change in value is today's value minus the value on the day chosen minus what was paid in.",
+  goalReserveLeftOut: (n) =>
+    n === 1 ? "One securities account counts toward the reserve and is not counted here." : `${n} securities accounts count toward the reserve and are not counted here.`,
+  goalOpenRoute: "See the route",
+  goalFootnote: "A comparison from your figures, not advice.",
 };
 
 export const assets = defineMessages({ de, en });

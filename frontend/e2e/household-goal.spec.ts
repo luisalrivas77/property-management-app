@@ -13,6 +13,10 @@
 //   changes and the choice posted with the goal unchanged.
 // - Phone width, light and dark: no sideways scroll; a screenshot of the tab, the form and the
 //   tile.
+// - „Diesem Weg folgen“ (§7.9 (e) 3): the route's return saved with its day, every other lever
+//   kept, and removed again; none without a return to follow or in `generic` mode. Anlagen's
+//   card „Für euer Ziel“ with the server's word (GET /household-goal/tracking mocked) and its
+//   side panel, at phone width in both languages and themes.
 import type { Page, Route } from "@playwright/test";
 
 import type { components } from "../src/api/types";
@@ -24,6 +28,7 @@ type Goal = components["schemas"]["Goal"];
 type GoalScenario = components["schemas"]["GoalScenario"];
 type HouseholdScenario = components["schemas"]["HouseholdScenario"];
 type HouseholdLevers = components["schemas"]["HouseholdLevers"];
+type GoalTracking = components["schemas"]["GoalTracking"];
 
 const WORKSPACE = "00000000-0000-4000-8000-00000000a001";
 
@@ -370,4 +375,214 @@ test("on the computer the goal sits under Finanzielle Gesundheit, without a side
   expect(Math.abs(own!.width - health!.width)).toBeLessThan(2);
   expect(own!.y).toBeGreaterThan(health!.y + health!.height - 1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1280);
+});
+
+// „Diesem Weg folgen“ and „Für euer Ziel“ (§7.9 (e) 3, D298 (5)–(7)): following a route's return
+// writes goal_choice.investment with its day; Anlagen shows one card with the server's word.
+// GET /household-goal/tracking is mocked: its word needs months of depot movements and prices.
+
+function withRoutes(goal: Goal, choice: HouseholdGoal["choice"]): HouseholdGoal {
+  return {
+    ...feasible(goal, choice),
+    balanced: {
+      cut: "150.00",
+      saving_extra: "200.00",
+      moved_to_saving: "0.00",
+      saving: "1500.00",
+      closes: true,
+      return_rate: "0.07",
+      reached: monthsAhead(24),
+    },
+    more_return: {
+      available: true,
+      needed_return: "0.061",
+      window_years: 2,
+      windows: 4,
+      reached_windows: 3,
+      median: "0.07",
+      best: "0.12",
+      verdict: "within_history",
+      thin: false,
+    },
+  };
+}
+
+function tracking(over: Partial<GoalTracking> = {}): GoalTracking {
+  return {
+    shown: true,
+    reason: null,
+    route: "more_return",
+    chosen_on: "2026-01-15",
+    days: 120,
+    rate: "0.061",
+    planned_per_year: "6000.00",
+    planned_by_now: "1972.60",
+    paid_in: "2400.00",
+    value_then: "20000.00",
+    value_now: "23000.00",
+    value_change: "600.00",
+    implied_change: "410.00",
+    yearly_return: null,
+    no_rate: "short_history",
+    word: "on_path",
+    short: [],
+    reserve_depots: 0,
+    ...over,
+  };
+}
+
+async function trackingApi(page: Page, body: GoalTracking) {
+  await page.route(
+    (url) => url.pathname === "/api/household-goal/tracking",
+    (route: Route) => route.fulfill({ json: body }),
+  );
+}
+
+const leversWith = (goal: Goal): HouseholdLevers => ({
+  reserve_target_months: "6",
+  buffer_percent: "10",
+  horizon_months: 60,
+  net_worth_years: 10,
+  goal,
+  goal_choice: null,
+  spending_changes: [],
+});
+
+test("„Diesem Weg folgen“ saves the route's return with its day, and „Nicht mehr folgen“ removes it", async ({ page, signedIn }) => {
+  void signedIn;
+  const goal: Goal = { kind: "net_worth", target: "500000.00", due_month: monthsAhead(24), set_on: TODAY };
+  const saved = scenario(leversWith(goal), "00000000-0000-4000-8000-0000000b0001", null);
+  const { posted } = await goalApi(page, { goal: withRoutes(goal, null), history: [saved] }, (body) =>
+    withRoutes(body.levers.goal as Goal, body.levers.goal_choice ?? null),
+  );
+
+  await page.goto("/household?tab=ziel#d-ziel-rendite");
+  const panel = detail(page, "Nur mehr Rendite");
+  const follow = panel.getByTestId("goal-follow-more_return");
+  await expect(follow).toContainText("Diesem Weg folgen");
+  // The panel no longer says „Nichts wird gespeichert“: following a route is the one write.
+  await expect(panel).toContainText("Gespeichert wird nur, welchem Weg ihr folgt.");
+  await expect(panel).not.toContainText("Nichts wird gespeichert");
+  await follow.getByRole("button", { name: "Diesem Weg folgen" }).click();
+
+  await expect.poll(() => posted.length).toBe(1);
+  const first = posted[0]!;
+  expect(first.supersedes_id).toBe(saved.id);
+  // Every other lever stays as it was.
+  expect(first.levers.goal).toEqual(goal);
+  expect(first.levers.spending_changes).toEqual([]);
+  expect(first.levers.goal_choice?.investment).toBe("more_return");
+  expect(first.levers.goal_choice?.investment_chosen_on).toBe(TODAY);
+  expect(first.levers.goal_choice?.spending ?? null).toBeNull();
+
+  await expect(follow).toContainText("ihr folgt ihm");
+  await expect(follow.getByRole("link", { name: /Auf Anlagen ansehen/ })).toHaveAttribute("href", "/assets");
+
+  // The balanced route's panel says it would replace the followed one.
+  await page.goto("/household?tab=ziel#d-ziel-ausgewogen");
+  const balanced = detail(page, "Ausgewogener Weg").getByTestId("goal-follow-balanced");
+  await expect(balanced).toContainText("dieser ersetzt ihn ab heute");
+
+  await page.goto("/household?tab=ziel#d-ziel-rendite");
+  await detail(page, "Nur mehr Rendite").getByTestId("goal-follow-more_return").getByRole("button", { name: "Nicht mehr folgen" }).click();
+  await expect.poll(() => posted.length).toBe(2);
+  expect(posted[1]!.levers.goal_choice?.investment ?? null).toBeNull();
+  expect(posted[1]!.levers.goal_choice?.investment_chosen_on ?? null).toBeNull();
+  expect(posted[1]!.levers.goal).toEqual(goal);
+});
+
+test("a route without a return to follow offers no button, and generic mode none at all", async ({ page, signedIn }) => {
+  void signedIn;
+  const goal: Goal = { kind: "net_worth", target: "500000.00", due_month: monthsAhead(24), set_on: TODAY };
+  const routes = withRoutes(goal, null);
+  // The balanced route on the typed rates (no median return): nothing to follow.
+  const typed: HouseholdGoal = { ...routes, balanced: { ...routes.balanced!, return_rate: null } };
+  await goalApi(page, { goal: typed }, () => typed);
+  await page.goto("/household?tab=ziel#d-ziel-ausgewogen");
+  const balanced = detail(page, "Ausgewogener Weg");
+  await expect(balanced).toBeVisible();
+  await expect(balanced.getByTestId("goal-follow-balanced")).toHaveCount(0);
+
+  // „Allgemein“ set through the API (setup, not under test), as on Einstellungen.
+  const settings = await page.request.fetch("/api/workspace/settings", {
+    method: "PATCH",
+    data: { advice_mode: "generic" },
+    headers: { Origin: new URL(page.url()).origin },
+  });
+  expect(settings.status()).toBe(200);
+  // Only the hash differs from the page open now, so goto alone would not read the settings again.
+  await page.goto("/household?tab=ziel#d-ziel-rendite");
+  await page.reload();
+  await expect(detail(page, "Nur mehr Rendite")).toBeVisible();
+  await expect(page.getByTestId("goal-follow-more_return")).toHaveCount(0);
+});
+
+test("Anlagen shows „Für euer Ziel“ only for a followed route, its figures in the side panel", async ({ page, signedIn }) => {
+  void signedIn;
+  // The real read of a fresh workspace: no goal, so no card.
+  const read = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/household-goal/tracking");
+  await page.goto("/assets");
+  expect((await (await read).json()) as GoalTracking).toMatchObject({ shown: false, reason: "no_goal" });
+  await expect(page.getByRole("heading", { name: "Positionen" })).toBeVisible();
+  await expect(page.getByTestId("goal-tracking")).toHaveCount(0);
+
+  await trackingApi(page, tracking());
+  await page.goto("/assets");
+  const card = page.getByTestId("goal-tracking");
+  await expect(card).toContainText("Für euer Ziel");
+  await expect(card.locator(".goal-word")).toHaveAttribute("data-word", "on_track");
+  await expect(card).toContainText("Auf dem Pfad");
+  await expect(card).toContainText("2.400,00 € von 1.972,60 € eingezahlt");
+  await card.click();
+  const panel = detail(page, "Für euer Ziel");
+  await expect(panel).toContainText("Mehr Rendite");
+  await expect(panel).toContainText("6,1 %");
+  await expect(panel).toContainText("Jahresrendite ab einem Jahr Verlauf");
+  await expect(panel).toContainText("kein Rat");
+  await expect(panel.getByRole("link", { name: /Weg ansehen/ })).toHaveAttribute("href", "/household?tab=ziel#d-ziel-rendite");
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await trackingApi(page, tracking({ route: "balanced", word: "behind", short: ["paid"], paid_in: "900.00", reserve_depots: 1 }));
+  await page.goto("/assets");
+  const behind = page.getByTestId("goal-tracking");
+  await expect(behind).toContainText("Dahinter");
+  await behind.click();
+  const behindPanel = detail(page, "Für euer Ziel");
+  await expect(behindPanel).toContainText("weniger eingezahlt, als der Weg plant");
+  await expect(behindPanel).toContainText("Ein Depot zählt zur Reserve");
+  await expect(behindPanel.getByRole("link", { name: /Weg ansehen/ })).toHaveAttribute("href", "/household?tab=ziel#d-ziel-ausgewogen");
+
+  // A followed route that no longer computes: no word, its reason instead.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await trackingApi(page, tracking({ word: null, reason: "route_gone", rate: null, paid_in: null, planned_by_now: null, value_change: null }));
+  await page.goto("/assets");
+  const gone = page.getByTestId("goal-tracking");
+  await expect(gone).toContainText("Weg nicht mehr berechnet");
+  await expect(gone.locator(".goal-word")).toHaveCount(0);
+});
+
+test("„Für euer Ziel“ and „Diesem Weg folgen“ at phone width, light and dark, German and English", async ({ page, signedIn }) => {
+  void signedIn;
+  const goal: Goal = { kind: "net_worth", target: "500000.00", due_month: monthsAhead(24), set_on: TODAY };
+  const followed = withRoutes(goal, { spending: null, spending_chosen_on: null, investment: "more_return", investment_chosen_on: TODAY });
+  const history = [scenario({ ...leversWith(goal), goal_choice: followed.choice }, "00000000-0000-4000-8000-0000000b0001", null)];
+  await goalApi(page, { goal: followed, history }, () => followed);
+  await trackingApi(page, tracking({ word: "behind", short: ["paid", "value"], paid_in: "900.00", value_change: "120.00" }));
+  for (const locale of ["de", "en"] as const) {
+    await page.goto("/");
+    await page.evaluate((value) => window.localStorage.setItem("hausbuch.locale", value), locale);
+    await phoneScreens(page, `goal-track-card-${locale}`, async () => {
+      await page.goto("/assets");
+      await expect(page.getByTestId("goal-tracking")).toContainText(locale === "de" ? "Dahinter" : "Behind");
+    });
+    await phoneScreens(page, `goal-track-panel-${locale}`, async () => {
+      await page.goto("/assets#d-fuerziel-pfad");
+      await expect(page.getByTestId("goal-tracking-panel")).toBeVisible();
+    });
+    await phoneScreens(page, `goal-follow-${locale}`, async () => {
+      await page.goto("/household?tab=ziel#d-ziel-rendite");
+      await expect(page.getByTestId("goal-follow-more_return")).toContainText(locale === "de" ? "ihr folgt ihm" : "you follow it");
+    });
+  }
+  await page.evaluate(() => window.localStorage.removeItem("hausbuch.locale"));
 });

@@ -13,10 +13,11 @@ from typing import Annotated
 from pydantic import Field
 
 from .allocation import AllocationCategory
-from .common import _STRING_ONLY, Money, NonNegativeMoney, Schema, _string_schema
+from .common import _STRING_ONLY, Money, NonNegativeMoney, ReturnRate, Schema, _string_schema
 from .health import HealthTodo, YearMonth
 from .household import BudgetClass
 from .plan import Goal, GoalChoice, GoalSpending, SpendingChange
+from .portfolio import NoRateReason
 
 # Today's value against the target, one place (it may pass 100 once the goal is reached).
 GoalPercent = Annotated[
@@ -269,3 +270,63 @@ class ReferenceRefreshQueued(Schema):
 
     job_id: int
     queued: bool
+
+
+# --- „Für euer Ziel“ (§7.9 (e), „(e) as decided for the build“ 3; D298 (5)–(7)) -------------
+
+
+class GoalInvestment(StrEnum):
+    """The return the household follows (`goal_choice.investment`, „Diesem Weg folgen“)."""
+
+    MORE_RETURN = "more_return"  # route 3 „Mehr Rendite“, its needed return
+    BALANCED = "balanced"  # „Ausgewogener Weg“ while it walks the median return
+
+
+class GoalTrackingReason(StrEnum):
+    """Why the card is not shown (the first three) or shows no word."""
+
+    GENERIC_MODE = "generic_mode"  # `advice_mode = generic`: nothing shown or computed
+    NO_GOAL = "no_goal"
+    NOT_FOLLOWING = "not_following"  # no return followed
+    ROUTE_GONE = "route_gone"  # the route followed has no return today
+    GOAL_ISSUE = "goal_issue"  # the goal has an issue (no projection, due passed, …)
+    NO_PLAN = "no_plan"  # the walk of the route followed ends before a year's pace
+    UNPRICED = "unpriced"  # a payment's euros are unknown
+    UNVALUED = "unvalued"  # a position then or today has no value
+
+
+class GoalTrackingWord(StrEnum):
+    ON_PATH = "on_path"  # „auf dem Pfad“
+    BEHIND = "behind"  # „dahinter“
+
+
+class GoalTrackingShort(StrEnum):
+    PAID = "paid"  # the money put in is below the plan's by now
+    VALUE = "value"  # the value change is below the change the return implies by now
+
+
+class GoalTracking(Schema):
+    """`GET /household-goal/tracking`: „Für euer Ziel“ on Anlagen › Übersicht. Since the day
+    the household chose to follow a return: the money put into its funds and crypto accounts
+    (a depot counted in the reserve left out, D304) against what the walk of that route plans
+    to invest by now, and the value change of those accounts against the change the return
+    implies by now; one word by code. Every figure computed on read, never stored."""
+
+    shown: bool
+    reason: GoalTrackingReason | None = None
+    route: GoalInvestment | None = None
+    chosen_on: date | None = None
+    days: int | None = None  # since the day chosen
+    rate: GoalReturn | None = None  # the return followed, today's answer of its route
+    planned_per_year: NonNegativeMoney | None = None  # the walk's pace, the next 12 months
+    planned_by_now: NonNegativeMoney | None = None  # planned per year × days ÷ 365
+    paid_in: Money | None = None  # net: in − out
+    value_then: Money | None = None  # at the end of the day chosen
+    value_now: Money | None = None
+    value_change: Money | None = None  # value now − value then − paid in
+    implied_change: Money | None = None
+    yearly_return: ReturnRate | None = None  # money-weighted, only after 365 days
+    no_rate: NoRateReason | None = None
+    word: GoalTrackingWord | None = None
+    short: list[GoalTrackingShort] = Field(default_factory=list)
+    reserve_depots: int = 0  # depots counted in the reserve, left out

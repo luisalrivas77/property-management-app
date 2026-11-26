@@ -62,6 +62,7 @@ type AllocationCategory = components["schemas"]["AllocationCategory"];
 type AdviceMode = components["schemas"]["AdviceMode"];
 type SpendingChange = components["schemas"]["SpendingChange"];
 type GT = Translation<typeof goalText.de>;
+type GoalInvestment = components["schemas"]["GoalInvestment"];
 
 /** The detail kind of the goal's panels: the form and one panel per spending scenario. */
 export const GOAL_DETAIL = "ziel";
@@ -77,6 +78,11 @@ const GOAL_BASIS = "basis";
 /** Haushalt › Ziel, and the form opened there (Übersicht's „Ziel festlegen“). */
 export const GOAL_PAGE = "/household?tab=ziel";
 export const GOAL_FORM_HREF = `${GOAL_PAGE}${detailHref(GOAL_DETAIL, GOAL_FORM)}`;
+
+/** A route's side panel on Haushalt › Ziel, for „Für euer Ziel“ on Anlagen (§7.9 (e) 3). */
+export function goalRouteHref(route: GoalInvestment): string {
+  return `${GOAL_PAGE}${detailHref(GOAL_DETAIL, route === "balanced" ? GOAL_BALANCED : GOAL_MORE_RETURN)}`;
+}
 
 /** The goal as Übersicht reads it (one request). */
 export const loadGoal = (): Promise<HouseholdGoal> => ok(api.GET("/api/household-goal"));
@@ -365,6 +371,18 @@ export function useGoalView({
     onWritten();
   };
 
+  // „Diesem Weg folgen“ (§7.9 (e) 3): the route followed, kept in the default scenario's levers.
+  const choice = data?.current?.levers?.goal_choice ?? null;
+  const follow: Follow = {
+    route: choice?.investment ?? null,
+    since: choice?.investment_chosen_on ?? null,
+    write: (route) =>
+      write((levers) => ({
+        ...levers,
+        goal_choice: { ...(levers.goal_choice ?? {}), investment: route, investment_chosen_on: route ? todayIso() : null },
+      })),
+  };
+
   let panel: ReactNode = null;
   if (enabled && data && detail.id !== null) {
     const goal = data.goal;
@@ -389,7 +407,7 @@ export function useGoalView({
     } else if (detail.id === GOAL_BALANCED && goal.balanced) {
       panel = (
         <DetailPanel title={t.balancedTitle} backLabel={backLabel} onClose={detail.close}>
-          <BalancedPanel goal={goal} />
+          <BalancedPanel goal={goal} follow={follow} />
         </DetailPanel>
       );
     } else if (detail.id === GOAL_MORE_SAVING && goal.more_saving) {
@@ -401,7 +419,7 @@ export function useGoalView({
     } else if (detail.id === GOAL_MORE_RETURN && goal.more_return) {
       panel = (
         <DetailPanel title={t.onlyMoreReturn} backLabel={backLabel} onClose={detail.close}>
-          <MoreReturnPanel goal={goal} />
+          <MoreReturnPanel goal={goal} follow={follow} />
         </DetailPanel>
       );
     } else if (detail.id === GOAL_LESS_SPENDING && (goal.scenarios ?? []).length > 0) {
@@ -834,12 +852,59 @@ function AssumptionCard({ href, action }: { href: string; action: string }) {
 
 // --- the side panels (19f panels 4 and 5) ------------------------------------------------------
 
-function Footnote() {
+function Footnote({ follows = false }: { follows?: boolean }) {
   const t = useT(goalText);
-  return <p className="goal-note">{t.footnote}</p>;
+  return <p className="goal-note">{follows ? t.footnoteFollow : t.footnote}</p>;
 }
 
-function BalancedPanel({ goal }: { goal: HouseholdGoal }) {
+/** The route the household follows, and the write that follows or stops following one. */
+interface Follow {
+  route: string | null;
+  since: string | null;
+  write: (route: GoalInvestment | null) => Promise<void>;
+}
+
+/** „Diesem Weg folgen“ / „Nicht mehr folgen“ in a route's side panel (§7.9 (e) 3). `offered`:
+ * the route has a return to follow today; stopping is always offered while it is followed. Ends
+ * the panel with its footnote, which names the one thing saved while the block is shown. */
+function FollowRoute({ route, offered, follow }: { route: GoalInvestment; offered: boolean; follow: Follow }) {
+  const t = useT(goalText);
+  const p = usePlanFormat();
+  const { mode } = useGoalPlan();
+  const { busy, error, run } = useRun();
+  const following = follow.route === route;
+  if (mode === "generic" || (!offered && !following)) return <Footnote />;
+  return (
+    <>
+      <div className="goal-c goal-follow" data-testid={`goal-follow-${route}`}>
+        <CardHead title={t.followTitle} tag={following ? <span className="goal-tag goal-tag-yes">{t.followingTag}</span> : null} />
+        <p className="goal-note">
+          {following && follow.since ? t.followingSince(p.date(follow.since)) : follow.route && !following ? t.followReplaces : t.followText}
+        </p>
+        <div className="row">
+          {following ? (
+            <>
+              <Link href="/assets" className="button-link secondary">
+                {t.followToAssets} ›
+              </Link>
+              <button type="button" className="secondary" disabled={busy} onClick={() => run(() => follow.write(null))}>
+                {t.unfollow}
+              </button>
+            </>
+          ) : (
+            <button type="button" disabled={busy} onClick={() => run(() => follow.write(route))}>
+              {t.follow}
+            </button>
+          )}
+        </div>
+        <ErrorNotice error={error} />
+      </div>
+      <Footnote follows />
+    </>
+  );
+}
+
+function BalancedPanel({ goal, follow }: { goal: HouseholdGoal; follow: Follow }) {
   const t = useT(goalText);
   const p = usePlanFormat();
   const balanced = goal.balanced;
@@ -853,7 +918,7 @@ function BalancedPanel({ goal }: { goal: HouseholdGoal }) {
       {(balanced.budgets ?? []).length > 0 ? <p>{t.balancedLimit}</p> : null}
       {balanced.saving != null ? <p>{t.balancedSaving(p.euro(balanced.saving))}</p> : null}
       <p>{balanced.closes && balanced.reached ? t.balancedReached(p.month(balanced.reached)) : t.balancedNotCloses}</p>
-      <Footnote />
+      <FollowRoute route="balanced" offered={balanced.return_rate != null && balanced.saving_extra != null} follow={follow} />
     </div>
   );
 }
@@ -873,7 +938,7 @@ function MoreSavingPanel({ goal }: { goal: HouseholdGoal }) {
   );
 }
 
-function MoreReturnPanel({ goal }: { goal: HouseholdGoal }) {
+function MoreReturnPanel({ goal, follow }: { goal: HouseholdGoal; follow: Follow }) {
   const t = useT(goalText);
   const p = usePlanFormat();
   const ret = goal.more_return;
@@ -955,7 +1020,7 @@ function MoreReturnPanel({ goal }: { goal: HouseholdGoal }) {
           </ul>
         </div>
       ) : null}
-      <Footnote />
+      <FollowRoute route="more_return" offered={ret.available && ret.needed_return != null} follow={follow} />
     </div>
   );
 }

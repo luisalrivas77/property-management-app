@@ -2835,6 +2835,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/household-goal/tracking": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Household Goal Tracking */
+        get: operations["household_goal_tracking_api_household_goal_tracking_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/household-goal/plan": {
         parameters: {
             query?: never;
@@ -8864,6 +8881,12 @@ export interface components {
             investment_chosen_on?: string | null;
         };
         /**
+         * GoalInvestment
+         * @description The return the household follows (`goal_choice.investment`, „Diesem Weg folgen“).
+         * @enum {string}
+         */
+        GoalInvestment: "more_return" | "balanced";
+        /**
          * GoalIssue
          * @description Why a set goal has no word yet; the card shows the plan's to-dos or the sentence.
          * @enum {string}
@@ -9038,6 +9061,67 @@ export interface components {
          * @enum {string}
          */
         GoalSpending: "wants_only" | "all_equal" | "own";
+        /**
+         * GoalTracking
+         * @description `GET /household-goal/tracking`: „Für euer Ziel“ on Anlagen › Übersicht. Since the day
+         *     the household chose to follow a return: the money put into its funds and crypto accounts
+         *     (a depot counted in the reserve left out, D304) against what the walk of that route plans
+         *     to invest by now, and the value change of those accounts against the change the return
+         *     implies by now; one word by code. Every figure computed on read, never stored.
+         */
+        GoalTracking: {
+            /** Shown */
+            shown: boolean;
+            reason?: components["schemas"]["GoalTrackingReason"] | null;
+            route?: components["schemas"]["GoalInvestment"] | null;
+            /** Chosen On */
+            chosen_on?: string | null;
+            /** Days */
+            days?: number | null;
+            /** Rate */
+            rate?: string | null;
+            /** Planned Per Year */
+            planned_per_year?: string | null;
+            /** Planned By Now */
+            planned_by_now?: string | null;
+            /** Paid In */
+            paid_in?: string | null;
+            /** Value Then */
+            value_then?: string | null;
+            /** Value Now */
+            value_now?: string | null;
+            /** Value Change */
+            value_change?: string | null;
+            /** Implied Change */
+            implied_change?: string | null;
+            /** Yearly Return */
+            yearly_return?: string | null;
+            no_rate?: components["schemas"]["NoRateReason"] | null;
+            word?: components["schemas"]["GoalTrackingWord"] | null;
+            /** Short */
+            short?: components["schemas"]["GoalTrackingShort"][];
+            /**
+             * Reserve Depots
+             * @default 0
+             */
+            reserve_depots: number;
+        };
+        /**
+         * GoalTrackingReason
+         * @description Why the card is not shown (the first three) or shows no word.
+         * @enum {string}
+         */
+        GoalTrackingReason: "generic_mode" | "no_goal" | "not_following" | "route_gone" | "goal_issue" | "no_plan" | "unpriced" | "unvalued";
+        /**
+         * GoalTrackingShort
+         * @enum {string}
+         */
+        GoalTrackingShort: "paid" | "value";
+        /**
+         * GoalTrackingWord
+         * @enum {string}
+         */
+        GoalTrackingWord: "on_path" | "behind";
         /**
          * GoalUnreachable
          * @description §7.9 (d) 4: what the household reaches instead. `later` is the month the goal is
@@ -23697,6 +23781,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HouseholdGoal"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_goal_tracking_api_household_goal_tracking_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoalTracking"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

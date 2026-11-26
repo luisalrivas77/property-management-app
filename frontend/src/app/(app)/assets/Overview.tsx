@@ -14,6 +14,8 @@
 // - `?kurs=<asset id>` (`&tag=<day>`, from a lot's „Kurs fehlt“, a portfolio's missing price and
 //   the price cards on Zu prüfen) opens „Kursquelle wählen“ (a coin's CoinGecko id and Kraken
 //   pair, PATCH /assets/{id}) and „Kurs eintragen“ (POST /assets/{id}/prices) in the panel.
+// - „Für euer Ziel“ (./GoalTracking.tsx, §7.9 (e) 3) after the gain card, once the household
+//   follows a return on Haushalt › Ziel; GET /household-goal/tracking, its panel in the hash.
 //
 // A wallet whose read movements wait for a person (a first sync proposes the whole history) is
 // counted nowhere yet: its line names the coins not yet counted and links „Transaktionen prüfen“.
@@ -26,13 +28,14 @@ import type { AssetRow, AssetsOverview, WalletWaiting } from "@/api/schemas";
 import type { components } from "@/api/types";
 import { todayIso } from "@/components/format";
 import { decimalInput, toDecimalString } from "@/components/input";
-import { DetailLayout, DetailPanel } from "@/components/DetailPanel";
+import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { Loading, Notice } from "@/components/ui";
 import { useLoad, type Loaded } from "@/components/useLoad";
 import { useFormat, useT, type Formatter, type Translation } from "@/i18n";
 import { assets } from "@/i18n/assets";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
+import { type GoalTracking, GoalTrackingCard, GoalTrackingPanel, loadTracking, TRACKING_DETAIL, TRACKING_ID } from "./GoalTracking";
 import { type AssetsPerformance, GainKpi, gainSub, loadPerformance } from "./Performance";
 import { MoneyBack } from "./Property";
 import { assetKindLabel, sourceLabel } from "./words";
@@ -50,13 +53,14 @@ const KIND_COLOUR: Record<string, string> = {
 
 export function OverviewTab({ priceFor, priceDay = null }: { priceFor: string | null; priceDay?: string | null }) {
   const load = useCallback(async () => {
-    const [overview, performance, payback] = await Promise.all([
+    const [overview, performance, payback, tracking] = await Promise.all([
       ok(api.GET("/api/assets/overview")),
       loadPerformance(),
       // The Immobilie card's „Geld zurück“ only; Anlagen shows without it.
       ok(api.GET("/api/properties/payback")).catch(() => null),
+      loadTracking(),
     ]);
-    return { overview, performance, payback };
+    return { overview, performance, payback, tracking };
   }, []);
   const state = useLoad(load);
   return (
@@ -70,6 +74,7 @@ function Overview({
   overview,
   performance,
   payback,
+  tracking,
   priceFor,
   priceDay,
   onSaved,
@@ -77,6 +82,7 @@ function Overview({
   overview: AssetsOverview;
   performance: AssetsPerformance;
   payback: PropertiesPayback | null;
+  tracking: GoalTracking | null;
   priceFor: string | null;
   priceDay: string | null;
   onSaved: () => void;
@@ -84,10 +90,13 @@ function Overview({
   const t = useT(assets);
   const f = useFormat();
   const router = useRouter();
+  const goalDetail = useDetail(TRACKING_DETAIL);
   const panel = priceFor ? (
     <DetailPanel title={t.typePrice} backLabel={t.tabOverview} onClose={() => router.replace("/assets", { scroll: false })}>
       <PriceForms assetId={priceFor} day={priceDay} onSaved={onSaved} titled />
     </DetailPanel>
+  ) : tracking?.shown && goalDetail.id === TRACKING_ID ? (
+    <GoalTrackingPanel tracking={tracking} backLabel={t.tabOverview} />
   ) : null;
   const hasProperty = (payback?.properties ?? []).length > 0 || Number(performance.property_estimate_eur) !== 0;
   if ((overview.accounts ?? []).length === 0 && !hasProperty) {
@@ -102,6 +111,12 @@ function Overview({
               <Link href="/accounts">{t.openAccounts}</Link> <Link href="/documents">{t.openDocuments}</Link>
             </p>
           </section>
+          {/* A followed route with nothing invested yet still says how far it is (§7.9 (e) 3). */}
+          {tracking?.shown ? (
+            <div className="planning-kpis">
+              <GoalTrackingCard tracking={tracking} />
+            </div>
+          ) : null}
         </div>
       </DetailLayout>
     );
@@ -119,6 +134,7 @@ function Overview({
         <WaitingNotices lines={overview.waiting ?? []} />
         <div className="planning-kpis">
           <GainKpi title={t.investedGain} figures={performance.invested} portfolios={portfolios} main />
+          {tracking?.shown ? <GoalTrackingCard tracking={tracking} /> : null}
           <KindCard
             title={t.kindEtf}
             href="/assets?tab=etf"
