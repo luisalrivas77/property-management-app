@@ -119,3 +119,10 @@ def test_an_entry_naming_an_unknown_source_is_refused():
                 },
             }
         )
+
+
+def test_only_a_checked_sample_is_marked_official():
+    """A source is official only when its lines were read from it: the BMF's
+    Lohnsteuerbescheinigung sample; the Anleitung sections were not checked (26 Nov 2026)."""
+    sources = registry.field_help(2026).sources
+    assert {code for code, s in sources.items() if s.official} == {"lstb_2026"}

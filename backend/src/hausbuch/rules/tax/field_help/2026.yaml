@@ -2,7 +2,9 @@
 # is, where to find it, an example (invented numbers only, no household data: public repo),
 # whether it goes behind „Weitere Angaben“ (rare) and which document the „where“ is from.
 #
-# Line numbers: only those read from the official sample are given. The Lohnsteuerbescheinigung
+# Line numbers: only those read from the official sample are given. Only lstb_2026 is marked
+# official: the Anlage N and ESt sections were named from knowledge, not checked against the
+# Anleitung (26 Nov 2026), so anleitung_n and anleitung_est are official: false. The Lohnsteuerbescheinigung
 # lines (Nr. 1 to 27, the header box) were checked on 26 Nov 2026 against the BMF's sample for
 # 2026 (source lstb_2026). The Anlage N and the other forms are named by their section only
 # („siehe Anleitung …“), never by a Zeile: the 2026 forms are not published yet and the
@@ -23,15 +25,15 @@ sources:
     de: "BMF, Muster für den Ausdruck der elektronischen Lohnsteuerbescheinigung für 2026 (Bekanntmachung vom 29. August 2025)"
     en: "German Federal Ministry of Finance (BMF), sample printout of the electronic wage tax certificate for 2026 (notice of 29 August 2025)"
   anleitung_n:
-    official: true
-    url: "https://www.elster.de"
-    de: "BMF/ELSTER, Anleitung zur Anlage N der Einkommensteuererklärung"
-    en: "BMF/ELSTER, instructions for the Anlage N of the income tax return"
+    official: false
+    url: null
+    de: "Die Unterlagen zur Arbeit (Arbeitsvertrag, Rechnungen, Bescheinigungen) und der Abschnitt der Anlage N, in den der Wert gehört; Abschnittsnamen ohne Zeilennummer, da die Vordrucke 2026 noch nicht veröffentlicht und die Anleitung nicht abgeglichen ist"
+    en: "The papers about the job (employment contract, invoices, certificates) and the section of the Anlage N the value belongs to; section names without a line number, since the 2026 forms are not published yet and the instructions were not checked line by line"
   anleitung_est:
-    official: true
-    url: "https://www.elster.de"
-    de: "BMF/ELSTER, Anleitung zur Einkommensteuererklärung und ihren Anlagen (Anlage Kind, Anlage Haushaltsnahe Aufwendungen, Anlage Sonderausgaben, Anlage Vorsorgeaufwand)"
-    en: "BMF/ELSTER, instructions for the income tax return and its annexes (Anlage Kind, Anlage Haushaltsnahe Aufwendungen, Anlage Sonderausgaben, Anlage Vorsorgeaufwand)"
+    official: false
+    url: null
+    de: "Die eigenen Belege (Rechnungen, Bescheide, Bescheinigungen, Kontoauszüge) und die Anlage der Einkommensteuererklärung, in die der Wert gehört (Anlage Kind, Haushaltsnahe Aufwendungen, Sonderausgaben, Vorsorgeaufwand); ohne Zeilennummer, die Anleitung ist nicht abgeglichen"
+    en: "Your own papers (invoices, notices, certificates, bank statements) and the annex of the income tax return the value belongs to (Anlage Kind, Haushaltsnahe Aufwendungen, Sonderausgaben, Vorsorgeaufwand); no line number, the instructions were not checked line by line"
   payslip:
     official: false
     url: null
