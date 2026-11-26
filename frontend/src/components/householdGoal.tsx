@@ -20,7 +20,8 @@
 // to the page's one DetailLayout by PlanProvider (components/householdPlan.tsx), like the one-off
 // check's panel.
 import Link from "next/link";
-import { type FormEvent, type ReactNode, useId, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createContext, type CSSProperties, type FormEvent, type ReactNode, useContext, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
@@ -28,13 +29,21 @@ import { type Translation, useT } from "@/i18n";
 import { goalText } from "@/i18n/goal";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { detailHref } from "@/lib/detailHash";
-import { HOUSEHOLD_PLAY, HOUSEHOLD_RESERVE } from "@/lib/planningRoutes";
+import { HOUSEHOLD_PLAY, HOUSEHOLD_RESERVE, RATE_LEVER } from "@/lib/planningRoutes";
 
 import { DetailPanel, useDetail } from "./DetailPanel";
 import { todayIso } from "./format";
 import { Field } from "./form";
 import { HealthTodoList } from "./healthFigures";
-import { currentDefault, fillLevers, type HouseholdLevers, type HouseholdScenario, loadScenarioHistory, saveDefaultScenario } from "./healthShared";
+import {
+  currentDefault,
+  fillLevers,
+  type HouseholdLevers,
+  type HouseholdPlan,
+  type HouseholdScenario,
+  loadScenarioHistory,
+  saveDefaultScenario,
+} from "./healthShared";
 import { decimalInput, toDecimalString, toMoneyString } from "./input";
 import { ALLOCATION_CATEGORY } from "./labels";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
@@ -51,11 +60,21 @@ type GoalWord = components["schemas"]["GoalWord"];
 type GoalScenario = components["schemas"]["GoalScenario"];
 type GoalSpending = components["schemas"]["GoalSpending"];
 type AllocationCategory = components["schemas"]["AllocationCategory"];
+type AdviceMode = components["schemas"]["AdviceMode"];
+type SpendingChange = components["schemas"]["SpendingChange"];
 type GT = Translation<typeof goalText.de>;
 
 /** The detail kind of the goal's panels: the form and one panel per spending scenario. */
 export const GOAL_DETAIL = "ziel";
 export const GOAL_FORM = "festlegen";
+/** The side panels of mockup 19f: the balanced route, routes 2, 3 and 4, the four words and
+ * „Womit gerechnet wird“. Route 4's own two scenarios keep their kinds as ids (19c). */
+const GOAL_BALANCED = "ausgewogen";
+const GOAL_MORE_SAVING = "anlegen";
+const GOAL_MORE_RETURN = "rendite";
+const GOAL_LESS_SPENDING = "ausgeben";
+const GOAL_WORDS = "woerter";
+const GOAL_BASIS = "basis";
 /** Haushalt › Ziel, and the form opened there (Übersicht's „Ziel festlegen“). */
 export const GOAL_PAGE = "/household?tab=ziel";
 export const GOAL_FORM_HREF = `${GOAL_PAGE}${detailHref(GOAL_DETAIL, GOAL_FORM)}`;
@@ -78,7 +97,8 @@ async function loadNoGoal(): Promise<GoalData | null> {
   return null;
 }
 
-// D303: „Ehrgeizig“ comes only through route 3, which is not built yet.
+// The tile's dot (D303): three marks only, so „Machbar“ and „Ehrgeizig“ share amber there; the
+// word pills on Haushalt › Ziel give each word its own colour (WordPill).
 const WORD_MARK: Record<GoalWord, Mark> = { none: "none", on_track: "green", feasible: "amber", ambitious: "amber", hardly: "red" };
 
 const SCENARIO_ORDER: GoalSpending[] = ["wants_only", "all_equal"];
@@ -348,6 +368,26 @@ function useRun() {
   return { busy, error, run };
 }
 
+/** What the goal's cards read from the household plan. PlanProvider hands it in, since
+ * components/householdPlan.tsx imports this file and the import must not run back. */
+export interface GoalPlanInfo {
+  plan: HouseholdPlan | null;
+  mode: AdviceMode | undefined;
+  /** Puts spending changes into Durchspielen's draft (§7.10 (a)); null before the plan is read. */
+  playSpending: ((changes: SpendingChange[]) => void) | null;
+}
+
+const GoalPlanContext = createContext<GoalPlanInfo>({ plan: null, mode: undefined, playSpending: null });
+
+function useGoalPlan(): GoalPlanInfo {
+  return useContext(GoalPlanContext);
+}
+
+/** „Anlegbar pro Monat“, what the walk invests each month (D301). */
+function investableMonthly(plan: HouseholdPlan | null): string | null {
+  return plan?.surplus?.rows.find((row) => row.key === "investable")?.amount ?? null;
+}
+
 export interface GoalView {
   /** The open goal panel, or null. */
   panel: ReactNode;
@@ -364,12 +404,14 @@ export function useGoalView({
   enough,
   dirty,
   onWritten,
+  info,
 }: {
   enabled: boolean;
   backLabel: string;
   enough: boolean;
   dirty: boolean;
   onWritten: () => void;
+  info: GoalPlanInfo;
 }): GoalView {
   const t = useT(goalText);
   const state = useLoad(enabled ? loadGoalData : loadNoGoal);
@@ -393,6 +435,42 @@ export function useGoalView({
           <GoalForm key={goal.goal ? JSON.stringify(goal.goal) : "new"} goal={goal.goal ?? null} write={write} onDone={detail.close} />
         </DetailPanel>
       );
+    } else if (detail.id === GOAL_WORDS && goal.goal) {
+      panel = (
+        <DetailPanel title={t.wordsTitle} backLabel={backLabel} onClose={detail.close}>
+          <WordsPanel goal={goal} />
+        </DetailPanel>
+      );
+    } else if (detail.id === GOAL_BASIS && goal.goal) {
+      panel = (
+        <DetailPanel title={t.basisTitle} backLabel={backLabel} onClose={detail.close}>
+          <BasisPanel goal={goal} />
+        </DetailPanel>
+      );
+    } else if (detail.id === GOAL_BALANCED && goal.balanced) {
+      panel = (
+        <DetailPanel title={t.balancedTitle} backLabel={backLabel} onClose={detail.close}>
+          <BalancedPanel goal={goal} />
+        </DetailPanel>
+      );
+    } else if (detail.id === GOAL_MORE_SAVING && goal.more_saving) {
+      panel = (
+        <DetailPanel title={t.onlyMoreSaving} backLabel={backLabel} onClose={detail.close}>
+          <MoreSavingPanel goal={goal} />
+        </DetailPanel>
+      );
+    } else if (detail.id === GOAL_MORE_RETURN && goal.more_return) {
+      panel = (
+        <DetailPanel title={t.onlyMoreReturn} backLabel={backLabel} onClose={detail.close}>
+          <MoreReturnPanel goal={goal} />
+        </DetailPanel>
+      );
+    } else if (detail.id === GOAL_LESS_SPENDING && (goal.scenarios ?? []).length > 0) {
+      panel = (
+        <DetailPanel title={t.onlyLessSpending} backLabel={backLabel} onClose={detail.close}>
+          <LessSpendingPanel data={data} enough={enough} dirty={dirty} write={write} />
+        </DetailPanel>
+      );
     } else if (isScenarioKind(detail.id)) {
       const scenario = (goal.scenarios ?? []).find((s) => s.kind === detail.id);
       if (scenario && goal.goal) {
@@ -412,21 +490,17 @@ export function useGoalView({
     }
   }
 
-  const tab = enabled ? <GoalTab state={state} enough={enough} dirty={dirty} write={write} /> : null;
-  return { panel, tab };
+  const tab = enabled ? <GoalTab state={state} /> : null;
+  return {
+    panel: panel ? <GoalPlanContext.Provider value={info}>{panel}</GoalPlanContext.Provider> : null,
+    tab: tab ? <GoalPlanContext.Provider value={info}>{tab}</GoalPlanContext.Provider> : null,
+  };
 }
 
-function GoalTab({
-  state,
-  enough,
-  dirty,
-  write,
-}: {
-  state: Loaded<GoalData | null>;
-  enough: boolean;
-  dirty: boolean;
-  write: Write;
-}) {
+/** The goal's cards on Haushalt › Ziel (mockup 19f panels 2, 3 and 7; „Cards, not text“, 25 Nov
+ * 2026): each card a title, one number or a few small figures and at most one short line; every
+ * explanation sits in the side panel its card opens. */
+function GoalTab({ state }: { state: Loaded<GoalData | null> }) {
   const t = useT(goalText);
   const detail = useDetail(GOAL_DETAIL);
   const ids = useId();
@@ -434,108 +508,639 @@ function GoalTab({
     <Loading state={state}>
       {(data) =>
         data ? (
-          <div className="stack goal-tab">
+          data.goal.word === "none" || !data.goal.goal ? (
             <section className="card goal-card" aria-labelledby={`${ids}-title`}>
-              <div className="goal-card-head">
-                <h2 id={`${ids}-title`}>{t.title}</h2>
-                {data.goal.goal ? (
-                  <a {...detail.linkProps(GOAL_FORM)} className="button-link secondary">
-                    {t.changeGoal}
-                  </a>
-                ) : null}
-              </div>
-              {data.goal.word === "none" || !data.goal.goal ? (
-                <div className="stack">
-                  <p className="muted">{t.noGoalText}</p>
-                  <p>
-                    <a {...detail.linkProps(GOAL_FORM)} className="button-link">
-                      {t.setGoal}
-                    </a>
-                  </p>
-                </div>
-              ) : (
-                <GoalSummary goal={data.goal} formHref={detail.href(GOAL_FORM)} onChanged={state.reload} />
-              )}
+              <h2 id={`${ids}-title`}>{t.title}</h2>
+              <p className="muted">{t.noGoalText}</p>
+              <p>
+                <a {...detail.linkProps(GOAL_FORM)} className="button-link">
+                  {t.setGoal}
+                </a>
+              </p>
             </section>
-            {(data.goal.scenarios ?? []).length > 0 ? (
-              <Scenarios data={data} enough={enough} dirty={dirty} write={write} />
-            ) : null}
-          </div>
+          ) : (
+            <GoalCards goal={data.goal} goalSet={data.goal.goal} onChanged={state.reload} />
+          )
         ) : null
       }
     </Loading>
   );
 }
 
-function Scenarios({ data, enough, dirty, write }: { data: GoalData; enough: boolean; dirty: boolean; write: Write }) {
+/** Whether the walk without change misses: then the routes show (19f panel 3); on course, or
+ * while the goal has no word yet, none does. */
+function hasGap(goal: HouseholdGoal): boolean {
+  return goal.issue == null && (goal.word === "feasible" || goal.word === "ambitious" || goal.word === "hardly");
+}
+
+function GoalCards({ goal, goalSet, onChanged }: { goal: HouseholdGoal; goalSet: Goal; onChanged: () => void }) {
+  const t = useT(goalText);
+  const detail = useDetail(GOAL_DETAIL);
+  return (
+    <div className="goal-cards">
+      <div className="goal-c">
+        <div className="goal-ch">
+          <h3>{t.title}</h3>
+          <a {...detail.linkProps(GOAL_FORM)} className="goal-lnk">
+            {t.change}
+          </a>
+        </div>
+        <GoalHeadline goal={goal} goalSet={goalSet} />
+        {goal.word != null ? (
+          <a {...detail.linkProps(GOAL_WORDS)} className="goal-word-link">
+            <WordPill word={goal.word} text={goalWordText(t, goal)} />
+          </a>
+        ) : (
+          <WordPill word="none" text={goalWordText(t, goal)} />
+        )}
+      </div>
+      {goal.issue != null ? (
+        <div className="goal-c">
+          <GoalIssue goal={goal} formHref={detail.href(GOAL_FORM)} onChanged={onChanged} />
+        </div>
+      ) : (
+        <>
+          {hasGap(goal) ? null : <OnTrackCard goal={goal} />}
+          <BasisCard goal={goal} />
+          <AsIsCard goal={goal} goalSet={goalSet} />
+          {hasGap(goal) ? (
+            <>
+              {goal.balanced ? <BalancedCard goal={goal} /> : null}
+              <OtherRoutesCard goal={goal} />
+            </>
+          ) : null}
+          {(goal.assumptions ?? []).map((a) => (
+            <AssumptionCard key={a.href} href={a.href} action={a.action} />
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** „500.000 € · Dez. 2031“: the target in euros (a reserve goal in months) and the due month. */
+function GoalHeadline({ goal, goalSet }: { goal: HouseholdGoal; goalSet: Goal }) {
   const t = useT(goalText);
   const p = usePlanFormat();
-  const ids = useId();
+  const target = goalSet.kind === "reserve_months" ? t.headMonths(p.short(goalSet.target)) : p.euro(goal.target ?? goalSet.target);
+  return (
+    <span className="goal-n">
+      {target} · {p.month(goalSet.due_month)}
+    </span>
+  );
+}
+
+/** The word as a pill, its own colour per word (19f's four pills). */
+export function WordPill({ word, text }: { word: GoalWord; text: string }) {
+  return (
+    <span className="goal-word" data-word={word}>
+      <i aria-hidden="true" />
+      {text}
+    </span>
+  );
+}
+
+/** A small figure with its label (19f's `.st`). */
+function Stat({ value, label, warn }: { value: ReactNode; label: ReactNode; warn?: boolean }) {
+  return (
+    <div>
+      <span className={warn ? "goal-v goal-v-warn" : "goal-v"}>{value}</span>
+      <span className="goal-l">{label}</span>
+    </div>
+  );
+}
+
+function Stats({ children, count }: { children: ReactNode; count: number }) {
+  return (
+    <div className="goal-st" style={{ "--k": String(Math.max(1, Math.min(3, count))) } as CSSProperties}>
+      {children}
+    </div>
+  );
+}
+
+/** A card's head that opens its side panel. */
+function CardHead({ title, id, tag }: { title: string; id?: string; tag?: ReactNode }) {
+  const detail = useDetail(GOAL_DETAIL);
+  if (!id)
+    return (
+      <div className="goal-ch">
+        <h3>{title}</h3>
+        {tag}
+      </div>
+    );
+  return (
+    <a {...detail.linkProps(id)} className="goal-ch goal-ch-link">
+      <h3>{title}</h3>
+      <span className="goal-ch-end">
+        {tag}
+        <span className="goal-go" aria-hidden="true">
+          ›
+        </span>
+      </span>
+    </a>
+  );
+}
+
+function isZero(amount: string | null | undefined): boolean {
+  return amount == null || /^-?0+(\.0+)?$/.test(amount);
+}
+
+function OnTrackCard({ goal }: { goal: HouseholdGoal }) {
+  const t = useT(goalText);
+  const p = usePlanFormat();
+  return (
+    <div className="goal-c goal-c-main">
+      <CardHead title={t.onTrackTitle} id={GOAL_WORDS} />
+      <Stats count={2}>
+        <Stat value={p.euro(goal.value_today)} label={t.reserveToday} />
+        <Stat value={goal.reached ? p.month(goal.reached) : "–"} label={t.atGoal} />
+      </Stats>
+    </div>
+  );
+}
+
+/** „Womit gerechnet wird“: the split the walk invests the money above the reserve in, what is
+ * added each month and each sale (D301). The split and the monthly amount are the plan's. */
+function BasisCard({ goal }: { goal: HouseholdGoal }) {
+  const t = useT(goalText);
+  const p = usePlanFormat();
+  const { plan } = useGoalPlan();
+  const shares = plan?.investment_split?.shares ?? null;
+  const monthly = investableMonthly(plan);
+  const sales = goal.sales ?? [];
+  const count = (shares ? 1 : 0) + (monthly != null ? 1 : 0) + sales.length;
+  if (count === 0) return null;
+  return (
+    <div className="goal-c">
+      <CardHead title={t.basisTitle} id={GOAL_BASIS} />
+      <Stats count={count}>
+        {shares ? <Stat value={t.splitValue(p.short(shares.depot), p.short(shares.crypto))} label={t.splitLabel} /> : null}
+        {monthly != null ? <Stat value={monthly.startsWith("-") ? p.signedEuro(monthly) : p.euro(monthly)} label={t.perMonth} /> : null}
+        {sales.map((sale) => (
+          <Stat key={sale.year} value={p.euro(sale.net_proceeds)} label={t.saleLabel(sale.year)} />
+        ))}
+      </Stats>
+    </div>
+  );
+}
+
+/** „So wie jetzt“: the value at the due month without change, what is missing, and the chart of
+ * the server's points (`path`), only scaled to the drawing here. */
+function AsIsCard({ goal, goalSet }: { goal: HouseholdGoal; goalSet: Goal }) {
+  const t = useT(goalText);
+  const p = usePlanFormat();
+  const due = p.month(goalSet.due_month);
+  const short = goal.short_at_due;
+  return (
+    <div className="goal-c">
+      <CardHead title={t.asIsTitle} />
+      <Stats count={short != null ? 2 : 1}>
+        <Stat value={p.euro(goal.projected)} label={t.atMonth(due)} />
+        {short != null ? <Stat value={`−${p.euro(short)}`} label={t.missing} warn /> : null}
+      </Stats>
+      <GoalChart goal={goal} label={t.chartLabel(due)} />
+    </div>
+  );
+}
+
+const CHART = { left: 10, right: 330, top: 20, bottom: 92 };
+
+/** The chart of mockup 19f: the target as a dashed line, the walk without change, the balanced
+ * route dotted, each sale's December as a line, the first and last year below. Coordinates only:
+ * every value drawn is the server's. */
+function GoalChart({ goal, label }: { goal: HouseholdGoal; label: string }) {
+  const t = useT(goalText);
+  const path = goal.path ?? [];
+  if (path.length < 2 || goal.target == null) return null;
+  const target = Number(goal.target);
+  const values = path.flatMap((point) => [Number(point.as_is), ...(point.balanced != null ? [Number(point.balanced)] : [])]);
+  const low = Math.min(...values);
+  const high = Math.max(target, ...values);
+  const span = high - low || 1;
+  const x = (i: number) => CHART.left + (i * (CHART.right - CHART.left)) / (path.length - 1);
+  const y = (value: number) => CHART.bottom - ((value - low) / span) * (CHART.bottom - CHART.top);
+  const fmt = (n: number) => n.toFixed(1);
+  const asIs = path.map((point, i) => `${fmt(x(i))},${fmt(y(Number(point.as_is)))}`).join(" ");
+  const balanced = path
+    .map((point, i) => (point.balanced != null ? `${fmt(x(i))},${fmt(y(Number(point.balanced)))}` : null))
+    .filter((point): point is string => point !== null);
+  const sales = (goal.sales ?? [])
+    .map((sale) => path.findIndex((point) => point.month === `${sale.year}-12`))
+    .filter((i) => i >= 0);
+  const last = path.length - 1;
+  const lastPoint = path[last];
+  return (
+    <svg className="goal-chart" viewBox="0 0 340 110" role="img" aria-label={label}>
+      <line x1={CHART.left} y1={y(target)} x2={CHART.right} y2={y(target)} stroke="var(--accent)" strokeDasharray="5 4" strokeWidth="1.5" />
+      <text x={12} y={Math.max(11, y(target) - 6)} fontSize="11" fontWeight="700" fill="var(--accent-strong)">
+        {t.chartGoal}
+      </text>
+      {sales.map((i) => (
+        <g key={i}>
+          <line x1={x(i)} y1={12} x2={x(i)} y2={100} stroke="var(--border-strong)" strokeWidth="1" />
+          <text x={Math.min(x(i) + 4, 300)} y={100} fontSize="10.5" fill="var(--muted)">
+            {t.chartSale}
+          </text>
+        </g>
+      ))}
+      <polyline points={asIs} fill="none" stroke="var(--text)" strokeWidth="2.5" />
+      {balanced.length >= 2 ? (
+        <polyline points={balanced.join(" ")} fill="none" stroke="var(--accent)" strokeWidth="2" strokeDasharray="2 3" />
+      ) : null}
+      {lastPoint ? <circle cx={x(last)} cy={y(Number(lastPoint.as_is))} r="4" fill="var(--text)" /> : null}
+      <text x={12} y={108} fontSize="10.5" fill="var(--muted)">
+        {path[0]?.month.slice(0, 4)}
+      </text>
+      <text x={328} y={108} fontSize="10.5" fill="var(--muted)" textAnchor="end">
+        {lastPoint?.month.slice(0, 4)}
+      </text>
+    </svg>
+  );
+}
+
+/** „Ausgewogener Weg“, the main route (D302): what is invested more, what the wants give, each
+ * want from its mean to its budget, and the month the goal is reached that way. */
+function BalancedCard({ goal }: { goal: HouseholdGoal }) {
+  const t = useT(goalText);
+  const p = usePlanFormat();
+  const { playSpending } = useGoalPlan();
+  const router = useRouter();
+  const balanced = goal.balanced;
+  if (!balanced) return null;
+  const toPlay = () => {
+    if (!playSpending) return;
+    // The cuts as Durchspielen's draft (§7.10 (a)): only the spending changes travel; the extra
+    // investing has no field there.
+    playSpending(balanced.spending_changes ?? []);
+    router.push(HOUSEHOLD_PLAY);
+  };
+  return (
+    <div className="goal-c goal-c-main">
+      <CardHead title={t.balancedTitle} id={GOAL_BALANCED} tag={<span className="goal-tag goal-tag-yes">{t.mainRoute}</span>} />
+      <div className="goal-rows">
+        <div className="goal-rw">
+          <span>{t.moreSavingRow}</span>
+          <b>{balanced.saving_extra != null ? t.perMonthAmount(`+${p.euro(balanced.saving_extra)}`) : t.aboveIncome}</b>
+        </div>
+        {!isZero(balanced.cut) ? (
+          <div className="goal-rw">
+            <span>{t.fewerWants}</span>
+            <b>{t.perMonthAmount(`−${p.euro(balanced.cut)}`)}</b>
+          </div>
+        ) : null}
+        {(balanced.budgets ?? []).map((budget) => (
+          <div key={budget.code} className="goal-rw goal-rw-sub">
+            <span>{categoryName(budget.code)}</span>
+            <b>{t.fromTo(p.euro(budget.mean), p.euro(budget.budget))}</b>
+          </div>
+        ))}
+        <div className="goal-rw">
+          <span>{t.atGoal}</span>
+          <b>{balanced.reached ? p.month(balanced.reached) : t.notReached}</b>
+        </div>
+      </div>
+      {(balanced.spending_changes ?? []).length > 0 && playSpending ? (
+        <button type="button" className="goal-lnk goal-lnk-button" onClick={toPlay}>
+          {t.toPlay} ›
+        </button>
+      ) : (
+        <Link href={HOUSEHOLD_PLAY} className="goal-lnk">
+          {t.toPlay} ›
+        </Link>
+      )}
+    </div>
+  );
+}
+
+const VERDICT_TAG: Record<string, string> = { within_history: "goal-tag-yes", good_times: "goal-tag-maybe", never: "goal-tag-no" };
+
+/** The spending scenario „Nur weniger ausgeben“ stands for: the first that closes, else the
+ * wants-only one. */
+function lessSpending(goal: HouseholdGoal): GoalScenario | null {
+  const scenarios = SCENARIO_ORDER.map((kind) => (goal.scenarios ?? []).find((s) => s.kind === kind)).filter((s): s is GoalScenario => s != null);
+  return scenarios.find((s) => s.closes) ?? scenarios[0] ?? null;
+}
+
+/** „Andere Wege“: routes 2, 3 and 4, each a row that opens its panel (D302, D303). */
+function OtherRoutesCard({ goal }: { goal: HouseholdGoal }) {
+  const t = useT(goalText);
+  const p = usePlanFormat();
+  const detail = useDetail(GOAL_DETAIL);
+  const ret = goal.more_return ?? null;
+  const less = lessSpending(goal);
+  const returnTag = ret ? (ret.available && ret.verdict ? t.verdictTag(ret.verdict) : ret.reason ? t.reasonTag(ret.reason) : "") : "";
+  const returnClass = ret?.available && ret.verdict ? (VERDICT_TAG[ret.verdict] ?? "goal-tag-no") : "goal-tag-no";
+  return (
+    <div className="goal-c">
+      <CardHead title={t.otherRoutes} />
+      <div className="goal-rows">
+        {goal.more_saving ? (
+          <a {...detail.linkProps(GOAL_MORE_SAVING)} className="goal-rw goal-rw-link">
+            <span>{t.onlyMoreSaving}</span>
+            <b>{t.perMonthAmount(`+${p.euro(goal.more_saving.extra)}`)}</b>
+          </a>
+        ) : null}
+        {ret ? (
+          <a {...detail.linkProps(GOAL_MORE_RETURN)} className="goal-rw goal-rw-link">
+            <span>
+              {t.onlyMoreReturn}
+              {returnTag ? <span className={`goal-tag ${returnClass}`}>{returnTag}</span> : null}
+            </span>
+            <b>{ret.needed_return != null ? p.ratio(ret.needed_return) : "–"}</b>
+          </a>
+        ) : null}
+        {less ? (
+          <a {...detail.linkProps(GOAL_LESS_SPENDING)} className="goal-rw goal-rw-link">
+            <span>{t.onlyLessSpending}</span>
+            <b>{t.perMonthAmount(`−${p.euro(less.cut)}`)}</b>
+          </a>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** 19f panel 7: a property the walk keeps at today's value because it has no scenario. */
+function AssumptionCard({ href, action }: { href: string; action: string }) {
+  const t = useT(goalText);
+  return (
+    <div className="goal-c">
+      <CardHead title={t.flatTitle} tag={<span className="goal-tag goal-tag-no">{t.noScenario}</span>} />
+      <Stats count={2}>
+        <Stat value={t.kept} label={t.assumption} />
+        <Stat value={t.asToday} label={t.valueLabel} />
+      </Stats>
+      <Link href={href} className="button-link secondary goal-btn">
+        {action} ›
+      </Link>
+    </div>
+  );
+}
+
+// --- the side panels (19f panels 4 and 5) ------------------------------------------------------
+
+function Footnote() {
+  const t = useT(goalText);
+  return <p className="goal-note">{t.footnote}</p>;
+}
+
+function BalancedPanel({ goal }: { goal: HouseholdGoal }) {
+  const t = useT(goalText);
+  const p = usePlanFormat();
+  const balanced = goal.balanced;
+  if (!balanced || !goal.goal) return null;
+  return (
+    <div className="stack goal-panel">
+      {goal.short_at_due != null ? <p>{t.gapLine(p.month(goal.goal.due_month), p.euro(goal.short_at_due))}</p> : null}
+      <p>{balanced.return_rate != null ? t.balancedRate(p.ratio(balanced.return_rate)) : t.balancedTyped}</p>
+      <p>{balanced.saving_extra != null ? t.balancedHalf : t.balancedTooMuch}</p>
+      {!isZero(balanced.moved_to_saving) ? <p>{t.balancedMoved(p.euro(balanced.moved_to_saving))}</p> : null}
+      {(balanced.budgets ?? []).length > 0 ? <p>{t.balancedLimit}</p> : null}
+      {balanced.saving != null ? <p>{t.balancedSaving(p.euro(balanced.saving))}</p> : null}
+      <p>{balanced.closes && balanced.reached ? t.balancedReached(p.month(balanced.reached)) : t.balancedNotCloses}</p>
+      <Footnote />
+    </div>
+  );
+}
+
+function MoreSavingPanel({ goal }: { goal: HouseholdGoal }) {
+  const t = useT(goalText);
+  const p = usePlanFormat();
+  const more = goal.more_saving;
+  if (!more) return null;
+  return (
+    <div className="stack goal-panel">
+      <p>{t.moreSavingText(p.euro(more.extra))}</p>
+      <p>{more.noetig != null ? t.moreSavingTotal(p.euro(more.noetig)) : t.moreSavingTooMuch}</p>
+      <p className="goal-note">{t.notForWord}</p>
+      <Footnote />
+    </div>
+  );
+}
+
+function MoreReturnPanel({ goal }: { goal: HouseholdGoal }) {
+  const t = useT(goalText);
+  const p = usePlanFormat();
+  const ret = goal.more_return;
+  const [queued, setQueued] = useState<boolean | null>(null);
+  const { busy, error, run } = useRun();
+  if (!ret) return null;
+  const refresh = () =>
+    run(async () => {
+      const answer = await ok(api.POST("/api/household-goal/reference-returns/refresh"));
+      setQueued(answer.queued);
+    });
+  const counted = ret.windows != null && ret.windows > 0 && ret.reached_windows != null && ret.window_years != null;
+  return (
+    <div className="stack goal-panel">
+      {ret.needed_return != null ? <p>{t.returnText(p.ratio(ret.needed_return))}</p> : null}
+      {ret.available && ret.verdict ? <p>{t.returnVerdict(ret.verdict)}</p> : null}
+      {!ret.available && ret.reason ? <p>{t.reasonText(ret.reason)}</p> : null}
+      {counted ? (
+        <div className="goal-c">
+          <Stats count={2}>
+            {ret.needed_return != null ? <Stat value={p.ratio(ret.needed_return)} label={t.neededLabel} /> : null}
+            <Stat value={t.windowsValue(ret.reached_windows ?? 0, ret.windows ?? 0)} label={t.windowsLabel(ret.window_years ?? 0)} />
+          </Stats>
+          <Stats count={2}>
+            <Stat value={p.ratio(ret.median)} label={t.medianLabel} />
+            <Stat value={p.ratio(ret.best)} label={t.bestLabel} />
+          </Stats>
+        </div>
+      ) : null}
+      {ret.thin ? <p className="goal-note">{t.thinNote}</p> : null}
+      {ret.reason === "series_missing" ? (
+        <div className="stack">
+          {queued === null ? (
+            <p>
+              <button type="button" className="secondary" disabled={busy} onClick={refresh}>
+                {t.refresh}
+              </button>
+            </p>
+          ) : (
+            <p role="status">{queued ? t.refreshQueued : t.refreshRunning}</p>
+          )}
+          <ErrorNotice error={error} />
+        </div>
+      ) : null}
+      {(ret.left_out ?? []).length > 0 ? (
+        <div className="goal-c">
+          <CardHead title={t.leftOutTitle} />
+          <div className="goal-rows">
+            {(ret.left_out ?? []).map((item) => (
+              <div key={`${item.kind}-${item.symbol ?? ""}`} className="goal-rw">
+                <span>
+                  {item.kind === "funds" ? t.leftOutFunds : (item.symbol ?? t.leftOutCrypto)}
+                  <span className="goal-tag goal-tag-no">{t.leftOutReason(item.reason)}</span>
+                </span>
+                <b>{p.percentValue(item.share)}</b>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {(ret.sources ?? []).length > 0 ? (
+        <div className="goal-c">
+          <CardHead title={t.sourcesTitle} />
+          <ul className="goal-sources">
+            {(ret.sources ?? []).map((source) => (
+              <li key={source.key}>
+                <a href={source.url} target="_blank" rel="noreferrer">
+                  {source.source}
+                </a>{" "}
+                <span className="muted">
+                  {source.first_year}–{source.last_year}
+                  {source.read_on ? ` · ${t.sourceRead(p.date(source.read_on))}` : ""}
+                </span>
+                <span className="goal-note">
+                  {source.licence} · {source.attribution} · {source.own_calculation}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <Footnote />
+    </div>
+  );
+}
+
+/** „Was die Wörter bedeuten“ (19f panel 5): the four words, today's marked with what decided it;
+ * no „Ehrgeizig“ in `generic` mode (D303). */
+function WordsPanel({ goal }: { goal: HouseholdGoal }) {
+  const t = useT(goalText);
+  const p = usePlanFormat();
+  const { mode } = useGoalPlan();
+  const generic = mode === "generic";
+  const less = lessSpending(goal);
+  const ret = goal.more_return ?? null;
+  const due = goal.goal ? p.month(goal.goal.due_month) : "";
+  const today = (word: GoalWord): string | null => {
+    switch (word) {
+      case "on_track":
+        return goal.reached ? t.todayOnTrack(p.month(goal.reached)) : t.todayOnTrackPlain;
+      case "feasible":
+        if (less?.closes) return t.todaySpending(p.euro(less.cut), scenarioName(t, less.kind));
+        if (ret?.available && ret.needed_return != null) return t.todayReturn(p.ratio(ret.needed_return));
+        return null;
+      case "ambitious":
+        return ret?.needed_return != null ? t.todayGoodTimes(p.ratio(ret.needed_return)) : null;
+      case "hardly":
+        return goal.unreachable ? t.todayHardly(due, p.euro(goal.unreachable.reaches_by_due)) : null;
+      default:
+        return null;
+    }
+  };
+  const words: { word: GoalWord; name: string; text: string }[] = [
+    { word: "on_track", name: t.onTrack, text: t.wordOnTrack },
+    { word: "feasible", name: t.feasible, text: t.wordFeasible },
+    ...(generic ? [] : [{ word: "ambitious" as GoalWord, name: t.ambitious, text: t.wordAmbitious }]),
+    { word: "hardly", name: t.hardly, text: t.wordHardly },
+  ];
+  return (
+    <div className="stack goal-panel">
+      <div className="goal-words">
+        {words.map((row) => {
+          const current = row.word === goal.word;
+          const line = current ? today(row.word) : null;
+          return (
+            <div key={row.word} className={current ? "goal-wrow goal-wrow-cur" : "goal-wrow"}>
+              <WordPill word={row.word} text={row.name} />
+              <p>{row.text}</p>
+              {line ? <span className="goal-today">{t.todayLine(line)}</span> : null}
+            </div>
+          );
+        })}
+      </div>
+      <p className="goal-note">{t.notForWord}</p>
+    </div>
+  );
+}
+
+/** „Womit gerechnet wird“'s panel: the split, the monthly amount, each sale and the typed rates. */
+function BasisPanel({ goal }: { goal: HouseholdGoal }) {
+  const t = useT(goalText);
+  const p = usePlanFormat();
+  const { plan } = useGoalPlan();
+  const shares = plan?.investment_split?.shares ?? null;
+  const monthly = investableMonthly(plan);
+  const rates = plan?.levers.value_change ?? null;
+  return (
+    <div className="stack goal-panel">
+      <p>{shares ? t.basisSplit(p.percentValue(shares.depot), p.percentValue(shares.crypto)) : t.basisNoSplit}</p>
+      {monthly != null ? <p>{t.basisMonthly(monthly.startsWith("-") ? p.signedEuro(monthly) : p.euro(monthly))}</p> : null}
+      {(goal.sales ?? []).map((sale) => (
+        <p key={sale.year}>{t.basisSale(sale.year, p.euro(sale.net_proceeds))}</p>
+      ))}
+      {rates ? <p>{t.basisRates(rates.depot != null ? p.ratio(rates.depot) : t.notTyped, rates.crypto != null ? p.ratio(rates.crypto) : t.notTyped)}</p> : null}
+      <p>
+        <Link href={`/assets#${RATE_LEVER}`} className="button-link secondary">
+          {t.changeRates} ›
+        </Link>
+      </p>
+      <Footnote />
+    </div>
+  );
+}
+
+/** „Nur weniger ausgeben“ (route 4): the spending scenarios and „Eigene Wahl“, each adopted as the
+ * budget from its own panel (`#d-ziel-wants_only`, `#d-ziel-all_equal`, kept from 19c). */
+function LessSpendingPanel({ data, enough, dirty, write }: { data: GoalData; enough: boolean; dirty: boolean; write: Write }) {
+  const t = useT(goalText);
+  const p = usePlanFormat();
   const detail = useDetail(GOAL_DETAIL);
   const goal = data.goal;
   const chosen = goal.choice?.spending ?? null;
   const scenarios = SCENARIO_ORDER.map((kind) => (goal.scenarios ?? []).find((s) => s.kind === kind)).filter((s): s is GoalScenario => s != null);
   const saved = data.current?.levers?.spending_changes ?? [];
-  const due = goal.goal ? p.month(goal.goal.due_month) : "";
+  const budgetName = chosen ? scenarioName(t, chosen) : null;
   return (
-    <section className="card goal-scenarios" aria-labelledby={`${ids}-title`}>
-      <h2 id={`${ids}-title`}>{t.scenariosTitle}</h2>
-      <p className="muted">{t.scenariosIntro}</p>
-      <ul className="goal-scenario-rows">
+    <div className="stack goal-panel">
+      <p>{t.lessSpendingIntro}</p>
+      {budgetName ? (
+        <p>{goal.reached_with_budget ? t.reachedWithBudget(budgetName, p.month(goal.reached_with_budget)) : t.notReachedWithBudget(budgetName)}</p>
+      ) : null}
+      <div className="goal-rows">
         {scenarios.map((s) => (
-          <li key={s.kind}>
-            <a {...detail.linkProps(s.kind)} className="goal-scenario-row">
-              <span className="goal-scenario-text">
-                <span className="goal-scenario-title">
-                  {scenarioName(t, s.kind)}
-                  {chosen === s.kind ? <span className="badge">{t.yourBudget}</span> : null}
-                </span>
-                <span className="muted">{s.kind === "wants_only" ? t.wantsOnlySub : t.allEqualSub}</span>
-                <span className="muted">
-                  {t.cutLine(p.money(s.cut))} · {s.closes ? t.closesText(due) : t.notClosesText(due)}
-                </span>
-              </span>
-              <span className={s.closes ? "badge" : "badge badge-warn"}>{s.closes ? t.closes : t.notCloses}</span>
-            </a>
-          </li>
-        ))}
-        <li className="goal-scenario-own">
-          <div className="goal-scenario-text">
-            <span className="goal-scenario-title">
-              {t.own}
-              {chosen === "own" ? <span className="badge">{t.yourBudget}</span> : null}
+          <a key={s.kind} {...detail.linkProps(s.kind)} className="goal-rw goal-rw-link">
+            <span>
+              {scenarioName(t, s.kind)}
+              {chosen === s.kind ? <span className="goal-tag goal-tag-yes">{t.yourBudget}</span> : null}
+              <span className={s.closes ? "goal-tag goal-tag-yes" : "goal-tag goal-tag-maybe"}>{s.closes ? t.closes : t.notCloses}</span>
             </span>
-            <span className="muted">{t.ownSub}</span>
-            {enough ? (
-              <>
-                <p className="muted">{saved.length > 0 ? t.ownMissing : t.ownNoChanges}</p>
-                <p className="row">
-                  <Link href={HOUSEHOLD_PLAY} className="button-link secondary">
-                    {t.own} ›
-                  </Link>
-                </p>
-                {saved.length > 0 ? (
-                  <Adopt
-                    label={t.ownAdopt}
-                    name={t.own}
-                    replaces={false}
-                    dirty={dirty}
-                    onConfirm={() =>
-                      write((levers) => ({
-                        ...levers,
-                        goal_choice: { ...(levers.goal_choice ?? {}), spending: "own", spending_chosen_on: todayIso() },
-                      }))
-                    }
-                  />
-                ) : null}
-              </>
-            ) : (
-              <p className="muted">{t.ownNeedsMonths}</p>
-            )}
-          </div>
-        </li>
-      </ul>
-    </section>
+            <b>{t.perMonthAmount(`−${p.euro(s.cut)}`)}</b>
+          </a>
+        ))}
+      </div>
+      <div className="goal-c">
+        <CardHead title={t.own} tag={chosen === "own" ? <span className="goal-tag goal-tag-yes">{t.yourBudget}</span> : undefined} />
+        {enough ? (
+          <>
+            <p className="goal-one">{saved.length > 0 ? t.ownMissing : t.ownNoChanges}</p>
+            <Link href={HOUSEHOLD_PLAY} className="goal-lnk">
+              {t.own} ›
+            </Link>
+            {saved.length > 0 ? (
+              <Adopt
+                label={t.ownAdopt}
+                name={t.own}
+                replaces={false}
+                dirty={dirty}
+                onConfirm={() =>
+                  write((levers) => ({
+                    ...levers,
+                    goal_choice: { ...(levers.goal_choice ?? {}), spending: "own", spending_chosen_on: todayIso() },
+                  }))
+                }
+              />
+            ) : null}
+          </>
+        ) : (
+          <p className="goal-one">{t.ownNeedsMonths}</p>
+        )}
+      </div>
+      <Footnote />
+    </div>
   );
 }
 

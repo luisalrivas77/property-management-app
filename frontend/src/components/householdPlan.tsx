@@ -358,6 +358,20 @@ export function PlanProvider({
         setEpoch((value) => value + 1);
       }
     },
+    info: {
+      plan: data?.plan ?? null,
+      mode: data?.mode,
+      // „In Durchspielen ansehen“ (mockup 19f): the balanced route's cuts as Durchspielen's draft.
+      playSpending: enough
+        ? (spending) => {
+            setPlay((previous) => ({
+              ...previous,
+              spending: { ...previous.spending, ...Object.fromEntries(spending.map((change) => [change.code, change])) },
+            }));
+            setPlayRound((n) => n + 1);
+          }
+        : null,
+    },
   });
 
   let ready: PlanReady | null = null;

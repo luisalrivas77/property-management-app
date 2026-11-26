@@ -211,3 +211,337 @@
   padding-top: 12px;
   border-top: 1px solid var(--divider);
 }
+
+/* Mockup 19f as cards (phase 10 §7.11 (h); „Cards, not text“, 25 Nov 2026): a title, one number
+   or two or three small figures, at most one short line; explanations in the side panel. */
+.goal-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+@media (min-width: 1100px) {
+  .goal-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.goal-c {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 13px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.goal-c-main {
+  border: 1.5px solid var(--accent);
+}
+
+.goal-c-excess {
+  border: 1.5px solid var(--accent);
+  background: var(--accent-tint);
+}
+
+.goal-ch {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+a.goal-ch-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.goal-ch h3 {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 800;
+}
+
+.goal-ch-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.goal-go {
+  color: var(--muted);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.goal-n {
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+.goal-one {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.goal-st {
+  display: grid;
+  grid-template-columns: repeat(var(--k, 3), minmax(0, 1fr));
+  gap: 8px;
+}
+
+.goal-st > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.goal-v {
+  font-size: 18px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.goal-v-warn {
+  color: var(--warn);
+}
+
+.goal-l {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.goal-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.goal-rw {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 14.5px;
+  padding: 6px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.goal-rw:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+a.goal-rw-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.goal-rw > span {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.goal-rw > b {
+  white-space: nowrap;
+}
+
+.goal-rw-sub {
+  padding-left: 14px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.goal-rw-sub > b {
+  color: var(--text);
+}
+
+.goal-tag {
+  font-size: 12px;
+  font-weight: 800;
+  border-radius: 12px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+
+.goal-tag-yes {
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+}
+
+.goal-tag-no {
+  background: var(--tag-bg);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.goal-tag-maybe {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.goal-lnk {
+  align-self: flex-start;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+button.goal-lnk-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  min-height: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.goal-btn {
+  align-self: flex-start;
+}
+
+/* The four words, each its own colour (19f): on course, feasible, ambitious, hardly. */
+.goal-word {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 7px;
+  font-weight: 800;
+  font-size: 15px;
+  border-radius: 20px;
+  padding: 5px 12px;
+  background: var(--tag-bg);
+  color: var(--text);
+}
+
+.goal-word i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--mark-empty);
+}
+
+.goal-word[data-word="on_track"] {
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+}
+
+.goal-word[data-word="on_track"] i {
+  background: var(--mark-green);
+}
+
+.goal-word[data-word="feasible"] {
+  background: color-mix(in srgb, #6aa84f 18%, var(--surface));
+  color: var(--text);
+}
+
+.goal-word[data-word="feasible"] i {
+  background: #6aa84f;
+}
+
+.goal-word[data-word="ambitious"] {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.goal-word[data-word="ambitious"] i {
+  background: var(--mark-amber);
+}
+
+.goal-word[data-word="hardly"] {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.goal-word[data-word="hardly"] i {
+  background: var(--danger);
+}
+
+a.goal-word-link {
+  align-self: flex-start;
+  text-decoration: none;
+}
+
+.goal-chart {
+  width: 100%;
+  height: 92px;
+  display: block;
+}
+
+.goal-panel p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.goal-note,
+.goal-panel p.goal-note {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.goal-words {
+  display: flex;
+  flex-direction: column;
+}
+
+.goal-wrow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.goal-wrow:first-child {
+  border-top: 0;
+}
+
+.goal-wrow .goal-word {
+  font-size: 13px;
+}
+
+.goal-wrow-cur {
+  background: var(--surface);
+  border: 1.5px solid var(--accent);
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+
+.goal-wrow-cur + .goal-wrow {
+  border-top: 0;
+}
+
+.goal-today {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+
+.goal-sources {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.goal-sources li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+}
