@@ -4,6 +4,8 @@ Every field of every form the guided tab shows has help in both languages, and n
 does; a year without its own file reuses the latest earlier one, marked reused_from.
 """
 
+import re
+
 import pytest
 
 from hausbuch.rules.errors import TAX_NO_RULE_SET, RuleError
@@ -59,6 +61,38 @@ def test_the_payslip_names_no_line_number_and_its_source_is_not_official():
     for entry in help_.forms["payslip"].values():
         assert entry.source == "payslip"
         assert "Nr." not in entry.de.where
+
+
+def _models() -> dict[str, type]:
+    from hausbuch.schemas.property import OwnerCreate
+
+    models: dict[str, type] = {
+        kind.value: model
+        for kind, model in RETURN_INPUT_VALUES.items()
+        if kind is not ReturnInputKind.NO_PAY
+    }
+    models["expected_gross_pay"] = ExpectedGrossPay
+    models["owner"] = OwnerCreate
+    return models
+
+
+def test_no_required_field_is_rare():
+    """A rare field goes behind „Weitere Angaben“ (D294 item 4); a required one there would
+    leave a form that cannot be saved without opening it."""
+    models = _models()
+    for form, fields in registry.field_help(2026).forms.items():
+        for field, entry in fields.items():
+            if entry.rare:
+                assert not models[form].model_fields[field].is_required(), (form, field)
+
+
+def test_only_the_wage_certificate_sample_is_cited_by_line_number():
+    """Line numbers are named only where an official sample was read (the BMF's
+    Lohnsteuerbescheinigung 2026); every other form is cited by its section (D294)."""
+    for form, fields in registry.field_help(2026).forms.items():
+        for field, entry in fields.items():
+            if re.search(r"(Nr\.|Zeile) ?\d", entry.de.where):
+                assert entry.source == "lstb_2026", (form, field)
 
 
 def test_a_later_year_reuses_the_latest_file():

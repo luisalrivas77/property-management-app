@@ -264,7 +264,7 @@ forms:
   # --- Werbungskosten (Anlage N) ------------------------------------------------------------
   commute:
     kind:
-      rare: true
+      rare: false
       source: anleitung_n
       de: {what: "Ob der Weg zur ersten Tätigkeitsstätte führt (der Normalfall) oder zu einem Sammelpunkt bzw. weiträumigen Tätigkeitsgebiet.", where: "Arbeitsvertrag oder Auskunft des Arbeitgebers; Anlage N, Abschnitt Wege zwischen Wohnung und erster Tätigkeitsstätte (siehe Anleitung zur Anlage N).", example: "Erste Tätigkeitsstätte"}
       en: {what: "Whether the route leads to the first place of work (the usual case) or to a collection point or wide work area.", where: "Employment contract or the employer's word; Anlage N, section on journeys between home and first place of work (see the instructions for the Anlage N).", example: "First place of work"}
@@ -510,7 +510,7 @@ forms:
   vorsorge_override:
     pension:
       rare: false
-      source: anleitung_est
+      source: lstb_2026
       de: {what: "Eigene Beiträge zur Rentenversicherung im Jahr, wenn sie von der Bescheinigung abweichen.", where: "Lohnsteuerbescheinigung Nr. 23 a) oder Beitragsbescheinigung; Anlage Vorsorgeaufwand (siehe Anleitung).", example: "4.487,25 €"}
       en: {what: "Your own pension contributions for the year, when they differ from the certificate.", where: "Lohnsteuerbescheinigung line 23 a) or a contribution statement; Anlage Vorsorgeaufwand (see the instructions).", example: "€4,487.25"}
     health_care_basis:
@@ -519,7 +519,7 @@ forms:
       de: {what: "Beiträge zur Basis-Kranken- und Pflegeversicherung im Jahr, z. B. bei privater Versicherung.", where: "Beitragsbescheinigung der Krankenversicherung; Anlage Vorsorgeaufwand (siehe Anleitung).", example: "5.300,00 €"}
       en: {what: "The year's basic health and care insurance contributions, for private cover say.", where: "The health insurer's contribution statement; Anlage Vorsorgeaufwand (see the instructions).", example: "€5,300.00"}
     other:
-      rare: true
+      rare: false
       source: anleitung_est
       de: {what: "Weitere Vorsorgeaufwendungen, z. B. Arbeitslosenversicherung oder Wahlleistungen der Krankenversicherung.", where: "Beitragsbescheinigungen; Anlage Vorsorgeaufwand (siehe Anleitung).", example: "627,25 €"}
       en: {what: "Other provident costs, such as unemployment insurance or optional health cover.", where: "Contribution statements; Anlage Vorsorgeaufwand (see the instructions).", example: "€627.25"}
@@ -593,7 +593,7 @@ forms:
 
   special_expense:
     expense_class:
-      rare: true
+      rare: false
       source: anleitung_est
       de: {what: "Die Art der Sonderausgabe; derzeit nur Spenden.", where: "Anlage Sonderausgaben, Zuwendungen (siehe Anleitung).", example: "Spende"}
       en: {what: "The kind of special expense; donations only for now.", where: "Anlage Sonderausgaben, donations (see the instructions).", example: "Donation"}

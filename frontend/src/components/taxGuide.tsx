@@ -57,7 +57,6 @@ import {
   POINT_DETAIL_KIND,
   propertyAnchorHref,
   payInputsHref,
-  questionnaireHref,
   taxFormHref,
   taxGuideHref,
   taxStepHref,
