@@ -7558,6 +7558,95 @@
         }
       }
     },
+    "/api/household-goal/plan": {
+      "get": {
+        "summary": "Household Goal Plan",
+        "operationId": "household_goal_plan_api_household_goal_plan_get",
+        "parameters": [
+          {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PlanView",
+              "default": "own"
+            }
+          },
+          {
+            "name": "round_amounts",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Round Amounts"
+            }
+          },
+          {
+            "name": "accounts",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Accounts"
+            }
+          },
+          {
+            "name": "wants",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Wants"
+            }
+          },
+          {
+            "name": "risks",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Risks"
+            }
+          },
+          {
+            "name": "assumptions",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Assumptions"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/household-goal/preview": {
       "post": {
         "summary": "Household Goal Preview",
@@ -24246,7 +24335,8 @@
           "scenario_check",
           "rate_missing",
           "income_change_link",
-          "uncategorized_lines"
+          "uncategorized_lines",
+          "living_area_missing"
         ],
         "title": "HealthTodoCode"
       },
@@ -31275,6 +31365,27 @@
         "title": "PayslipExtraction",
         "description": "Gehaltsabrechnung: one month, with the month column and the year-to-date column\n(Jahreswerte / kumuliert). Net pay and the bank account are not read."
       },
+      "PlanAssumptions": {
+        "properties": {
+          "rates": {
+            "$ref": "#/components/schemas/PlanRates"
+          },
+          "properties": {
+            "items": {
+              "$ref": "#/components/schemas/PlanPropertyAssumption"
+            },
+            "type": "array",
+            "title": "Properties"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rates"
+        ],
+        "title": "PlanAssumptions",
+        "description": "Card 4 „Eure Annahmen“: nothing the app chose."
+      },
       "PlanClass": {
         "type": "string",
         "enum": [
@@ -31406,6 +31517,233 @@
         "title": "PlanExplanationRequest",
         "description": "POST /household-plan/explanation („Neu erklären“): the scenario, else the default."
       },
+      "PlanGoalCard": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/GoalKind"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "due_month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Due Month"
+          },
+          "word": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalWord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value_today": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Today"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "target",
+          "due_month",
+          "word",
+          "value_today",
+          "percent"
+        ],
+        "title": "PlanGoalCard",
+        "description": "Card 1, the green goal card of 19f: target, month, word and the share reached."
+      },
+      "PlanHeute": {
+        "properties": {
+          "net_worth": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Net Worth"
+          },
+          "reserve": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Reserve"
+          },
+          "reserve_months": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Months"
+          },
+          "reserve_full": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Full"
+          },
+          "saved_mean": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Saved Mean"
+          },
+          "window_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window From"
+          },
+          "window_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window To"
+          },
+          "reserve_accounts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reserve Accounts"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "net_worth",
+          "reserve",
+          "reserve_months",
+          "reserve_full",
+          "saved_mean"
+        ],
+        "title": "PlanHeute",
+        "description": "Card 2 „Heute“: the net worth, the reserve in months of its need (D305) and the mean saved\nper month of the window; the reserve's accounts (D304) with their provider, „Für euch“ or\nwith the switch `accounts` only."
+      },
+      "PlanIncomeGap": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "months": {
+            "type": "integer",
+            "title": "Months"
+          },
+          "reached": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reached"
+          },
+          "delay_months": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delay Months"
+          },
+          "not_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not Until"
+          },
+          "drawn": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Drawn",
+            "default": "0.00"
+          },
+          "used_up": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Up"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "available",
+          "months"
+        ],
+        "title": "PlanIncomeGap",
+        "description": "„Einkommenslücke“: months with no income, the reserve paying first, then the invested\nmoney (`drawn`); `used_up` when even that is short."
+      },
       "PlanMonth": {
         "properties": {
           "month": {
@@ -31446,6 +31784,87 @@
         "title": "PlanMonth",
         "description": "One future month of §7.1; `spending_delta` is §7.6 (3)'s Δ(k), Σ (planned − mean) over\nthe spending changes in force, already inside `free`."
       },
+      "PlanOtherRoutes": {
+        "properties": {
+          "more_saving": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "More Saving"
+          },
+          "needed_return": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Needed Return"
+          },
+          "less_spending": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Less Spending"
+          },
+          "return_windows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return Windows"
+          },
+          "return_reached_windows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return Reached Windows"
+          },
+          "return_verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalVerdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "more_saving",
+          "needed_return",
+          "less_spending"
+        ],
+        "title": "PlanOtherRoutes",
+        "description": "Card 6 „Andere Wege“: routes 2, 3 and 4 of §7.11 (c), one figure each; route 3's history\n(windows reached, verdict) for its panel."
+      },
       "PlanOverride": {
         "properties": {
           "plan_key": {
@@ -31478,6 +31897,767 @@
         ],
         "title": "PlanOverride",
         "description": "Sets a detected plan's monthly amount, or drops it (D245)."
+      },
+      "PlanPage": {
+        "properties": {
+          "view": {
+            "$ref": "#/components/schemas/PlanView"
+          },
+          "switches": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanSwitches"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "word": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalWord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalIssue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanGoalCard"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "heute": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanHeute"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanRoute"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assumptions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanAssumptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "risks": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanRisks"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "other_routes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanOtherRoutes"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "this_month": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanThisMonth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "todos": {
+            "items": {
+              "$ref": "#/components/schemas/HealthTodo"
+            },
+            "type": "array",
+            "title": "Todos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "view",
+          "word"
+        ],
+        "title": "PlanPage",
+        "description": "`GET /household-goal/plan`. `goal` None while no goal is set (word `none`); the other\ncards None while the goal has no word (`issue` says why, `todos` what is missing). In the\nshared view `risks` or `assumptions` are absent when their switch is off, and the to-dos\nalways."
+      },
+      "PlanPropertyAssumption": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PropertyKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kept": {
+            "type": "boolean",
+            "title": "Kept"
+          },
+          "sale_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sale Year"
+          },
+          "value_change": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,6})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Change"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "kept",
+          "sale_year",
+          "value_change"
+        ],
+        "title": "PlanPropertyAssumption",
+        "description": "A property in the walk: kept (D301 (a) 5) or sold in its scenario's year, and its\nscenario's yearly value change. `kind` names it generically („Wohnung“); `label` only „Für\neuch“, since a property's label can be its address."
+      },
+      "PlanRates": {
+        "properties": {
+          "depot": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depot"
+          },
+          "crypto": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crypto"
+          },
+          "reserve": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PlanRates",
+        "description": "The yearly rates the route walks (typed by the household, D247; the reserve's D304)."
+      },
+      "PlanRepair": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanRepairReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "per_m2": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per M2"
+          },
+          "years": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Years"
+          },
+          "by_property": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "type": "object",
+            "title": "By Property"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "reached": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reached"
+          },
+          "delay_months": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delay Months"
+          },
+          "not_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not Until"
+          },
+          "used_up": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Up"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "available"
+        ],
+        "title": "PlanRepair",
+        "description": "„Große Reparatur“: living area × the year's maintenance rate × `years`, paid once."
+      },
+      "PlanRepairReason": {
+        "type": "string",
+        "enum": [
+          "no_property",
+          "no_living_area",
+          "no_rate"
+        ],
+        "title": "PlanRepairReason"
+      },
+      "PlanRisks": {
+        "properties": {
+          "base_reached": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Reached"
+          },
+          "weak_markets": {
+            "$ref": "#/components/schemas/PlanWeakMarkets"
+          },
+          "income_gap": {
+            "$ref": "#/components/schemas/PlanIncomeGap"
+          },
+          "repair": {
+            "$ref": "#/components/schemas/PlanRepair"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/PlanSource"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "todos": {
+            "items": {
+              "$ref": "#/components/schemas/HealthTodo"
+            },
+            "type": "array",
+            "title": "Todos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "base_reached",
+          "weak_markets",
+          "income_gap",
+          "repair"
+        ],
+        "title": "PlanRisks",
+        "description": "Card 5 „Wenn es schlechter läuft“: the route run again under three changes, each the\nmonths it moves the goal. The to-dos (a property's living area) never in the shared view."
+      },
+      "PlanRoute": {
+        "properties": {
+          "on_track": {
+            "type": "boolean",
+            "title": "On Track"
+          },
+          "reached": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reached"
+          },
+          "without_route": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Without Route"
+          },
+          "gap": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gap"
+          },
+          "saving_extra": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saving Extra"
+          },
+          "by_class": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/PlanClass"
+            },
+            "type": "object",
+            "title": "By Class"
+          },
+          "cut": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cut"
+          },
+          "wants": {
+            "items": {
+              "$ref": "#/components/schemas/PlanWant"
+            },
+            "type": "array",
+            "title": "Wants"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "on_track",
+          "reached",
+          "without_route",
+          "gap",
+          "saving_extra",
+          "cut"
+        ],
+        "title": "PlanRoute",
+        "description": "Card 3 „Der Plan“, the main route (D303, „Ausgewogener Weg“): the extra invested per\nmonth and its split by class, the wants' cut and the month reached; „auf Kurs“ without\nmoves. `without_route` the value at the due month without change, `gap` the target less it."
+      },
+      "PlanSource": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "read_on": {
+            "type": "string",
+            "title": "Read On"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "url",
+          "read_on"
+        ],
+        "title": "PlanSource",
+        "description": "A source of a size in risks.yaml (the maintenance rate)."
+      },
+      "PlanStep": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/PlanStepKind"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "done": {
+            "type": "boolean",
+            "title": "Done"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "amount",
+          "done"
+        ],
+        "title": "PlanStep"
+      },
+      "PlanStepKind": {
+        "type": "string",
+        "enum": [
+          "invest",
+          "wants_budget"
+        ],
+        "title": "PlanStepKind"
+      },
+      "PlanSwitches": {
+        "properties": {
+          "round_amounts": {
+            "type": "boolean",
+            "title": "Round Amounts",
+            "default": true
+          },
+          "accounts": {
+            "type": "boolean",
+            "title": "Accounts",
+            "default": false
+          },
+          "wants": {
+            "type": "boolean",
+            "title": "Wants",
+            "default": false
+          },
+          "risks": {
+            "type": "boolean",
+            "title": "Risks",
+            "default": true
+          },
+          "assumptions": {
+            "type": "boolean",
+            "title": "Assumptions",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PlanSwitches",
+        "description": "„Was geteilt wird“ (D306): the five switches the shared view was built with."
+      },
+      "PlanThisMonth": {
+        "properties": {
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/PlanStep"
+            },
+            "type": "array",
+            "title": "Steps"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "of": {
+            "type": "integer",
+            "title": "Of"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "done",
+          "of"
+        ],
+        "title": "PlanThisMonth",
+        "description": "Card 7 „Diesen Monat“: the route's steps for the running month, at most two."
+      },
+      "PlanView": {
+        "type": "string",
+        "enum": [
+          "own",
+          "share"
+        ],
+        "title": "PlanView"
+      },
+      "PlanWant": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "from": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "From"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "To"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "from",
+          "to"
+        ],
+        "title": "PlanWant",
+        "description": "A want the route lowers: its measured mean (`from`) and its budget on the route (`to`)."
+      },
+      "PlanWeakMarkets": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalRouteReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "window_years": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Years"
+          },
+          "rates": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/PlanClass"
+            },
+            "type": "object",
+            "title": "Rates"
+          },
+          "worst": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/PlanClass"
+            },
+            "type": "object",
+            "title": "Worst"
+          },
+          "capped": {
+            "items": {
+              "$ref": "#/components/schemas/PlanClass"
+            },
+            "type": "array",
+            "title": "Capped"
+          },
+          "left_out": {
+            "items": {
+              "$ref": "#/components/schemas/GoalLeftOut"
+            },
+            "type": "array",
+            "title": "Left Out"
+          },
+          "reached": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reached"
+          },
+          "delay_months": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delay Months"
+          },
+          "not_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not Until"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "available"
+        ],
+        "title": "PlanWeakMarkets",
+        "description": "„Schwache Märkte“: per kind the worst window of the goal's years in its own history\n(`worst`), walked never above the typed rate (`rates`, `capped`)."
       },
       "PlayedChange": {
         "properties": {

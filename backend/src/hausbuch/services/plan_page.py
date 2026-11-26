@@ -194,8 +194,8 @@ def _page(
     data: dict[str, Any] = {"view": view, "word": word, "issue": issue, **(cards or {})}
     if view is PlanView.SHARE:
         data["switches"] = switches
-    elif todos is not None:
-        data["todos"] = todos
+    else:
+        data["todos"] = todos or []
     return PlanPage.model_validate(data)
 
 
