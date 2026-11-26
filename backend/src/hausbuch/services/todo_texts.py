@@ -391,6 +391,13 @@ PATTERNS = i18n.Patterns(
             "On “{label}”, {n} transactions await your confirmation; together they do not"
             " change the holding.",
         ),
+        # services/plan_page.py: „Euer Plan“'s repair without a property's living area.
+        (
+            "Für die Wohnung ist keine Wohnfläche eingetragen; ohne sie rechnet „Wenn es"
+            " schlechter läuft“ keine große Reparatur.",
+            "No living area is entered for the flat; without it, “If things go worse” sizes no"
+            " major repair.",
+        ),
         # rules/goal/goal.py: the walk's assumption for a property kept without a scenario.
         (
             "Annahme: Wohnung wird behalten, Wert unverändert.",
@@ -435,6 +442,7 @@ ACTIONS = i18n.Patterns(
         ("Darlehen öffnen", "Open loan"),
         ("Eigentümer festlegen", "Set owners"),
         ("Transaktionen prüfen", "Review transactions"),
+        ("Wohnfläche eintragen", "Enter living area"),
     ],
 )
 
