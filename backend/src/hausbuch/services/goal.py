@@ -30,6 +30,7 @@ the coins' committed series and the funds series of the workspace's newest downl
 (services.reference_returns), none before the first (route 3 then says `series_missing`).
 """
 
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
@@ -49,11 +50,17 @@ from hausbuch.schemas.goal import GoalIssue, HouseholdGoal
 from hausbuch.schemas.health import Reserve
 from hausbuch.schemas.household import NetWorthClass
 from hausbuch.schemas.net_worth import NetWorth
-from hausbuch.schemas.plan import GoalKind, HouseholdLevers, HouseholdScenario, SurplusKey
+from hausbuch.schemas.plan import (
+    GoalKind,
+    HouseholdLevers,
+    HouseholdPlan,
+    HouseholdScenario,
+    SurplusKey,
+)
 
 from . import reference_returns
 from .health import MonthRead, _reserve_balances, _window, key_figures, levers_one_off_codes
-from .plan import _net_worth, _scenario, advice_mode, plan_parts, previewed
+from .plan import PlanParts, _net_worth, _scenario, advice_mode, plan_parts, previewed
 from .plan_inputs import PlanInputs
 
 
@@ -89,6 +96,59 @@ def _goal(
     reads: dict[str, MonthRead],
     inputs: PlanInputs,
 ) -> HouseholdGoal:
+    built = goal_inputs(conn, today, row, levers, reads, inputs)
+    if isinstance(built, HouseholdGoal):
+        return built
+    return household_goal(built.goal)
+
+
+@dataclass(frozen=True)
+class GoalReads:
+    """What the goal read beside its inputs, for „Euer Plan“ (services.plan_page): the plan,
+    its parts and today's net worth."""
+
+    goal: GoalInputs
+    plan: HouseholdPlan
+    parts: PlanParts
+    now: NetWorth
+
+
+def reserve_today(
+    conn: Connection,
+    today: date,
+    levers: HouseholdLevers,
+    reads: dict[str, MonthRead],
+    inputs: PlanInputs,
+    now: NetWorth,
+) -> Reserve:
+    """The reserve on today's balances (D237): a reserve goal's value today."""
+    rows = inputs.part(
+        ("reserve_balances", ("net_worth", today)), lambda c: _reserve_balances(c, now)
+    )
+    reserve = key_figures(
+        conn,
+        reads,
+        _window(reads),
+        levers,
+        balances=now,
+        debt_figure=None,
+        today=today,
+        balance_rows=rows,
+    ).reserve
+    assert reserve is not None  # three closed months, as parts
+    return reserve
+
+
+def goal_inputs(
+    conn: Connection,
+    today: date,
+    row: HouseholdScenario | None,
+    levers: HouseholdLevers,
+    reads: dict[str, MonthRead],
+    inputs: PlanInputs,
+) -> HouseholdGoal | GoalReads:
+    """The goal's inputs and what they were read from; the answer itself while the plan has
+    fewer than three closed months."""
     assert levers.goal is not None
     codes = levers_one_off_codes(levers)  # phase 10 D307
     plan, parts = plan_parts(conn, today, row, levers, reads, inputs)
@@ -106,47 +166,32 @@ def _goal(
     if levers.goal.kind is GoalKind.NET_WORTH:
         value_today = now.total
     else:
-        rows = inputs.part(
-            ("reserve_balances", ("net_worth", today)), lambda c: _reserve_balances(c, now)
-        )
-        reserve = key_figures(
-            conn,
-            reads,
-            _window(reads),
-            levers,
-            balances=now,
-            debt_figure=None,
-            today=today,
-            balance_rows=rows,
-        ).reserve
-        assert reserve is not None  # three closed months, as parts
-        value_today = reserve.amount
+        value_today = reserve_today(conn, today, levers, reads, inputs, now).amount
     classes = {
         code: cls
         for code in parts.means
         if (cls := B.class_of(code, levers.budget_class_overrides, codes)) is not None
     }
     todos = () if parts.projection is not None or plan.projection is None else plan.projection.todos
-    return household_goal(
-        GoalInputs(
-            today=today,
-            goal=levers.goal,
-            choice=levers.goal_choice,
-            heute=mean_cent([m.saved for m in parts.months]),
-            value_today=value_today,
-            need=parts.reserve.need,
-            code_means=parts.means,
-            classes=classes,
-            household_changes=tuple(SP.in_play(levers.spending_changes, codes)),
-            projection=parts.projection,
-            todos=tuple(todos),
-            mean_income=plan.surplus.amount(SurplusKey.MEAN_INCOME),
-            wants_max=levers.budget_targets.wants_max,
-            mode=inputs.part(("advice_mode",), advice_mode),
-            invested=_invested(inputs, now, _reserve_depots(parts.reserve)),
-            history=_history(inputs),
-        )
+    gi = GoalInputs(
+        today=today,
+        goal=levers.goal,
+        choice=levers.goal_choice,
+        heute=mean_cent([m.saved for m in parts.months]),
+        value_today=value_today,
+        need=parts.reserve.need,
+        code_means=parts.means,
+        classes=classes,
+        household_changes=tuple(SP.in_play(levers.spending_changes, codes)),
+        projection=parts.projection,
+        todos=tuple(todos),
+        mean_income=plan.surplus.amount(SurplusKey.MEAN_INCOME),
+        wants_max=levers.budget_targets.wants_max,
+        mode=inputs.part(("advice_mode",), advice_mode),
+        invested=_invested(inputs, now, _reserve_depots(parts.reserve)),
+        history=_history(inputs),
     )
+    return GoalReads(goal=gi, plan=plan, parts=parts, now=now)
 
 
 # --- Route 3's inputs (§7.11 (c) 3, D310 amended) ----------------------------------------------
