@@ -1142,6 +1142,13 @@ function StepScreen({
 function TopicSummary({ data, steps: list, onJump }: { data: FlowData; steps: Step[]; onJump: (index: number) => void }) {
   const t = useT(questionnaireText);
   const open = list.map((s, at) => [s, at] as const).filter(([s]) => isOpen(data.view, s.slot));
+  // What the year's „Ja“ answers leave to type by hand in ELSTER, for this topic's questions only.
+  const own = new Set(
+    list.flatMap((s) =>
+      (s.question.targets ?? []).flatMap((target) => (target.kind === "reminder" && target.reminder_de ? [target.reminder_de] : [])),
+    ),
+  );
+  const reminders = data.view.reminders.filter((text) => own.has(text));
   return (
     <div className="fragen-card stack">
       <p className="fragen-question">{open.length === 0 ? t.topicDone : t.stillOpen(open.length)}</p>
@@ -1155,6 +1162,16 @@ function TopicSummary({ data, steps: list, onJump }: { data: FlowData; steps: St
             </li>
           ))}
         </ul>
+      ) : null}
+      {reminders.length > 0 ? (
+        <>
+          <h3>{t.byHand}</h3>
+          <ul>
+            {reminders.map((text) => (
+              <li key={text}>{text}</li>
+            ))}
+          </ul>
+        </>
       ) : null}
       <div className="fragen-answers">
         <button type="button" className="secondary" onClick={() => onJump(0)}>

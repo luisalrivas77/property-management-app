@@ -171,13 +171,16 @@ test("the 2026 questions are walked to all answered, and 2027 carries and reconf
   await expect(yearQuestions.locator("h2.fragen-question, p.fragen-question").first()).toBeVisible();
   await walk();
   expect([...seen].sort()).toEqual(["Fragen für A", "Fragen für B", "Fragen für den Haushalt", "Fragen zur Immobilie Wohnung Fragen"]);
-  // Back to the Werbungskosten, whose questions are all answered.
+  // Back to the Werbungskosten, whose questions are all answered, with what a „Ja“ leaves to type
+  // by hand.
   await page.goto(`/tax/${YEAR}?tab=angaben&thema=work_costs`);
   await expect(page.locator("p.fragen-question")).toHaveText("Alle Fragen dieses Themas sind beantwortet.");
+  await expect(page.getByText("Berufliche Umzugskosten von Hand in der Anlage N eintragen.")).toBeVisible();
 
   // Change two answers. An answered slot shows its answer and "Antwort ändern".
   await page.getByRole("button", { name: "Zur ersten Frage" }).click();
   await expect(page.getByText(/^Frage 1 von \d+$/)).toBeVisible();
+  await expect(page.getByText("Ihre Antwort:", { exact: false }).first()).toBeVisible();
   const forward = async (text: string) => {
     for (let step = 0; step < 20; step += 1) {
       const { question, position } = await screen(page);
