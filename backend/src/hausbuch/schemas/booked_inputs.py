@@ -48,6 +48,17 @@ class ChildChoice(Schema):
     born_on: date
 
 
+class BookedPayment(Schema):
+    """One payment a proposal sums, for „Zahlungen ansehen“: its booking date, the amount as on
+    the account (signed) and the payee's name, never the purpose text. Filled by the service
+    (services/return_inputs.booked_input_proposals); the rule leaves it empty."""
+
+    allocation_id: UUID
+    booking_date: date
+    amount: Money
+    payee: str | None = None
+
+
 class BookedProposal(Schema):
     """One proposed return input from the year's bookings.
 
@@ -69,6 +80,8 @@ class BookedProposal(Schema):
     difference: NonNegativeMoney
     payments: int = Field(ge=1)
     allocation_ids: list[UUID]
+    # The payments behind allocation_ids, for display only (filled by the service).
+    lines: list[BookedPayment] = Field(default_factory=list)
     payload: dict[str, Any]
     needs: list[BookedNeed] = Field(default_factory=list)
     benefit: str | None = None  # the benefit kind the lines name (benefit group)

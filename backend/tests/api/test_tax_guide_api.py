@@ -276,8 +276,12 @@ def test_a_booked_donation_is_a_proposal_whose_payload_posts_verbatim(client_a, 
     assert proposal["difference"] == line["amount"].lstrip("-")
     assert proposal["allocation_ids"]
     assert proposal["ask_party"] is True
-    # The purpose text never leaves the server: the payee's name only.
-    assert not {"purpose", "text", "lines"} & set(proposal)
+    # The purpose text never leaves the server: the payee's name only („Zahlungen ansehen“).
+    assert not {"purpose", "text"} & set(proposal)
+    (shown,) = proposal["lines"]
+    assert set(shown) == {"allocation_id", "booking_date", "amount", "payee"}
+    assert (shown["booking_date"], shown["amount"]) == (line["booking_date"], line["amount"])
+    assert [shown["allocation_id"]] == proposal["allocation_ids"]
     assert _proposal_points(client_b, "return.donation_booked") == []  # RLS
 
     body = proposal["payload"]

@@ -81,7 +81,7 @@ from hausbuch.rules.tax.booked_inputs import CHILDCARE_MAX_AGE, PROPOSING_CODES,
 from hausbuch.rules.tax.questionnaire import reminders
 from hausbuch.rules.tax.return_estimate import return_estimate
 from hausbuch.schemas.allocation import AllocationCategory
-from hausbuch.schemas.booked_inputs import BookedLine, BookedProposal
+from hausbuch.schemas.booked_inputs import BookedLine, BookedPayment, BookedProposal
 from hausbuch.schemas.employment import (
     HOUSEHOLD_KINDS,
     AnlageNDraft,
@@ -375,13 +375,36 @@ def booked_input_proposals(conn: Connection, tax_year: int) -> list[BookedPropos
     rules/tax/booked_inputs over the owners' and household's current rows and the year's
     lines. Writes nothing; „Übernehmen“ posts the proposal's payload to /return-inputs."""
     care = registry.tariff(tax_year).childcare
-    return booked_proposals(
+    lines = booked_lines(conn, tax_year)
+    proposals = booked_proposals(
         tax_year,
         owner_facts(conn, tax_year),
         household_rows(conn),
-        booked_lines(conn, tax_year),
+        lines,
         childcare_max_age=CHILDCARE_MAX_AGE if care is None else care.max_age,
     )
+    # „Zahlungen ansehen“: each proposal's payments by date, amount and payee (never the
+    # purpose text, which may name people or account numbers).
+    by_id = {line.allocation_id: line for line in lines}
+    return [
+        p.model_copy(
+            update={
+                "lines": [
+                    BookedPayment(
+                        allocation_id=line.allocation_id,
+                        booking_date=line.booking_date,
+                        amount=line.amount,
+                        payee=line.payee,
+                    )
+                    for line in sorted(
+                        (by_id[i] for i in p.allocation_ids if i in by_id),
+                        key=lambda x: (x.booking_date, str(x.allocation_id)),
+                    )
+                ]
+            }
+        )
+        for p in proposals
+    ]
 
 
 # --- Writes ------------------------------------------------------------------------------
