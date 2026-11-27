@@ -36,6 +36,7 @@ import { todayIso } from "./format";
 import { HealthTodoList } from "./healthFigures";
 import { currentDefault, fillLevers, loadScenarioHistory, saveDefaultScenario } from "./healthShared";
 import { CardHead, GOAL_FORM_HREF, GOAL_PAGE, loadGoal, Stat, Stats, WordPill } from "./householdGoal";
+import { SplitOnPlanPage } from "./investmentSplit";
 import { ALLOCATION_CATEGORY } from "./labels";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
 import { Loading } from "./ui";
@@ -539,7 +540,7 @@ function Panel({
   if (id === P.share) body = share ? <SharePanel code={code} /> : null;
   else if (id === P.goal) body = <GoalPanel plan={data} />;
   else if (id === P.heute && data.heute) body = <HeutePanel plan={data} />;
-  else if (id === P.route && data.plan) body = <RoutePanel plan={data} />;
+  else if (id === P.route && data.plan) body = <RoutePanel plan={data} onWritten={onWritten} />;
   else if (id === P.assumptions && data.assumptions) body = <AssumptionsPanel plan={data} />;
   else if (id === P.risks && data.risks) body = <RisksPanel plan={data} />;
   else if (id === P.other && data.other_routes) body = <OtherPanel plan={data} />;
@@ -638,7 +639,7 @@ function HeutePanel({ plan }: { plan: PlanPage }) {
   );
 }
 
-function RoutePanel({ plan }: { plan: PlanPage }) {
+function RoutePanel({ plan, onWritten }: { plan: PlanPage; onWritten: () => void }) {
   const t = useT(planPageText);
   const p = usePlanFormat();
   const route = plan.plan!;
@@ -697,6 +698,8 @@ function RoutePanel({ plan }: { plan: PlanPage }) {
           ) : null}
         </>
       )}
+      {/* §7.11 (i) item 10: „Aufteilung ändern“, „Für euch“ only; the shared view writes nothing. */}
+      {plan.view === "own" ? <SplitOnPlanPage onWritten={onWritten} /> : null}
       <Link href={GOAL_PAGE} className="goal-lnk">
         {t.sources} ›
       </Link>

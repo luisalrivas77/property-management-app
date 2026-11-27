@@ -10,6 +10,10 @@
 // - „Für alle übernehmen“ sets one month on every changed row; „Zurücksetzen“ drops the draft
 //   and stores nothing.
 // - Phone width, light and dark: no sideways scroll; a screenshot of the tab.
+// - „Aufteilung ändern“ in Haushalt › Ziel's „Womit gerechnet wird“: prefilled from the
+//   purchases, one share filling the other, saved with every other lever, held while the levers'
+//   draft is unsaved (§7.11 (i) item 10).
+// - „Noch nicht angelegt“ on Anlagen › Übersicht, per kind and in generic mode (item 11).
 import type { Page, Route } from "@playwright/test";
 
 import type { components } from "../src/api/types";
@@ -558,4 +562,144 @@ test("on the phone, Durchspielen scrolls no page sideways, light and dark", asyn
   await expect(effect(page, "investable")).toBeVisible();
   expect(await pageWidth()).toBeLessThanOrEqual(1280);
   await page.screenshot({ path: test.info().outputPath("durchspielen-desktop.png"), fullPage: true });
+});
+
+// „Aufteilung ändern“ in „Womit gerechnet wird“ on Haushalt › Ziel (phase 10 §7.11 (i) item 10,
+// (a) 2): GET /household-plan carries the effective split and the prefill from the purchases;
+// the effective split follows the saved lever once one is stored (invented figures).
+const PREFILL = { depot: "80.0", crypto: "20.0" };
+async function mockSplit(page: Page) {
+  const mocks = await mockPlan(page);
+  await serve(page, "/api/household-plan", () => {
+    const levers = { ...LEVERS, ...(mocks.posted.at(-1)?.levers ?? {}) };
+    const saved = levers.investment_split ?? null;
+    const id = mocks.posted.length ? `00000000-0000-4000-8000-000000000b1${mocks.posted.length}` : SAVED_ID;
+    return {
+      ...plan(levers, id),
+      investment_split: saved
+        ? { source: "saved", shares: saved, left_out: [], todos: [] }
+        : { source: "savings_plans", shares: PREFILL, left_out: [], todos: [] },
+      investment_split_prefill: { from_month: WINDOW[0] ?? "", to_month: WINDOW[2] ?? "", bought: { depot: "2400.00", crypto: "600.00" }, split: PREFILL },
+    } satisfies HouseholdPlan;
+  });
+  return mocks;
+}
+
+function sidePanel(page: Page, name: string) {
+  return page.getByRole("complementary", { name }).or(page.getByRole("dialog", { name }));
+}
+
+test("„Aufteilung ändern“: prefilled from the purchases, one share fills the other, saved with every other lever", async ({ page, signedIn }) => {
+  void signedIn;
+  const { posted } = await mockSplit(page);
+
+  await page.goto("/household?tab=ziel#d-ziel-basis");
+  const split = sidePanel(page, "Womit gerechnet wird").getByTestId("investment-split");
+  await expect(split).toContainText(/80\s?% in Fonds, 20\s?% in Krypto/);
+  await expect(split).toContainText("Bis ihr eine Aufteilung speichert, rechnet der Plan mit dem Mix eurer Sparpläne.");
+
+  await split.getByRole("button", { name: "Aufteilung ändern" }).click();
+  const funds = split.getByLabel("Fonds (%)");
+  const crypto = split.getByLabel("Krypto (%)");
+  await expect(funds).toHaveValue("80");
+  await expect(crypto).toHaveValue("20");
+  await expect(split).toContainText("Vorausgefüllt aus dem, was ihr von");
+
+  // Typing one share fills the other; a decimal comma is kept.
+  await crypto.fill("35");
+  await expect(funds).toHaveValue("65");
+  await funds.fill("62,5");
+  await expect(crypto).toHaveValue("37,5");
+  // A share above 100 is refused in the form, nothing posted.
+  await funds.fill("120");
+  await split.getByRole("button", { name: "Aufteilung speichern" }).click();
+  await expect(split.getByText("Bitte eine Zahl von 0 bis 100 mit höchstens einer Nachkommastelle.").first()).toBeVisible();
+  expect(posted).toHaveLength(0);
+
+  await crypto.fill("35");
+  await expect(funds).toHaveValue("65");
+  await split.getByRole("button", { name: "Aufteilung speichern" }).click();
+  await expect.poll(() => posted.length).toBe(1);
+  const body = posted[0];
+  expect(body?.supersedes_id).toBe(SAVED_ID);
+  expect(body?.levers?.investment_split).toEqual({ depot: "65.0", crypto: "35.0" });
+  // Every other lever as stored.
+  expect(body?.levers?.goal).toEqual(GOAL);
+  expect(body?.levers?.value_change?.depot).toBe("0.05");
+  expect(body?.levers?.reserve_target_months).toBe("6");
+
+  // The plan is read again: the panel names the saved split.
+  await expect(split).toContainText(/65\s?% in Fonds, 35\s?% in Krypto/);
+  await expect(split).toContainText("Eure gespeicherte Aufteilung.");
+  await expect(split.getByLabel("Fonds (%)")).toHaveCount(0);
+  // Opened again, the form starts from the saved split and names what was bought.
+  await split.getByRole("button", { name: "Aufteilung ändern" }).click();
+  await expect(split.getByLabel("Fonds (%)")).toHaveValue("65");
+  await expect(split).toContainText(/Gekauft von .* 80\s?% Fonds, 20\s?% Krypto\./);
+});
+
+test("„Aufteilung ändern“ waits while the levers' draft holds unsaved changes", async ({ page, signedIn }) => {
+  void signedIn;
+  const { posted } = await mockSplit(page);
+  // An unsaved class move in the Budget's class panel: saving that draft posts every lever of the
+  // draft, the old split too.
+  await page.goto("/household?tab=budget");
+  await page.getByRole("link", { name: "Wünsche öffnen" }).click();
+  await page.getByRole("group", { name: "Klasse von Restaurant" }).getByRole("button", { name: "Notwendiges" }).click();
+  await expect(page.getByText(/^Geändert, noch nicht gespeichert/)).toBeVisible();
+  // Within the page (a reload would drop the draft): the Ziel tab, then its card.
+  await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Ziel" }).click();
+  await page.getByRole("link", { name: /Womit gerechnet wird/ }).first().click();
+  const split = sidePanel(page, "Womit gerechnet wird").getByTestId("investment-split");
+  await split.getByRole("button", { name: "Aufteilung ändern" }).click();
+  await expect(split.getByRole("button", { name: "Aufteilung speichern" })).toBeDisabled();
+  await expect(split).toContainText("Ihr habt ungespeicherte Änderungen im Budget.");
+  expect(posted).toHaveLength(0);
+});
+
+// „Noch nicht angelegt“ on Anlagen › Übersicht (phase 10 §7.11 (i) item 11, (a) 6): one row per
+// kind from GET /household-plan's `not_invested`, the kinds left out in generic mode; how the
+// amount is computed in the side panel. No card without it (invented figures).
+type NotInvested = components["schemas"]["NotInvested"];
+async function mockNotInvested(page: Page, value: NotInvested | null) {
+  await mockPlan(page);
+  await serve(page, "/api/household-plan", () => ({ ...plan(LEVERS, SAVED_ID), not_invested: value }) satisfies HouseholdPlan);
+}
+
+test("Anlagen › Übersicht names what is not yet invested by the saved split, per kind, its reckoning in the panel", async ({ page, signedIn }) => {
+  void signedIn;
+  await mockNotInvested(page, null);
+  await page.goto("/assets");
+  await expect(page.getByRole("heading", { name: "Positionen" })).toBeVisible();
+  await expect(page.getByTestId("not-invested")).toHaveCount(0);
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await mockNotInvested(page, {
+    from_month: WINDOW[0] ?? "",
+    to_month: WINDOW[2] ?? "",
+    invested: "13200.00",
+    amount: "2400.00",
+    lines: [{ asset_class: "crypto", target_percent: "25.0", actual_percent: "18.0", amount: "2400.00" }],
+  });
+  await page.goto("/assets");
+  const card = page.getByTestId("not-invested");
+  await expect(card).toContainText("Noch nicht angelegt");
+  await expect(card).toContainText(/Krypto: 18\s?% statt 25\s?% · 2\.400\s€ noch nicht angelegt/);
+  await expect(card).not.toContainText("Fonds");
+  await card.click();
+  await expect(page).toHaveURL(/#d-fuerziel-nochnicht$/);
+  const panel = sidePanel(page, "Noch nicht angelegt").getByTestId("not-invested-panel");
+  await expect(panel).toContainText(/13\.200\s€/);
+  await expect(panel).toContainText("Hausbuch vergleicht eure Käufe von Fonds und Krypto");
+  await expect(panel.getByRole("link", { name: /Aufteilung ändern/ })).toHaveAttribute("href", "/household?tab=ziel#d-ziel-basis");
+  // A fact, no button.
+  await expect(panel.getByRole("button")).toHaveCount(0);
+
+  // Generic mode: the server sends no kind, the card names the amount only.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await mockNotInvested(page, { from_month: WINDOW[0] ?? "", to_month: WINDOW[2] ?? "", invested: "13200.00", amount: "2400.00", lines: [] });
+  await page.goto("/assets");
+  const generic = page.getByTestId("not-invested");
+  await expect(generic).toContainText(/Nach eurer Aufteilung noch nicht angelegt: 2\.400\s€/);
+  await expect(generic).not.toContainText("Krypto");
 });

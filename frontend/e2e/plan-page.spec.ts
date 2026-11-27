@@ -502,3 +502,68 @@ test("on track, the plan card at phone width, light and dark", async ({ page, si
     await expect(page.locator(".planp-cards .goal-c-main")).toContainText("Jetzt anlegen");
   });
 });
+
+// „Aufteilung ändern“ in the plan card's panel (phase 10 §7.11 (i) item 10): the split section
+// reads GET /household-plan, which „Euer Plan“'s own read does not carry. Only the fields the
+// section reads are served; the effective split follows the saved lever (invented figures).
+type HouseholdPlan = components["schemas"]["HouseholdPlan"];
+async function splitApi(page: Page, posted: Posted[], levers: HouseholdLevers) {
+  await page.route(
+    (url) => url.pathname === "/api/household-plan",
+    (route: Route) => {
+      const saved = posted.at(-1)?.levers.investment_split ?? null;
+      const answer = {
+        levers: { ...levers, investment_split: saved },
+        investment_split: saved
+          ? { source: "saved", shares: saved, left_out: [], todos: [] }
+          : { source: "holdings", shares: { depot: "70.0", crypto: "30.0" }, left_out: [], todos: [] },
+        investment_split_prefill: null,
+      } as unknown as HouseholdPlan;
+      return route.fulfill({ json: answer });
+    },
+  );
+}
+
+test("„Aufteilung ändern“ on the plan card's panel saves the split and reads the plan again", async ({ page, signedIn }) => {
+  void signedIn;
+  const goal: Goal = { kind: "net_worth", target: "500000.00", due_month: monthsAhead(62), set_on: TODAY };
+  const levers: HouseholdLevers = { reserve_target_months: "6", buffer_percent: "10", horizon_months: 60, net_worth_years: 10, goal, goal_choice: null, spending_changes: [] };
+  const saved: HouseholdScenario = {
+    id: "00000000-0000-4000-8000-0000000b0001",
+    workspace_id: WORKSPACE,
+    name: "Standard",
+    is_default: true,
+    levers,
+    supersedes_id: null,
+    withdrawn: false,
+    created_at: `${TODAY}T09:00:00Z`,
+    created_by: null,
+  };
+  const posted = await goalApi(page, [saved]);
+  await splitApi(page, posted, levers);
+  const asked = await planApi(page);
+  await page.goto("/household/plan#d-plan-weg");
+  const split = detail(page, "Der Plan · ausgewogen").getByTestId("investment-split");
+  await expect(split).toContainText(/70\s?% in Fonds, 30\s?% in Krypto/);
+  await expect(split).toContainText("Bis ihr eine Aufteilung speichert, rechnet der Plan mit dem heutigen Wert eurer Fonds und Krypto.");
+
+  await split.getByRole("button", { name: "Aufteilung ändern" }).click();
+  // Nothing saved and no purchases to prefill from: the form starts empty, never with a split of
+  // the app's own (D247).
+  await expect(split.getByLabel("Fonds (%)")).toHaveValue("");
+  await split.getByLabel("Fonds (%)").fill("90");
+  await expect(split.getByLabel("Krypto (%)")).toHaveValue("10");
+  const before = asked.length;
+  await split.getByRole("button", { name: "Aufteilung speichern" }).click();
+
+  await expect.poll(() => posted.length).toBe(1);
+  const body = posted[0]!;
+  expect(body.supersedes_id).toBe(saved.id);
+  expect(body.levers.investment_split).toEqual({ depot: "90.0", crypto: "10.0" });
+  expect(body.levers.goal).toEqual(goal);
+  expect(body.levers.reserve_target_months).toBe("6");
+  await expect(split).toContainText(/90\s?% in Fonds, 10\s?% in Krypto/);
+  await expect(split).toContainText("Eure gespeicherte Aufteilung.");
+  // „Euer Plan“ is read again after the save.
+  await expect.poll(() => asked.length).toBeGreaterThan(before);
+});
