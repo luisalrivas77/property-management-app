@@ -160,13 +160,23 @@ def with_path(answer: HouseholdGoal, built: "GoalReads", levers: HouseholdLevers
     invested = (bought / months).quantize(CENT, ROUND_HALF_UP) if months else ZERO
     saved = built.goal.heute
     generic = built.goal.mode is AdviceMode.GENERIC
+    above = built.plan.above_target
+    walked = built.goal.projection
+    parts = PA.above_target_split(
+        above,
+        None if walked is None else walked.split,
+        None if walked is None else walked.target,
+    )
     update: dict = {
         "today": GoalPathToday(
             invested=invested,
             saved=saved,
             saved_not_invested=max(ZERO, saved - invested),
             plans=[] if generic else list(built.plan.plans),
-        )
+        ),
+        "above_target": above,
+        "above_target_depot": None if parts is None else parts[0],
+        "above_target_crypto": None if parts is None else parts[1],
     }
     todos = list(answer.todos)
     lever = levers.goal_path

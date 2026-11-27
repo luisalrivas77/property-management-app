@@ -330,6 +330,12 @@ class GoalPath(Schema):
     adoptable: bool
     why: GoalPathWhy | None = None
     today: GoalPathToday | None = None  # „Heute angelegt“, filled by the service
+    # „Jetzt anlegen“ (§7.11 (d)): the plan's money above the reserve target today, filled by
+    # the service; and the part of it the walk invests in its first month in funds and in
+    # crypto at its split (rules/goal/path.py `above_target_split`), None when it invests none
+    above_target: NonNegativeMoney | None = None
+    above_target_depot: NonNegativeMoney | None = None
+    above_target_crypto: NonNegativeMoney | None = None
     adopted: GoalPathAdopted | None = None  # the stored path, when one is adopted
 
 

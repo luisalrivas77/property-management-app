@@ -198,6 +198,20 @@ class PathMonth:
     flows: Sequence[tuple[date, Decimal]]
 
 
+def above_target_split(
+    amount: Decimal | None, split: InvestmentSplit | None, target: Decimal | None
+) -> tuple[Decimal, Decimal] | None:
+    """„Jetzt anlegen“ on the path's plan card: the money above the reserve target today,
+    which the walk invests in its first month at the split it invests in (rules/plan/
+    projection.py: only with a split and a target). Funds = amount × depot share to the cent,
+    half-up as the server rounds money; crypto the rest, so the two add up to the amount.
+    None when the walk invests nothing of it (no amount above 0, no split or no target)."""
+    if amount is None or amount <= 0 or split is None or target is None:
+        return None
+    depot = (amount * split.depot / 100).quantize(CENT, ROUND_HALF_UP)
+    return depot, amount - depot
+
+
 def track(
     day: date,
     monthly: Decimal,
@@ -287,6 +301,7 @@ def _floor_cent(value: Fraction) -> Decimal:
 
 __all__ = [
     "PathMonth",
+    "above_target_split",
     "anlegbar_of",
     "ceiling_of",
     "cuttable",

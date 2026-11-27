@@ -245,3 +245,21 @@ def test_moved_when_the_investment_split_changes() -> None:
     lever, goal, vc = _lever("0.00", None)
     assert not PA.moved(lever, goal, vc, None, Decimal("2000.00"), None)
     assert PA.moved(lever, goal, vc, None, Decimal("2000.00"), split)
+
+
+def test_jetzt_anlegen_split_to_the_cent_adding_up() -> None:
+    """„Jetzt anlegen“: 1,000.05 € above the target at 33.3 / 66.7: funds 333.016… → 333.02
+    half-up, crypto the rest 667.03, so the two add up; nothing without an amount above 0, a
+    split or a target (the walk then invests none of it)."""
+    from hausbuch.schemas.plan import InvestmentSplit
+
+    split = InvestmentSplit(depot=Decimal("33.3"), crypto=Decimal("66.7"))
+    target = Decimal("9000.00")
+    assert PA.above_target_split(Decimal("1000.05"), split, target) == (
+        Decimal("333.02"),
+        Decimal("667.03"),
+    )
+    assert PA.above_target_split(Decimal("0.00"), split, target) is None
+    assert PA.above_target_split(None, split, target) is None
+    assert PA.above_target_split(Decimal("1000.05"), None, target) is None
+    assert PA.above_target_split(Decimal("1000.05"), split, None) is None

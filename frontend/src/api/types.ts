@@ -9140,6 +9140,12 @@ export interface components {
             adoptable: boolean;
             why?: components["schemas"]["GoalPathWhy"] | null;
             today?: components["schemas"]["GoalPathToday"] | null;
+            /** Above Target */
+            above_target?: string | null;
+            /** Above Target Depot */
+            above_target_depot?: string | null;
+            /** Above Target Crypto */
+            above_target_crypto?: string | null;
             adopted?: components["schemas"]["GoalPathAdopted"] | null;
         };
         /**
