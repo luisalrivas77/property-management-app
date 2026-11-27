@@ -610,10 +610,15 @@ function PathSummaryCard({ view }: { view: PathView }) {
           <Stat value={view.return_needed ? tp.perYear(p.ratio(view.return_needed)) : "–"} label={tp.returnNeeded} />
           <Stat value={p.euro(view.monthly)} label={tp.investMonthly} />
         </Stats>
-      ) : (
+      ) : view.windows != null ? (
+        // Step 2 was judged: a missing return is one above the search's 100 % a year.
         <Stats count={2}>
           <Stat value={p.euro(view.path.ceiling.ceiling)} label={tp.ceilingLabel} />
           <Stat value={view.return_needed ? tp.perYear(p.ratio(view.return_needed)) : tp.noReturn} label={tp.returnForIt} warn />
+        </Stats>
+      ) : (
+        <Stats count={1}>
+          <Stat value={p.euro(view.path.ceiling.ceiling)} label={tp.ceilingLabel} />
         </Stats>
       )}
       {view.state === "on_track" || view.state === "doable_rates" ? (
