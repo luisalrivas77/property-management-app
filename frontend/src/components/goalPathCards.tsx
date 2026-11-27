@@ -515,6 +515,21 @@ function RoutePanel({ view, due, target }: { view: PathView; due: string | null;
         <p>{t.windowsLine(view.path.window_years, view.reached_windows, view.windows)}</p>
       ) : null}
       {history ? <p className="goal-note">{history}</p> : null}
+      {view.path.mix_today_share != null && view.path.mix_future_share != null ? (
+        <>
+          <h3 className="goal-kicker">{t.mixTitle}</h3>
+          <div className="goal-rows">
+            <div className="goal-rw">
+              <span>{t.mixToday}</span>
+              <b>{p.percentValue(view.path.mix_today_share)}</b>
+            </div>
+            <div className="goal-rw">
+              <span>{t.mixFuture}</span>
+              <b>{p.percentValue(view.path.mix_future_share)}</b>
+            </div>
+          </div>
+        </>
+      ) : null}
       {budgets.length > 0 && (view.state === "on_track" || view.state === "doable_rates" || view.state === "doable_return") ? (
         <>
           <h3 className="goal-kicker">{t.wantsBudget}</h3>
