@@ -132,7 +132,7 @@ export const goalPathText = defineMessages({
       "Jeder Monat seit dem Tag, an dem ihr den Plan übernommen habt: was ihr angelegt habt gegen den Betrag, eure Wünsche gegen das Budget, der Wertzuwachs eurer Anlagen gegen den nötigen und euer Vermögen gegen den Pfad.",
     waitingText: "Geld, das für Krypto vorgesehen ist und noch auf den Konten wartet, zählt als angelegt.",
     investNowText:
-      "„Jetzt anlegen“, das Geld über eurem Reserve-Ziel, gehört zum Plan, bis ihr es angelegt habt: Was ihr in einem Monat anlegt, zählt zuerst dafür.",
+      "„Jetzt anlegen“, das Geld über eurem Reserve-Ziel, gehört zum Plan, bis ihr es angelegt habt: Was ihr in einem Monat über den Monatsbetrag hinaus anlegt, zählt dafür.",
     // Übersicht's tile (item 6)
     tilePlan: (month: string) => `Euer Plan · ${month}`,
     tileInvest: (amount: string) => `${amount} im Monat anlegen`,
@@ -267,7 +267,7 @@ export const goalPathText = defineMessages({
       "Each month since the day you adopted the plan: what you invested against the amount, your wants against the budget, your investments' growth against the growth needed and your net worth against the path.",
     waitingText: "Money set aside for crypto that is still waiting on the accounts counts as invested.",
     investNowText:
-      "“Invest now”, the money above your reserve target, stays part of the plan until you invest it: what you invest in a month counts toward it first.",
+      "“Invest now”, the money above your reserve target, stays part of the plan until you invest it: what you invest in a month beyond the monthly amount counts toward it.",
     tilePlan: (month) => `Your plan · ${month}`,
     tileInvest: (amount) => `Invest ${amount} a month`,
     tileInvestNow: (monthly, now) => `Invest ${now} now + ${monthly} a month`,

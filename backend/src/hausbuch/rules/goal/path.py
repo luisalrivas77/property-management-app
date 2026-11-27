@@ -215,6 +215,11 @@ class PathMonth:
     path_net_worth: Decimal | None
     value_now: Decimal
     flows: Sequence[tuple[date, Decimal]]
+    # §7.11 (k): the purchases and the crypto bought after the day adopted, which alone can pay
+    # „Jetzt anlegen“ (the amount adopted is net of what was bought before it); None: the
+    # month's figures, as in every month after the one adopted in
+    invested_since: Decimal | None = None
+    crypto_since: Decimal | None = None
 
 
 def above_target_split(
@@ -347,22 +352,26 @@ def track(
 ) -> tuple[list[GoalPathRow], list[GoalPathPoint]]:
     """`now`: „Jetzt anlegen“ as adopted, (the amount, its crypto part), or None (§7.11 (k)).
     It is planned on top of the monthly amount in the first row and, as far as it is not yet
-    bought, in every row after it, so a lump invested in the month after the day adopted
-    still counts. A month's purchases pay what is still open of it first (its crypto part
-    from the crypto bought), and only the rest of the purchases counts as the month's
-    investing: the money above the reserve target is no part of the month's saving, so it
-    never waits and never takes the saving that the crypto share may wait in."""
+    bought, in every row after it, so a lump invested in a later month still counts. A month's
+    purchases pay the month's own amount first, and only what was bought beyond it (after the
+    day adopted, in the month adopted) pays what is open of the lump, its crypto part from the
+    crypto bought beyond the month's crypto share: ordinary monthly investing never uses the
+    lump up, and the monthly crypto share bought never reads as waiting."""
     from .tracker import implied  # tracker imports goal, which imports this module
 
     rows: list[GoalPathRow] = []
     points: list[GoalPathPoint] = []
     open_total, open_crypto = now if now is not None and now[0] > 0 else (ZERO, ZERO)
     open_crypto = min(open_crypto, open_total)
+    crypto_share = ZERO if crypto_percent is None else monthly * crypto_percent / 100
     for m in months:
         invest_now = open_total if open_total > 0 else None
-        planned = monthly + open_total  # what the row's invested is compared with
-        to_now = min(open_total, max(ZERO, m.invested))
-        crypto_to_now = min(open_crypto, max(ZERO, m.crypto_bought), to_now)
+        since = m.invested if m.invested_since is None else m.invested_since
+        crypto_since = m.crypto_bought if m.crypto_since is None else m.crypto_since
+        beyond = max(ZERO, min(since, m.invested - monthly))
+        to_now = min(open_total, beyond)
+        crypto_beyond = max(ZERO, min(crypto_since, m.crypto_bought - crypto_share))
+        crypto_to_now = min(open_crypto, crypto_beyond, to_now)
         open_total -= to_now
         open_crypto = min(open_crypto - crypto_to_now, open_total)
         invested_month = m.invested - to_now
@@ -377,8 +386,9 @@ def track(
             into_property = max(ZERO, m.invested_property)
             left = m.saved - m.principal - into_property - invested_month
             waiting = min(share, max(ZERO, left)).quantize(CENT, ROUND_HALF_UP)
-        put = m.invested + (waiting or ZERO)
-        invested_gap = _gap(planned - put)
+        # the month's own amount short (less what waits in the saving), plus the lump still open
+        own_short = max(ZERO, monthly - invested_month - (waiting or ZERO))
+        invested_gap = _gap(own_short + open_total)
         wants_gap = _gap(m.wants - wants_budget)
         nw_gap = None if m.path_net_worth is None else _gap(m.path_net_worth - m.net_worth)
         paid = sum((a for _, a in m.flows), ZERO)

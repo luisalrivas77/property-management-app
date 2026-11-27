@@ -228,10 +228,10 @@ def test_adopting_again_with_nothing_moved_writes_nothing(world):
     assert world.query(household_scenarios.default_scenario).id == first.id
 
 
-def test_a_path_adopted_before_jetzt_anlegen_was_stored_is_adopted_again(world):
+def test_a_path_adopted_before_jetzt_anlegen_was_stored_stays_as_adopted(world):
     """§7.11 (k): a path adopted before 27 Nov 2026 stored no „Jetzt anlegen“; adopting it
-    again with nothing moved writes a new row that stores it, instead of returning the old
-    one; a second adopt after that writes nothing."""
+    again with nothing moved writes nothing (the lever is a figure of its day), and its
+    tracking plans the monthly amount alone."""
     _goal_world(world)
     lever = _adopt(world).levers.goal_path
     current = world.query(household_scenarios.default_scenario)
@@ -247,10 +247,8 @@ def test_a_path_adopted_before_jetzt_anlegen_was_stored_is_adopted_again(world):
         adopt=True,
     )
     stored = world.query(household_scenarios.default_scenario)
-    again = _adopt(world)
-    assert again.id != stored.id
-    assert again.levers.goal_path.above_target == Decimal("12365.00")
-    assert _adopt(world).id == again.id
+    assert _adopt(world).id == stored.id
+    assert stored.levers.goal_path.above_target is None
 
 
 def test_adopting_again_after_a_move_computes_without_the_paths_own_budget(world):
@@ -415,9 +413,9 @@ def test_tracking_rows_for_each_stored_month_end_since_the_day_adopted(world):
     run, January to March; each month's purchases (the depot's and the broker's), its wants
     (the 300 € at the restaurant), the stored net worth against the path's walk (given here a
     January 100 € above the stored total and a February 100 € below it; March has none).
-    „Jetzt anlegen“ (§7.11 (k)): the 12,365 € adopted stays planned until bought; each month's
-    purchases pay it first, so 12,365, 12,290 and 12,205 € are open at the months' starts and
-    the invested mark compares the purchases with 531 € plus what is open."""
+    „Jetzt anlegen“ (§7.11 (k)): the 12,365 € adopted stays planned until bought; a month's
+    purchases pay the month's own 531 € first, so the 75 or 85 € bought never use it up and the
+    invested mark compares the purchases with 531 € plus the 12,365 € still open."""
     _goal_world(world)
     for end in (date(2027, 1, 31), date(2027, 2, 28)):
         world.cmd(net_worth.capture_month_end, end)
@@ -459,11 +457,7 @@ def test_tracking_rows_for_each_stored_month_end_since_the_day_adopted(world):
         Decimal("75.00"),
     ]
     assert all(r.planned == Decimal("531.00") for r in got.rows)
-    assert [r.invest_now for r in got.rows] == [
-        Decimal("12365.00"),
-        Decimal("12290.00"),
-        Decimal("12205.00"),
-    ]
+    assert all(r.invest_now == Decimal("12365.00") for r in got.rows)
     assert all(r.invested_gap == r.planned + r.invest_now - r.invested for r in got.rows)
     assert all(r.waiting is None for r in got.rows)  # no split saved
     assert all(r.wants == Decimal("300.00") for r in got.rows)

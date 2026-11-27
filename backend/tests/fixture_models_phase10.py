@@ -1166,6 +1166,8 @@ class PathMonthIn(Schema):
     path_net_worth: Money
     value_now: Money
     flows: list[tuple[date, Money]]
+    invested_since: Money | None = None  # §7.11 (k): bought after the day, in the month adopted
+    crypto_since: Money | None = None
 
 
 class PathRowExpect(Schema):

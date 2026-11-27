@@ -124,6 +124,8 @@ def test_path_tracking(case) -> None:
             path_net_worth=m.path_net_worth,
             value_now=m.value_now,
             flows=m.flows,
+            invested_since=m.invested_since,
+            crypto_since=m.crypto_since,
         )
         for m in case.months
     ]

@@ -237,8 +237,6 @@ def adopt_path(ctx: CommandContext) -> HouseholdScenario:
     if (
         stored is not None
         and choice.investment == GoalInvestment.PATH.value
-        # a path adopted before §7.11 (k) stored no „Jetzt anlegen“: adopting again stores it
-        and (stored.above_target is not None or path.above_target is None)
         and not PA.moved(
             stored,
             levers.goal,

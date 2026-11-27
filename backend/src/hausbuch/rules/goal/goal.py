@@ -691,6 +691,9 @@ def _balanced(
         limits = {
             c: _floor_cent(Fraction(room) * Fraction(m) / Fraction(total)) for c, m in wants.items()
         }
+        # never more than a code's mean: the net wants can exceed the playable ones (a refund's
+        # code, or a code moved to Wünsche that no change can play, counts in the net only)
+        limits = {c: min(v, wants[c]) for c, v in limits.items()}
         if i.wants_max is None:
             limits = {c: min(v, _floor_cent(Fraction(wants[c]) / 2)) for c, v in limits.items()}
         for code, mean in wants.items():
