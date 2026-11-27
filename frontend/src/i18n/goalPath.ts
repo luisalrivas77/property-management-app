@@ -111,6 +111,7 @@ export const goalPathText = defineMessages({
     lastCard: (month: string) => `Zuletzt · ${month}`,
     rowInvested: "Angelegt",
     ofPlan: (amount: string) => `Plan ${amount}`,
+    ofPlanNow: (monthly: string, now: string) => `Plan ${monthly} + ${now} jetzt`,
     waiting: (amount: string) => `${amount} warten auf Krypto`,
     rowWantsTracked: "Wünsche",
     ofBudget: (amount: string) => `Budget ${amount}`,
@@ -130,9 +131,12 @@ export const goalPathText = defineMessages({
     trackingText:
       "Jeder Monat seit dem Tag, an dem ihr den Plan übernommen habt: was ihr angelegt habt gegen den Betrag, eure Wünsche gegen das Budget, der Wertzuwachs eurer Anlagen gegen den nötigen und euer Vermögen gegen den Pfad.",
     waitingText: "Geld, das für Krypto vorgesehen ist und noch auf den Konten wartet, zählt als angelegt.",
+    investNowText:
+      "„Jetzt anlegen“, das Geld über eurem Reserve-Ziel, gehört zum Plan, bis ihr es angelegt habt: Was ihr in einem Monat anlegt, zählt zuerst dafür.",
     // Übersicht's tile (item 6)
     tilePlan: (month: string) => `Euer Plan · ${month}`,
     tileInvest: (amount: string) => `${amount} im Monat anlegen`,
+    tileInvestNow: (monthly: string, now: string) => `${now} jetzt + ${monthly} im Monat anlegen`,
     tileWants: (amount: string) => `Wünsche bis ${amount}`,
     tileGrowth: "Anlagen wachsen wie nötig",
     investLabel: "im Monat anlegen",
@@ -242,6 +246,7 @@ export const goalPathText = defineMessages({
     lastCard: (month) => `Latest · ${month}`,
     rowInvested: "Invested",
     ofPlan: (amount) => `plan ${amount}`,
+    ofPlanNow: (monthly, now) => `plan ${monthly} + ${now} now`,
     waiting: (amount) => `${amount} waiting for crypto`,
     rowWantsTracked: "Wants",
     ofBudget: (amount) => `budget ${amount}`,
@@ -261,8 +266,11 @@ export const goalPathText = defineMessages({
     trackingText:
       "Each month since the day you adopted the plan: what you invested against the amount, your wants against the budget, your investments' growth against the growth needed and your net worth against the path.",
     waitingText: "Money set aside for crypto that is still waiting on the accounts counts as invested.",
+    investNowText:
+      "“Invest now”, the money above your reserve target, stays part of the plan until you invest it: what you invest in a month counts toward it first.",
     tilePlan: (month) => `Your plan · ${month}`,
     tileInvest: (amount) => `Invest ${amount} a month`,
+    tileInvestNow: (monthly, now) => `Invest ${now} now + ${monthly} a month`,
     tileWants: (amount) => `Wants up to ${amount}`,
     tileGrowth: "Investments growing as needed",
     investLabel: "to invest a month",

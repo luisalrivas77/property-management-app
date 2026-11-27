@@ -24070,6 +24070,30 @@
             "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Wants Budget Total"
           },
+          "above_target": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Target"
+          },
+          "above_target_crypto": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Target Crypto"
+          },
           "goal": {
             "$ref": "#/components/schemas/Goal"
           },
@@ -24222,6 +24246,18 @@
             "type": "string",
             "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Planned"
+          },
+          "invest_now": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invest Now"
           },
           "invested": {
             "type": "string",

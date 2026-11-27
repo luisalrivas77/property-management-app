@@ -9286,6 +9286,10 @@ export interface components {
             reached_windows?: number | null;
             /** Wants Budget Total */
             wants_budget_total: string;
+            /** Above Target */
+            above_target?: string | null;
+            /** Above Target Crypto */
+            above_target_crypto?: string | null;
             goal: components["schemas"]["Goal"];
             value_change: components["schemas"]["ValueChange"];
             /** Wants Max */
@@ -9346,6 +9350,8 @@ export interface components {
             word: components["schemas"]["GoalTrackingWord"];
             /** Planned */
             planned: string;
+            /** Invest Now */
+            invest_now?: string | null;
             /** Invested */
             invested: string;
             /** Waiting */

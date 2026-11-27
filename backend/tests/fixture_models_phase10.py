@@ -1150,6 +1150,8 @@ class PathAdoptedIn(Schema):
     wants_budget: Money
     rate: Annotated[Decimal, _STRING_ONLY]
     crypto_percent: Dec | None  # the saved split's crypto percent; None: no saved split
+    now: Money | None = None  # §7.11 (k): „Jetzt anlegen“ as adopted
+    now_crypto: Money | None = None  # its crypto part
 
 
 class PathMonthIn(Schema):
@@ -1169,6 +1171,7 @@ class PathMonthIn(Schema):
 class PathRowExpect(Schema):
     month_end: date
     word: Literal["on_path", "behind"]
+    invest_now: Money | None = None  # §7.11 (k): still open at the month's start
     waiting: Money | None
     invested_gap: Money | None
     wants_gap: Money | None

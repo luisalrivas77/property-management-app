@@ -192,6 +192,12 @@ def test_adopt_supersedes_the_default_once_with_its_event(world):
         Decimal("135.00"),
     )
     assert (lever.goal, lever.value_change) == (before.levers.goal, before.levers.value_change)
+    # §7.11 (k): „Jetzt anlegen“ of that day, all of it to funds (no split saved)
+    assert (lever.above_target, lever.above_target_crypto) == (
+        path.above_target,
+        path.above_target_crypto,
+    )
+    assert lever.above_target == Decimal("12365.00")
     # its walk, from the month after the newest closed one to the due month
     assert lever.months[0].month == "2027-04" and lever.months[-1].month == "2028-12"
     assert lever.months[-1].net_worth >= Decimal(DOABLE)
@@ -220,6 +226,31 @@ def test_adopting_again_with_nothing_moved_writes_nothing(world):
     again = _adopt(world)
     assert again.id == first.id and again.levers.goal_path == first.levers.goal_path
     assert world.query(household_scenarios.default_scenario).id == first.id
+
+
+def test_a_path_adopted_before_jetzt_anlegen_was_stored_is_adopted_again(world):
+    """§7.11 (k): a path adopted before 27 Nov 2026 stored no „Jetzt anlegen“; adopting it
+    again with nothing moved writes a new row that stores it, instead of returning the old
+    one; a second adopt after that writes nothing."""
+    _goal_world(world)
+    lever = _adopt(world).levers.goal_path
+    current = world.query(household_scenarios.default_scenario)
+    old = lever.model_copy(update={"above_target": None, "above_target_crypto": None})
+    world.cmd(
+        household_scenarios.create_scenario,
+        HouseholdScenarioCreate(
+            name="Basis",
+            is_default=True,
+            supersedes_id=current.id,
+            levers=current.levers.model_copy(update={"goal_path": old}),
+        ),
+        adopt=True,
+    )
+    stored = world.query(household_scenarios.default_scenario)
+    again = _adopt(world)
+    assert again.id != stored.id
+    assert again.levers.goal_path.above_target == Decimal("12365.00")
+    assert _adopt(world).id == again.id
 
 
 def test_adopting_again_after_a_move_computes_without_the_paths_own_budget(world):
@@ -383,7 +414,10 @@ def test_tracking_rows_for_each_stored_month_end_since_the_day_adopted(world):
     command would have on that day): one row and one point per closed month-end with a stored
     run, January to March; each month's purchases (the depot's and the broker's), its wants
     (the 300 € at the restaurant), the stored net worth against the path's walk (given here a
-    January 100 € above the stored total and a February 100 € below it; March has none)."""
+    January 100 € above the stored total and a February 100 € below it; March has none).
+    „Jetzt anlegen“ (§7.11 (k)): the 12,365 € adopted stays planned until bought; each month's
+    purchases pay it first, so 12,365, 12,290 and 12,205 € are open at the months' starts and
+    the invested mark compares the purchases with 531 € plus what is open."""
     _goal_world(world)
     for end in (date(2027, 1, 31), date(2027, 2, 28)):
         world.cmd(net_worth.capture_month_end, end)
@@ -425,7 +459,12 @@ def test_tracking_rows_for_each_stored_month_end_since_the_day_adopted(world):
         Decimal("75.00"),
     ]
     assert all(r.planned == Decimal("531.00") for r in got.rows)
-    assert all(r.invested_gap == Decimal("531.00") - r.invested for r in got.rows)
+    assert [r.invest_now for r in got.rows] == [
+        Decimal("12365.00"),
+        Decimal("12290.00"),
+        Decimal("12205.00"),
+    ]
+    assert all(r.invested_gap == r.planned + r.invest_now - r.invested for r in got.rows)
     assert all(r.waiting is None for r in got.rows)  # no split saved
     assert all(r.wants == Decimal("300.00") for r in got.rows)
     assert [r.path_net_worth for r in got.rows] == [stored[jan] + 100, stored[feb] - 100, None]
@@ -436,7 +475,9 @@ def test_tracking_rows_for_each_stored_month_end_since_the_day_adopted(world):
 
 def _adopted_in_january(world: World):
     """The path adopted, then moved to 2 January 2027 (as the command would have written it
-    that day), so the tracking has a row for each closed month-end January to March."""
+    that day), so the tracking has a row for each closed month-end January to March. Its
+    „Jetzt anlegen“ is dropped (as on a path with nothing above the reserve target), so these
+    rows test the money waiting for crypto alone; §7.11 (k) is the test above."""
     for end in (date(2027, 1, 31), date(2027, 2, 28)):
         world.cmd(net_worth.capture_month_end, end)
     lever = _adopt(world).levers.goal_path
@@ -444,7 +485,9 @@ def _adopted_in_january(world: World):
     choice = current.levers.goal_choice.model_copy(
         update={"investment_chosen_on": date(2027, 1, 2)}
     )
-    early = lever.model_copy(update={"adopted_on": date(2027, 1, 2)})
+    early = lever.model_copy(
+        update={"adopted_on": date(2027, 1, 2), "above_target": None, "above_target_crypto": None}
+    )
     world.cmd(
         household_scenarios.create_scenario,
         HouseholdScenarioCreate(

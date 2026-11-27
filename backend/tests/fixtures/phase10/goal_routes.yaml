@@ -238,6 +238,36 @@ cases:
       moved_to_saving: '761.00'   # 1,672 − 911
       closes: true
 
+- id: balanced_wants_net_of_a_refund
+  description: >-
+    Added 27 Nov 2026 (§7.11 (c) amended): the household of balanced_wants_target with 300 of
+    clothing bought and 300 refunded each month, both wants, so the spending (3,000), the saving
+    and the walk are that case's. The want class nets 900 (600 + 300 + 300 − 300), as the
+    Budget's Wünsche line shows it, and the target keeps 750, so the wants can give up 150, not
+    the 450 the positive wants alone (1,200 − 750) would allow; the 150 is shared over the
+    positive wants by their means, and the rest of the half moves to saving, as in
+    balanced_wants_target
+  <<: *household
+  means: {hh_rent: '1500.00', hh_supermarket: '600.00', hh_restaurant: '600.00', hh_streaming: '300.00', hh_clothing: '300.00', hh_refund: '-300.00'}
+  levers:
+    goal: {kind: net_worth, target: '650000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    value_change: {depot: '0.06'}
+    budget_targets: {wants_max: '15'}
+  expect:
+    word: hardly
+    projected: '369991.55'
+    reached: '2041-12'
+    noetig: '3822.00'            # E = 1,822, the walk of balanced_wants_target
+    more_saving: {extra: '1822.00', noetig: '3822.00'}
+    more_return: {available: false, reason: series_missing}
+    balanced:
+      # room 900 − 750 = 150 by the positive means 600, 300, 300 of 1,200: 75, 37.50, 37.50
+      cuts: {hh_clothing: '37.50', hh_restaurant: '75.00', hh_streaming: '37.50'}
+      cut: '150.00'
+      saving_extra: '1672.00'    # 1,822 − 150, as in balanced_wants_target
+      moved_to_saving: '761.00'  # 1,672 − 911
+      closes: true
+
 - id: generic_mode
   description: the case closed_by_spending in `generic` mode; route 3 says why it is not offered
   <<: *household

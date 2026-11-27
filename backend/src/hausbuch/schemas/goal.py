@@ -471,7 +471,10 @@ class GoalPathRow(Schema):
 
     month_end: date
     word: GoalTrackingWord
-    planned: NonNegativeMoney
+    planned: NonNegativeMoney  # the path's monthly amount
+    # „Jetzt anlegen“ still open at the month's start (§7.11 (k)): planned on top of the monthly
+    # amount, so invested (with waiting) is compared with planned + invest_now; None: none open
+    invest_now: NonNegativeMoney | None = None
     invested: Money
     waiting: NonNegativeMoney | None = None  # None without a saved split
     invested_gap: NonNegativeMoney | None = None

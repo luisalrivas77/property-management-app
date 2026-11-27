@@ -167,7 +167,15 @@ def _path_rows(
         None if split is None else split.crypto,
         _value(then, members)[0],
         out,
+        _invest_now(lever),
     )
+
+
+def _invest_now(lever: GoalPathLever) -> tuple[Decimal, Decimal] | None:
+    """„Jetzt anlegen“ as adopted (§7.11 (k)): the amount and its crypto part, or None."""
+    if lever.above_target is None or lever.above_target <= 0:
+        return None
+    return lever.above_target, lever.above_target_crypto or ZERO
 
 
 def _members(overviews: list[AssetsOverview], performance: AssetsPerformance) -> set[UUID]:

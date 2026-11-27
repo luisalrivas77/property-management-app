@@ -127,13 +127,16 @@ def test_path_tracking(case) -> None:
         )
         for m in case.months
     ]
+    now = None if a.now is None else (a.now, a.now_crypto or Decimal("0.00"))
     rows, points = PA.track(
-        a.day, a.monthly, a.wants_budget, a.rate, a.crypto_percent, case.value_then, months
+        a.day, a.monthly, a.wants_budget, a.rate, a.crypto_percent, case.value_then, months, now
     )
     assert len(rows) == len(points) == len(case.expect)
     for row, point, want in zip(rows, points, case.expect, strict=True):
         assert row.month_end == want.month_end
+        assert row.planned == a.monthly
         for name in (
+            "invest_now",
             "waiting",
             "invested_gap",
             "wants_gap",
