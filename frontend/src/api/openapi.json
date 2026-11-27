@@ -23658,6 +23658,25 @@
             ],
             "title": "Above Target Crypto"
           },
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/GoalPathAction"
+            },
+            "type": "array",
+            "title": "Actions"
+          },
+          "plan_reached": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Reached"
+          },
           "adopted": {
             "anyOf": [
               {
@@ -23680,6 +23699,126 @@
         ],
         "title": "GoalPath",
         "description": "The goal's path (D311): step 1 at the typed rates within the room, else step 2 the return\nneeded with the whole room against the invested mix's history, else why. Every figure by\ncode; the app proposes no goal, no rate and no product (D247, D289)."
+      },
+      "GoalPathAction": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/GoalPathActionKind"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "amount_depot": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Depot"
+          },
+          "amount_crypto": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Crypto"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AllocationCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mean": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean"
+          },
+          "within_target": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Within Target"
+          },
+          "wants_percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wants Percent"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "GoalPathAction",
+        "description": "One step of „Was ihr tun müsst“. `amount`: save_monthly, invest_now and keep_reserve\ntheir euros, wants_cut the want's budget a month, wants_none the wants' net mean a month;\n`amount_depot` and `amount_crypto` the part into funds and crypto at the walk's split (funds\nhalf-up to the cent, crypto the rest), None when the walk invests none of it. wants_cut:\n`code` and its `mean`. wants_none: `within_target` whether the wants already lie within\nthe wants kept, `wants_percent` the household's wants target (None: the app's suggestion).\nreturn_needed: `rate`. Every figure by code."
+      },
+      "GoalPathActionKind": {
+        "type": "string",
+        "enum": [
+          "save_monthly",
+          "invest_now",
+          "keep_reserve",
+          "wants_cut",
+          "wants_none",
+          "return_needed"
+        ],
+        "title": "GoalPathActionKind",
+        "description": "„Was ihr tun müsst“ on „Euer Plan“'s plan panel, in this order, each only when it\napplies (rules/goal/path.py `actions_of`)."
       },
       "GoalPathAdopted": {
         "properties": {

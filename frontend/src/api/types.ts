@@ -9146,8 +9146,47 @@ export interface components {
             above_target_depot?: string | null;
             /** Above Target Crypto */
             above_target_crypto?: string | null;
+            /** Actions */
+            actions?: components["schemas"]["GoalPathAction"][];
+            /** Plan Reached */
+            plan_reached?: string | null;
             adopted?: components["schemas"]["GoalPathAdopted"] | null;
         };
+        /**
+         * GoalPathAction
+         * @description One step of „Was ihr tun müsst“. `amount`: save_monthly, invest_now and keep_reserve
+         *     their euros, wants_cut the want's budget a month, wants_none the wants' net mean a month;
+         *     `amount_depot` and `amount_crypto` the part into funds and crypto at the walk's split (funds
+         *     half-up to the cent, crypto the rest), None when the walk invests none of it. wants_cut:
+         *     `code` and its `mean`. wants_none: `within_target` whether the wants already lie within
+         *     the wants kept, `wants_percent` the household's wants target (None: the app's suggestion).
+         *     return_needed: `rate`. Every figure by code.
+         */
+        GoalPathAction: {
+            kind: components["schemas"]["GoalPathActionKind"];
+            /** Amount */
+            amount?: string | null;
+            /** Amount Depot */
+            amount_depot?: string | null;
+            /** Amount Crypto */
+            amount_crypto?: string | null;
+            code?: components["schemas"]["AllocationCategory"] | null;
+            /** Mean */
+            mean?: string | null;
+            /** Within Target */
+            within_target?: boolean | null;
+            /** Wants Percent */
+            wants_percent?: string | null;
+            /** Rate */
+            rate?: string | null;
+        };
+        /**
+         * GoalPathActionKind
+         * @description „Was ihr tun müsst“ on „Euer Plan“'s plan panel, in this order, each only when it
+         *     applies (rules/goal/path.py `actions_of`).
+         * @enum {string}
+         */
+        GoalPathActionKind: "save_monthly" | "invest_now" | "keep_reserve" | "wants_cut" | "wants_none" | "return_needed";
         /**
          * GoalPathAdopted
          * @description The path the household adopted (the default scenario's `goal_path` lever), as stored,

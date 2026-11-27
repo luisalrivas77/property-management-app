@@ -25,7 +25,13 @@ from hausbuch.rules.errors import HOUSEHOLD_SCENARIO_PATH_INVALID
 from hausbuch.rules.goal.goal import wants_net
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.budget import BudgetLineKey
-from hausbuch.schemas.goal import GoalInvestment, GoalSpending, GoalTrackingWord, GoalWord
+from hausbuch.schemas.goal import (
+    GoalInvestment,
+    GoalPathActionKind,
+    GoalSpending,
+    GoalTrackingWord,
+    GoalWord,
+)
 from hausbuch.schemas.health import HealthTodoCode
 from hausbuch.schemas.plan import (
     GoalPathBudgetChange,
@@ -152,6 +158,20 @@ def test_jetzt_anlegen_is_the_plans_above_target_at_the_walks_split(world):
         Decimal("7419.00"),
         Decimal("4946.00"),
     )
+    # „Was ihr tun müsst“ carries the same figures: invest the 12,365 now at 7,419 / 4,946
+    # and keep the reserve at the walk's target
+    kinds = {a.kind: a for a in path.actions}
+    now = kinds[GoalPathActionKind.INVEST_NOW]
+    assert (now.amount, now.amount_depot, now.amount_crypto) == (
+        above,
+        Decimal("7419.00"),
+        Decimal("4946.00"),
+    )
+    assert GoalPathActionKind.KEEP_RESERVE in kinds
+    monthly = kinds[GoalPathActionKind.SAVE_MONTHLY]
+    assert monthly.amount == path.monthly
+    assert monthly.amount_depot + monthly.amount_crypto == monthly.amount
+    assert path.plan_reached is not None
 
 
 def test_adopt_supersedes_the_default_once_with_its_event(world):

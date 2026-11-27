@@ -14,6 +14,7 @@ from uuid import UUID
 from pydantic import Field
 
 from .allocation import AllocationCategory
+from .budget import BudgetPercent
 from .common import _STRING_ONLY, Money, NonNegativeMoney, ReturnRate, Schema, _string_schema
 from .health import HealthTodo, YearMonth
 from .household import BudgetClass
@@ -302,6 +303,38 @@ class GoalPathAdopted(Schema):
     moved: bool
 
 
+class GoalPathActionKind(StrEnum):
+    """„Was ihr tun müsst“ on „Euer Plan“'s plan panel, in this order, each only when it
+    applies (rules/goal/path.py `actions_of`)."""
+
+    SAVE_MONTHLY = "save_monthly"  # save and invest this much a month
+    INVEST_NOW = "invest_now"  # invest the money above the reserve target now
+    KEEP_RESERVE = "keep_reserve"  # keep the reserve at its target
+    WANTS_CUT = "wants_cut"  # one want cut from its mean to its budget
+    WANTS_NONE = "wants_none"  # no want is cut
+    RETURN_NEEDED = "return_needed"  # the yearly return the investments would need
+
+
+class GoalPathAction(Schema):
+    """One step of „Was ihr tun müsst“. `amount`: save_monthly, invest_now and keep_reserve
+    their euros, wants_cut the want's budget a month, wants_none the wants' net mean a month;
+    `amount_depot` and `amount_crypto` the part into funds and crypto at the walk's split (funds
+    half-up to the cent, crypto the rest), None when the walk invests none of it. wants_cut:
+    `code` and its `mean`. wants_none: `within_target` whether the wants already lie within
+    the wants kept, `wants_percent` the household's wants target (None: the app's suggestion).
+    return_needed: `rate`. Every figure by code."""
+
+    kind: GoalPathActionKind
+    amount: Money | None = None
+    amount_depot: NonNegativeMoney | None = None
+    amount_crypto: NonNegativeMoney | None = None
+    code: AllocationCategory | None = None
+    mean: NonNegativeMoney | None = None
+    within_target: bool | None = None
+    wants_percent: BudgetPercent | None = None
+    rate: GoalReturn | None = None
+
+
 class GoalPath(Schema):
     """The goal's path (D311): step 1 at the typed rates within the room, else step 2 the return
     needed with the whole room against the invested mix's history, else why. Every figure by
@@ -330,12 +363,18 @@ class GoalPath(Schema):
     adoptable: bool
     why: GoalPathWhy | None = None
     today: GoalPathToday | None = None  # „Heute angelegt“, filled by the service
-    # „Jetzt anlegen“ (§7.11 (d)): the plan's money above the reserve target today, filled by
-    # the service; and the part of it the walk invests in its first month in funds and in
-    # crypto at its split (rules/goal/path.py `above_target_split`), None when it invests none
+    # „Jetzt anlegen“ (§7.11 (d)): the plan's money above the reserve target today, which the
+    # walk invests in its first month, and its part in funds and in crypto at the walk's split
+    # (rules/goal/path.py `above_target_split`); all None when the walk invests none of it (no
+    # split or no target, or a goal of a sum or the reserve, which keeps it)
     above_target: NonNegativeMoney | None = None
     above_target_depot: NonNegativeMoney | None = None
     above_target_crypto: NonNegativeMoney | None = None
+    # „Was ihr tun müsst“: the plan's steps, and the month its walk reaches the goal (on a path
+    # at the path's figures; without one, with the whole room at the return needed when step 2
+    # names one, else at the typed rates, the why's month), None when the walk does not reach it
+    actions: list[GoalPathAction] = Field(default_factory=list)
+    plan_reached: YearMonth | None = None
     adopted: GoalPathAdopted | None = None  # the stored path, when one is adopted
 
 

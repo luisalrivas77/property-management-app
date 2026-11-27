@@ -36,7 +36,15 @@ from fractions import Fraction
 
 from hausbuch.rules.plan.surplus import ZERO, buffer_of
 from hausbuch.schemas.allocation import AllocationCategory
-from hausbuch.schemas.goal import GoalPathCeiling, GoalPathPoint, GoalPathRow, GoalTrackingWord
+from hausbuch.schemas.goal import (
+    GoalBudget,
+    GoalPathAction,
+    GoalPathActionKind,
+    GoalPathCeiling,
+    GoalPathPoint,
+    GoalPathRow,
+    GoalTrackingWord,
+)
 from hausbuch.schemas.plan import (
     GoalPathLever,
     GoalPathState,
@@ -212,6 +220,99 @@ def above_target_split(
     return depot, amount - depot
 
 
+def monthly_split(
+    monthly: Decimal | None,
+    split: InvestmentSplit | None,
+    target: Decimal | None,
+    plans_depot: Decimal,
+    plans_crypto: Decimal,
+) -> tuple[Decimal, Decimal] | None:
+    """„Jeden Monat X sparen und anlegen, davon …“: the walk pays each savings plan into its
+    own class and moves the rest of the month's saving at the split once the reserve is at its
+    target (rules/plan/projection.py). Funds = the funds plans + the rest × depot share, to the
+    cent half-up; crypto the rest of the amount, so the two add up. None when the walk moves
+    nothing at the split (no split or no target), the amount is not above 0, or the plans
+    alone take more than it."""
+    if monthly is None or monthly <= 0 or split is None or target is None:
+        return None
+    rest = monthly - plans_depot - plans_crypto
+    if rest < 0:
+        return None
+    depot = (plans_depot + rest * split.depot / 100).quantize(CENT, ROUND_HALF_UP)
+    return depot, monthly - depot
+
+
+@dataclass(frozen=True)
+class PlanFigures:
+    """What „Was ihr tun müsst“ reads (rules/goal/goal.py `_plan_path` fills it). `monthly`:
+    the plan's saving a month (on a path its monthly amount, without one Anlegbar + the whole
+    room the why and the return needed are computed with); `cuts`: each want the plan cuts;
+    `wants_net`: the want class's net mean; `target`: the reserve target, `split` the walk's
+    (None for a goal of a sum or the reserve: nothing moves out of it)."""
+
+    monthly: Decimal | None
+    split: InvestmentSplit | None
+    target: Decimal | None
+    plans_depot: Decimal
+    plans_crypto: Decimal
+    above_target: Decimal | None
+    cuts: Sequence[GoalBudget]
+    wants_net: Decimal
+    ceiling: GoalPathCeiling
+    wants_max: Decimal | None
+    return_needed: Decimal | None
+
+
+def actions_of(f: PlanFigures) -> list[GoalPathAction]:
+    """„Was ihr tun müsst“, in order, each only when its figure exists: save a month (with its
+    funds and crypto parts), invest the money above the reserve target now, keep the reserve
+    at its target (both only when the walk invests above it), one row per want cut or one row
+    that nothing is cut, and the return needed (step 2 only)."""
+    out: list[GoalPathAction] = []
+    if f.monthly is not None and f.monthly > 0:
+        parts = monthly_split(f.monthly, f.split, f.target, f.plans_depot, f.plans_crypto)
+        out.append(_action(GoalPathActionKind.SAVE_MONTHLY, f.monthly, parts))
+    invests = f.split is not None and f.target is not None
+    now = above_target_split(f.above_target, f.split, f.target)
+    if now is not None:
+        out.append(_action(GoalPathActionKind.INVEST_NOW, f.above_target, now))
+    if invests:
+        assert f.target is not None
+        reserve = f.target.quantize(CENT, ROUND_HALF_UP)
+        out.append(GoalPathAction(kind=GoalPathActionKind.KEEP_RESERVE, amount=reserve))
+    if f.cuts:
+        out += [
+            GoalPathAction(
+                kind=GoalPathActionKind.WANTS_CUT, amount=b.budget, code=b.code, mean=b.mean
+            )
+            for b in f.cuts
+        ]
+    else:
+        net = max(f.wants_net, ZERO)
+        out.append(
+            GoalPathAction(
+                kind=GoalPathActionKind.WANTS_NONE,
+                amount=net,
+                within_target=net <= f.ceiling.wants_kept,
+                wants_percent=f.wants_max,
+            )
+        )
+    if f.return_needed is not None:
+        out.append(GoalPathAction(kind=GoalPathActionKind.RETURN_NEEDED, rate=f.return_needed))
+    return out
+
+
+def _action(
+    kind: GoalPathActionKind, amount: Decimal | None, parts: tuple[Decimal, Decimal] | None
+) -> GoalPathAction:
+    return GoalPathAction(
+        kind=kind,
+        amount=amount,
+        amount_depot=None if parts is None else parts[0],
+        amount_crypto=None if parts is None else parts[1],
+    )
+
+
 def track(
     day: date,
     monthly: Decimal,
@@ -301,10 +402,13 @@ def _floor_cent(value: Fraction) -> Decimal:
 
 __all__ = [
     "PathMonth",
+    "PlanFigures",
     "above_target_split",
+    "actions_of",
     "anlegbar_of",
     "ceiling_of",
     "cuttable",
+    "monthly_split",
     "moved",
     "room_of",
     "step_2_state",

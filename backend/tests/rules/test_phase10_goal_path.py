@@ -263,3 +263,124 @@ def test_jetzt_anlegen_split_to_the_cent_adding_up() -> None:
     assert PA.above_target_split(None, split, target) is None
     assert PA.above_target_split(Decimal("1000.05"), None, target) is None
     assert PA.above_target_split(Decimal("1000.05"), split, None) is None
+
+
+# „Was ihr tun müsst“ (the plan panel's steps): pinned per state over the fixture's cases,
+# and hand-worked on sample numbers below.
+_ORDER = ["save_monthly", "invest_now", "keep_reserve", "wants_cut", "wants_none", "return_needed"]
+
+
+@pytest.mark.parametrize("case", FIXTURE.cases, ids=lambda c: c.id)
+def test_the_plans_steps_per_state(case) -> None:
+    inputs, _, _ = _route_inputs(case)
+    path = household_goal(inputs).goal_path
+    kinds = [a.kind.value for a in path.actions]
+    assert kinds == sorted(kinds, key=_ORDER.index), "the steps keep their order"
+    by = {k: [a for a in path.actions if a.kind.value == k] for k in _ORDER}
+    # save a month: the path's monthly amount, else Anlegbar + the whole room; only above 0
+    monthly = path.monthly if path.adoptable else path.anlegbar + path.room
+    assert [a.amount for a in by["save_monthly"]] == ([monthly] if monthly > 0 else [])
+    for a in path.actions:
+        if a.amount_depot is not None:
+            assert a.amount_depot + a.amount_crypto == a.amount, "the parts add up"
+    # the reserve kept only when the walk invests above it (a net-worth goal with a split)
+    p = inputs.projection
+    walks = p is not None and p.split is not None and p.target is not None
+    assert len(by["keep_reserve"]) == (1 if walks else 0)
+    assert by["invest_now"] == [], "no money above the target is given here"
+    # the wants: one row per cut (on a path the wants budget), else one row that nothing is cut
+    if path.adoptable:
+        assert [(a.code, a.amount, a.mean) for a in by["wants_cut"]] == [
+            (b.code, b.budget, b.mean) for b in path.wants_budget
+        ]
+    assert (len(by["wants_cut"]) > 0) != (len(by["wants_none"]) == 1)
+    for a in by["wants_none"]:
+        assert a.within_target == (a.amount <= path.ceiling.wants_kept)
+        assert (a.wants_percent is None) == (inputs.wants_max is None)
+    # the return needed only in step 2's states, as the path names it
+    assert [a.rate for a in by["return_needed"]] == (
+        [] if path.return_needed is None else [path.return_needed]
+    )
+    # the month the plan reaches the goal: on a path and at a return needed by the due month
+    # (the return needed is the one that reaches it then), else the why's at the typed rates
+    if path.adoptable or path.return_needed is not None:
+        assert path.plan_reached is not None
+        assert path.plan_reached <= inputs.goal.due_month
+    else:
+        assert path.plan_reached == path.why.reached
+
+
+def test_the_plans_steps_on_sample_numbers() -> None:
+    """1,000.00 € a month at 60 / 40 with savings plans of 100.00 into funds and 50.00 into
+    crypto: the rest 850.00 at the split gives funds 100.00 + 510.00 = 610.00, crypto 390.00;
+    2,500.00 € above the reserve target of 12,000.00: funds 1,500.00, crypto 1,000.00; one want
+    cut from 300.00 to 180.00; the return needed 6.500 %."""
+    from dataclasses import replace
+
+    from hausbuch.schemas.allocation import AllocationCategory
+    from hausbuch.schemas.goal import GoalBudget, GoalPathActionKind, GoalPathCeiling
+    from hausbuch.schemas.household import BudgetClass
+    from hausbuch.schemas.plan import InvestmentSplit
+
+    d = Decimal
+    code = AllocationCategory.HH_RESTAURANT
+    ceiling = GoalPathCeiling(
+        income=d("4000.00"),
+        rental_cash=d("0.00"),
+        need=d("2000.00"),
+        wants_kept=d("400.00"),
+        other_spending=d("0.00"),
+        suggested=False,
+        buffer=d("100.00"),
+        ceiling=d("1500.00"),
+    )
+    cut = GoalBudget(code=code, budget_class=BudgetClass.WANT, mean=d("300.00"), budget=d("180.00"))
+    figures = PA.PlanFigures(
+        monthly=d("1000.00"),
+        split=InvestmentSplit(depot=d("60"), crypto=d("40")),
+        target=d("12000.00"),
+        plans_depot=d("100.00"),
+        plans_crypto=d("50.00"),
+        above_target=d("2500.00"),
+        cuts=[cut],
+        wants_net=d("300.00"),
+        ceiling=ceiling,
+        wants_max=d("10"),
+        return_needed=d("6.500"),
+    )
+    K = GoalPathActionKind
+    got = [
+        (a.kind, a.amount, a.amount_depot, a.amount_crypto, a.code, a.mean, a.rate)
+        for a in PA.actions_of(figures)
+    ]
+    assert got == [
+        (K.SAVE_MONTHLY, d("1000.00"), d("610.00"), d("390.00"), None, None, None),
+        (K.INVEST_NOW, d("2500.00"), d("1500.00"), d("1000.00"), None, None, None),
+        (K.KEEP_RESERVE, d("12000.00"), None, None, None, None, None),
+        (K.WANTS_CUT, d("180.00"), None, None, code, d("300.00"), None),
+        (K.RETURN_NEEDED, None, None, None, None, None, d("6.500")),
+    ]
+    # nothing cut: one row with the wants' net mean 300.00, within the 400.00 kept at 10 %
+    none = PA.actions_of(replace(figures, cuts=[], return_needed=None))
+    last = none[-1]
+    assert (last.kind, last.amount, last.within_target, last.wants_percent) == (
+        K.WANTS_NONE,
+        d("300.00"),
+        True,
+        d("10"),
+    )
+    # wants of 450.00 above the 400.00 kept and nothing cut (on track), at the suggestion
+    above = PA.actions_of(
+        replace(figures, cuts=[], wants_net=d("450.00"), wants_max=None, return_needed=None)
+    )[-1]
+    assert (above.amount, above.within_target, above.wants_percent) == (d("450.00"), False, None)
+    # no split (a goal of a sum or the reserve): no parts, nothing invested now, no reserve row
+    kept = PA.actions_of(replace(figures, split=None))
+    assert [(a.kind, a.amount_depot) for a in kept] == [
+        (K.SAVE_MONTHLY, None),
+        (K.WANTS_CUT, None),
+        (K.RETURN_NEEDED, None),
+    ]
+    # the plans alone above the monthly amount: no parts rather than a negative rest
+    plans_above = PA.monthly_split(d("120.00"), figures.split, figures.target, d("100"), d("50"))
+    assert plans_above is None
