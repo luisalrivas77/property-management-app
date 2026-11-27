@@ -16,7 +16,7 @@ from uuid import UUID
 from pydantic import Field, SerializerFunctionWrapHandler, model_serializer, model_validator
 
 from .allocation import AllocationCategory
-from .budget import BudgetTargets
+from .budget import BudgetPercent, BudgetTargets
 from .common import _STRING_ONLY, Money, NonNegativeMoney, PositiveMoney, Schema, _string_schema
 from .health import BandLimits, HealthTodo, Reserve, TargetMonths, YearMonth, is_month_end
 from .household import BudgetClass, HouseholdGroup
@@ -312,6 +312,95 @@ class GoalChoice(Schema):
         return self
 
 
+class GoalPathState(StrEnum):
+    """Where the goal's path stands (phase 10 §7.11 (i), D311): the first step that holds."""
+
+    ON_TRACK = "on_track"  # the walk without change reaches the goal by its month
+    DOABLE_RATES = "doable_rates"  # step 1: an extra within the room, at the typed rates
+    DOABLE_RETURN = "doable_return"  # step 2: the whole room, a return reached in ≥ half
+    AMBITIOUS = "ambitious"  # step 2: the return reached in some windows, under half
+    HARDLY = "hardly"  # none of these: the why is shown
+
+
+# The rate a path counts on, a yearly fraction to 0.1 % (schemas.goal.GoalReturn's shape).
+PathRate = Annotated[
+    Decimal,
+    Field(max_digits=9, decimal_places=3),
+    _STRING_ONLY,
+    _string_schema(3, signed=True),
+]
+ADOPTABLE_STATES = frozenset(
+    {GoalPathState.ON_TRACK, GoalPathState.DOABLE_RATES, GoalPathState.DOABLE_RETURN}
+)
+
+
+class GoalPathMonth(Schema):
+    """One month of the adopted path's walk (§7.11 (i) item 6): the net worth the path reaches
+    at that month's end, stored when the path is adopted, so a month that closes later is
+    compared with the path as it was adopted (the live walk starts after the newest closed
+    month and cannot give a past month)."""
+
+    month: YearMonth
+    net_worth: Money
+
+
+class GoalPathBudgetChange(Schema):
+    """One spending change the adopted path wrote as its wants budget (§7.11 (i) 5): the code
+    and its planned amount a month. The months are left out on purpose: they run from the
+    month after the newest closed one to the due month, and „Durchspielen“ moves a change's
+    first month to today's, so a change still at this code and amount is still the path's."""
+
+    code: AllocationCategory
+    monthly: NonNegativeMoney
+
+
+class GoalPathLever(Schema):
+    """The path the household adopted for its goal (phase 10 §7.11 (i), D311), written by
+    `POST /household-goal/path/adopt` from the server's own answer at that moment, never from
+    figures a browser sends. What the path was computed from is kept with it, so a later read
+    can tell that its inputs moved („Plan prüfen“) instead of replacing it silently."""
+
+    adopted_on: date
+    state: GoalPathState
+    monthly: NonNegativeMoney  # „Anlegbar“ + extra, invested a month
+    extra: NonNegativeMoney
+    rate: PathRate | None = None  # the rate counted on: the typed rates, or the return needed
+    return_needed: PathRate | None = None  # step 2 only
+    windows: int | None = Field(default=None, ge=0)
+    reached_windows: int | None = Field(default=None, ge=0)
+    wants_budget_total: NonNegativeMoney
+    # What it was computed from: the goal, the typed rates, the wants target, and „Anlegbar“
+    # and the room of that day.
+    goal: Goal
+    value_change: ValueChange
+    wants_max: BudgetPercent | None = None
+    anlegbar: Money
+    room: NonNegativeMoney
+    # The investment split in force that day (None: unset), stored for a later check of a
+    # moved split; rules/goal/path.py `moved` does not read it yet.
+    investment_split: InvestmentSplit | None = None
+    # The wants budget the path wrote as the spending changes (empty on track, where the
+    # household's own budget is kept), so adopting again strips only that budget while the
+    # spending changes in force still are it (services.goal._without_path_budget)
+    budget: list[GoalPathBudgetChange] = Field(default_factory=list, max_length=200)
+    # The path's walk from the month after the newest closed one to the due month, at most the
+    # walk's forty years
+    months: list[GoalPathMonth] = Field(default_factory=list, max_length=481)
+
+    @model_validator(mode="after")
+    def _path(self) -> Self:
+        if self.state not in ADOPTABLE_STATES:
+            raise ValueError(f"{LEVER_INVALID}: only a path that holds is adopted")
+        if self.monthly != self.anlegbar + self.extra or self.extra > self.room:
+            raise ValueError(f"{LEVER_INVALID}: a path is Anlegbar + an extra within the room")
+        if (self.state is GoalPathState.DOABLE_RETURN) != (self.return_needed is not None):
+            raise ValueError(f"{LEVER_INVALID}: a return is needed exactly on step 2")
+        seen = [m.month for m in self.months]
+        if seen != sorted(set(seen)) or any(m > self.goal.due_month for m in seen):
+            raise ValueError(f"{LEVER_INVALID}: the path's months, in order, up to the due month")
+        return self
+
+
 class HouseholdLevers(Schema):
     """`household_scenario.levers` (D248). The defaults are the spec's (§18 Q1)."""
 
@@ -349,13 +438,16 @@ class HouseholdLevers(Schema):
     # then takes the savings plans' or the holdings' mix, rules/investment_split.py). Left out
     # of the dump when None, like the goal.
     investment_split: InvestmentSplit | None = None
+    # Phase 10 §7.11 (i), D311: the path adopted with „Diesen Plan übernehmen“, None until then;
+    # left out of the dump when None, like the goal.
+    goal_path: GoalPathLever | None = None
 
     @model_serializer(mode="wrap")
     def _without_unset_goal(self, handler: SerializerFunctionWrapHandler):
         # No return annotation: pydantic then keeps the fields' JSON schema for the answer.
         data = handler(self)
         if isinstance(data, dict):
-            for key in ("goal", "goal_choice", "investment_split"):
+            for key in ("goal", "goal_choice", "investment_split", "goal_path"):
                 if data.get(key) is None:
                     data.pop(key, None)
             if not data.get("one_off_overrides"):

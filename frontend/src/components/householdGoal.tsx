@@ -27,6 +27,7 @@ import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { type Translation, useT } from "@/i18n";
 import { goalText } from "@/i18n/goal";
+import { goalPathText } from "@/i18n/goalPath";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { detailHref } from "@/lib/detailHash";
 import { HOUSEHOLD_PLAN_PAGE, HOUSEHOLD_PLAY, HOUSEHOLD_RESERVE, RATE_LEVER } from "@/lib/planningRoutes";
@@ -34,6 +35,7 @@ import { HOUSEHOLD_PLAN_PAGE, HOUSEHOLD_PLAY, HOUSEHOLD_RESERVE, RATE_LEVER } fr
 import { DetailPanel, useDetail } from "./DetailPanel";
 import { todayIso } from "./format";
 import { Field } from "./form";
+import { hasGap as pathHasGap, type PathView, usePathWord } from "./goalPathWord";
 import { HealthTodoList } from "./healthFigures";
 import { SplitSection } from "./investmentSplit";
 import {
@@ -84,6 +86,7 @@ export const GOAL_BASIS_HREF = `${GOAL_PAGE}${detailHref(GOAL_DETAIL, GOAL_BASIS
 
 /** A route's side panel on Haushalt › Ziel, for „Für euer Ziel“ on Anlagen (§7.9 (e) 3). */
 export function goalRouteHref(route: GoalInvestment): string {
+  if (route === "path") return HOUSEHOLD_PLAN_PAGE;
   return `${GOAL_PAGE}${detailHref(GOAL_DETAIL, route === "balanced" ? GOAL_BALANCED : GOAL_MORE_RETURN)}`;
 }
 
@@ -168,13 +171,22 @@ function keepsOnTrack(goal: HouseholdGoal): goal is HouseholdGoal & { heute: str
  * figure is the server's. */
 export function GoalTileBody({ goal }: { goal: HouseholdGoal }) {
   const t = useT(goalText);
+  const tp = useT(goalPathText);
   const p = usePlanFormat();
+  // With the goal's path (§7.11 (i), D311) its word and its monthly amount, as on „Euer Plan“.
+  const path = usePathWord(goal);
   if (!goal.goal) return null;
   const reached = goal.balanced?.reached ?? null;
   return (
     <>
       <GoalHeadline goal={goal} goalSet={goal.goal} />
-      {goal.word && goal.word !== "none" ? <WordPill word={goal.word} text={goalWordText(t, goal)} /> : <span className="tile-sub">{goalWordText(t, goal)}</span>}
+      {path ? (
+        <WordPill word={path.word} text={path.text} />
+      ) : goal.word && goal.word !== "none" ? (
+        <WordPill word={goal.word} text={goalWordText(t, goal)} />
+      ) : (
+        <span className="tile-sub">{goalWordText(t, goal)}</span>
+      )}
       {keepsOnTrack(goal) ? <span className="tile-sub">{t.keepOnTrack(p.euro(goal.heute))}</span> : null}
       {goal.percent != null ? (
         <span className="goal-bar goal-bar-tile" role="img" aria-label={t.percentReached(p.percentValue(goal.percent))}>
@@ -184,7 +196,13 @@ export function GoalTileBody({ goal }: { goal: HouseholdGoal }) {
       {goal.word && goal.word !== "none" ? (
         <Stats count={2}>
           <Stat value={p.euro(goal.value_today)} label={t.reserveToday} />
-          {reached ? (
+          {path ? (
+            path.view.monthly != null ? (
+              <Stat value={p.euro(path.view.monthly)} label={tp.investLabel} />
+            ) : (
+              <Stat value={p.euro(path.view.path.ceiling.ceiling)} label={tp.ceilingLabel} />
+            )
+          ) : reached ? (
             <Stat value={p.month(reached)} label={t.atGoalBalanced} />
           ) : (
             <Stat value={goal.reached ? p.month(goal.reached) : "–"} label={t.atGoal} />
@@ -507,6 +525,7 @@ function GoalCards({ goal, goalSet, onChanged }: { goal: HouseholdGoal; goalSet:
   const detail = useDetail(GOAL_DETAIL);
   const ids = useId();
   const chosen = goal.choice?.spending ?? null;
+  const path = usePathWord(goal);
   return (
     <section className="goal-cards" aria-labelledby={`${ids}-title`}>
       <div className="goal-c">
@@ -525,7 +544,7 @@ function GoalCards({ goal, goalSet, onChanged }: { goal: HouseholdGoal; goalSet:
         <GoalHeadline goal={goal} goalSet={goalSet} />
         {goal.word != null ? (
           <a {...detail.linkProps(GOAL_WORDS)} className="goal-word-link">
-            <WordPill word={goal.word} text={goalWordText(t, goal)} />
+            {path ? <WordPill word={path.word} text={path.text} /> : <WordPill word={goal.word} text={goalWordText(t, goal)} />}
           </a>
         ) : (
           <WordPill word="none" text={goalWordText(t, goal)} />
@@ -546,12 +565,14 @@ function GoalCards({ goal, goalSet, onChanged }: { goal: HouseholdGoal; goalSet:
         </div>
       ) : (
         <>
+          {path ? <PathSummaryCard view={path.view} /> : null}
           {hasGap(goal) ? null : <OnTrackCard goal={goal} />}
           <BasisCard goal={goal} />
           <AsIsCard goal={goal} goalSet={goalSet} />
           {hasGap(goal) ? (
             <>
-              {goal.balanced ? <BalancedCard goal={goal} /> : null}
+              {/* The path's card replaces the balanced route's (§7.11 (i), D311). */}
+              {goal.balanced && !path ? <BalancedCard goal={goal} /> : null}
               <OtherRoutesCard goal={goal} />
             </>
           ) : null}
@@ -561,6 +582,50 @@ function GoalCards({ goal, goalSet, onChanged }: { goal: HouseholdGoal; goalSet:
         </>
       )}
     </section>
+  );
+}
+
+/** „Euer Plan“ in one card on Haushalt › Ziel: the same amounts as the plan's page, with its
+ * link. At step 1 the monthly amount and what it is more than today; at step 2 the return
+ * needed; Ehrgeizig and Kaum erreichbar the most that can be invested. */
+function PathSummaryCard({ view }: { view: PathView }) {
+  const tp = useT(goalPathText);
+  const p = usePlanFormat();
+  const adopted = view.current && view.adopted ? tp.adoptedTag(p.date(view.adopted.adopted_on)) : null;
+  return (
+    <div className="goal-c goal-c-main" data-testid="goal-path-summary">
+      <div className="goal-ch">
+        <h3>{tp.planTitle}</h3>
+        <Link href={HOUSEHOLD_PLAN_PAGE} className="goal-lnk">
+          {tp.toPlan} ›
+        </Link>
+      </div>
+      {view.state === "on_track" || view.state === "doable_rates" ? (
+        <Stats count={2}>
+          <Stat value={p.euro(view.monthly)} label={tp.investMonthly} />
+          <Stat value={p.euro(view.wants_budget_total)} label={tp.wantsBudget} />
+        </Stats>
+      ) : view.state === "doable_return" ? (
+        <Stats count={2}>
+          <Stat value={view.return_needed ? tp.perYear(p.ratio(view.return_needed)) : "–"} label={tp.returnNeeded} />
+          <Stat value={p.euro(view.monthly)} label={tp.investMonthly} />
+        </Stats>
+      ) : view.windows != null ? (
+        // Step 2 was judged: a missing return is one above the search's 100 % a year.
+        <Stats count={2}>
+          <Stat value={p.euro(view.path.ceiling.ceiling)} label={tp.ceilingLabel} />
+          <Stat value={view.return_needed ? tp.perYear(p.ratio(view.return_needed)) : tp.noReturn} label={tp.returnForIt} warn />
+        </Stats>
+      ) : (
+        <Stats count={1}>
+          <Stat value={p.euro(view.path.ceiling.ceiling)} label={tp.ceilingLabel} />
+        </Stats>
+      )}
+      {view.state === "on_track" || view.state === "doable_rates" ? (
+        <p className="goal-one">{pathHasGap(view.extra) ? tp.extraSub(p.euro(view.extra)) : tp.sameAsToday}</p>
+      ) : null}
+      {adopted ? <p className="goal-one goal-path-adopted">{adopted}</p> : null}
+    </div>
   );
 }
 

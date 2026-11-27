@@ -391,6 +391,15 @@ PATTERNS = i18n.Patterns(
             "On “{label}”, {n} transactions await your confirmation; together they do not"
             " change the holding.",
         ),
+        # services/goal.py: an adopted path whose inputs moved (phase 10 §7.11 (i) 5).
+        (
+            "Seit ihr den Plan übernommen habt, hat sich geändert, womit er gerechnet wurde"
+            " (das Ziel, die Renditen, das Budget für Wünsche oder eure Monate). Prüft den Plan"
+            " und übernehmt ihn neu, wenn er passt.",
+            "Since you adopted the plan, what it was computed from has changed (the goal, the"
+            " returns, the wants budget or your months). Check the plan and adopt it again if it"
+            " fits.",
+        ),
         # services/plan_page.py: „Euer Plan“'s repair without a property's living area.
         (
             "Für die Wohnung ist keine Wohnfläche eingetragen; ohne sie rechnet „Wenn es"
@@ -443,6 +452,7 @@ ACTIONS = i18n.Patterns(
         ("Eigentümer festlegen", "Set owners"),
         ("Transaktionen prüfen", "Review transactions"),
         ("Wohnfläche eintragen", "Enter living area"),
+        ("Plan prüfen", "Check plan"),
     ],
 )
 

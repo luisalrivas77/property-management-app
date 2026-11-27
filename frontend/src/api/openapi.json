@@ -7741,6 +7741,34 @@
         }
       }
     },
+    "/api/household-goal/path/adopt": {
+      "post": {
+        "summary": "Household Goal Path Adopt",
+        "operationId": "household_goal_path_adopt_api_household_goal_path_adopt_post",
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdScenario"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/household-goal/reference-returns/refresh": {
       "post": {
         "summary": "Household Goal Reference Refresh",
@@ -23130,7 +23158,8 @@
         "type": "string",
         "enum": [
           "more_return",
-          "balanced"
+          "balanced",
+          "path"
         ],
         "title": "GoalInvestment",
         "description": "The return the household follows (`goal_choice.investment`, „Diesem Weg folgen“)."
@@ -23358,6 +23387,818 @@
         ],
         "title": "GoalMoreSaving",
         "description": "Route 2 „Mehr anlegen“ (D302): the smallest whole-euro `extra` a month from next month\nto the due month that reaches the target on the walk; `noetig` = Heute + extra, None when\nthe extra is above the mean income. It never decides the word."
+      },
+      "GoalPath": {
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/GoalPathState"
+          },
+          "ceiling": {
+            "$ref": "#/components/schemas/GoalPathCeiling"
+          },
+          "anlegbar": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Anlegbar"
+          },
+          "room": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Room"
+          },
+          "extra": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra"
+          },
+          "monthly": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly"
+          },
+          "typed_rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Typed Rate"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "return_needed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return Needed"
+          },
+          "window_years": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Years"
+          },
+          "windows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Windows"
+          },
+          "reached_windows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reached Windows"
+          },
+          "short_history": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short History"
+          },
+          "years": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Years"
+          },
+          "wants_budget": {
+            "items": {
+              "$ref": "#/components/schemas/GoalBudget"
+            },
+            "type": "array",
+            "title": "Wants Budget"
+          },
+          "wants_budget_total": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wants Budget Total"
+          },
+          "spending_changes": {
+            "items": {
+              "$ref": "#/components/schemas/SpendingChange"
+            },
+            "type": "array",
+            "title": "Spending Changes"
+          },
+          "adoptable": {
+            "type": "boolean",
+            "title": "Adoptable"
+          },
+          "why": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalPathWhy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "today": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalPathToday"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "adopted": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalPathAdopted"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "ceiling",
+          "anlegbar",
+          "room",
+          "adoptable"
+        ],
+        "title": "GoalPath",
+        "description": "The goal's path (D311): step 1 at the typed rates within the room, else step 2 the return\nneeded with the whole room against the invested mix's history, else why. Every figure by\ncode; the app proposes no goal, no rate and no product (D247, D289)."
+      },
+      "GoalPathAdopted": {
+        "properties": {
+          "adopted_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Adopted On"
+          },
+          "state": {
+            "$ref": "#/components/schemas/GoalPathState"
+          },
+          "monthly": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Monthly"
+          },
+          "extra": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Extra"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "return_needed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return Needed"
+          },
+          "windows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Windows"
+          },
+          "reached_windows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reached Windows"
+          },
+          "wants_budget_total": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Wants Budget Total"
+          },
+          "moved": {
+            "type": "boolean",
+            "title": "Moved"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "adopted_on",
+          "state",
+          "monthly",
+          "extra",
+          "wants_budget_total",
+          "moved"
+        ],
+        "title": "GoalPathAdopted",
+        "description": "The path the household adopted (the default scenario's `goal_path` lever), as stored,\nand whether what it was computed from has moved since („Plan prüfen“)."
+      },
+      "GoalPathBudgetChange": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "monthly": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Monthly"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "monthly"
+        ],
+        "title": "GoalPathBudgetChange",
+        "description": "One spending change the adopted path wrote as its wants budget (§7.11 (i) 5): the code\nand its planned amount a month. The months are left out on purpose: they run from the\nmonth after the newest closed one to the due month, and „Durchspielen“ moves a change's\nfirst month to today's, so a change still at this code and amount is still the path's."
+      },
+      "GoalPathCeiling": {
+        "properties": {
+          "income": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Income"
+          },
+          "rental_cash": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Rental Cash"
+          },
+          "need": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Need"
+          },
+          "wants_kept": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Wants Kept"
+          },
+          "other_spending": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Other Spending"
+          },
+          "suggested": {
+            "type": "boolean",
+            "title": "Suggested"
+          },
+          "buffer": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Buffer"
+          },
+          "ceiling": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Ceiling"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "income",
+          "rental_cash",
+          "need",
+          "wants_kept",
+          "other_spending",
+          "suggested",
+          "buffer",
+          "ceiling"
+        ],
+        "title": "GoalPathCeiling",
+        "description": "Item 1: what the household can save at most a month: Anlegbar's free cash with the\nwants cut to the wants kept, less the buffer kept from it as phase 9 keeps it from a free\nmonth. Its rows add up: ceiling = income + rental cash (when positive) − need − wants kept\n− other spending − buffer."
+      },
+      "GoalPathLever": {
+        "properties": {
+          "adopted_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Adopted On"
+          },
+          "state": {
+            "$ref": "#/components/schemas/GoalPathState"
+          },
+          "monthly": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Monthly"
+          },
+          "extra": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Extra"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "return_needed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return Needed"
+          },
+          "windows": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Windows"
+          },
+          "reached_windows": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reached Windows"
+          },
+          "wants_budget_total": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Wants Budget Total"
+          },
+          "goal": {
+            "$ref": "#/components/schemas/Goal"
+          },
+          "value_change": {
+            "$ref": "#/components/schemas/ValueChange"
+          },
+          "wants_max": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wants Max"
+          },
+          "anlegbar": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Anlegbar"
+          },
+          "room": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Room"
+          },
+          "investment_split": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvestmentSplit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "budget": {
+            "items": {
+              "$ref": "#/components/schemas/GoalPathBudgetChange"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Budget"
+          },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/GoalPathMonth"
+            },
+            "type": "array",
+            "maxItems": 481,
+            "title": "Months"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "adopted_on",
+          "state",
+          "monthly",
+          "extra",
+          "wants_budget_total",
+          "goal",
+          "value_change",
+          "anlegbar",
+          "room"
+        ],
+        "title": "GoalPathLever",
+        "description": "The path the household adopted for its goal (phase 10 §7.11 (i), D311), written by\n`POST /household-goal/path/adopt` from the server's own answer at that moment, never from\nfigures a browser sends. What the path was computed from is kept with it, so a later read\ncan tell that its inputs moved („Plan prüfen“) instead of replacing it silently."
+      },
+      "GoalPathMonth": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Month"
+          },
+          "net_worth": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Net Worth"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month",
+          "net_worth"
+        ],
+        "title": "GoalPathMonth",
+        "description": "One month of the adopted path's walk (§7.11 (i) item 6): the net worth the path reaches\nat that month's end, stored when the path is adopted, so a month that closes later is\ncompared with the path as it was adopted (the live walk starts after the newest closed\nmonth and cannot give a past month)."
+      },
+      "GoalPathPoint": {
+        "properties": {
+          "month_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Month End"
+          },
+          "needed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Needed"
+          },
+          "actual": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual"
+          },
+          "behind": {
+            "type": "boolean",
+            "title": "Behind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month_end",
+          "behind"
+        ],
+        "title": "GoalPathPoint",
+        "description": "The chart on Anlagen: the change needed and the change made, cumulative, per row."
+      },
+      "GoalPathRow": {
+        "properties": {
+          "month_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Month End"
+          },
+          "word": {
+            "$ref": "#/components/schemas/GoalTrackingWord"
+          },
+          "planned": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Planned"
+          },
+          "invested": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Invested"
+          },
+          "waiting": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waiting"
+          },
+          "invested_gap": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invested Gap"
+          },
+          "wants": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Wants"
+          },
+          "wants_budget": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Wants Budget"
+          },
+          "wants_gap": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wants Gap"
+          },
+          "net_worth": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Net Worth"
+          },
+          "path_net_worth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Net Worth"
+          },
+          "net_worth_gap": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Worth Gap"
+          },
+          "value_change": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Value Change"
+          },
+          "implied_change": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Implied Change"
+          },
+          "actual_percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Percent"
+          },
+          "needed_percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Needed Percent"
+          },
+          "value_behind": {
+            "type": "boolean",
+            "title": "Value Behind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month_end",
+          "word",
+          "planned",
+          "invested",
+          "wants",
+          "wants_budget",
+          "net_worth",
+          "value_change",
+          "implied_change",
+          "value_behind"
+        ],
+        "title": "GoalPathRow",
+        "description": "One closed month-end since the path was adopted (§7.11 (i) item 6, 12): what was invested\n(with the money waiting to be bought) against the path's monthly amount, the wants against\nits budget, the net worth against the path's walk, and the value change against the change\nits rate implies; each gap what is short, None when nothing is."
+      },
+      "GoalPathState": {
+        "type": "string",
+        "enum": [
+          "on_track",
+          "doable_rates",
+          "doable_return",
+          "ambitious",
+          "hardly"
+        ],
+        "title": "GoalPathState",
+        "description": "Where the goal's path stands (phase 10 §7.11 (i), D311): the first step that holds."
+      },
+      "GoalPathToday": {
+        "properties": {
+          "invested": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Invested"
+          },
+          "saved": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Saved"
+          },
+          "saved_not_invested": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Saved Not Invested"
+          },
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/SavingsPlan"
+            },
+            "type": "array",
+            "title": "Plans"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "invested",
+          "saved",
+          "saved_not_invested"
+        ],
+        "title": "GoalPathToday",
+        "description": "„Heute angelegt“ (item 3): the mean invested a month over the closed window (the\npurchases rules/investment_split.py counts), the savings plans detected, the mean saved and\nwhat is saved but not invested. In `generic` mode no plan is listed (no kind, no payee)."
+      },
+      "GoalPathWhy": {
+        "properties": {
+          "due_value": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Due Value"
+          },
+          "reached": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reached"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "due_value"
+        ],
+        "title": "GoalPathWhy",
+        "description": "Item 4, when no path holds: with the whole room used at the typed rates, the value at\nthe due month and the month the goal is then reached (None within the walk's 40 years)."
       },
       "GoalPoint": {
         "properties": {
@@ -23904,6 +24745,20 @@
             "type": "integer",
             "title": "Reserve Depots",
             "default": 0
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/GoalPathRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/GoalPathPoint"
+            },
+            "type": "array",
+            "title": "Points"
           }
         },
         "additionalProperties": false,
@@ -25495,7 +26350,8 @@
           "rate_missing",
           "income_change_link",
           "uncategorized_lines",
-          "living_area_missing"
+          "living_area_missing",
+          "plan_check"
         ],
         "title": "HealthTodoCode"
       },
@@ -26083,6 +26939,16 @@
               }
             ]
           },
+          "goal_path": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalPath"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "assumptions": {
             "items": {
               "$ref": "#/components/schemas/GoalAssumption"
@@ -26257,6 +27123,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/InvestmentSplit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "goal_path": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalPathLever"
               },
               {
                 "type": "null"

@@ -168,6 +168,8 @@ export const RULE_CODE_TEXT_EN: Record<string, string> = {
     "This category cannot be moved between Needs and Wants: one-off spending and unclassified transactions belong to neither. Please reload the page.",
   "household_scenario.one_off_code_invalid":
     "This category cannot be marked as one-off: only the household's spending can be one-off. Please reload the page.",
+  "household_scenario.path_invalid":
+    "This plan cannot be adopted as it is: there is no reachable path, or the figures have changed since. Please reload the page.",
   "household_scenario.goal_invalid":
     "The goal's month must lie after the current month. Please choose a later month.",
   "scenario.not_current":

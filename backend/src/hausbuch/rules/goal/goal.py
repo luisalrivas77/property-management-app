@@ -33,16 +33,18 @@ a product (D247, D251, D289 (1)).
   history (the reference series in euros), with the median, the best and N of M reached.
   Not offered in `generic` mode (D289), for a goal that is not a net worth, with nothing
   invested and no split, without the funds series, or on a history covering under half of
-  the invested value; out of range above +100 %. Under 5 windows it is thin: shown, never the
-  word. When route 3 decides (available, not thin) the balanced route is walked at its
-  median for funds and crypto, else at the typed rates.
+  the invested value; out of range above +100 %. Under 5 windows it is thin. Since §7.11 (i)
+  (D311) it never decides the word and the balanced route always walks the typed rates.
 - „Eigene Wahl“ (D289 (3)) is the household's own spending in play (D263) on the Ziel tab; once
   adopted with `goal_choice.spending = own`, it is read like any adopted budget.
-- The word (D303): „Auf Kurs“ when the walk without change, or with the budget the household
-  adopted, reaches the target by the due month; „Machbar“ when a route 4 scenario closes the
-  gap or route 3 decides with its return within the median; „Ehrgeizig“ only through route 3,
-  its return reached only in good times (never in `generic` mode, never on a thin history);
-  „Kaum erreichbar“ otherwise.
+- The path (§7.11 (i), D311; rules/goal/path.py): „Auf Kurs“ when the walk without change, or
+  with the budget the household adopted, reaches the target by the due month; step 1, the
+  smallest whole-euro extra within the room (the ceiling less Anlegbar) at the typed rates;
+  step 2 (own use, a net-worth goal), the return needed with the whole room, reached in at
+  least half of the windows of the invested mix's history. The word is the path's state:
+  on_track „Auf Kurs“, doable_rates and doable_return „Machbar“, ambitious „Ehrgeizig“
+  (never adoptable), hardly „Kaum erreichbar“ with the why. Route 4 and route 3 are still
+  shown and decide nothing (amends D303).
 - A property without a default scenario is kept (D301 (a) 5); the answer names that
   assumption with the link that replaces it.
 """
@@ -67,21 +69,31 @@ from hausbuch.schemas.goal import (
     GoalIssue,
     GoalMoreReturn,
     GoalMoreSaving,
+    GoalPath,
+    GoalPathWhy,
     GoalPoint,
     GoalReferenceSource,
     GoalRouteReason,
     GoalSale,
     GoalScenario,
     GoalUnreachable,
-    GoalVerdict,
     GoalWord,
     HouseholdGoal,
 )
 from hausbuch.schemas.health import HealthTodo
 from hausbuch.schemas.household import BudgetClass
-from hausbuch.schemas.plan import Goal, GoalChoice, GoalKind, GoalSpending, SpendingChange
+from hausbuch.schemas.plan import (
+    ADOPTABLE_STATES,
+    Goal,
+    GoalChoice,
+    GoalKind,
+    GoalPathState,
+    GoalSpending,
+    SpendingChange,
+)
 
 from . import history as H
+from . import path as PA
 from .walk import Projection, Walk, last_month, walk
 
 CENT = Decimal("0.01")
@@ -202,7 +214,7 @@ def household_goal(i: GoalInputs) -> HouseholdGoal:
         "used_up": as_is.used_up,
         "more_saving": None if extra is None else GoalMoreSaving(extra=extra, noetig=noetig),
     }
-    more_return, rate = _more_return(i, p, target, left)
+    more_return, _median = _more_return(i, p, target, left)
     known["more_return"] = more_return
     with_budget = None
     if i.choice is not None and i.choice.spending is not None and i.household_changes:
@@ -216,15 +228,8 @@ def household_goal(i: GoalInputs) -> HouseholdGoal:
     balanced_walk: Walk | None = None
     if projected < target:
         scenarios = _scenarios(i, p, target, extra, first)
-        if rate is None:
-            bp, balanced = p, _balanced(i, reaches, extra, first)
-        else:  # route 3 decides: the invested mix at its median-window return (D302)
-            bp = _at_rate(p, rate)
-            at_rate = _reaches(i, bp, target, first)
-            extra_at = _smallest(lambda e: at_rate(e, ()), EXTRA_CEILING, grow=True)
-            balanced = _balanced(i, at_rate, extra_at, first)
-            if balanced is not None:
-                balanced = balanced.model_copy(update={"return_rate": rate})
+        # D311: one growth assumption for every goal, the typed rates (route 3 is shown beside)
+        bp, balanced = p, _balanced(i, reaches, extra, first)
         if balanced is not None and balanced.saving_extra is not None:
             balanced_walk = walk(
                 bp,
@@ -238,23 +243,138 @@ def household_goal(i: GoalInputs) -> HouseholdGoal:
             )
         known["balanced"] = balanced
     known["path"] = _path(goal, as_is, balanced_walk)
-    decides = rate is not None and i.mode is AdviceMode.OWN_USE
-    if on_track:
-        word = GoalWord.ON_TRACK
-    elif any(s.closes for s in scenarios) or (
-        decides and more_return.verdict is GoalVerdict.WITHIN_HISTORY
-    ):
-        word = GoalWord.FEASIBLE
-    elif decides and more_return.verdict is GoalVerdict.GOOD_TIMES:
-        word = GoalWord.AMBITIOUS
-    else:
-        word = GoalWord.HARDLY
+    plan = _plan_path(i, p, target, left, on_track, reaches, first)
+    known["goal_path"] = plan
+    word = WORD_OF[plan.state]
     unreachable = (
         GoalUnreachable(later=known["reached"], reaches_by_due=projected)
         if word is GoalWord.HARDLY
         else None
     )
     return HouseholdGoal(word=word, scenarios=scenarios, unreachable=unreachable, **known)
+
+
+# --- The path (§7.11 (i), D311) -------------------------------------------------------------
+
+WORD_OF = {
+    GoalPathState.ON_TRACK: GoalWord.ON_TRACK,
+    GoalPathState.DOABLE_RATES: GoalWord.FEASIBLE,
+    GoalPathState.DOABLE_RETURN: GoalWord.FEASIBLE,
+    GoalPathState.AMBITIOUS: GoalWord.AMBITIOUS,
+    GoalPathState.HARDLY: GoalWord.HARDLY,
+}
+
+
+def _plan_path(
+    i: GoalInputs,
+    p: Projection,
+    target: Decimal,
+    left: int,
+    on_track: bool,
+    reaches: "Reaches",
+    first: str,
+) -> GoalPath:
+    """Step 1 at the typed rates within the room, else step 2 the return needed with the whole
+    room against the invested mix's history, else why (rules/goal/path.py)."""
+    b = p.basis
+    wants = {c: m for c, m in _codes(i).items() if i.classes[c] is BudgetClass.WANT}
+    net = wants_net(i)
+    ceiling = PA.ceiling_of(
+        b.mean_income,
+        b.mean_regular_spending,
+        b.mean_rental_cash,
+        i.need,
+        wants,
+        net,
+        i.wants_max,
+        b.buffer_percent,
+    )
+    anlegbar = PA.anlegbar_of(
+        b.mean_income, b.mean_regular_spending, b.mean_rental_cash, b.buffer_percent
+    )
+    room = PA.room_of(ceiling, anlegbar)
+    typed = PA.typed_rate(p.levers, p.split)
+    head = {"ceiling": ceiling, "anlegbar": anlegbar, "room": room, "typed_rate": typed}
+    step: dict = {}
+    if on_track:
+        state, extra = GoalPathState.ON_TRACK, ZERO
+    else:
+        extra = _smallest(lambda e: reaches(e, ()), Decimal(math.floor(room)))
+        state = GoalPathState.DOABLE_RATES
+    if extra is None:  # step 1 misses within the room
+        state, step = _step_2(i, p, target, left, room, first)
+        extra = room if state is GoalPathState.DOABLE_RETURN else None
+    if extra is None:
+        due = i.goal.due_month
+        with_room = walk(p, extra=room, extra_from=first)
+        month = with_room.at(due)
+        why = GoalPathWhy(
+            due_value=ZERO if month is None else value_of(i.goal, month),
+            reached=reached_in(i.goal, with_room, target),
+        )
+        return GoalPath(state=state, adoptable=False, why=why, **head, **step)
+    cuts = PA.wants_cuts(wants, PA.cuttable(net, ceiling.wants_kept), extra, b.buffer_percent)
+    budgets = [
+        GoalBudget(code=c, budget_class=BudgetClass.WANT, mean=wants[c], budget=wants[c] - cuts[c])
+        for c in sorted(cuts, key=lambda c: c.value)
+    ]
+    return GoalPath(
+        state=state,
+        extra=extra,
+        monthly=anlegbar + extra,
+        rate=typed if step.get("return_needed") is None else step["return_needed"],
+        wants_budget=budgets,
+        # never below 0: refunds above the wants of the window leave a budget of 0, not less
+        wants_budget_total=max(net, ZERO) - sum(cuts.values(), ZERO),
+        spending_changes=_changes(i.code_means, cuts, first, i.goal.due_month),
+        adoptable=True,
+        **head,
+        **step,
+    )
+
+
+def path_months(i: GoalInputs, path: GoalPath) -> tuple[tuple[str, Decimal], ...]:
+    """The path's walk to the due month, (YYYY-MM, net worth) per month, for adopting it
+    (§7.11 (i) item 6): step 1 at the typed rates with its extra, step 2 at the return needed
+    with the whole room, both without spending changes (the extra is the cut, D311); on track
+    with the household's adopted budget when it has one. Empty without a projection."""
+    p = i.projection
+    if p is None or path.state not in ADOPTABLE_STATES:
+        return ()
+    if i.goal.kind is not GoalKind.NET_WORTH:
+        p = replace(p, split=None)
+    if path.state is GoalPathState.DOABLE_RETURN:
+        assert path.return_needed is not None
+        p = _at_rate(p, path.return_needed)
+    budget = i.choice is not None and i.choice.spending is not None
+    changes = i.household_changes if path.state is GoalPathState.ON_TRACK and budget else ()
+    first = add_months(current_month(i.today), 1)
+    w = walk(p, changes, until=i.goal.due_month, extra=path.extra or ZERO, extra_from=first)
+    return tuple((m.month, m.net_worth) for m in w.months)
+
+
+def _step_2(
+    i: GoalInputs, p: Projection, target: Decimal, left: int, room: Decimal, first: str
+) -> tuple[GoalPathState, dict]:
+    """Step 2 (own use, a net-worth goal): route 3's needed return with the whole room."""
+    if i.mode is AdviceMode.GENERIC or i.goal.kind is not GoalKind.NET_WORTH:
+        return GoalPathState.HARDLY, {}
+    years = H.window_years(left)
+    mix = H.mix_of(i.invested, p.split, i.history, years)
+    if isinstance(mix, H.NoCount):
+        return GoalPathState.HARDLY, {}
+    products = H.window_products(mix.returns, years)
+    needed = _needed_return(i, p, target, room, first)
+    reached = None if needed is None else H.reached(needed, products, years)
+    shown = {
+        "return_needed": needed,
+        "window_years": years,
+        "windows": len(products),
+        "reached_windows": reached,
+        "short_history": len(products) < H.THIN_BELOW,
+        "years": [min(mix.returns), max(mix.returns)] if mix.returns else None,
+    }
+    return PA.step_2_state(reached, len(products)), shown
 
 
 # --- Route 3 „Mehr Rendite“ -------------------------------------------------------------------
@@ -269,13 +389,21 @@ def _at_rate(p: Projection, rate: Decimal) -> Projection:
     return replace(p, levers=p.levers.model_copy(update={"value_change": vc}))
 
 
-def _needed_return(i: GoalInputs, p: Projection, target: Decimal) -> Decimal | None:
+def _needed_return(
+    i: GoalInputs,
+    p: Projection,
+    target: Decimal,
+    extra: Decimal = ZERO,
+    first: str | None = None,
+) -> Decimal | None:
     """The smallest rate in thousandths that reaches the target at the due month with nothing
-    else changed; −50 % when even that reaches it, None when +100 % does not."""
+    else changed (or with `extra` a month from `first`, the path's step 2); −50 % when even
+    that reaches it, None when +100 % does not."""
     due = i.goal.due_month
 
     def ok(k: int) -> bool:
-        month = walk(_at_rate(p, Decimal(k) / 1000), until=due).at(due)
+        w = walk(_at_rate(p, Decimal(k) / 1000), until=due, extra=extra, extra_from=first)
+        month = w.at(due)
         return month is not None and value_of(i.goal, month) >= target
 
     return smallest_rate(ok)
@@ -454,6 +582,12 @@ def _scenarios(
     ):
         out.append(_cut(i, p, target, kind, {c: codes[c] for c in chosen}, wanted, first))
     return out
+
+
+def wants_net(i: GoalInputs) -> Decimal:
+    """The want class's net mean: every want code's mean, a refund (negative) and a code
+    netting to 0 included, as the Budget's Wünsche line nets them (rules/budget, D273)."""
+    return sum((m for c, m in i.code_means.items() if i.classes.get(c) is BudgetClass.WANT), ZERO)
 
 
 def _codes(i: GoalInputs) -> dict[AllocationCategory, Decimal]:

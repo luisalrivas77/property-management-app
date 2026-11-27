@@ -216,6 +216,8 @@ const RULE_CODE_TEXT_DE: Record<string, string> = {
     "Diese Kategorie lässt sich nicht zwischen Notwendiges und Wünsche verschieben: einmalige Ausgaben und Umsätze ohne Einordnung gehören zu keiner der beiden. Bitte die Seite neu laden.",
   "household_scenario.one_off_code_invalid":
     "Diese Kategorie lässt sich nicht als einmalig markieren: nur Ausgaben des Haushalts können einmalig sein. Bitte die Seite neu laden.",
+  "household_scenario.path_invalid":
+    "Dieser Plan lässt sich so nicht übernehmen: es gibt keinen erreichbaren Weg, oder die Zahlen haben sich inzwischen geändert. Bitte die Seite neu laden.",
   "household_scenario.goal_invalid":
     "Der Zielmonat muss nach dem laufenden Monat liegen. Bitte einen späteren Monat wählen.",
   "scenario.not_current":

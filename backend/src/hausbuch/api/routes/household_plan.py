@@ -56,6 +56,12 @@ replaces (supersedes_id); services/household_scenarios.py holds the checks.
   for typed levers, checked and run on the same row as POST /household-plan/preview (same
   422s and 404s); word `none` when the levers hold no goal; stores nothing, so it runs as a
   read („Durchspielen“ shows the goal with the changes beside the saved one).
+- POST /household-goal/path/adopt (phase 10 §7.11 (i) 5, D311, „Diesen Plan übernehmen“):
+  201 with the new default scenario: the server computes the goal again and writes its path
+  (step 1 or step 2) into one row superseding the default (services.goal.adopt_path). No
+  body: the browser sends no figure. 422 household_scenario.path_invalid without a goal or a
+  path that can be adopted; the same path adopted again with its inputs unmoved returns the
+  row in force and writes nothing.
 - POST /household-goal/reference-returns/refresh (phase 10 §7.11 (c) 3, point 8): 202; queues
   one refresh_reference_returns job, which downloads route 3's funds series again, due or
   not; `queued` false and the open job's id while one waits or runs. Writes nothing else:
@@ -195,6 +201,11 @@ def household_goal_plan(
 @router.post("/household-goal/preview")
 def household_goal_preview(body: HouseholdPlanPreview, cmd: Cmd) -> HouseholdGoal:
     return english(cmd.read(goal_service.preview_goal, _today(), body.levers, body.scenario_id))
+
+
+@router.post("/household-goal/path/adopt", status_code=201)
+def household_goal_path_adopt(cmd: Cmd) -> HouseholdScenario:
+    return cmd.run(goal_service.adopt_path)
 
 
 @router.post("/household-goal/reference-returns/refresh", status_code=202)

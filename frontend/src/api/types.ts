@@ -2903,6 +2903,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/household-goal/path/adopt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Household Goal Path Adopt */
+        post: operations["household_goal_path_adopt_api_household_goal_path_adopt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/household-goal/reference-returns/refresh": {
         parameters: {
             query?: never;
@@ -8984,7 +9001,7 @@ export interface components {
          * @description The return the household follows (`goal_choice.investment`, „Diesem Weg folgen“).
          * @enum {string}
          */
-        GoalInvestment: "more_return" | "balanced";
+        GoalInvestment: "more_return" | "balanced" | "path";
         /**
          * GoalIssue
          * @description Why a set goal has no word yet; the card shows the plan's to-dos or the sentence.
@@ -9071,6 +9088,267 @@ export interface components {
             extra: string;
             /** Noetig */
             noetig: string | null;
+        };
+        /**
+         * GoalPath
+         * @description The goal's path (D311): step 1 at the typed rates within the room, else step 2 the return
+         *     needed with the whole room against the invested mix's history, else why. Every figure by
+         *     code; the app proposes no goal, no rate and no product (D247, D289).
+         */
+        GoalPath: {
+            state: components["schemas"]["GoalPathState"];
+            ceiling: components["schemas"]["GoalPathCeiling"];
+            /** Anlegbar */
+            anlegbar: string;
+            /** Room */
+            room: string;
+            /** Extra */
+            extra?: string | null;
+            /** Monthly */
+            monthly?: string | null;
+            /** Typed Rate */
+            typed_rate?: string | null;
+            /** Rate */
+            rate?: string | null;
+            /** Return Needed */
+            return_needed?: string | null;
+            /** Window Years */
+            window_years?: number | null;
+            /** Windows */
+            windows?: number | null;
+            /** Reached Windows */
+            reached_windows?: number | null;
+            /** Short History */
+            short_history?: boolean | null;
+            /** Years */
+            years?: number[] | null;
+            /** Wants Budget */
+            wants_budget?: components["schemas"]["GoalBudget"][];
+            /** Wants Budget Total */
+            wants_budget_total?: string | null;
+            /** Spending Changes */
+            spending_changes?: components["schemas"]["SpendingChange"][];
+            /** Adoptable */
+            adoptable: boolean;
+            why?: components["schemas"]["GoalPathWhy"] | null;
+            today?: components["schemas"]["GoalPathToday"] | null;
+            adopted?: components["schemas"]["GoalPathAdopted"] | null;
+        };
+        /**
+         * GoalPathAdopted
+         * @description The path the household adopted (the default scenario's `goal_path` lever), as stored,
+         *     and whether what it was computed from has moved since („Plan prüfen“).
+         */
+        GoalPathAdopted: {
+            /**
+             * Adopted On
+             * Format: date
+             */
+            adopted_on: string;
+            state: components["schemas"]["GoalPathState"];
+            /** Monthly */
+            monthly: string;
+            /** Extra */
+            extra: string;
+            /** Rate */
+            rate?: string | null;
+            /** Return Needed */
+            return_needed?: string | null;
+            /** Windows */
+            windows?: number | null;
+            /** Reached Windows */
+            reached_windows?: number | null;
+            /** Wants Budget Total */
+            wants_budget_total: string;
+            /** Moved */
+            moved: boolean;
+        };
+        /**
+         * GoalPathBudgetChange
+         * @description One spending change the adopted path wrote as its wants budget (§7.11 (i) 5): the code
+         *     and its planned amount a month. The months are left out on purpose: they run from the
+         *     month after the newest closed one to the due month, and „Durchspielen“ moves a change's
+         *     first month to today's, so a change still at this code and amount is still the path's.
+         */
+        GoalPathBudgetChange: {
+            code: components["schemas"]["AllocationCategory"];
+            /** Monthly */
+            monthly: string;
+        };
+        /**
+         * GoalPathCeiling
+         * @description Item 1: what the household can save at most a month: Anlegbar's free cash with the
+         *     wants cut to the wants kept, less the buffer kept from it as phase 9 keeps it from a free
+         *     month. Its rows add up: ceiling = income + rental cash (when positive) − need − wants kept
+         *     − other spending − buffer.
+         */
+        GoalPathCeiling: {
+            /** Income */
+            income: string;
+            /** Rental Cash */
+            rental_cash: string;
+            /** Need */
+            need: string;
+            /** Wants Kept */
+            wants_kept: string;
+            /** Other Spending */
+            other_spending: string;
+            /** Suggested */
+            suggested: boolean;
+            /** Buffer */
+            buffer: string;
+            /** Ceiling */
+            ceiling: string;
+        };
+        /**
+         * GoalPathLever
+         * @description The path the household adopted for its goal (phase 10 §7.11 (i), D311), written by
+         *     `POST /household-goal/path/adopt` from the server's own answer at that moment, never from
+         *     figures a browser sends. What the path was computed from is kept with it, so a later read
+         *     can tell that its inputs moved („Plan prüfen“) instead of replacing it silently.
+         */
+        GoalPathLever: {
+            /**
+             * Adopted On
+             * Format: date
+             */
+            adopted_on: string;
+            state: components["schemas"]["GoalPathState"];
+            /** Monthly */
+            monthly: string;
+            /** Extra */
+            extra: string;
+            /** Rate */
+            rate?: string | null;
+            /** Return Needed */
+            return_needed?: string | null;
+            /** Windows */
+            windows?: number | null;
+            /** Reached Windows */
+            reached_windows?: number | null;
+            /** Wants Budget Total */
+            wants_budget_total: string;
+            goal: components["schemas"]["Goal"];
+            value_change: components["schemas"]["ValueChange"];
+            /** Wants Max */
+            wants_max?: string | null;
+            /** Anlegbar */
+            anlegbar: string;
+            /** Room */
+            room: string;
+            investment_split?: components["schemas"]["InvestmentSplit"] | null;
+            /** Budget */
+            budget?: components["schemas"]["GoalPathBudgetChange"][];
+            /** Months */
+            months?: components["schemas"]["GoalPathMonth"][];
+        };
+        /**
+         * GoalPathMonth
+         * @description One month of the adopted path's walk (§7.11 (i) item 6): the net worth the path reaches
+         *     at that month's end, stored when the path is adopted, so a month that closes later is
+         *     compared with the path as it was adopted (the live walk starts after the newest closed
+         *     month and cannot give a past month).
+         */
+        GoalPathMonth: {
+            /** Month */
+            month: string;
+            /** Net Worth */
+            net_worth: string;
+        };
+        /**
+         * GoalPathPoint
+         * @description The chart on Anlagen: the change needed and the change made, cumulative, per row.
+         */
+        GoalPathPoint: {
+            /**
+             * Month End
+             * Format: date
+             */
+            month_end: string;
+            /** Needed */
+            needed?: string | null;
+            /** Actual */
+            actual?: string | null;
+            /** Behind */
+            behind: boolean;
+        };
+        /**
+         * GoalPathRow
+         * @description One closed month-end since the path was adopted (§7.11 (i) item 6, 12): what was invested
+         *     (with the money waiting to be bought) against the path's monthly amount, the wants against
+         *     its budget, the net worth against the path's walk, and the value change against the change
+         *     its rate implies; each gap what is short, None when nothing is.
+         */
+        GoalPathRow: {
+            /**
+             * Month End
+             * Format: date
+             */
+            month_end: string;
+            word: components["schemas"]["GoalTrackingWord"];
+            /** Planned */
+            planned: string;
+            /** Invested */
+            invested: string;
+            /** Waiting */
+            waiting?: string | null;
+            /** Invested Gap */
+            invested_gap?: string | null;
+            /** Wants */
+            wants: string;
+            /** Wants Budget */
+            wants_budget: string;
+            /** Wants Gap */
+            wants_gap?: string | null;
+            /** Net Worth */
+            net_worth: string;
+            /** Path Net Worth */
+            path_net_worth?: string | null;
+            /** Net Worth Gap */
+            net_worth_gap?: string | null;
+            /** Value Change */
+            value_change: string;
+            /** Implied Change */
+            implied_change: string;
+            /** Actual Percent */
+            actual_percent?: string | null;
+            /** Needed Percent */
+            needed_percent?: string | null;
+            /** Value Behind */
+            value_behind: boolean;
+        };
+        /**
+         * GoalPathState
+         * @description Where the goal's path stands (phase 10 §7.11 (i), D311): the first step that holds.
+         * @enum {string}
+         */
+        GoalPathState: "on_track" | "doable_rates" | "doable_return" | "ambitious" | "hardly";
+        /**
+         * GoalPathToday
+         * @description „Heute angelegt“ (item 3): the mean invested a month over the closed window (the
+         *     purchases rules/investment_split.py counts), the savings plans detected, the mean saved and
+         *     what is saved but not invested. In `generic` mode no plan is listed (no kind, no payee).
+         */
+        GoalPathToday: {
+            /** Invested */
+            invested: string;
+            /** Saved */
+            saved: string;
+            /** Saved Not Invested */
+            saved_not_invested: string;
+            /** Plans */
+            plans?: components["schemas"]["SavingsPlan"][];
+        };
+        /**
+         * GoalPathWhy
+         * @description Item 4, when no path holds: with the whole room used at the typed rates, the value at
+         *     the due month and the month the goal is then reached (None within the walk's 40 years).
+         */
+        GoalPathWhy: {
+            /** Due Value */
+            due_value: string;
+            /** Reached */
+            reached?: string | null;
         };
         /**
          * GoalPoint
@@ -9270,6 +9548,10 @@ export interface components {
              * @default 0
              */
             reserve_depots: number;
+            /** Rows */
+            rows?: components["schemas"]["GoalPathRow"][];
+            /** Points */
+            points?: components["schemas"]["GoalPathPoint"][];
         };
         /**
          * GoalTrackingReason
@@ -9872,7 +10154,7 @@ export interface components {
          * HealthTodoCode
          * @enum {string}
          */
-        HealthTodoCode: "month_end_missing" | "account_not_covered" | "lines_waiting" | "transfer_open" | "too_few_months" | "balance_stale" | "bands_unconfirmed" | "no_default_scenario" | "scenario_check" | "rate_missing" | "income_change_link" | "uncategorized_lines" | "living_area_missing";
+        HealthTodoCode: "month_end_missing" | "account_not_covered" | "lines_waiting" | "transfer_open" | "too_few_months" | "balance_stale" | "bands_unconfirmed" | "no_default_scenario" | "scenario_check" | "rate_missing" | "income_change_link" | "uncategorized_lines" | "living_area_missing" | "plan_check";
         /**
          * HiddenToken
          * @description GET /wallets/{id}/hidden-tokens (D187 (3)): a token held as spam, by its asset's name
@@ -10076,6 +10358,7 @@ export interface components {
             more_return?: components["schemas"]["GoalMoreReturn"] | null;
             balanced?: components["schemas"]["GoalBalanced"] | null;
             unreachable?: components["schemas"]["GoalUnreachable"] | null;
+            goal_path?: components["schemas"]["GoalPath"] | null;
             /** Assumptions */
             assumptions?: components["schemas"]["GoalAssumption"][];
             /** Todos */
@@ -10137,6 +10420,7 @@ export interface components {
             goal?: components["schemas"]["Goal"] | null;
             goal_choice?: components["schemas"]["GoalChoice"] | null;
             investment_split?: components["schemas"]["InvestmentSplit"] | null;
+            goal_path?: components["schemas"]["GoalPathLever"] | null;
         };
         /**
          * HouseholdMonth
@@ -24180,6 +24464,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HouseholdGoal"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_goal_path_adopt_api_household_goal_path_adopt_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseholdScenario"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

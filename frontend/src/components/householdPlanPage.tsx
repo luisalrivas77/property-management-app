@@ -33,9 +33,11 @@ import { assumptionsHref, HOUSEHOLD_RESERVE } from "@/lib/planningRoutes";
 
 import { DetailLayout, DetailPanel, useDetail } from "./DetailPanel";
 import { todayIso } from "./format";
+import { type GoalTracking, loadPathTracking, PathCards, PathPanelBody, usePathPanelTitle } from "./goalPathCards";
+import { pathView, usePathWord } from "./goalPathWord";
 import { HealthTodoList } from "./healthFigures";
 import { currentDefault, fillLevers, loadScenarioHistory, saveDefaultScenario } from "./healthShared";
-import { CardHead, GOAL_FORM_HREF, GOAL_PAGE, loadGoal, Stat, Stats, WordPill } from "./householdGoal";
+import { CardHead, GOAL_FORM_HREF, GOAL_PAGE, type HouseholdGoal, loadGoal, Stat, Stats, WordPill } from "./householdGoal";
 import { SplitOnPlanPage } from "./investmentSplit";
 import { ALLOCATION_CATEGORY } from "./labels";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
@@ -50,6 +52,22 @@ type PlanSwitches = components["schemas"]["PlanSwitches"];
 type PlanStep = components["schemas"]["PlanStep"];
 type GoalWord = components["schemas"]["GoalWord"];
 type PT = ReturnType<typeof useT<typeof planPageText.de>>;
+
+/** The goal's path (§7.11 (i), D311) and its tracking, read beside the plan for „Für euch“ only:
+ * the shared view never asks for them, so nothing exact reaches „Zum Teilen“. */
+interface PathData {
+  goal: HouseholdGoal | null;
+  tracking: GoalTracking | null;
+}
+
+async function loadPathData(): Promise<PathData> {
+  const [goal, tracking] = await Promise.all([loadGoal().catch(() => null), loadPathTracking()]);
+  return { goal, tracking };
+}
+
+async function loadNoPath(): Promise<PathData> {
+  return { goal: null, tracking: null };
+}
 
 /** The side panels' detail kind and the cards' ids. */
 const KIND = "plan";
@@ -112,6 +130,7 @@ export function PlanPageView() {
   const code = useDeviceSetting(PLAN_SHARE_SETTING);
   const load = useCallback(() => loadPlan(share, code), [share, code]);
   const state = useLoad(load);
+  const pathState = useLoad(share ? loadNoPath : loadPathData);
   const detail = useDetail(KIND);
 
   const setView = (next: boolean) => {
@@ -124,7 +143,16 @@ export function PlanPageView() {
 
   // Only an answer of the view asked for is shown: never „Für euch“'s figures under „Zum Teilen“.
   const data = state.data?.view === (share ? "share" : "own") ? state.data : undefined;
-  const panel = data && detail.id ? <Panel data={data} id={detail.id} share={share} code={code} onClose={detail.close} onWritten={state.reload} /> : null;
+  // The path only under „Für euch“, gated on the view asked for, never on the answer loaded.
+  const path = !share && data?.view === "own" ? (pathState.data ?? null) : null;
+  const reloadAll = () => {
+    state.reload();
+    pathState.reload();
+  };
+  const panel =
+    data && detail.id ? (
+      <Panel data={data} path={path} id={detail.id} share={share} code={code} onClose={detail.close} onWritten={reloadAll} />
+    ) : null;
 
   return (
     <section className="planp">
@@ -149,7 +177,7 @@ export function PlanPageView() {
         </a>
       ) : null}
       <DetailLayout panel={panel}>
-        <Loading state={{ ...state, data }}>{(plan) => <Cards plan={plan} />}</Loading>
+        <Loading state={{ ...state, data }}>{(plan) => <Cards plan={plan} path={path} onAdopted={reloadAll} />}</Loading>
       </DetailLayout>
     </section>
   );
@@ -181,8 +209,10 @@ function StatAmount({ plan, value }: { plan: PlanPage; value: string | null | un
   );
 }
 
-function Cards({ plan }: { plan: PlanPage }) {
+function Cards({ plan, path, onAdopted }: { plan: PlanPage; path: PathData | null; onAdopted: () => void }) {
   const t = useT(planPageText);
+  const goal = path?.goal ?? null;
+  const withPath = plan.view === "own" && pathView(goal) != null;
   if (!plan.goal) {
     return (
       <div className="goal-cards">
@@ -200,14 +230,15 @@ function Cards({ plan }: { plan: PlanPage }) {
   }
   return (
     <div className="goal-cards planp-cards">
-      <GoalCard plan={plan} />
+      <GoalCard plan={plan} goal={withPath ? goal : null} />
       {plan.issue != null || plan.heute == null ? <IssueCard plan={plan} /> : null}
       {plan.heute ? <HeuteCard plan={plan} /> : null}
-      {plan.plan ? <RouteCard plan={plan} /> : null}
+      {/* With the goal's path (§7.11 (i)), its cards replace the route and „Diesen Monat“. */}
+      {withPath && goal ? <PathCards goal={goal} tracking={path?.tracking ?? null} onAdopted={onAdopted} /> : plan.plan ? <RouteCard plan={plan} /> : null}
       {plan.assumptions ? <AssumptionsCard plan={plan} /> : null}
       {plan.risks ? <RisksCard plan={plan} /> : null}
       {plan.other_routes ? <OtherCard plan={plan} /> : null}
-      {plan.this_month ? <MonthCard plan={plan} /> : null}
+      {!withPath && plan.this_month ? <MonthCard plan={plan} /> : null}
     </div>
   );
 }
@@ -242,15 +273,21 @@ function barWidth(percent: string): string {
   return `${Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0}%`;
 }
 
-function GoalCard({ plan }: { plan: PlanPage }) {
+function GoalCard({ plan, goal: household }: { plan: PlanPage; goal: HouseholdGoal | null }) {
   const t = useT(planPageText);
   const g = useT(goalText);
   const p = usePlanFormat();
   const goal = plan.goal!;
+  // With the goal's path, its word („Machbar mit 9,4 %“), as Übersicht and Ziel read it.
+  const pathWord = usePathWord(household);
   return (
     <div className="goal-c goal-c-excess planp-goal">
       <CardHead kind={KIND} id={P.goal} title={targetText(t, p, plan)} />
-      <WordPill word={goal.word ?? "none"} text={wordText(g, goal.word, plan.issue)} />
+      {pathWord ? (
+        <WordPill word={pathWord.word} text={pathWord.text} />
+      ) : (
+        <WordPill word={goal.word ?? "none"} text={wordText(g, goal.word, plan.issue)} />
+      )}
       {goal.percent != null ? (
         <>
           <span className="goal-bar" role="img" aria-label={g.percentReached(p.percentValue(goal.percent))}>
@@ -510,6 +547,7 @@ function MonthCard({ plan }: { plan: PlanPage }) {
 
 function Panel({
   data,
+  path,
   id,
   share,
   code,
@@ -517,6 +555,7 @@ function Panel({
   onWritten,
 }: {
   data: PlanPage;
+  path: PathData | null;
   id: string;
   share: boolean;
   code: string;
@@ -534,6 +573,17 @@ function Panel({
     [P.month]: t.monthCard,
     [P.share]: t.shared,
   };
+  const goal = data.view === "own" && pathView(path?.goal) != null ? (path?.goal ?? null) : null;
+  const pathTitle = usePathPanelTitle(goal, id);
+  if (goal && pathTitle) {
+    return (
+      <DetailPanel title={pathTitle} backLabel={t.title} onClose={onClose}>
+        <div className="stack planp-panel">
+          <PathPanelBody goal={goal} id={id} extra={id === P.route ? <SplitOnPlanPage onWritten={onWritten} /> : undefined} />
+        </div>
+      </DetailPanel>
+    );
+  }
   const title = titles[id];
   if (!title) return null;
   let body: ReactNode = null;

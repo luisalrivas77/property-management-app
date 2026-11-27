@@ -1069,6 +1069,130 @@ class ReferenceFixture(Schema):
     expect: ReferenceExpect
 
 
+# --- goal_path.yaml (§7.11 (i), D311) ------------------------------------------------------
+
+
+class PathCeilingExpect(Schema):
+    """Item 1: what the household can save at most a month and its parts."""
+
+    income: Money
+    need: Money
+    wants_kept: Money
+    # The regular spending outside the need and the wants' positive means, signed (a refund
+    # lowers it, an uncategorised line raises it); 0 where the codes are needs and wants only.
+    other_spending: Money = ZERO
+    suggested: bool  # no wants target saved: the wants kept are the suggestion (half of each)
+    buffer: Money
+    ceiling: Money
+
+
+class PathWhyExpect(Schema):
+    """Item 4: with the whole room used at the typed rates, the value at the due month and
+    the month the goal is then reached (None within 40 years)."""
+
+    due_value: Money
+    reached: YearMonth | None
+
+
+class PathExpect(Schema):
+    state: Literal["on_track", "doable_rates", "doable_return", "ambitious", "hardly"]
+    ceiling: PathCeilingExpect
+    anlegbar: Money
+    room: Money
+    extra: Money | None = None  # the path's extra a month; None without a path
+    monthly: Money | None = None  # Anlegbar + extra
+    rate: Annotated[Decimal, _STRING_ONLY] | None = None  # the rate the path counts on
+    return_needed: Annotated[Decimal, _STRING_ONLY] | None = None
+    window_years: int | None = None
+    windows: int | None = None
+    reached_windows: int | None = None
+    short_history: bool | None = None
+    years: tuple[int, int] | None = None  # the mix's first and last year
+    wants_budget: dict[AllocationCategory, Money] = Field(default_factory=dict)
+    wants_budget_total: Money | None = None
+    adoptable: bool
+    why: PathWhyExpect | None = None
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        if self.room != max(ZERO, self.ceiling.ceiling - self.anlegbar):
+            raise ValueError("the room is the ceiling less Anlegbar, at least 0")
+        if self.adoptable != (self.state in ("on_track", "doable_rates", "doable_return")):
+            raise ValueError("a path is adoptable exactly in the states that have one")
+        if self.adoptable:
+            if self.extra is None or self.monthly != self.anlegbar + self.extra:
+                raise ValueError("a path's monthly amount is Anlegbar + its extra")
+            if self.extra > self.room or self.why is not None:
+                raise ValueError("a path stays within the room and needs no why")
+        elif self.why is None:
+            raise ValueError("no path: the why is shown")
+        return self
+
+
+class PathCaseExpect(Schema):
+    word: Literal["on_track", "feasible", "ambitious", "hardly"]
+    path: PathExpect
+
+
+class PathCase(RouteCase):
+    expect: PathCaseExpect  # type: ignore[assignment]
+
+
+class PathAdoptedIn(Schema):
+    day: date
+    monthly: Money
+    wants_budget: Money
+    rate: Annotated[Decimal, _STRING_ONLY]
+    crypto_percent: Dec | None  # the saved split's crypto percent; None: no saved split
+
+
+class PathMonthIn(Schema):
+    month_end: date
+    saved: Money
+    principal: Money = Decimal("0.00")  # Q-O194: the month's loan repayment
+    invested_property: Money = Decimal("0.00")  # Q-O194: paid into the property (D234)
+    invested: Money
+    crypto_bought: Money
+    wants: Money
+    net_worth: Money
+    path_net_worth: Money
+    value_now: Money
+    flows: list[tuple[date, Money]]
+
+
+class PathRowExpect(Schema):
+    month_end: date
+    word: Literal["on_path", "behind"]
+    waiting: Money | None
+    invested_gap: Money | None
+    wants_gap: Money | None
+    net_worth_gap: Money | None
+    value_change: Money
+    implied_change: Money
+    actual_percent: Dec
+    needed_percent: Dec
+    value_behind: bool
+
+
+class PathTrackingCase(Lenient):
+    adopted: PathAdoptedIn
+    value_then: Money
+    months: list[PathMonthIn]
+    expect: list[PathRowExpect]
+
+    @model_validator(mode="after")
+    def _rows(self) -> Self:
+        if [m.month_end for m in self.months] != [r.month_end for r in self.expect]:
+            raise ValueError(f"{self.id}: one row per month-end")
+        return self
+
+
+class PathFixture(Schema):
+    bases: dict[str, Any] = Field(default_factory=dict)  # YAML anchors only
+    cases: list[PathCase]
+    tracking: list[PathTrackingCase]
+
+
 MODELS: dict[str, type[Schema]] = {
     "reference_returns": ReferenceFixture,
     "budget_fixed": FixedFixture,
@@ -1081,6 +1205,7 @@ MODELS: dict[str, type[Schema]] = {
     "one_off_marks": OneOffFixture,
     "goal": GoalFixture,
     "goal_routes": RouteFixture,
+    "goal_path": PathFixture,
     "reserve_above": RouteFixture,
     "plan_page": PlanFixture,
     "investment_split": InvestmentSplitFixture,

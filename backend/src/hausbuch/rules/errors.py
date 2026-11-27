@@ -261,6 +261,10 @@ HOUSEHOLD_SCENARIO_ONE_OFF_CODE_INVALID = "household_scenario.one_off_code_inval
 # Phase 10 §7.9 (d): a goal, new or altered against the superseded row, due in the current
 # month or before it (D289 (1): the household types the due month; the app proposes none)
 HOUSEHOLD_SCENARIO_GOAL_INVALID = "household_scenario.goal_invalid"
+# Phase 10 §7.11 (i) 5, D311: a goal path (the lever `goal_path` or the followed return
+# `path`) written other than by POST /household-goal/path/adopt, or an adopt without a path
+# that can be adopted (no goal, no path, „Ehrgeizig“ or „Kaum erreichbar“, nothing to invest)
+HOUSEHOLD_SCENARIO_PATH_INVALID = "household_scenario.path_invalid"
 # Phase 6 step 5b (PATCH /assets/{id}, POST /assets/{id}/prices)
 ASSET_NOT_CRYPTO = "asset.not_crypto"  # a CoinGecko id or Kraken pair on a fund or cash
 ASSET_IS_EURO = "asset.is_euro"  # a typed price for the euro, which is 1.0

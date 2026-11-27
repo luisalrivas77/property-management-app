@@ -43,7 +43,7 @@ from hausbuch.schemas.goal import (
     GoalTrackingWord,
     HouseholdGoal,
 )
-from hausbuch.schemas.plan import Goal, GoalChoice, SpendingChange
+from hausbuch.schemas.plan import Goal, GoalChoice, GoalPathLever, SpendingChange
 from hausbuch.schemas.portfolio import NoRateReason
 
 from .goal import current_month
@@ -98,8 +98,14 @@ def route_of(choice: GoalChoice | None) -> GoalInvestment | None:
         return None
 
 
-def followed_of(answer: HouseholdGoal, route: GoalInvestment) -> Followed | GoalTrackingReason:
-    """Today's return of the route followed, from the goal's answer (rules.goal.household_goal)."""
+def followed_of(
+    answer: HouseholdGoal, route: GoalInvestment, lever: GoalPathLever | None = None
+) -> Followed | GoalTrackingReason:
+    """Today's return of the route followed, from the goal's answer (rules.goal.household_goal).
+    The balanced route walks the typed rates since D311, so its rate is the typed rates weighted
+    by the split (`goal_path.typed_rate`). The path adopted (`lever`, §7.11 (i)) is followed as
+    stored: its rate (none counts 0) and its extra, walked with no spending change, as the path
+    itself was found."""
     if answer.issue is not None or answer.word is None:
         return Reason.GOAL_ISSUE
     if route is GoalInvestment.MORE_RETURN:
@@ -107,12 +113,19 @@ def followed_of(answer: HouseholdGoal, route: GoalInvestment) -> Followed | Goal
         if m is None or not m.available or m.needed_return is None:
             return Reason.ROUTE_GONE
         return Followed(route=route, rate=m.needed_return)
+    if route is GoalInvestment.PATH:
+        if lever is None:
+            return Reason.ROUTE_GONE
+        return Followed(route=route, rate=lever.rate or ZERO, extra=lever.extra)
     b = answer.balanced
-    if b is None or b.return_rate is None or b.saving_extra is None:
+    rate = b.return_rate if b is not None else None
+    if rate is None and answer.goal_path is not None:
+        rate = answer.goal_path.typed_rate
+    if b is None or rate is None or b.saving_extra is None:
         return Reason.ROUTE_GONE
     return Followed(
         route=route,
-        rate=b.return_rate,
+        rate=rate,
         spending_changes=tuple(b.spending_changes),
         extra=b.saving_extra,
     )

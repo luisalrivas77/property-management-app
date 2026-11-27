@@ -21,6 +21,8 @@ import { api, ok } from "@/api/client";
 import { useAuth } from "@/auth/AuthGate";
 import { DetailLayout, useDetail } from "@/components/DetailPanel";
 import { todayIso } from "@/components/format";
+import { loadPathTracking } from "@/components/goalPathCards";
+import { isFollowed } from "@/components/goalPathWord";
 import { loadGoal } from "@/components/householdGoal";
 import {
   OverviewTiles,
@@ -110,9 +112,14 @@ export default function OverviewPage() {
   // appears once the plan says money sits above the reserve target.
   const loadPlan = useCallback(() => gate.promise.then(loadPlanToday), [gate]);
   const plan = useLoad(loadPlan);
+  // The adopted path's newest month (§7.11 (i), 19j frame 7) under the goal tile, read after the
+  // tiles and only while the household follows the path it adopted.
+  const followed = isFollowed(goal.data);
+  const loadTracking = useCallback(() => (followed ? gate.promise.then(loadPathTracking) : Promise.resolve(null)), [gate, followed]);
+  const tracking = useLoad(loadTracking);
   const detail = useDetail("kachel");
   const today = todayIso();
-  const tiles = { netWorth, health, goal, cashflow, inbox, paidIn, payback, plan };
+  const tiles = { netWorth, health, goal, cashflow, inbox, paidIn, payback, plan, tracking };
   const properties = (propertyList.data ?? []).map((property) => ({ id: property.id, label: property.label }));
 
   const panel = isTileId(detail.id) ? <TilePanel id={detail.id} data={tiles} detail={detail} properties={properties} /> : null;

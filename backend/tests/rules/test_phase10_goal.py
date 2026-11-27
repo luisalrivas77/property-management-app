@@ -385,16 +385,18 @@ def test_goal_routes(case) -> None:
             assert w.at(ym).net_worth == value, ym
 
 
-def test_ambitious_only_through_route_3() -> None:
-    """D303: „Ehrgeizig“ only when route 3 decides (available, not thin, own use) with the
-    verdict good_times; a thin or unavailable route 3 never sets a word."""
+def test_ambitious_only_through_the_paths_step_2() -> None:
+    """D311 (amends D303): „Ehrgeizig“ only when the path's step 2 finds the return needed
+    reached in some but under half of the windows, in own use; route 3 decides no word. At
+    least one case reads it, so the check is never empty."""
     seen = set()
     for case in ROUTES:
         inputs, _, _ = _route_inputs(case)
         got = household_goal(inputs)
         if got.word is GoalWord.AMBITIOUS:
-            r = got.more_return
-            assert r.available and not r.thin and r.verdict.value == "good_times", case.id
+            path = got.goal_path
+            assert path.state.value == "ambitious", case.id
+            assert path.reached_windows > 0 and path.reached_windows * 2 < path.windows, case.id
             assert case.mode.value == "own_use", case.id
         seen.add(got.word)
     assert GoalWord.AMBITIOUS in seen

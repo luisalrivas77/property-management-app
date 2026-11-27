@@ -567,3 +567,248 @@ test("„Aufteilung ändern“ on the plan card's panel saves the split and read
   // „Euer Plan“ is read again after the save.
   await expect.poll(() => asked.length).toBeGreaterThan(before);
 });
+
+// The goal's path (phase 10 §7.11 (i), D311; mockup 19j): GET /household-goal carries
+// `goal_path` per state, GET /household-goal/tracking the rows since the day adopted, and POST
+// /household-goal/path/adopt is mocked by its answer. The figures are invented; the ceiling's
+// rows add up to it as the server's identity says (5.200 + 300 − 2.600 − 870 − 180 − 270).
+type GoalPath = components["schemas"]["GoalPath"];
+type GoalTracking = components["schemas"]["GoalTracking"];
+type GoalPathRow = components["schemas"]["GoalPathRow"];
+
+const CEILING: GoalPath["ceiling"] = {
+  income: "5200.00",
+  rental_cash: "300.00",
+  need: "2600.00",
+  wants_kept: "870.00",
+  other_spending: "180.00",
+  suggested: true,
+  buffer: "270.00",
+  ceiling: "1580.00",
+};
+
+function stepOne(): GoalPath {
+  return {
+    state: "doable_rates",
+    ceiling: CEILING,
+    anlegbar: "1100.00",
+    room: "480.00",
+    extra: "250.00",
+    monthly: "1350.00",
+    typed_rate: "0.068",
+    rate: "0.068",
+    wants_budget: [{ code: "hh_restaurant", budget_class: "want", mean: "400.00", budget: "150.00" }],
+    wants_budget_total: "1220.00",
+    spending_changes: SPENDING_CHANGES,
+    adoptable: true,
+    why: null,
+    today: { invested: "600.00", saved: "1840.00", saved_not_invested: "1240.00", plans: [] },
+    adopted: null,
+  };
+}
+
+function withPath(path: GoalPath, choice: HouseholdGoal["choice"] = null): HouseholdGoal {
+  return { ...goalAnswer(), choice, goal_path: path };
+}
+
+const ADOPTED: NonNullable<GoalPath["adopted"]> = {
+  adopted_on: TODAY,
+  state: "doable_rates",
+  monthly: "1350.00",
+  extra: "250.00",
+  rate: "0.068",
+  wants_budget_total: "1220.00",
+  moved: false,
+};
+
+const FOLLOWED: HouseholdGoal["choice"] = { spending: null, spending_chosen_on: null, investment: "path", investment_chosen_on: TODAY };
+
+function tracking(rows: GoalPathRow[]): GoalTracking {
+  return { shown: true, route: "path", chosen_on: TODAY, rate: "0.068", reserve_depots: 0, rows, points: [] };
+}
+
+const ROW: GoalPathRow = {
+  month_end: `${monthsAhead(0)}-01`,
+  word: "behind",
+  planned: "1350.00",
+  invested: "1100.00",
+  waiting: "0.00",
+  invested_gap: "250.00",
+  wants: "1180.00",
+  wants_budget: "1220.00",
+  wants_gap: "0.00",
+  net_worth: "314000.00",
+  path_net_worth: "315000.00",
+  net_worth_gap: "1000.00",
+  value_change: "900.00",
+  implied_change: "800.00",
+  actual_percent: "0.6",
+  needed_percent: "0.5",
+  value_behind: false,
+};
+
+/** GET /household-goal and /tracking from `state`; POST …/path/adopt answered by `adopt`. */
+async function pathApi(page: Page, state: { goal: HouseholdGoal; tracking: GoalTracking }, adopt: () => { status: number; json: unknown }) {
+  const posts: number[] = [];
+  await page.route(
+    (url) => url.pathname === "/api/household-goal",
+    (route: Route) => (route.request().method() === "GET" ? route.fulfill({ json: state.goal }) : route.fallback()),
+  );
+  await page.route(
+    (url) => url.pathname === "/api/household-goal/tracking",
+    (route: Route) => route.fulfill({ json: state.tracking }),
+  );
+  await page.route(
+    (url) => url.pathname === "/api/household-goal/path/adopt",
+    (route: Route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      posts.push(posts.length + 1);
+      const answer = adopt();
+      return route.fulfill({ status: answer.status, json: answer.json });
+    },
+  );
+  return posts;
+}
+
+test("the path at step 1: the plan card, „Woher“ and „Diesen Plan übernehmen“, then the adopted plan tracked", async ({ page, signedIn }) => {
+  void signedIn;
+  await planApi(page);
+  const state = { goal: withPath(stepOne()), tracking: tracking([]) };
+  const posts = await pathApi(page, state, () => {
+    state.goal = withPath({ ...stepOne(), adopted: ADOPTED }, FOLLOWED);
+    state.tracking = tracking([ROW]);
+    return { status: 201, json: state.goal };
+  });
+  await page.goto("/household/plan");
+  const main = page.locator(".planp-cards");
+  await expect(main.locator(".planp-goal")).toContainText("Machbar");
+  const plan = main.getByTestId("path-plan");
+  await expect(plan).toHaveAttribute("data-state", "doable_rates");
+  await expect(plan).toContainText(/1\.350\s€/);
+  await expect(plan).toContainText(/250\s€ mehr als heute/);
+  await expect(plan).toContainText(/Mischung 6,8\s%/);
+  await expect(main.getByTestId("path-today")).toContainText(/600\s€/);
+  // The balanced route and the old „Diesen Monat“ make way for the path.
+  await expect(main.getByRole("link", { name: /^Der Plan · ausgewogen$/ })).toHaveCount(0);
+  await expect(main.getByTestId("path-month")).toHaveCount(0);
+
+  // „Woher“: the ceiling's rows, signed, the wants budget marked as the app's suggestion.
+  await page.goto("/household/plan#d-plan-woher");
+  const woher = page.getByTestId("path-woher");
+  await expect(woher).toContainText(/Einkommen im Monat\s*5\.200\s€/);
+  await expect(woher).toContainText(/Überschuss der Wohnung\s*\+ 300\s€/);
+  await expect(woher).toContainText(/Notwendiges\s*− 2\.600\s€/);
+  await expect(woher).toContainText(/Wünsche-Budget\s*Vorschlag\s*− 870\s€/);
+  await expect(woher).toContainText(/Andere Ausgaben\s*− 180\s€/);
+  await expect(woher).toContainText(/Puffer\s*− 270\s€/);
+  await expect(woher).toContainText(/Höchstens anlegen\s*1\.580\s€/);
+
+  await page.goto("/household/plan");
+  await plan.getByRole("button", { name: "Diesen Plan übernehmen" }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  await expect(plan).toContainText(/Plan übernommen am/);
+  await expect(plan.getByRole("button", { name: /übernehmen/ })).toHaveCount(0);
+  const month = main.getByTestId("path-month");
+  await expect(month).toContainText(/1\.350\s€ anlegen/);
+  await expect(month).toContainText(/Wünsche bis 1\.220\s€/);
+  const row = month.getByTestId("path-row");
+  await expect(row).toContainText(/250\s€ zu wenig/);
+  await expect(row).toContainText(/1\.000\s€ dahinter/);
+  await expect(main.getByTestId("path-since")).toContainText(/Angelegt 1\.100\s€/);
+});
+
+test("the path when it cannot hold: no adopt button; Ehrgeizig and Kaum erreichbar say why", async ({ page, signedIn }) => {
+  void signedIn;
+  await planApi(page);
+  const ambitious: GoalPath = {
+    ...stepOne(),
+    state: "ambitious",
+    extra: null,
+    monthly: null,
+    rate: null,
+    return_needed: "0.142",
+    window_years: 5,
+    windows: 4,
+    reached_windows: 1,
+    short_history: true,
+    years: [2018, 2025],
+    wants_budget: [],
+    wants_budget_total: null,
+    spending_changes: [],
+    adoptable: false,
+    why: { due_value: "441000.00", reached: monthsAhead(80) },
+  };
+  const state = { goal: withPath(ambitious), tracking: tracking([]) };
+  const posts = await pathApi(page, state, () => ({ status: 201, json: {} }));
+  await page.goto("/household/plan");
+  const main = page.locator(".planp-cards");
+  await expect(main.locator(".planp-goal")).toContainText("Ehrgeizig");
+  await expect(main.getByTestId("path-ceiling")).toContainText(/1\.580\s€/);
+  const ret = main.getByTestId("path-return");
+  await expect(ret).toContainText(/14,2\s%/);
+  await expect(ret).toContainText("1 von 4");
+  await expect(ret).toContainText("kurze Historie 2018–2025");
+  await expect(main.getByTestId("path-realistic")).toContainText(/441\.000\s€/);
+  await expect(main.getByRole("button", { name: /übernehmen/ })).toHaveCount(0);
+
+  // A return above the search's 100 % a year comes without a return and without a count, as
+  // rules/goal/goal.py `_step_2` sends it: the card says so and draws no „x von y“.
+  state.goal = withPath({ ...ambitious, state: "hardly", return_needed: null, reached_windows: null, why: { due_value: "402000.00", reached: null } });
+  await page.reload();
+  await expect(main.locator(".planp-goal")).toContainText("Kaum erreichbar");
+  const why = main.getByTestId("path-why");
+  await expect(why).toContainText(/über 100\s%/);
+  await expect(why).not.toContainText(" von 4");
+  await expect(main.getByTestId("path-realistic")).toContainText("nicht erreicht");
+  await expect(main.getByTestId("path-realistic").getByRole("link", { name: /Budget ansehen/ })).toBeVisible();
+  await expect(main.getByRole("button", { name: /übernehmen/ })).toHaveCount(0);
+  expect(posts).toHaveLength(0);
+});
+
+test("a refused adopt (the path moved) shows the server's reason, and nothing is adopted", async ({ page, signedIn }) => {
+  void signedIn;
+  await planApi(page);
+  const state = { goal: withPath(stepOne()), tracking: tracking([]) };
+  await pathApi(page, state, () => ({
+    status: 422,
+    json: { error: "household_scenario.path_invalid", message: "path invalid" },
+  }));
+  await page.goto("/household/plan");
+  const plan = page.locator(".planp-cards").getByTestId("path-plan");
+  await plan.getByRole("button", { name: "Diesen Plan übernehmen" }).click();
+  await expect(plan.getByRole("alert")).toContainText("household_scenario.path_invalid");
+  await expect(plan).not.toContainText("Plan übernommen am");
+  await expect(plan.getByRole("button", { name: "Diesen Plan übernehmen" })).toBeEnabled();
+});
+
+test("the adopted path on Übersicht's tile and on Haushalt › Ziel", async ({ page, signedIn }) => {
+  void signedIn;
+  const state = { goal: withPath({ ...stepOne(), adopted: ADOPTED }, FOLLOWED), tracking: tracking([ROW]) };
+  await pathApi(page, state, () => ({ status: 201, json: {} }));
+  await page.goto("/");
+  const rows = page.getByTestId("goal-tile-path");
+  await expect(rows).toHaveAttribute("href", "/household/plan");
+  await expect(rows).toContainText(/1\.350\s€ im Monat anlegen/);
+  await expect(rows).toContainText(/Wünsche bis 1\.220\s€/);
+
+  await page.goto("/household?tab=ziel");
+  const summary = page.getByTestId("goal-path-summary");
+  await expect(summary).toContainText(/1\.350\s€/);
+  await expect(summary).toContainText(/Plan übernommen am/);
+  await expect(summary.getByRole("link", { name: /Euer Plan/ })).toHaveAttribute("href", "/household/plan");
+});
+
+test("the path's cards at phone width, light and dark: no sideways scroll", async ({ page, signedIn }) => {
+  void signedIn;
+  await planApi(page);
+  const state = { goal: withPath({ ...stepOne(), adopted: ADOPTED }, FOLLOWED), tracking: tracking([ROW]) };
+  await pathApi(page, state, () => ({ status: 201, json: {} }));
+  await screens(page, "plan-path-phone", 390, async () => {
+    await page.goto("/household/plan");
+    await expect(page.locator(".planp-cards").getByTestId("path-row")).toBeVisible();
+  });
+  await screens(page, "plan-path-woher-phone", 390, async () => {
+    await page.goto("/household/plan#d-plan-woher");
+    await expect(page.getByTestId("path-woher")).toBeVisible();
+  });
+});

@@ -23,6 +23,7 @@ import type { components } from "@/api/types";
 import { CashflowCard, lastFullMonth, loadCashflow, type HouseholdCashflow } from "@/components/cashflow";
 import { DetailPanel, type Detail } from "@/components/DetailPanel";
 import { HealthTodoList } from "@/components/healthFigures";
+import { type GoalTracking, PathTileRows } from "@/components/goalPathCards";
 import { GOAL_FORM_HREF, GOAL_PAGE, GoalOverviewPanel, GoalTileBody, type HouseholdGoal } from "@/components/householdGoal";
 import type { Health, HouseholdPlan } from "@/components/healthShared";
 import { NetWorthSection } from "@/components/netWorth";
@@ -106,6 +107,8 @@ export interface TileData {
   payback: Loaded<PropertiesPayback>;
   /** Read after the tiles (Übersicht's gate); only „Anlegbar jetzt“ reads it. */
   plan?: Loaded<HouseholdPlan>;
+  /** The adopted path's tracking, read after the tiles while the path is followed. */
+  tracking?: Loaded<GoalTracking | null>;
 }
 
 /** The server's percent points with one decimal ("-0.3") as de „-0,3 %“, en „-0.3%“; unlike
@@ -224,7 +227,7 @@ function Wait<D>({ state, children }: { state: Loaded<D>; children: (data: D) =>
 export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail }) {
   const t = useT(catalogue);
   const f = useFormat();
-  const { netWorth, health, goal, cashflow, inbox, payback } = data;
+  const { netWorth, health, goal, cashflow, inbox, payback, tracking } = data;
   const lines = netWorth.data?.lines ?? [];
   const cards = cardLines(lines);
   const tv = useT(verdictText);
@@ -278,6 +281,7 @@ export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail
               <span className="tile-name">{tg.title}</span>
               <Wait state={goal}>{(value) => <GoalTileBody goal={value} />}</Wait>
             </a>
+            {goal.data && tracking?.data ? <PathTileRows goal={goal.data} tracking={tracking.data} /> : null}
             <span className="tile-goal-links">
               <Link href={GOAL_PAGE} className="tile-goal-go">
                 {tg.toGoal} ›

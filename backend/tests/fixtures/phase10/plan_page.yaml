@@ -123,6 +123,12 @@ rounding:
 - {id: monthly_cents, kind: monthly, value: '98.01', rounded: '100.00'}
 - {id: once_repair, kind: once, value: '7920.00', rounded: '8000.00'}
 
+# Amended 27 Nov 2026 by phase 10 §7.11 (i), D311: cards_one_walk's word feasible → hardly
+# (goal_routes.yaml's household: the room is 0 and its 9-year windows never reach the
+# return needed); every card's figure is unchanged. Amended again the same day (§7.11 (i)
+# item 1, the ceiling counts all regular spending): the room is 450, and 600,000 by Jun 2036
+# needs E = 196 a month (goal_routes' closed_by_spending with the kept 200,000 added), within
+# it: hardly → feasible.
 cases:
 - id: cards_one_walk
   description: >-

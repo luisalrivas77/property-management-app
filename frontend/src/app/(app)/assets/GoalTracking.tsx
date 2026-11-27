@@ -6,11 +6,16 @@
 // the figures and what they mean sit in its side panel („Cards, not text“, 25 Nov 2026). Every
 // figure is GET /household-goal/tracking's; nothing is summed here. Not shown in `generic` mode,
 // without a goal or without a return followed (the server says `shown: false`).
+//
+// Following the adopted path (§7.11 (i), D311, mockup 19j frame 8), the card draws the
+// investments' growth against the growth needed per closed month-end (`points`), and the panel
+// the same chart with its axis and legend; the points are the server's.
 import Link from "next/link";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { DetailPanel, useDetail } from "@/components/DetailPanel";
+import { PathChartLast, PathGrowthChart } from "@/components/goalPathCards";
 import { goalRouteHref, Stat, Stats, WordPill } from "@/components/householdGoal";
 import { useFormat, useT, type Translation } from "@/i18n";
 import { assets } from "@/i18n/assets";
@@ -51,6 +56,7 @@ export function GoalTrackingCard({ tracking }: { tracking: GoalTracking }) {
           <strong>{wordText(t, tracking)}</strong>
         </p>
       )}
+      {tracking.route === "path" && (tracking.points ?? []).length > 1 ? <PathGrowthChart points={tracking.points ?? []} rate={tracking.rate ?? null} compact /> : null}
       <p className="planning-kpi-sub">{line}</p>
     </a>
   );
@@ -82,6 +88,12 @@ export function GoalTrackingPanel({ tracking, backLabel }: { tracking: GoalTrack
         {sentences.map((sentence) => (
           <p key={sentence}>{sentence}</p>
         ))}
+        {tracking.route === "path" ? (
+          <div className="goal-c">
+            <PathGrowthChart points={tracking.points ?? []} rate={tracking.rate ?? null} />
+            <PathChartLast points={tracking.points ?? []} />
+          </div>
+        ) : null}
         <div className="goal-c">
           <Stats count={2}>
             <Stat value={t.goalRoute(tracking.route)} label={t.goalFollowed} />

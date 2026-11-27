@@ -95,6 +95,7 @@ class HealthTodoCode(StrEnum):
     INCOME_CHANGE_LINK = "income_change_link"  # an income change beside Eigentümer (Q-O141)
     UNCATEGORIZED_LINES = "uncategorized_lines"  # „N Zahlungen einordnen“ (phase 10 D272 (4))
     LIVING_AREA_MISSING = "living_area_missing"  # „Wohnfläche eintragen“ (phase 10 §7.11 (h))
+    PLAN_CHECK = "plan_check"  # „Plan prüfen“: an adopted path's inputs moved (§7.11 (i) 5)
 
 
 class HealthTodo(Schema):
