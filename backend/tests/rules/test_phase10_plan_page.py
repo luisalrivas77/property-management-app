@@ -1,7 +1,7 @@
 """„Euer Plan“ (phase 10 §7.11 (h), D306): tests/fixtures/phase10/plan_page.yaml against
 rules/goal/risks.py and rules/goal/share.py."""
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Any
 
@@ -20,6 +20,7 @@ from hausbuch.rules.goal.risks import (
 from hausbuch.rules.goal.share import plain, round_to, share
 from hausbuch.rules.plan.levers import add_months
 from hausbuch.rules.plan.projection import walk
+from hausbuch.schemas.plan import PlanClass
 
 FIXTURE = phase10.load("plan_page")
 
@@ -120,3 +121,27 @@ def test_draw_is_off_by_default() -> None:
     assert walk(q).used_up == "2026-12"
     assert walk(q, draw_invested=True).used_up is None
     assert walk(q, draw_invested=True).drawn == Decimal("13000.00")
+
+
+@dataclass(frozen=True)
+class _Plan:
+    key: str
+    monthly: Decimal
+    asset_class: PlanClass
+
+
+def test_a_draw_month_adds_nothing_to_the_money_still_to_come() -> None:
+    """§7.11 (j), D312: `Walk.invested` counts a month's payments into the classes only in a
+    month that draws nothing from them. The income-gap case with a savings plan of 100 into
+    funds: Nov 2026 5,000 − 3,000 − 100 = 1,900 (100 invested), Dec 2026 – Apr 2027 short and
+    drawn (nothing counted), May and Jun 2027 2,000 − 100 a month (100 each): 300 through Jun
+    2027, of the 800 the plan pays in those eight months. Without the draw the walk ends in
+    Dec 2026 after Nov's 100."""
+    case = next(c for c in FIXTURE.cases if c.id == "income_gap_empties_reserve")
+    _, p, _ = _route_inputs(case)
+    first = add_months(case.newest_closed, 1)
+    changes = gap_changes(p.basis.mean_income, p.levers.income_changes, first, 6)
+    gapped = p.levers.model_copy(update={"income_changes": changes})
+    q = replace(p, levers=gapped, plans=(_Plan("plan", Decimal("100.00"), PlanClass.DEPOT),))
+    assert walk(q, until="2027-06", draw_invested=True).invested == Decimal("300.00")
+    assert walk(q, until="2027-06").invested == Decimal("100.00")

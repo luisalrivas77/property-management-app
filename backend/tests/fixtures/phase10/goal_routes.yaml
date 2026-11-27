@@ -102,6 +102,25 @@
 # windows of three years, products by first year 2015 1.716, 2016 1.404, 2017 1.512, 2018 1.512,
 # 2019 2.184, 2020 1.248, 2021 1.56, 2022 1.32, 2023 1.98; sorted 1.248, 1.32, 1.404, 1.512, 1.512 (median, 14.7 %:
 # 1.147³ = 1.50898 ≤ 1.512 < 1.148³ = 1.51294), 1.56, 1.716, 1.98, 2.184 (best, 29.7 %).
+#
+# Amended 27 Nov 2026 by §7.11 (j), D312: reading 1's weights blend today's values with the money
+# still to come, what the walk invests from Nov 2026 to the due month in all (what moves above
+# the reserve target, undiscounted; route 3 the household's own walk, step 2 the walk with the
+# whole room from Dec 2026), at the split: its funds share joins the funds, its crypto share is
+# spread over the coins held today by their value (also one left out), or with no coin held is
+# a no_coin part; a kind in both counts once, at the sum, and the left-out shares, the half
+# covered and the windows read the blended values. `mix_today_share` and `mix_future_share`
+# are the two parts' percents of the whole (to 0.1, half up), null without a count; nothing
+# held and nothing still to come keeps the split's reading (0.0 and 100.0). The investor by
+# Dec 2029 invests 14,000 + 37 × 2,000 = 88,000 (step 2: + 37 × 450 = 104,650), so 500,000
+# held of 588,000: 85.0 and 15.0; with only funds held and the split all funds the mix is the
+# funds' as before. Changed: route3_coins_left_out (funds 388,000 and BTC 100,000 of 588,000:
+# ETH 8.0 → 6.8, SOL 12.0 → 10.2, median 22.2 → 20.1 %, best 58.5 → 53.6 %; still 3 of 7,
+# good_times, ambitious) and route3_history_short (funds 188,000 of 338,000 cover 55.6 %, so
+# route 3 is available: SOL 60.0 → 44.4, 19.5 % needed, 3 of 9, good_times; the word hardly →
+# ambitious, step 2's 17.9 % reached by 3 of 9); its history_short pin moves to
+# route3_history_short_blended. New: route3_future_lifts_the_coin, route3_future_crypto_no_coin,
+# route3_lump_above_reserve, route3_due_next_month.
 bases:
   household: &household
     today: '2026-11-24'
@@ -377,6 +396,8 @@ cases:
       verdict: within_history    # 1.435249 ≤ 1.512
       thin: false
       left_out: []
+      mix_today_share: '85.0'      # 500,000 held of 588,000
+      mix_future_share: '15.0'     # 88,000 still to come
       sources: [funds]
     scenarios:
       wants_only: {closes: false, cut: '900.00'}
@@ -414,6 +435,8 @@ cases:
       verdict: good_times        # 1.512 < 2.058076 ≤ 2.184
       thin: false
       left_out: []
+      mix_today_share: '85.0'      # 500,000 held of 588,000
+      mix_future_share: '15.0'     # 88,000 still to come
       sources: [funds]
     scenarios:
       wants_only: {closes: false, cut: '900.00'}
@@ -448,6 +471,8 @@ cases:
       verdict: never
       thin: false
       left_out: []
+      mix_today_share: '85.0'      # 500,000 held of 588,000
+      mix_future_share: '15.0'     # 88,000 still to come
       sources: [funds]
     scenarios:
       wants_only: {closes: false, cut: '900.00'}
@@ -484,6 +509,8 @@ cases:
       best: '0.297'
       verdict: null
       thin: false
+      mix_today_share: '85.0'
+      mix_future_share: '15.0'
       sources: [funds]
     balanced:
       cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # at 6 %: half of 130,126
@@ -521,6 +548,8 @@ cases:
       verdict: within_history
       thin: true
       left_out: []
+      mix_today_share: '85.0'      # 500,000 held of 588,000
+      mix_future_share: '15.0'     # 88,000 still to come
       sources: [funds]
     scenarios:
       wants_only: {closes: false, cut: '900.00'}
@@ -536,10 +565,10 @@ cases:
 - id: route3_coins_left_out
   description: >-
     funds 300,000 and crypto 200,000 (BTC 100,000, SOL 60,000 with no series, ETH 40,000 with
-    two years, fewer than the window's three): SOL (12 %) and ETH (8 %) are left out and named,
-    the funds weigh 3/4 and BTC 1/4 over their common years 2017–25; 1,300,000 by Dec 2029 needs
-    28.9 % a year, which three of the seven windows reached: „Ehrgeizig“; the balanced route at
-    the mix's median 22.2 % cuts the wants to half and saves 3,240 more
+    two years, fewer than the window's three) with 88,000 still to come, all into funds (D312):
+    SOL (10.2 %) and ETH (6.8 %) of 588,000 are left out and named, the funds weigh 388/488 and
+    BTC 100/488 over their common years 2017–25; 1,300,000 by Dec 2029 needs 28.9 % a year,
+    which three of the seven windows reached: „Ehrgeizig“
   <<: *household
   start: {month_end: '2026-10-31', bank: '50000.00', depot: '300000.00', crypto: '200000.00', property: '0.00', loans: '0.00', other_liabilities: '0.00'}
   value_today: {net_worth: '551000.00', reserve: '31000.00'}
@@ -554,11 +583,14 @@ cases:
     value_change: {depot: '0.06', crypto: '0.10'}
   # the walk: crypto 200,000 grows at 10 % (31 Dec 2026 203,333.33, 2029 270,636.67), funds at
   # 6 % with each month's 2,000 (31 Dec 2029 458,525.05), bank 38,000: 767,161.72.
-  # The mix, ¾ × funds + ¼ × BTC: 2017 0.4, 2018 −0.2, 2019 0.525, 2020 0.9, 2021 0.375,
-  # 2022 −0.3, 2023 0.75, 2024 0.375, 2025 0.125; windows 2017 1.708, 2018 2.318, 2019 3.984063,
-  # 2020 1.82875, 2021 1.684375, 2022 1.684375, 2023 2.707031; sorted 1.684375, 1.684375, 1.708,
-  # 1.82875 (median: 1.222³ = 1.82480 ≤ 1.82875 < 1.223³ = 1.82929), 2.318, 2.707031, 3.984063
-  # (best: 1.585³ = 3.98187 ≤ 3.984063 < 1.586³ = 3.98942)
+  # The mix until D312, ¾ × funds + ¼ × BTC: windows 2017 1.708, 2018 2.318, 2019 3.984063,
+  # 2020 1.82875, 2021 1.684375, 2022 1.684375, 2023 2.707031 (median 22.2 %, best 58.5 %).
+  # D312: the walk invests 88,000, all into funds (the split 100 % funds), so funds 388,000 and
+  # BTC 100,000 are kept, ETH 40,000 and SOL 60,000 left out of 588,000 (6.8 %, 10.2 %); the mix
+  # 388/488 × funds + 100/488 × BTC; windows 2017 1.676358, 2018 2.180072, 2019 3.628356,
+  # 2020 1.734010, 2021 1.666701, 2022 1.622550, 2023 2.572741; sorted 1.62255, 1.666701,
+  # 1.676358, 1.73401 (median: 1.201³ = 1.73228 ≤ 1.73401 < 1.202³ = 1.73661), 2.180072,
+  # 2.572741, 3.628356 (best: 1.536³ = 3.62374 ≤ 3.628356 < 1.537³ = 3.63083)
   expect:
     word: ambitious
     projected: '767161.72'
@@ -568,14 +600,16 @@ cases:
       needed_return: '0.289'     # 1,302,790.10 at 28.9 % for both, 1,299,777.24 at 28.8 %
       window_years: 3
       windows: 7
-      reached_windows: 3         # 1.289³ = 2.141701: 2.318, 2.707031, 3.984063
-      median: '0.222'
-      best: '0.585'
+      reached_windows: 3         # 1.289³ = 2.141701: 2.180072, 2.572741, 3.628356
+      median: '0.201'            # D312: 0.222 until 27 Nov 2026
+      best: '0.536'              # D312: 0.585 until 27 Nov 2026
       verdict: good_times
       thin: false
       left_out:
-      - {kind: coin, symbol: ETH, share: '8.0', reason: too_short}
-      - {kind: coin, symbol: SOL, share: '12.0', reason: no_series}
+      - {kind: coin, symbol: ETH, share: '6.8', reason: too_short}    # D312: 8.0
+      - {kind: coin, symbol: SOL, share: '10.2', reason: no_series}   # D312: 12.0
+      mix_today_share: '85.0'
+      mix_future_share: '15.0'
       sources: [funds, BTC]
     scenarios:
       wants_only: {closes: false, cut: '900.00'}
@@ -618,7 +652,9 @@ cases:
       verdict: never
       thin: false
       left_out:
-      - {kind: coin, symbol: null, share: '40.0', reason: no_coin}
+      - {kind: coin, symbol: null, share: '40.0', reason: no_coin}   # 35,200 of the 88,000 to come
+      mix_today_share: '0.0'       # nothing held
+      mix_future_share: '100.0'
       sources: [funds]
     scenarios:
       wants_only: {closes: false, cut: '900.00'}
@@ -633,8 +669,11 @@ cases:
 
 - id: route3_history_short
   description: >-
-    funds 100,000 and SOL 150,000 with no series: the series cover 40 % of the invested value,
-    under half, so route 3 is not offered (history_short) and names what it left out
+    funds 100,000 and SOL 150,000 with no series: today the series cover 40 % of the value,
+    under half, but the walk's 88,000 still to come go into funds (D312), so funds 188,000 of
+    338,000 cover 55.6 % and route 3 is offered, SOL named with 44.4 %; 600,000 by Dec 2029
+    needs 19.5 %, which three of the nine windows reached: „Ehrgeizig“ (step 2 at the room 450:
+    17.9 %, 3 of 9). Until D312 history_short with SOL 60.0 and the word hardly
   <<: *household
   start: {month_end: '2026-10-31', bank: '50000.00', depot: '100000.00', crypto: '150000.00', property: '0.00', loans: '0.00', other_liabilities: '0.00'}
   value_today: {net_worth: '301000.00', reserve: '31000.00'}
@@ -644,12 +683,193 @@ cases:
     goal: {kind: net_worth, target: '600000.00', due_month: '2029-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06', crypto: '0.10'}
   expect:
-    word: hardly                 # E = 3,489: no scenario closes
+    word: ambitious              # D312: hardly until 27 Nov 2026; step 2 17.9 %, 1.179³ = 1.638858: 3 of 9
     projected: '458917.32'
     more_saving: {extra: '3489.00', noetig: '5489.00'}
+    more_return:
+      available: true            # D312: history_short until 27 Nov 2026
+      needed_return: '0.195'     # 600,903.75 at 19.5 % for both, 599,528.05 at 19.4 %
+      window_years: 3
+      windows: 9
+      reached_windows: 3         # 1.195³ = 1.706490: 1.716, 1.98, 2.184
+      median: '0.147'
+      best: '0.297'
+      verdict: good_times
+      thin: false
+      left_out:
+      - {kind: coin, symbol: SOL, share: '44.4', reason: no_series}   # D312: 60.0
+      mix_today_share: '74.0'      # 250,000 held of 338,000
+      mix_future_share: '26.0'
+      sources: [funds]
+
+- id: route3_history_short_blended
+  description: >-
+    funds 50,000 and SOL 250,000 with no series: with the 88,000 still to come in funds the
+    series cover 138,000 of 388,000, 35.6 %, under half, so route 3 is not offered
+    (history_short) and names SOL with its blended share
+  <<: *household
+  start: {month_end: '2026-10-31', bank: '50000.00', depot: '50000.00', crypto: '250000.00', property: '0.00', loans: '0.00', other_liabilities: '0.00'}
+  value_today: {net_worth: '351000.00', reserve: '31000.00'}
+  invested: {funds: '50000.00', coins: {SOL: '250000.00'}}
+  history: *funds_history
+  levers:
+    goal: {kind: net_worth, target: '800000.00', due_month: '2029-12', set_on: '2026-11-20'}
+    value_change: {depot: '0.06', crypto: '0.10'}
+  expect:
+    word: hardly                 # step 2: 154,650 of 404,650 covered, 38.2 %: no count either
+    projected: '534089.34'
+    more_saving: {extra: '6575.00', noetig: null}
     more_return:
       available: false
       reason: history_short
       left_out:
-      - {kind: coin, symbol: SOL, share: '60.0', reason: no_series}
+      - {kind: coin, symbol: SOL, share: '64.4', reason: no_series}   # 250,000 of 388,000
+      mix_today_share: null        # no count: no shares
+      mix_future_share: null
 
+- id: route3_future_lifts_the_coin
+  description: >-
+    funds 400,000 and BTC 20,000 with the split 60 % funds and 40 % crypto: of the walk's
+    88,000 still to come 52,800 go to the funds and 35,200 to BTC, the only coin held, so BTC
+    weighs 55,200 of 508,000 (10.9 %) instead of today's 4.8 %; 878,000 by Dec 2029 needs
+    18.5 %, reached by three of the seven windows: route 3 good_times; step 2 at the room 450
+    (104,650 to come, BTC 61,860 of 524,650) needs 17.5 %, reached by four of seven: „Machbar“
+  <<: *household
+  start: {month_end: '2026-10-31', bank: '50000.00', depot: '400000.00', crypto: '20000.00', property: '0.00', loans: '0.00', other_liabilities: '0.00'}
+  value_today: {net_worth: '471000.00', reserve: '31000.00'}
+  invested: {funds: '400000.00', coins: {BTC: '20000.00'}}
+  split: {depot: '60', crypto: '40'}
+  history:
+    <<: *funds_history
+    coins:
+      BTC: {2017: '1.00', 2018: '-0.50', 2019: '0.90', 2020: '3.00', 2021: '0.60', 2022: '-0.60', 2023: '1.50', 2024: '1.20', 2025: '-0.10'}
+  levers:
+    goal: {kind: net_worth, target: '878000.00', due_month: '2029-12', set_on: '2026-11-20'}
+    value_change: {depot: '0.06', crypto: '0.10'}
+  # the walk: Nov 2026 14,000 moves (8,400 funds, 5,600 crypto), then 1,200 and 800 a month: in
+  # all 88,000, 52,800 and 35,200 (these are what route 3 weighs: 452,800 and 55,200 of 508,000).
+  expect:
+    word: feasible               # step 2 17.5 %: 1.175³ = 1.622234 reached by 4 of 7
+    projected: '646635.37'
+    more_saving: {extra: '5587.00', noetig: null}   # E above the mean income
+    more_return:
+      available: true
+      needed_return: '0.185'     # 878,860.39 at 18.5 % for both, 876,724.52 at 18.4 %
+      window_years: 3
+      windows: 7
+      reached_windows: 3
+      median: '0.174'
+      best: '0.428'
+      verdict: good_times
+      thin: false
+      left_out: []
+      mix_today_share: '82.7'      # 420,000 held of 508,000
+      mix_future_share: '17.3'
+      sources: [funds, BTC]
+
+- id: route3_future_crypto_no_coin
+  description: >-
+    funds 500,000 and no coin, the split 60 % funds and 40 % crypto: the walk's 88,000 still to
+    come put 35,200 into crypto with no coin held, left out as no_coin (6.0 % of 588,000), the
+    rest weighing the funds alone; 850,000 by Dec 2029 needs 11.5 %, reached by seven of nine
+    windows: within_history, „Machbar“
+  <<: *investor
+  split: {depot: '60', crypto: '40'}
+  levers:
+    goal: {kind: net_worth, target: '850000.00', due_month: '2029-12', set_on: '2026-11-20'}
+    value_change: {depot: '0.06', crypto: '0.10'}
+  expect:
+    word: feasible               # step 2 10.6 %: no_coin 6.9 %, 7 of 9
+    projected: '739864.31'
+    more_saving: {extra: '2660.00', noetig: '4660.00'}
+    more_return:
+      available: true
+      needed_return: '0.115'     # 851,592.99 at 11.5 %, 849,398.68 at 11.4 %
+      window_years: 3
+      windows: 9
+      reached_windows: 7         # 1.115³ = 1.386195: all but 1.248 and 1.32
+      median: '0.147'
+      best: '0.297'
+      verdict: within_history
+      thin: false
+      left_out:
+      - {kind: coin, symbol: null, share: '6.0', reason: no_coin}   # 35,200 of 588,000
+      mix_today_share: '85.0'
+      mix_future_share: '15.0'
+      sources: [funds]
+
+- id: route3_lump_above_reserve
+  description: >-
+    a reserve of 130,000 against its target of 18,000: Nov 2026 moves 114,000 into funds at
+    once, which counts in the money still to come (D312) with each month's 2,000 after it:
+    188,000 in all beside funds 100,000 and BTC 100,000 held, so funds 288,000 and BTC 100,000
+    weigh the mix (48.5 % still to come); 700,000 by Dec 2029 needs 20.4 %, reached by four of
+    seven windows: within_history, „Machbar“
+  <<: *household
+  start: {month_end: '2026-10-31', bank: '150000.00', depot: '100000.00', crypto: '100000.00', property: '0.00', loans: '0.00', other_liabilities: '0.00'}
+  reserve: {amount: '130000.00', need: '3000.00'}
+  value_today: {net_worth: '351000.00', reserve: '131000.00'}
+  invested: {funds: '100000.00', coins: {BTC: '100000.00'}}
+  history:
+    <<: *funds_history
+    coins:
+      BTC: {2017: '1.00', 2018: '-0.50', 2019: '0.90', 2020: '3.00', 2021: '0.60', 2022: '-0.60', 2023: '1.50', 2024: '1.20', 2025: '-0.10'}
+  levers:
+    goal: {kind: net_worth, target: '700000.00', due_month: '2029-12', set_on: '2026-11-20'}
+    value_change: {depot: '0.06', crypto: '0.10'}
+  expect:
+    word: feasible               # step 2 19.0 %: funds 304,650 and BTC 100,000 of 404,650, 5 of 7
+    projected: '510955.26'
+    more_saving: {extra: '4675.00', noetig: '6675.00'}
+    more_return:
+      available: true
+      needed_return: '0.204'     # 700,662.96 at 20.4 % for both, 699,047.76 at 20.3 %
+      window_years: 3
+      windows: 7
+      reached_windows: 4
+      median: '0.226'
+      best: '0.593'
+      verdict: within_history
+      thin: false
+      left_out: []
+      mix_today_share: '51.5'      # 200,000 held of 388,000
+      mix_future_share: '48.5'
+      sources: [funds, BTC]
+
+- id: route3_due_next_month
+  description: >-
+    a goal for Dec 2026, two months walked (the due month included, D312): the reserve sits at
+    its target, so the walk invests 2,000 in Nov and 2,000 in Dec, 4,000 beside funds 300,000
+    and BTC 100,000 held (1.0 % still to come); windows of one year over 2017–25; 470,000 needs
+    24.0 %, reached by six of nine years: within_history, „Machbar“ (step 2 at the room 450,
+    4,450 to come: 23.3 %, 6 of 9)
+  <<: *household
+  start: {month_end: '2026-10-31', bank: '50000.00', depot: '300000.00', crypto: '100000.00', property: '0.00', loans: '0.00', other_liabilities: '0.00'}
+  reserve: {amount: '18000.00', need: '3000.00'}
+  value_today: {net_worth: '451000.00', reserve: '19000.00'}
+  invested: {funds: '300000.00', coins: {BTC: '100000.00'}}
+  history:
+    <<: *funds_history
+    coins:
+      BTC: {2017: '1.00', 2018: '-0.50', 2019: '0.90', 2020: '3.00', 2021: '0.60', 2022: '-0.60', 2023: '1.50', 2024: '1.20', 2025: '-0.10'}
+  levers:
+    goal: {kind: net_worth, target: '470000.00', due_month: '2026-12', set_on: '2026-11-20'}
+    value_change: {depot: '0.06', crypto: '0.10'}
+  expect:
+    word: feasible
+    projected: '458676.67'
+    more_saving: {extra: '11324.00', noetig: null}
+    more_return:
+      available: true
+      needed_return: '0.240'     # 470,040.00 at 24.0 % for both, 469,973.16 at 23.9 %
+      window_years: 1
+      windows: 9
+      reached_windows: 6         # 1.24 against the yearly returns 1.123 … 1.893
+      median: '0.374'
+      best: '0.893'
+      verdict: within_history
+      thin: false
+      left_out: []
+      mix_today_share: '99.0'      # 400,000 held of 404,000
+      mix_future_share: '1.0'
+      sources: [funds, BTC]

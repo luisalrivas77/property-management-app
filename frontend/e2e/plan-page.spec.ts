@@ -765,6 +765,67 @@ test("the path when it cannot hold: no adopt button; Ehrgeizig and Kaum erreichb
   expect(posts).toHaveLength(0);
 });
 
+test("„Jetzt anlegen“ on the path's plan card in every state, its split in the panel", async ({ page, signedIn }) => {
+  void signedIn;
+  await planApi(page);
+  // The server's figures: 12.340 € above the reserve target, 60/40 into funds and crypto, and
+  // „Was ihr tun müsst“ as goal_path.actions sends it.
+  const above = { above_target: "12340.00", above_target_depot: "7404.00", above_target_crypto: "4936.00" };
+  const actions: GoalPath["actions"] = [
+    { kind: "save_monthly", amount: "1350.00", amount_depot: "810.00", amount_crypto: "540.00" },
+    { kind: "invest_now", amount: "12340.00", amount_depot: "7404.00", amount_crypto: "4936.00" },
+    { kind: "keep_reserve", amount: "18000.00", within_target: true },
+    { kind: "wants_cut", code: "hh_restaurant", mean: "400.00", amount: "150.00" },
+  ];
+  const reached = monthsAhead(50);
+  const state = { goal: withPath({ ...stepOne(), ...above, actions, plan_reached: reached }), tracking: tracking([]) };
+  await pathApi(page, state, () => ({ status: 201, json: {} }));
+  await page.goto("/household/plan");
+  const main = page.locator(".planp-cards");
+  const now = main.getByTestId("path-plan").getByTestId("path-invest-now");
+  await expect(now).toContainText(/Jetzt anlegen\s*12\.340\s€/);
+  await page.goto("/household/plan#d-plan-weg");
+  const steps = detail(page, "Der Plan").getByTestId("path-steps");
+  await expect(steps.locator("li")).toHaveCount(4);
+  await expect(steps.locator("li").nth(0)).toContainText(/Jeden Monat 1\.350\s€ sparen und anlegen\s*davon 810\s€ in Fonds, 540\s€ in Krypto/);
+  await expect(steps.locator("li").nth(1)).toContainText(/Jetzt 12\.340\s€ anlegen\s*davon 7\.404\s€ in Fonds, 4\.936\s€ in Krypto/);
+  await expect(steps.locator("li").nth(2)).toContainText(/Reserve von 18\.000\s€ halten/);
+  await expect(steps.locator("li").nth(3)).toContainText(/Restaurant: 400\s€ → 150\s€ im Monat/);
+  await expect(detail(page, "Der Plan")).toContainText(/Dann erreicht ihr 500\.000\s€ im/);
+
+  const notHeld = { extra: null, monthly: null, rate: null, adoptable: false, why: { due_value: "441000.00", reached: null } };
+  state.goal = withPath({ ...stepOne(), ...above, ...notHeld, state: "ambitious", return_needed: "0.142", windows: 4, reached_windows: 1 });
+  await page.goto("/household/plan");
+  await expect(main.getByTestId("path-return").getByTestId("path-invest-now")).toContainText(/12\.340\s€/);
+  await expect(main.getByTestId("path-invest-now")).toHaveCount(1);
+
+  state.goal = withPath({ ...stepOne(), ...above, ...notHeld, state: "hardly", return_needed: null, windows: null, reached_windows: null });
+  await page.reload();
+  await expect(main.getByTestId("path-realistic").getByTestId("path-invest-now")).toContainText(/12\.340\s€/);
+  await expect(main.getByTestId("path-invest-now")).toHaveCount(1);
+
+  // The reserve below its target and no want cut: no row, no step to invest now, the monthly
+  // saving without a split (the walk fills the reserve first), the reserve to fill, and one step
+  // that says the wants need no cut, below the app's suggestion (no wants target saved).
+  const kept: GoalPath["actions"] = [
+    { kind: "save_monthly", amount: "1350.00", amount_depot: null, amount_crypto: null },
+    { kind: "keep_reserve", amount: "18000.00", within_target: false },
+    { kind: "wants_none", amount: "640.00", within_target: true, wants_percent: null },
+  ];
+  state.goal = withPath({ ...stepOne(), above_target: "0.00", above_target_depot: null, above_target_crypto: null, actions: kept, plan_reached: reached });
+  // a hash change alone does not load the page again, so load it first for the new answer
+  await page.goto("/household/plan");
+  await page.goto("/household/plan#d-plan-weg");
+  await expect(main.getByTestId("path-plan")).toBeVisible();
+  await expect(main.getByTestId("path-invest-now")).toHaveCount(0);
+  const none = detail(page, "Der Plan").getByTestId("path-steps");
+  await expect(none.locator("li")).toHaveCount(3);
+  await expect(none).not.toContainText(/Jetzt .* anlegen/);
+  await expect(none.locator("li").nth(0)).not.toContainText("davon");
+  await expect(none.locator("li").nth(1)).toContainText(/Reserve zuerst auf 18\.000\s€ auffüllen/);
+  await expect(none.locator("li").nth(2)).toContainText(/Wünsche: nichts zu kürzen – ihr liegt mit 640\s€ unter dem Vorschlag von 870\s€/);
+});
+
 test("a refused adopt (the path moved) shows the server's reason, and nothing is adopted", async ({ page, signedIn }) => {
   void signedIn;
   await planApi(page);

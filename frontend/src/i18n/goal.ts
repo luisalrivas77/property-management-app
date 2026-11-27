@@ -199,6 +199,10 @@ export const goalText = defineMessages({
     leftOutTitle: "Nicht mitgerechnet",
     leftOutFunds: "Fonds",
     leftOutCrypto: "Krypto",
+    // §7.11 (j), D312: what the history check weighs, today's holdings and the money to come
+    mixTitle: "Was der Vergleich wiegt",
+    mixToday: "Heute angelegt",
+    mixFuture: "Kommt noch dazu, nach eurer Aufteilung",
     leftOutReason: (reason: string) =>
       (({ too_short: "zu kurze Geschichte", no_series: "keine Daten", no_coin: "keine Münze gehalten" }) as Record<string, string>)[reason] ?? "",
     reasonText: (reason: string) =>
@@ -493,6 +497,9 @@ export const goalText = defineMessages({
     leftOutTitle: "Not counted",
     leftOutFunds: "Funds",
     leftOutCrypto: "Crypto",
+    mixTitle: "What the comparison weighs",
+    mixToday: "Invested today",
+    mixFuture: "Still to come, at your split",
     leftOutReason: (reason) =>
       (({ too_short: "history too short", no_series: "no data", no_coin: "no coin held" }) as Record<string, string>)[reason] ?? "",
     reasonText: (reason) =>

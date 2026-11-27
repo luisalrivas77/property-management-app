@@ -561,6 +561,9 @@ class MoreReturnExpect(Schema):
     verdict: Literal["within_history", "good_times", "never"] | None = None
     thin: bool | None = None
     left_out: list[LeftOutExpect] = Field(default_factory=list)
+    # §7.11 (j), D312: the mix's part held today and the part still to come, percent to 0.1
+    mix_today_share: Dec | None = None
+    mix_future_share: Dec | None = None
     sources: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -1108,6 +1111,9 @@ class PathExpect(Schema):
     reached_windows: int | None = None
     short_history: bool | None = None
     years: tuple[int, int] | None = None  # the mix's first and last year
+    # D312: step 2's mix, the part held today and the part still to come, percent to 0.1
+    mix_today_share: Dec | None = None
+    mix_future_share: Dec | None = None
     wants_budget: dict[AllocationCategory, Money] = Field(default_factory=dict)
     wants_budget_total: Money | None = None
     adoptable: bool

@@ -1061,6 +1061,21 @@ function MoreReturnPanel({ goal, follow }: { goal: HouseholdGoal; follow: Follow
           <ErrorNotice error={error} />
         </div>
       ) : null}
+      {ret.mix_today_share != null && ret.mix_future_share != null ? (
+        <div className="goal-c">
+          <CardHead title={t.mixTitle} />
+          <div className="goal-rows">
+            <div className="goal-rw">
+              <span>{t.mixToday}</span>
+              <b>{p.percentValue(ret.mix_today_share)}</b>
+            </div>
+            <div className="goal-rw">
+              <span>{t.mixFuture}</span>
+              <b>{p.percentValue(ret.mix_future_share)}</b>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {(ret.left_out ?? []).length > 0 ? (
         <div className="goal-c">
           <CardHead title={t.leftOutTitle} />

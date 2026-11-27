@@ -25,7 +25,13 @@ from hausbuch.rules.errors import HOUSEHOLD_SCENARIO_PATH_INVALID
 from hausbuch.rules.goal.goal import wants_net
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.budget import BudgetLineKey
-from hausbuch.schemas.goal import GoalInvestment, GoalSpending, GoalTrackingWord, GoalWord
+from hausbuch.schemas.goal import (
+    GoalInvestment,
+    GoalPathActionKind,
+    GoalSpending,
+    GoalTrackingWord,
+    GoalWord,
+)
 from hausbuch.schemas.health import HealthTodoCode
 from hausbuch.schemas.plan import (
     GoalPathBudgetChange,
@@ -38,6 +44,7 @@ from hausbuch.schemas.plan import (
 )
 from hausbuch.services import budget, goal_tracking, household_scenarios, net_worth, plan_page
 from hausbuch.services import goal as goal_service
+from hausbuch.services import plan as plan_service
 from hausbuch.services.errors import RuleViolationError
 from hausbuch.services.health import levers_one_off_codes
 from hausbuch.services.plan_inputs import PlanInputs
@@ -120,6 +127,51 @@ def test_the_path_and_heute_angelegt_on_get(world):
     assert sorted(p.monthly for p in today.plans) == [Decimal("25.00"), Decimal("50.00")]
     assert path.adopted is None
     assert HealthTodoCode.PLAN_CHECK not in {t.code for t in got.todos}
+
+
+def test_jetzt_anlegen_is_the_plans_above_target_at_the_walks_split(world):
+    """„Jetzt anlegen“ on the path's plan card: the plan's own `above_target` (the reserve
+    above its target today), and its part in funds and in crypto at the split the walk invests
+    in. Without a saved split the walk takes the holdings' mix, funds only here, so all of it
+    goes to funds; with 60/40 saved and a rate typed for crypto too (a kind without a rate
+    leaves the effective split, rules/investment_split.py), 12,365 × 60 % = 7,419 to funds
+    and the rest, 4,946, to crypto."""
+    _goal_world(world)
+    above = world.query(plan_service.household_plan, TODAY).above_target
+    assert above == Decimal("12365.00")
+    path = _answer(world).goal_path
+    assert path is not None
+    assert (path.above_target, path.above_target_depot, path.above_target_crypto) == (
+        above,
+        above,
+        Decimal("0.00"),
+    )
+    _save(
+        world,
+        investment_split=InvestmentSplit(depot=Decimal("60"), crypto=Decimal("40")),
+        value_change=ValueChange(depot=Decimal("0.030"), crypto=Decimal("0.050")),
+    )
+    path = _answer(world).goal_path
+    assert path is not None
+    assert (path.above_target, path.above_target_depot, path.above_target_crypto) == (
+        above,
+        Decimal("7419.00"),
+        Decimal("4946.00"),
+    )
+    # „Was ihr tun müsst“ carries the same figures: invest the 12,365 now at 7,419 / 4,946
+    # and keep the reserve at the walk's target
+    kinds = {a.kind: a for a in path.actions}
+    now = kinds[GoalPathActionKind.INVEST_NOW]
+    assert (now.amount, now.amount_depot, now.amount_crypto) == (
+        above,
+        Decimal("7419.00"),
+        Decimal("4946.00"),
+    )
+    assert GoalPathActionKind.KEEP_RESERVE in kinds
+    monthly = kinds[GoalPathActionKind.SAVE_MONTHLY]
+    assert monthly.amount == path.monthly
+    assert monthly.amount_depot + monthly.amount_crypto == monthly.amount
+    assert path.plan_reached is not None
 
 
 def test_adopt_supersedes_the_default_once_with_its_event(world):

@@ -166,7 +166,7 @@ def with_path(answer: HouseholdGoal, built: "GoalReads", levers: HouseholdLevers
             saved=saved,
             saved_not_invested=max(ZERO, saved - invested),
             plans=[] if generic else list(built.plan.plans),
-        )
+        ),
     }
     todos = list(answer.todos)
     lever = levers.goal_path
@@ -430,6 +430,7 @@ def goal_inputs(
         mode=inputs.part(("advice_mode",), advice_mode),
         invested=_invested(inputs, now, _reserve_depots(parts.reserve)),
         history=_history(inputs),
+        above_target=plan.above_target,  # „Jetzt anlegen“, the plan's own figure
     )
     return GoalReads(goal=gi, plan=plan, parts=parts, now=now)
 

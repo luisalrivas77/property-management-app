@@ -89,6 +89,7 @@ from hausbuch.schemas.plan import (
     GoalKind,
     GoalPathState,
     GoalSpending,
+    PlanClass,
     SpendingChange,
 )
 
@@ -128,6 +129,9 @@ class GoalInputs:
     # Route 3 (D310 amended): today's invested values and the reference series in euros
     invested: H.Invested = H.Invested()
     history: H.History = H.History()
+    # „Jetzt anlegen“: the plan's money above the reserve target today (D301, GET
+    # /household-plan's `above_target`), which the walk invests in its first month
+    above_target: Decimal | None = None
 
 
 def none_set() -> HouseholdGoal:
@@ -294,7 +298,36 @@ def _plan_path(
     )
     room = PA.room_of(ceiling, anlegbar)
     typed = PA.typed_rate(p.levers, p.split)
-    head = {"ceiling": ceiling, "anlegbar": anlegbar, "room": room, "typed_rate": typed}
+    now = PA.above_target_split(i.above_target, p.split, p.target)
+    head = {
+        "ceiling": ceiling,
+        "anlegbar": anlegbar,
+        "room": room,
+        "typed_rate": typed,
+        "above_target": None if now is None else i.above_target,
+        "above_target_depot": None if now is None else now[0],
+        "above_target_crypto": None if now is None else now[1],
+    }
+    plans = {c: sum((x.monthly for x in p.plans if x.asset_class is c), ZERO) for c in PlanClass}
+
+    def figures(monthly: Decimal | None, cuts: dict, return_needed) -> PA.PlanFigures:
+        return PA.PlanFigures(
+            monthly=monthly,
+            split=p.split,
+            target=p.target,
+            plans_depot=plans[PlanClass.DEPOT],
+            plans_crypto=plans[PlanClass.CRYPTO],
+            above_target=i.above_target,
+            cuts=_budgets(wants, cuts),
+            wants_net=net,
+            ceiling=ceiling,
+            wants_max=i.wants_max,
+            return_needed=return_needed,
+            reserve_start=p.reserve_start,
+            # on track the path's walk counts on the adopted budget (`_path_walk`)
+            adopted_budget=on_track and i.choice is not None and i.choice.spending is not None,
+        )
+
     step: dict = {}
     if on_track:
         state, extra = GoalPathState.ON_TRACK, ZERO
@@ -312,13 +345,28 @@ def _plan_path(
             due_value=ZERO if month is None else value_of(i.goal, month),
             reached=reached_in(i.goal, with_room, target),
         )
-        return GoalPath(state=state, adoptable=False, why=why, **head, **step)
+        # „Was ihr tun müsst“ without a path: the whole room (the wants cut for it) at the
+        # return needed when step 2 names one, else at the typed rates (the why's walk)
+        needed = step.get("return_needed")
+        reached = why.reached
+        if needed is not None:
+            at = walk(_at_rate(p, needed), until=due, extra=room, extra_from=first)
+            reached = reached_in(i.goal, at, target)
+        room_cuts = PA.wants_cuts(
+            wants, PA.cuttable(net, ceiling.wants_kept), room, b.buffer_percent
+        )
+        return GoalPath(
+            state=state,
+            adoptable=False,
+            why=why,
+            actions=PA.actions_of(figures(anlegbar + room, room_cuts, needed)),
+            plan_reached=reached,
+            **head,
+            **step,
+        )
     cuts = PA.wants_cuts(wants, PA.cuttable(net, ceiling.wants_kept), extra, b.buffer_percent)
-    budgets = [
-        GoalBudget(code=c, budget_class=BudgetClass.WANT, mean=wants[c], budget=wants[c] - cuts[c])
-        for c in sorted(cuts, key=lambda c: c.value)
-    ]
-    return GoalPath(
+    budgets = _budgets(wants, cuts)
+    path = GoalPath(
         state=state,
         extra=extra,
         monthly=anlegbar + extra,
@@ -331,16 +379,36 @@ def _plan_path(
         **head,
         **step,
     )
+    w = _path_walk(i, path)
+    return path.model_copy(
+        update={
+            "actions": PA.actions_of(figures(path.monthly, cuts, step.get("return_needed"))),
+            "plan_reached": None if w is None else reached_in(i.goal, w, target),
+        }
+    )
+
+
+def _budgets(wants: dict, cuts: dict) -> list[GoalBudget]:
+    return [
+        GoalBudget(code=c, budget_class=BudgetClass.WANT, mean=wants[c], budget=wants[c] - cuts[c])
+        for c in sorted(cuts, key=lambda c: c.value)
+    ]
 
 
 def path_months(i: GoalInputs, path: GoalPath) -> tuple[tuple[str, Decimal], ...]:
     """The path's walk to the due month, (YYYY-MM, net worth) per month, for adopting it
-    (§7.11 (i) item 6): step 1 at the typed rates with its extra, step 2 at the return needed
-    with the whole room, both without spending changes (the extra is the cut, D311); on track
-    with the household's adopted budget when it has one. Empty without a projection."""
+    (§7.11 (i) item 6). Empty without a projection or a path."""
+    w = _path_walk(i, path)
+    return () if w is None else tuple((m.month, m.net_worth) for m in w.months)
+
+
+def _path_walk(i: GoalInputs, path: GoalPath) -> Walk | None:
+    """The path's walk to the due month: step 1 at the typed rates with its extra, step 2 at
+    the return needed with the whole room, both without spending changes (the extra is the
+    cut, D311); on track with the household's adopted budget when it has one."""
     p = i.projection
     if p is None or path.state not in ADOPTABLE_STATES:
-        return ()
+        return None
     if i.goal.kind is not GoalKind.NET_WORTH:
         p = replace(p, split=None)
     if path.state is GoalPathState.DOABLE_RETURN:
@@ -349,8 +417,7 @@ def path_months(i: GoalInputs, path: GoalPath) -> tuple[tuple[str, Decimal], ...
     budget = i.choice is not None and i.choice.spending is not None
     changes = i.household_changes if path.state is GoalPathState.ON_TRACK and budget else ()
     first = add_months(current_month(i.today), 1)
-    w = walk(p, changes, until=i.goal.due_month, extra=path.extra or ZERO, extra_from=first)
-    return tuple((m.month, m.net_worth) for m in w.months)
+    return walk(p, changes, until=i.goal.due_month, extra=path.extra or ZERO, extra_from=first)
 
 
 def _step_2(
@@ -360,7 +427,9 @@ def _step_2(
     if i.mode is AdviceMode.GENERIC or i.goal.kind is not GoalKind.NET_WORTH:
         return GoalPathState.HARDLY, {}
     years = H.window_years(left)
-    mix = H.mix_of(i.invested, p.split, i.history, years)
+    # D312: the money still to come is what the walk at the whole room invests
+    coming = walk(p, until=i.goal.due_month, extra=room, extra_from=first).invested
+    mix = H.mix_of(i.invested, p.split, i.history, years, future=coming)
     if isinstance(mix, H.NoCount):
         return GoalPathState.HARDLY, {}
     products = H.window_products(mix.returns, years)
@@ -373,6 +442,8 @@ def _step_2(
         "reached_windows": reached,
         "short_history": len(products) < H.THIN_BELOW,
         "years": [min(mix.returns), max(mix.returns)] if mix.returns else None,
+        "mix_today_share": mix.today_share,
+        "mix_future_share": mix.future_share,
     }
     return PA.step_2_state(reached, len(products)), shown
 
@@ -436,7 +507,9 @@ def _more_return(
     if i.goal.kind is not GoalKind.NET_WORTH:  # a sum saved or the reserve: nothing invested
         return GoalMoreReturn(reason=GoalRouteReason.NOTHING_INVESTED), None
     years = H.window_years(left)
-    mix = H.mix_of(i.invested, p.split, i.history, years)
+    # D312: the money still to come is what the household's own walk invests
+    coming = walk(p, until=i.goal.due_month).invested
+    mix = H.mix_of(i.invested, p.split, i.history, years, future=coming)
     if isinstance(mix, H.NoCount):
         return GoalMoreReturn(reason=mix.reason, left_out=list(mix.left_out)), None
     products = H.window_products(mix.returns, years)
@@ -449,6 +522,8 @@ def _more_return(
         "best": H.annualised(max(products), years),
         "thin": thin,
         "left_out": list(mix.left_out),
+        "mix_today_share": mix.today_share,
+        "mix_future_share": mix.future_share,
         "sources": [
             GoalReferenceSource(
                 key=s.key,

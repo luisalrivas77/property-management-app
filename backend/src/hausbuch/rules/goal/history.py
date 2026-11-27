@@ -11,11 +11,15 @@ reads the database, the network or a model, and nothing proposes a rate or a pro
   year without both rates, or a coin without both prices, has no return.
 - **The mix** (1, 2): today's values weigh funds against each coin (with nothing held, the
   saved split; crypto in a split with no coin held is left out as `no_coin`, no coin is
-  assumed). A part without a series (a coin) or with fewer yearly returns than the window is
-  left out and named with its share, its weight going to the rest pro rata; under half of the
-  value covered, or no window in the years every series left has, gives no count. Each
-  year's mix return is Σ weight × return over those years (rebalanced to today's weights
-  every year).
+  assumed). With the money still to come (§7.11 (j), D312: what the walk invests up to the
+  due month, in euros, undiscounted) a second part joins at the split: its funds share adds
+  to the funds, its crypto share is spread over the coins held today by their value, or with
+  no coin held is a `no_coin` part; each part weighs by its euros, a kind in both counting
+  once at the sum. `today_share` and `future_share` are the two parts' percents. A part
+  without a series (a coin) or with fewer yearly returns than the window is left out and named
+  with its share, its weight going to the rest pro rata; under half of the value covered, or
+  no window in the years every series left has, gives no count. Each year's mix return is
+  Σ weight × return over those years (rebalanced to these weights every year).
 - **The windows** (3): every run of `years` consecutive years in the mix; a window's product
   Π (1 + return); the median is the sorted products' element M ÷ 2 (the upper middle of an
   even count, so at least half the windows reached it), the best the largest; each shown
@@ -155,6 +159,10 @@ class Mix:
     weights: tuple[Fraction, ...]  # adding up to 1
     returns: dict[int, Fraction]  # Σ weight × return over the years every series has
     left_out: tuple[GoalLeftOut, ...]
+    # §7.11 (j), D312: the percents (to 0.1) of the part held today and the part still to
+    # come; None when mix_of was asked without the money still to come
+    today_share: Decimal | None = None
+    future_share: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -170,24 +178,43 @@ def _share(value: Fraction) -> Decimal:
 
 
 def mix_of(
-    invested: Invested, split: InvestmentSplit | None, history: History, years: int
+    invested: Invested,
+    split: InvestmentSplit | None,
+    history: History,
+    years: int,
+    future: Decimal | None = None,
 ) -> Mix | NoCount:
-    """The invested mix for a window of `years` (1, 2), or why there is no count."""
+    """The invested mix for a window of `years` (1, 2), or why there is no count.
+
+    `future` (§7.11 (j), D312): the money the walk invests up to the due month, which joins
+    today's values at the split; None reads today's values alone (the weak-markets risk)."""
     # (kind, symbol, value): today's values, else the saved split's shares
     parts: list[tuple[GoalLeftOutKind, str | None, Fraction]] = []
-    if invested.total > 0:
-        if invested.funds > 0:
-            parts.append((GoalLeftOutKind.FUNDS, None, Fraction(invested.funds)))
-        parts += [
-            (GoalLeftOutKind.COIN, s, Fraction(v))
-            for s, v in sorted(invested.coins.items())
-            if v > 0
-        ]
+    if invested.funds > 0:
+        parts.append((GoalLeftOutKind.FUNDS, None, Fraction(invested.funds)))
+    parts += [
+        (GoalLeftOutKind.COIN, s, Fraction(v)) for s, v in sorted(invested.coins.items()) if v > 0
+    ]
+    held = sum((v for _, _, v in parts), Fraction(0))
+    coming = (
+        Fraction(future) if future is not None and future > 0 and split is not None else Fraction(0)
+    )
+    shares: tuple[Decimal | None, Decimal | None] = (None, None)
+    if coming:
+        assert split is not None
+        parts = _with_future(parts, held, coming, split)
+        whole = held + coming
+        shares = (_share(held * 100 / whole), _share(coming * 100 / whole))
+    elif held:
+        if future is not None:
+            shares = (_share(Fraction(100)), _share(Fraction(0)))
     elif split is not None:
         if split.depot > 0:
             parts.append((GoalLeftOutKind.FUNDS, None, Fraction(split.depot)))
         if split.crypto > 0:  # no coin held: no coin is assumed
             parts.append((GoalLeftOutKind.COIN, None, Fraction(split.crypto)))
+        if future is not None:  # nothing held and nothing still to come: the split alone
+            shares = (_share(Fraction(0)), _share(Fraction(100)))
     if not parts:
         return NoCount(GoalRouteReason.NOTHING_INVESTED)
     total = sum(v for _, _, v in parts)
@@ -226,7 +253,38 @@ def mix_of(
     }
     if not window_products(returns, years):
         return NoCount(GoalRouteReason.HISTORY_SHORT, named)
-    return Mix(series=tuple(s for s, _ in kept), weights=weights, returns=returns, left_out=named)
+    return Mix(
+        series=tuple(s for s, _ in kept),
+        weights=weights,
+        returns=returns,
+        left_out=named,
+        today_share=shares[0],
+        future_share=shares[1],
+    )
+
+
+def _with_future(
+    parts: list[tuple[GoalLeftOutKind, str | None, Fraction]],
+    held: Fraction,
+    coming: Fraction,
+    split: InvestmentSplit,
+) -> list[tuple[GoalLeftOutKind, str | None, Fraction]]:
+    """Today's parts with the money still to come added at the split (D312 1, 2): the funds'
+    share to the funds, the crypto's spread over the coins held today by their value (every
+    coin held, also one later left out), or with no coin held a `no_coin` part."""
+    to_funds = coming * Fraction(split.depot) / 100
+    to_crypto = coming * Fraction(split.crypto) / 100
+    coins = sum((v for k, _, v in parts if k is GoalLeftOutKind.COIN), Fraction(0))
+    out: list[tuple[GoalLeftOutKind, str | None, Fraction]] = []
+    funds = sum((v for k, _, v in parts if k is GoalLeftOutKind.FUNDS), Fraction(0)) + to_funds
+    if funds > 0:
+        out.append((GoalLeftOutKind.FUNDS, None, funds))
+    for kind, symbol, value in parts:
+        if kind is GoalLeftOutKind.COIN:
+            out.append((kind, symbol, value + to_crypto * value / coins))
+    if not coins and to_crypto > 0:
+        out.append((GoalLeftOutKind.COIN, None, to_crypto))
+    return out
 
 
 # --- The windows and the verdict --------------------------------------------------------------

@@ -51,6 +51,10 @@ WALK_RULE_VERSION = "5f75a9856b0a2a7e0d14cc596036e57a561920b9e08355d5e01eb4cb3c4
 # income gap, off by default, so every existing answer and stored figure is unchanged; only
 # the months stored from now on carry the new version).
 PLAN_RULE_VERSION = "95bb50becb8276c0d43ceb4b819340a35d49ef35a7018fc9c4f140b7b278162e"
+# §7.11 (j) changes it once more (27 Nov 2026, D312: `Walk.invested`, the money a walk invests
+# in all, which the goal's history check weighs at the split; no other answer or stored figure
+# reads it, so only the months stored from now on carry the new version).
+D312_RULE_VERSION = "749708febaa684a151b8402de196d5c03078575c799a6f6b778083abd181af1b"
 
 
 def _view(case: phase10.BudgetCase):
@@ -230,10 +234,12 @@ def test_fill(case) -> None:
 def test_references_do_not_touch_the_rule_version() -> None:
     """D271, D275: the Budget adds no file under rules/health or rules/plan; the hash moved
     only with wave 3's one-off marks (§7.9 (c) 2), §7.12's one-offs by category (D307,
-    D308), §7.11 (g)'s need from needs (D305), §7.11 (a)'s walk (D301) and §7.11 (h)'s draw
-    from the invested money, pinned so any other change shows."""
-    assert rule_version() == PLAN_RULE_VERSION
+    D308), §7.11 (g)'s need from needs (D305), §7.11 (a)'s walk (D301), §7.11 (h)'s draw
+    from the invested money and §7.11 (j)'s money a walk invests (D312), pinned so any other
+    change shows."""
+    assert rule_version() == D312_RULE_VERSION
     versions = {
+        D312_RULE_VERSION,
         PLAN_RULE_VERSION,
         WALK_RULE_VERSION,
         NEED_RULE_VERSION,
@@ -241,7 +247,7 @@ def test_references_do_not_touch_the_rule_version() -> None:
         WAVE3_RULE_VERSION,
         MAIN_RULE_VERSION,
     }
-    assert len(versions) == 6
+    assert len(versions) == 7
     root = Path(B.__file__).resolve().parents[1]
     assert not list((root / "health").glob("*budget*"))
     assert not list((root / "plan").glob("*budget*"))

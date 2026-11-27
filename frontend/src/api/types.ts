@@ -9074,6 +9074,10 @@ export interface components {
             thin: boolean;
             /** Left Out */
             left_out?: components["schemas"]["GoalLeftOut"][];
+            /** Mix Today Share */
+            mix_today_share?: string | null;
+            /** Mix Future Share */
+            mix_future_share?: string | null;
             /** Sources */
             sources?: components["schemas"]["GoalReferenceSource"][];
         };
@@ -9122,6 +9126,10 @@ export interface components {
             short_history?: boolean | null;
             /** Years */
             years?: number[] | null;
+            /** Mix Today Share */
+            mix_today_share?: string | null;
+            /** Mix Future Share */
+            mix_future_share?: string | null;
             /** Wants Budget */
             wants_budget?: components["schemas"]["GoalBudget"][];
             /** Wants Budget Total */
@@ -9132,8 +9140,58 @@ export interface components {
             adoptable: boolean;
             why?: components["schemas"]["GoalPathWhy"] | null;
             today?: components["schemas"]["GoalPathToday"] | null;
+            /** Above Target */
+            above_target?: string | null;
+            /** Above Target Depot */
+            above_target_depot?: string | null;
+            /** Above Target Crypto */
+            above_target_crypto?: string | null;
+            /** Actions */
+            actions?: components["schemas"]["GoalPathAction"][];
+            /** Plan Reached */
+            plan_reached?: string | null;
             adopted?: components["schemas"]["GoalPathAdopted"] | null;
         };
+        /**
+         * GoalPathAction
+         * @description One step of „Was ihr tun müsst“. `amount`: save_monthly, invest_now and keep_reserve
+         *     their euros, wants_cut the want's budget a month, wants_none the wants' net mean a month;
+         *     `amount_depot` and `amount_crypto` the part into funds and crypto at the walk's split (funds
+         *     half-up to the cent, crypto the rest), None when the walk invests none of it (for the
+         *     monthly saving also while the reserve is below its target: the walk fills it first).
+         *     keep_reserve: `within_target` whether the reserve is at its target today (else it is filled
+         *     first). wants_cut: `code` and its `mean`. wants_none: `within_target` whether the wants
+         *     already lie within the wants kept, `wants_percent` the household's wants target (None: the
+         *     app's suggestion), `adopted_budget` whether the plan counts on the spending budget the
+         *     household adopted (on track). return_needed: `rate`. Every figure by code.
+         */
+        GoalPathAction: {
+            kind: components["schemas"]["GoalPathActionKind"];
+            /** Amount */
+            amount?: string | null;
+            /** Amount Depot */
+            amount_depot?: string | null;
+            /** Amount Crypto */
+            amount_crypto?: string | null;
+            code?: components["schemas"]["AllocationCategory"] | null;
+            /** Mean */
+            mean?: string | null;
+            /** Within Target */
+            within_target?: boolean | null;
+            /** Wants Percent */
+            wants_percent?: string | null;
+            /** Adopted Budget */
+            adopted_budget?: boolean | null;
+            /** Rate */
+            rate?: string | null;
+        };
+        /**
+         * GoalPathActionKind
+         * @description „Was ihr tun müsst“ on „Euer Plan“'s plan panel, in this order, each only when it
+         *     applies (rules/goal/path.py `actions_of`).
+         * @enum {string}
+         */
+        GoalPathActionKind: "save_monthly" | "invest_now" | "keep_reserve" | "wants_cut" | "wants_none" | "return_needed";
         /**
          * GoalPathAdopted
          * @description The path the household adopted (the default scenario's `goal_path` lever), as stored,
