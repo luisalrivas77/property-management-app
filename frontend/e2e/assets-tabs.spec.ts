@@ -336,6 +336,50 @@ test("„Für euer Ziel“ sits after the gain card, with no sideways scroll on 
   expect(backgrounds[0]).not.toEqual(backgrounds[1]);
 });
 
+test("following the adopted path, „Für euer Ziel“ draws the growth against the growth needed, on the card and in its panel", async ({ page, signedIn }) => {
+  void signedIn;
+  await holdings(page);
+  // The path's tracking (§7.11 (i), D311, mockup 19j frame 8): `points` per closed month-end,
+  // the growth so far and the growth needed in percent points; invented figures.
+  const tracking: GoalTracking = {
+    shown: true,
+    reason: null,
+    route: "path",
+    chosen_on: "2026-08-03",
+    rate: "0.068",
+    word: "behind",
+    short: ["value"],
+    reserve_depots: 0,
+    rows: [],
+    points: [
+      { month_end: "2026-08-31", needed: "0.5", actual: "0.9", behind: false },
+      { month_end: "2026-09-30", needed: "1.1", actual: "0.7", behind: true },
+      { month_end: "2026-10-31", needed: "1.6", actual: "1.2", behind: true },
+    ],
+  };
+  await serve(page, "/api/household-goal/tracking", () => tracking);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const backgrounds: string[] = [];
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.goto("/assets");
+    const card = page.getByTestId("goal-tracking");
+    await expect(card).toContainText("Dahinter");
+    await expect(card).toContainText("Euer Plan");
+    await expect(card.getByTestId("path-chart")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    backgrounds.push(await page.evaluate(() => getComputedStyle(document.body).backgroundColor));
+    await card.evaluate((node) => node.scrollIntoView({ block: "center" }));
+    await page.screenshot({ path: test.info().outputPath(`goal-track-path-${scheme}.png`) });
+  }
+  expect(backgrounds[0]).not.toEqual(backgrounds[1]);
+  await page.getByTestId("goal-tracking").click();
+  const panel = page.getByTestId("goal-tracking-panel");
+  await expect(panel.getByTestId("path-chart")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: test.info().outputPath("goal-track-path-panel.png") });
+});
+
 test("„Wertzuwachs fürs Ziel“ on Immobilie opens its windows, with no sideways scroll on a phone", async ({ page, signedIn }) => {
   void signedIn;
   const property = await apiCall<{ id: string }>(page, "POST", "/api/properties", {
