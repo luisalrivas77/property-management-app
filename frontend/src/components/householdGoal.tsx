@@ -35,6 +35,7 @@ import { DetailPanel, useDetail } from "./DetailPanel";
 import { todayIso } from "./format";
 import { Field } from "./form";
 import { HealthTodoList } from "./healthFigures";
+import { SplitSection } from "./investmentSplit";
 import {
   currentDefault,
   fillLevers,
@@ -78,6 +79,8 @@ const GOAL_BASIS = "basis";
 /** Haushalt › Ziel, and the form opened there (Übersicht's „Ziel festlegen“). */
 export const GOAL_PAGE = "/household?tab=ziel";
 export const GOAL_FORM_HREF = `${GOAL_PAGE}${detailHref(GOAL_DETAIL, GOAL_FORM)}`;
+/** „Womit gerechnet wird“ with „Aufteilung ändern“ (§7.11 (i) item 10), for Anlagen's link. */
+export const GOAL_BASIS_HREF = `${GOAL_PAGE}${detailHref(GOAL_DETAIL, GOAL_BASIS)}`;
 
 /** A route's side panel on Haushalt › Ziel, for „Für euer Ziel“ on Anlagen (§7.9 (e) 3). */
 export function goalRouteHref(route: GoalInvestment): string {
@@ -409,7 +412,7 @@ export function useGoalView({
     } else if (detail.id === GOAL_BASIS && goal.goal) {
       panel = (
         <DetailPanel title={t.basisTitle} backLabel={backLabel} onClose={detail.close}>
-          <BasisPanel goal={goal} />
+          <BasisPanel goal={goal} write={write} dirty={dirty} />
         </DetailPanel>
       );
     } else if (detail.id === GOAL_BALANCED && goal.balanced) {
@@ -1088,7 +1091,7 @@ function WordsPanel({ goal }: { goal: HouseholdGoal }) {
 }
 
 /** „Womit gerechnet wird“'s panel: the split, the monthly amount, each sale and the typed rates. */
-function BasisPanel({ goal }: { goal: HouseholdGoal }) {
+function BasisPanel({ goal, write, dirty }: { goal: HouseholdGoal; write: Write; dirty: boolean }) {
   const t = useT(goalText);
   const p = usePlanFormat();
   const { plan } = useGoalPlan();
@@ -1097,7 +1100,18 @@ function BasisPanel({ goal }: { goal: HouseholdGoal }) {
   const rates = plan?.levers.value_change ?? null;
   return (
     <div className="stack goal-panel">
-      <p>{shares ? t.basisSplit(p.percentValue(shares.depot), p.percentValue(shares.crypto)) : t.basisNoSplit}</p>
+      {/* §7.11 (i) item 10: the split and „Aufteilung ändern“; an unsaved draft of the levers
+          (Budget, Reserve) holds the save, since saving that draft posts its own split. */}
+      {plan ? (
+        <SplitSection
+          plan={plan}
+          blocked={dirty}
+          onChanged={() => undefined}
+          save={(split) => write((levers) => ({ ...levers, investment_split: split }))}
+        />
+      ) : (
+        <p>{shares ? t.basisSplit(p.percentValue(shares.depot), p.percentValue(shares.crypto)) : t.basisNoSplit}</p>
+      )}
       {monthly != null ? <p>{t.basisMonthly(monthly.startsWith("-") ? p.signedEuro(monthly) : p.euro(monthly))}</p> : null}
       {(goal.sales ?? []).map((sale) => (
         <p key={sale.year}>{t.basisSale(sale.year, p.euro(sale.net_proceeds))}</p>
