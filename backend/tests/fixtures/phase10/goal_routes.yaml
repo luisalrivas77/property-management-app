@@ -23,6 +23,22 @@
 # So each month after Nov 2026 pays 2,000 into funds: 31 Dec 2027 funds 41,694.20, net worth
 # 79,694.20; 30 Jun 2036 funds 331,991.55, net worth 369,991.55 (projected).
 #
+# Amended 27 Nov 2026 by phase 10 §7.11 (i), D311, before its rules existed: the word is the
+# path's state (goal_path.yaml) and the balanced route always walks the typed rates. The
+# ceiling = income − need − wants kept − buffer; this household's need of 3,000 counts every
+# spending (written before (g)), and with no wants target the suggested wants kept are 450,
+# so the ceiling 1,550 lies below Anlegbar 2,000 and the room is 0 in every case here. So step
+# 1 reads on_track or nothing, and step 2 is route 3 at the room 0 (its needed returns below,
+# unchanged): reached in at least half of the windows feasible, in fewer but some ambitious,
+# none, out of range or not available hardly; a short history (thin) is judged the same.
+# Changed: closed_by_spending, balanced_wants_target, generic_mode, nothing_held,
+# sale_before_goal, property_without_scenario feasible → hardly (no room, no history);
+# route3_thin hardly → feasible (2 of 4); route3_split_without_coin feasible → hardly (0 of 9);
+# the balanced route of route3_within, route3_good_times, route3_never, route3_coins_left_out
+# and route3_split_without_coin walked at the typed rates (return_rate null). Every other
+# figure is unchanged. Superseded where it disagrees: the „Words (D303)“ paragraph and
+# reading 5 of route 3 below.
+#
 # Nötig (D302): extra E = the smallest whole euro which, added to each month's saving from Dec
 # 2026 to the due month, makes the walk reach the target at the due month; found by bisection
 # between 0 and the mean income; nötig = 2,000 + E, none above it. Route 2 „Mehr anlegen“ is
@@ -123,7 +139,7 @@ cases:
     goal: {kind: net_worth, target: '400000.00', due_month: '2036-06', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
-    word: feasible
+    word: hardly
     projected: '369991.55'
     reached: '2037-03'
     noetig: '2196.00'            # 196: 400,127.28 at 30 Jun 2036
@@ -175,7 +191,7 @@ cases:
     value_change: {depot: '0.06'}
     budget_targets: {wants_max: '15'}
   expect:
-    word: feasible
+    word: hardly
     projected: '369991.55'
     reached: '2041-12'
     noetig: '3822.00'            # E = 1,822
@@ -199,7 +215,7 @@ cases:
     goal: {kind: net_worth, target: '400000.00', due_month: '2036-06', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
-    word: feasible
+    word: hardly
     projected: '369991.55'
     reached: '2037-03'
     noetig: '2196.00'
@@ -224,7 +240,7 @@ cases:
   levers:
     goal: {kind: net_worth, target: '400000.00', due_month: '2036-06', set_on: '2026-11-20'}
   expect:
-    word: feasible
+    word: hardly
     projected: '282000.00'
     reached: '2041-05'           # 50,000 + 2,000k ≥ 400,000 → k = 175
     noetig: '3027.00'            # E = ⌈118,000 ÷ 115⌉ = ⌈1,026.09⌉
@@ -268,7 +284,7 @@ cases:
     goal: {kind: net_worth, target: '700000.00', due_month: '2036-06', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
-    word: feasible
+    word: hardly
     projected: '576747.40'       # funds 538,747.40 + bank 38,000
     reached: '2038-08'
     noetig: '2802.00'            # E = 802
@@ -300,7 +316,7 @@ cases:
     goal: {kind: net_worth, target: '600000.00', due_month: '2036-06', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
-    word: feasible
+    word: hardly
     projected: '563991.55'       # 369,991.55 + 290,000 − 96,000 (half-way 102,000 → 90,000)
     reached: '2037-02'
     noetig: '2235.00'            # E = 235
@@ -354,12 +370,12 @@ cases:
       wants_only: {closes: false, cut: '900.00'}
       all_equal: {closes: false, cut: '3000.00'}
     balanced:
-      cuts: {}
-      cut: '0.00'
-      saving_extra: '0.00'       # at 14.7 % the walk alone gives more than 880,000
-      moved_to_saving: '0.00'
+      cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # at 6 %: half of 3,533 = 1,766.50, above the limit
+      cut: '450.00'
+      saving_extra: '3083.00'    # 3,533 − 450 (no buffer: a cut counts in full)
+      moved_to_saving: '1316.50'  # 3,083 − 1,766.50
       closes: true
-      return_rate: '0.147'
+      return_rate: null
 
 - id: route3_good_times
   description: >-
@@ -391,12 +407,12 @@ cases:
       wants_only: {closes: false, cut: '900.00'}
       all_equal: {closes: false, cut: '3000.00'}
     balanced:
-      cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # at 14.7 % the extra is 7,107, half 3,553.50 above the limit
+      cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # at 6 % the extra is 12,682, half above the limit
       cut: '450.00'
       saving_extra: null         # with the cuts, 5,000 more a month still misses
       moved_to_saving: '0.00'
       closes: false
-      return_rate: '0.147'
+      return_rate: null
 
 - id: route3_never
   description: >-
@@ -425,12 +441,12 @@ cases:
       wants_only: {closes: false, cut: '900.00'}
       all_equal: {closes: false, cut: '3000.00'}
     balanced:
-      cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # at 14.7 %: extra 14,739
+      cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # at 6 %: extra 21,335
       cut: '450.00'
       saving_extra: null
       moved_to_saving: '0.00'
       closes: false
-      return_rate: '0.147'
+      return_rate: null
 
 - id: route3_out_of_range
   description: >-
@@ -478,7 +494,7 @@ cases:
     goal: {kind: net_worth, target: '950000.00', due_month: '2029-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
-    word: hardly
+    word: feasible
     projected: '737110.28'
     noetig: null                 # E = 5,264 above the mean income
     more_saving: {extra: '5264.00', noetig: null}
@@ -553,12 +569,12 @@ cases:
       wants_only: {closes: false, cut: '900.00'}
       all_equal: {closes: false, cut: '3000.00'}
     balanced:
-      cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # at 22.2 % the extra is 3,690, half 1,845.00
+      cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # at the typed rates the extra is 13,175
       cut: '450.00'
-      saving_extra: '3240.00'    # with the cuts, 3,240 reaches 1,300,000 at 22.2 %; 3,239 does not
-      moved_to_saving: '1395.00'  # 3,240 − 1,845
-      closes: true
-      return_rate: '0.222'
+      saving_extra: null         # 13,175 − 450 is above the mean income
+      moved_to_saving: '0.00'
+      closes: false
+      return_rate: null
 
 - id: route3_split_without_coin
   description: >-
@@ -575,7 +591,7 @@ cases:
   # the walk: Nov 2026 14,000 moves (8,400 funds, 5,600 crypto), then 1,200 and 800 a month;
   # 31 Dec 2029 funds 58,588.32, crypto 41,812.91, bank 38,000: 138,401.23
   expect:
-    word: feasible
+    word: hardly
     projected: '138401.23'
     noetig: '3488.00'            # E = 1,488
     more_saving: {extra: '1488.00', noetig: '3488.00'}
@@ -596,12 +612,12 @@ cases:
       wants_only: {closes: false, cut: '900.00'}
       all_equal: {closes: true, cut: '1488.00'}   # 744.00 + 297.60 + 297.60 + 148.80
     balanced:
-      cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # at 14.7 % the extra is 1,067, half 533.50
+      cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # at the typed rates the extra is 1,488, half 744.00
       cut: '450.00'
-      saving_extra: '617.00'
-      moved_to_saving: '83.50'   # 617 − 533.50
+      saving_extra: '1038.00'    # 1,488 − 450
+      moved_to_saving: '294.00'  # 1,038 − 744
       closes: true
-      return_rate: '0.147'
+      return_rate: null
 
 - id: route3_history_short
   description: >-

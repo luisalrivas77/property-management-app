@@ -13,6 +13,13 @@
 # the reserve and the walk is the linear one below. The routes (§7.11 (c)) are pinned in
 # goal_routes.yaml, money above the reserve target in reserve_above.yaml.
 #
+# Amended 27 Nov 2026 by phase 10 §7.11 (i), D311: the word is the path's state
+# (goal_path.yaml). This household's need of 3,000 counts every spending and no wants target is
+# saved, so the ceiling (5,000 − 3,000 − 450 suggested wants) lies below Anlegbar 2,000: the
+# room is 0, and with nothing invested there is no step 2. Every case that read feasible reads
+# hardly, with `later` its month reached without change and `reaches_by_due` its projected
+# value; every other figure is unchanged.
+#
 # Input at rule level: what services.plan already has for phase 9's projection (the month
 # basis, the stored run at the newest closed month-end as `start`, the reserve and its monthly
 # need, the savings plans, the property scenarios), the codes' means over the window with their
@@ -113,7 +120,7 @@ cases:
   levers:
     goal: {kind: net_worth, target: '120000.00', due_month: '2028-12', set_on: '2026-11-20'}
   expect:
-    word: feasible
+    word: hardly
     target: '120000.00'
     value_today: '51000.00'
     percent: '42.5'               # 51,000 ÷ 120,000 = 0.425
@@ -144,7 +151,9 @@ cases:
         - {code: hh_restaurant, monthly: '456.00', from_month: '2026-12', to_month: '2028-12'}
         - {code: hh_streaming, monthly: '228.00', from_month: '2026-12', to_month: '2028-12'}
         - {code: hh_supermarket, monthly: '456.00', from_month: '2026-12', to_month: '2028-12'}
-    unreachable: null
+    unreachable:
+      later: '2029-09'
+      reaches_by_due: '102000.00'
 
 - id: wants_cannot_close
   description: all wants together are 900 a month, the gap 1,520; „Alles gleich kürzen“ closes it
@@ -152,7 +161,7 @@ cases:
   levers:
     goal: {kind: net_worth, target: '140000.00', due_month: '2028-12', set_on: '2026-11-20'}
   expect:
-    word: feasible
+    word: hardly
     target: '140000.00'
     value_today: '51000.00'
     percent: '36.4'               # 51,000 ÷ 140,000 = 0.36428…
@@ -183,7 +192,9 @@ cases:
         - {code: hh_restaurant, monthly: '296.00', from_month: '2026-12', to_month: '2028-12'}
         - {code: hh_streaming, monthly: '148.00', from_month: '2026-12', to_month: '2028-12'}
         - {code: hh_supermarket, monthly: '296.00', from_month: '2026-12', to_month: '2028-12'}
-    unreachable: null
+    unreachable:
+      later: '2030-07'
+      reaches_by_due: '102000.00'
 
 - id: not_reachable
   description: „Kaum erreichbar“; the gap of 11,920 a month is more than all spending
@@ -251,7 +262,7 @@ cases:
   levers:
     goal: {kind: reserve_months, target: '14.0', due_month: '2027-03', set_on: '2026-11-20'}
   expect:
-    word: feasible
+    word: hardly
     target: '42000.00'            # 14 × the monthly need 3,000
     value_today: '31000.00'
     percent: '73.8'               # 31,000 ÷ 42,000 = 0.738095…
@@ -282,7 +293,9 @@ cases:
         - {code: hh_restaurant, monthly: '500.00', from_month: '2026-12', to_month: '2027-03'}
         - {code: hh_streaming, monthly: '250.00', from_month: '2026-12', to_month: '2027-03'}
         - {code: hh_supermarket, monthly: '500.00', from_month: '2026-12', to_month: '2027-03'}
-    unreachable: null
+    unreachable:
+      later: '2027-04'
+      reaches_by_due: '40000.00'
 
 - id: buffer_kept
   description: a 10 % buffer; a cut reaches the projection at 90 %, so the scenario cuts more than nötig − heute
@@ -292,7 +305,7 @@ cases:
     buffer_percent: '10'
     goal: {kind: net_worth, target: '110000.00', due_month: '2028-12', set_on: '2026-11-20'}
   expect:
-    word: feasible
+    word: hardly
     target: '110000.00'
     value_today: '51000.00'
     percent: '46.4'               # 51,000 ÷ 110,000 = 0.4636…
@@ -329,7 +342,9 @@ cases:
         - {code: hh_restaurant, monthly: '482.66', from_month: '2026-12', to_month: '2028-12'}
         - {code: hh_streaming, monthly: '241.33', from_month: '2026-12', to_month: '2028-12'}
         - {code: hh_supermarket, monthly: '482.66', from_month: '2026-12', to_month: '2028-12'}
-    unreachable: null
+    unreachable:
+      later: '2029-08'
+      reaches_by_due: '96800.00'
 
 - id: budget_adopted
   description: the case behind_closed_by_wants after „Als Budget übernehmen“ of „Nur Wünsche kürzen“; the word is „Auf Kurs“
@@ -381,7 +396,7 @@ cases:
   levers:
     goal: {kind: net_worth, target: '113000.00', due_month: '2028-12', set_on: '2026-11-20'}
   expect:
-    word: feasible
+    word: hardly
     target: '113000.00'
     value_today: '51000.00'
     percent: '45.1'               # 51,000 ÷ 113,000 = 0.4513…
@@ -417,4 +432,6 @@ cases:
         - {code: hh_rent, monthly: '1280.00', from_month: '2026-12', to_month: '2028-12'}
         - {code: hh_restaurant, monthly: '384.00', from_month: '2026-12', to_month: '2028-12'}
         - {code: hh_supermarket, monthly: '512.00', from_month: '2026-12', to_month: '2028-12'}
-    unreachable: null
+    unreachable:
+      later: '2029-06'
+      reaches_by_due: '102000.00'

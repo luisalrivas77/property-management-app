@@ -123,6 +123,9 @@ rounding:
 - {id: monthly_cents, kind: monthly, value: '98.01', rounded: '100.00'}
 - {id: once_repair, kind: once, value: '7920.00', rounded: '8000.00'}
 
+# Amended 27 Nov 2026 by phase 10 §7.11 (i), D311: cards_one_walk's word feasible → hardly
+# (goal_routes.yaml's household: the room is 0 and its 9-year windows never reach the
+# return needed); every card's figure is unchanged.
 cases:
 - id: cards_one_walk
   description: >-
@@ -132,7 +135,7 @@ cases:
   <<: *cards
   expect:
     cards:
-      goal: {kind: net_worth, target: '600000.00', due_month: '2036-06', word: feasible, value_today: '251000.00', percent: '41.8'}
+      goal: {kind: net_worth, target: '600000.00', due_month: '2036-06', word: hardly, value_today: '251000.00', percent: '41.8'}
       heute: {net_worth: '251000.00', reserve: '31000.00', reserve_months: '10.3', reserve_full: true, saved_mean: '2000.00', reserve_accounts: ['Tagesgeld (Bank A)']}
       plan:
         on_track: false
@@ -192,7 +195,7 @@ cases:
         done: 1
         of: 2
     share:
-      goal: {target: '600000.00', value_today: '250000.00', percent: '41.8', word: feasible}
+      goal: {target: '600000.00', value_today: '250000.00', percent: '41.8', word: hardly}
       heute: {net_worth: '250000.00', reserve: '31000.00', reserve_months: '10.3', saved_mean: '2000.00'}
       plan: {reached: '2036-06', without_route: '570000.00', gap: '30000.00', saving_extra: '100.00', by_class: {depot: '100.00'}, cut: '100.00'}
       risks:
