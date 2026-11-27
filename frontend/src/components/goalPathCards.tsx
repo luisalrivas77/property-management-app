@@ -240,18 +240,17 @@ function ReturnCard({ view }: { view: PathView }) {
 function WhyCard({ view }: { view: PathView }) {
   const t = useT(goalPathText);
   const p = usePlanFormat();
-  const hasStep2 = view.windows != null && view.reached_windows != null;
+  // Step 2 was judged when `windows` is set; a return above the search's 100 % a year comes
+  // without a return and without a count (rules/goal/goal.py `_step_2`).
+  const judged = view.windows != null;
+  const counted = judged && view.windows! > 0 && view.reached_windows != null;
   return (
     <div className="goal-c" data-testid="path-why">
       <CardHead kind={KIND} id={PATH_IDS.ceiling} title={t.whyTitle} />
-      <Stats count={hasStep2 ? 3 : 1}>
+      <Stats count={1 + (judged ? 1 : 0) + (counted ? 1 : 0)}>
         <Stat value={p.euro(view.path.ceiling.ceiling)} label={t.ceilingLabel} />
-        {hasStep2 ? (
-          <>
-            <Stat value={view.return_needed ? t.perYear(p.ratio(view.return_needed)) : t.noReturn} label={t.returnForIt} />
-            <Stat value={t.windowsValue(view.reached_windows!, view.windows!)} label={t.pastReached} warn />
-          </>
-        ) : null}
+        {judged ? <Stat value={view.return_needed ? t.perYear(p.ratio(view.return_needed)) : t.noReturn} label={t.returnForIt} /> : null}
+        {counted ? <Stat value={t.windowsValue(view.reached_windows!, view.windows!)} label={t.pastReached} warn /> : null}
       </Stats>
     </div>
   );
@@ -284,7 +283,8 @@ function RealisticCard({ view, goal, budgetLink = false }: { view: PathView; goa
   );
 }
 
-/** „Diesen Monat“: the full monthly amount and the wants budget of the adopted path, and the
+/** „Diesen Monat“: the full monthly amount and the wants budget of the adopted path (its stored
+ * figures, even once the path read today has moved, so they match the row's `planned`), and the
  * newest closed month compared, when there is one. */
 function MonthCard({ view, row }: { view: PathView; row: GoalPathRow | null }) {
   const t = useT(goalPathText);
@@ -294,10 +294,10 @@ function MonthCard({ view, row }: { view: PathView; row: GoalPathRow | null }) {
       <CardHead kind={KIND} id={PATH_IDS.month} title={t.monthCard} />
       <div className="goal-rows">
         <div className="goal-rw">
-          <span>{t.monthInvest(p.euro(view.monthly))}</span>
+          <span>{t.monthInvest(p.euro(view.adopted?.monthly ?? view.monthly))}</span>
         </div>
         <div className="goal-rw">
-          <span>{t.monthWants(p.euro(view.wants_budget_total))}</span>
+          <span>{t.monthWants(p.euro(view.adopted?.wants_budget_total ?? view.wants_budget_total))}</span>
         </div>
       </div>
       {row ? <RowFigures row={row} day={view.adopted?.adopted_on ?? null} /> : null}
