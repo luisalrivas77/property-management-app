@@ -117,7 +117,9 @@ def test_route_3_and_the_balanced_route_against_the_depots_payments(world):
     _follow(world, "balanced")
     bal = _read(world)
     assert bal.route is GoalInvestment.BALANCED
-    assert bal.rate == answer.balanced.return_rate
+    # D311: the balanced route walks the typed rates, weighted by the split
+    assert answer.balanced.return_rate is None and answer.goal_path.typed_rate is not None
+    assert bal.rate == answer.goal_path.typed_rate
     assert bal.paid_in == Decimal("160.00") and bal.word is GoalTrackingWord.BEHIND
 
     _follow(world, "balanced", chosen=date(2027, 3, 20))  # after the last transfer

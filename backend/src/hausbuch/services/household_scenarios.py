@@ -285,7 +285,7 @@ def _check_investment(levers: HouseholdLevers, previous: GoalChoice | None) -> N
     if choice.investment not in {r.value for r in GoalInvestment}:
         raise RuleViolationError(
             [HOUSEHOLD_SCENARIO_GOAL_INVALID],
-            f"a followed return {choice.investment!r}, which is neither more_return nor balanced",
+            f"a followed return {choice.investment!r}, which is not more_return, balanced or path",
         )
 
 

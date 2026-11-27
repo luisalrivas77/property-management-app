@@ -17,7 +17,14 @@ from .allocation import AllocationCategory
 from .common import _STRING_ONLY, Money, NonNegativeMoney, ReturnRate, Schema, _string_schema
 from .health import HealthTodo, YearMonth
 from .household import BudgetClass
-from .plan import Goal, GoalChoice, GoalSpending, SpendingChange
+from .plan import (
+    Goal,
+    GoalChoice,
+    GoalPathState,
+    GoalSpending,
+    SavingsPlan,
+    SpendingChange,
+)
 from .portfolio import NoRateReason
 
 # Today's value against the target, one place (it may pass 100 once the goal is reached).
@@ -234,6 +241,86 @@ class GoalUnreachable(Schema):
     reaches_by_due: Money
 
 
+# --- The path (§7.11 (i), D311): a realistic path, adopted and tracked ----------------------
+
+
+class GoalPathCeiling(Schema):
+    """Item 1: what the household can save at most a month. ceiling = income + rental cash
+    (when positive) − need − wants kept − buffer; the buffer is kept from that free cash as
+    phase 9 keeps it from a free month."""
+
+    income: Money
+    rental_cash: NonNegativeMoney  # the rental cash when positive, else 0
+    need: Money  # the reserve's monthly need, needs only (§7.11 (g))
+    wants_kept: NonNegativeMoney
+    suggested: bool  # no wants target saved: the wants kept are the app's suggestion
+    buffer: NonNegativeMoney
+    ceiling: Money
+
+
+class GoalPathWhy(Schema):
+    """Item 4, when no path holds: with the whole room used at the typed rates, the value at
+    the due month and the month the goal is then reached (None within the walk's 40 years)."""
+
+    due_value: Money
+    reached: YearMonth | None = None
+
+
+class GoalPathToday(Schema):
+    """„Heute angelegt“ (item 3): the mean invested a month over the closed window (the
+    purchases rules/investment_split.py counts), the savings plans detected, the mean saved and
+    what is saved but not invested. In `generic` mode no plan is listed (no kind, no payee)."""
+
+    invested: NonNegativeMoney
+    saved: Money
+    saved_not_invested: NonNegativeMoney
+    plans: list[SavingsPlan] = Field(default_factory=list)
+
+
+class GoalPathAdopted(Schema):
+    """The path the household adopted (the default scenario's `goal_path` lever), as stored,
+    and whether what it was computed from has moved since („Plan prüfen“)."""
+
+    adopted_on: date
+    state: GoalPathState
+    monthly: NonNegativeMoney
+    extra: NonNegativeMoney
+    rate: GoalReturn | None = None
+    return_needed: GoalReturn | None = None
+    windows: int | None = None
+    reached_windows: int | None = None
+    wants_budget_total: NonNegativeMoney
+    moved: bool
+
+
+class GoalPath(Schema):
+    """The goal's path (D311): step 1 at the typed rates within the room, else step 2 the return
+    needed with the whole room against the invested mix's history, else why. Every figure by
+    code; the app proposes no goal, no rate and no product (D247, D289)."""
+
+    state: GoalPathState
+    ceiling: GoalPathCeiling
+    anlegbar: Money  # the walk's own „Anlegbar“ a month
+    room: NonNegativeMoney  # the ceiling less Anlegbar, at least 0
+    extra: NonNegativeMoney | None = None  # the path's extra a month; None without a path
+    monthly: Money | None = None  # Anlegbar + extra
+    typed_rate: GoalReturn | None = None  # the typed rates weighted by the split
+    rate: GoalReturn | None = None  # the rate the path counts on; None without a path
+    return_needed: GoalReturn | None = None  # step 2
+    window_years: int | None = None
+    windows: int | None = None
+    reached_windows: int | None = None
+    short_history: bool | None = None  # under 5 windows: judged, and labelled
+    years: list[int] | None = None  # the mix's first and last year
+    wants_budget: list[GoalBudget] = Field(default_factory=list)  # each want cut
+    wants_budget_total: NonNegativeMoney | None = None
+    spending_changes: list[SpendingChange] = Field(default_factory=list)  # the cut, adopted
+    adoptable: bool
+    why: GoalPathWhy | None = None
+    today: GoalPathToday | None = None  # „Heute angelegt“, filled by the service
+    adopted: GoalPathAdopted | None = None  # the stored path, when one is adopted
+
+
 class HouseholdGoal(Schema):
     """`GET /household-goal`: the card on Übersicht and the Ziel tab read the same answer."""
 
@@ -260,6 +347,7 @@ class HouseholdGoal(Schema):
     more_return: GoalMoreReturn | None = None  # route 3
     balanced: GoalBalanced | None = None  # „Ausgewogener Weg“, while route 1 misses
     unreachable: GoalUnreachable | None = None
+    goal_path: GoalPath | None = None  # §7.11 (i), D311
     assumptions: list[GoalAssumption] = Field(default_factory=list)
     todos: list[HealthTodo] = Field(default_factory=list)
 
@@ -280,7 +368,8 @@ class GoalInvestment(StrEnum):
     """The return the household follows (`goal_choice.investment`, „Diesem Weg folgen“)."""
 
     MORE_RETURN = "more_return"  # route 3 „Mehr Rendite“, its needed return
-    BALANCED = "balanced"  # „Ausgewogener Weg“ while it walks the median return
+    BALANCED = "balanced"  # „Ausgewogener Weg“, at the typed rates since D311
+    PATH = "path"  # the path adopted (§7.11 (i), D311), its stored rate
 
 
 class GoalTrackingReason(StrEnum):
@@ -304,6 +393,47 @@ class GoalTrackingWord(StrEnum):
 class GoalTrackingShort(StrEnum):
     PAID = "paid"  # the money put in is below the plan's by now
     VALUE = "value"  # the value change is below the change the return implies by now
+
+
+# A cumulative change in percent of the value at the day plus the money in, two places, signed;
+# never annualised (§7.11 (i) item 6).
+GoalChangePercent = Annotated[
+    Decimal, Field(max_digits=9, decimal_places=2), _STRING_ONLY, _string_schema(2, signed=True)
+]
+
+
+class GoalPathRow(Schema):
+    """One closed month-end since the path was adopted (§7.11 (i) item 6, 12): what was invested
+    (with the money waiting to be bought) against the path's monthly amount, the wants against
+    its budget, the net worth against the path's walk, and the value change against the change
+    its rate implies; each gap what is short, None when nothing is."""
+
+    month_end: date
+    word: GoalTrackingWord
+    planned: NonNegativeMoney
+    invested: Money
+    waiting: NonNegativeMoney | None = None  # None without a saved split
+    invested_gap: NonNegativeMoney | None = None
+    wants: Money
+    wants_budget: NonNegativeMoney
+    wants_gap: NonNegativeMoney | None = None
+    net_worth: Money
+    path_net_worth: Money | None = None
+    net_worth_gap: NonNegativeMoney | None = None
+    value_change: Money
+    implied_change: Money
+    actual_percent: GoalChangePercent | None = None
+    needed_percent: GoalChangePercent | None = None
+    value_behind: bool
+
+
+class GoalPathPoint(Schema):
+    """The chart on Anlagen: the change needed and the change made, cumulative, per row."""
+
+    month_end: date
+    needed: GoalChangePercent | None = None
+    actual: GoalChangePercent | None = None
+    behind: bool
 
 
 class GoalTracking(Schema):
@@ -331,6 +461,9 @@ class GoalTracking(Schema):
     word: GoalTrackingWord | None = None
     short: list[GoalTrackingShort] = Field(default_factory=list)
     reserve_depots: int = 0  # depots counted in the reserve, left out
+    # §7.11 (i) item 6: for an adopted path, one row and one point per closed month-end
+    rows: list[GoalPathRow] = Field(default_factory=list)
+    points: list[GoalPathPoint] = Field(default_factory=list)
 
 
 # --- The property scenario (§7.9 (e), „(e) as decided for the build“ 1, 2; D289, D298) -------
