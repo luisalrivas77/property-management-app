@@ -34,10 +34,19 @@ export const goalPathText = defineMessages({
     mixTitle: "Was der Vergleich wiegt",
     mixToday: "Heute angelegt",
     mixFuture: "Kommt noch dazu, nach eurer Aufteilung",
-    // „Jetzt anlegen“ (the row's label is planPageText's investNow): the money above the
-    // reserve target, which the walk invests in its first month at the split
-    investNowText: (funds: string, crypto: string) =>
-      `Jetzt anlegen: Der Plan zählt das Geld über dem Reserve-Ziel schon im ersten Monat als angelegt, nach eurer Aufteilung: ${funds} in Fonds und Wertpapiere, ${crypto} in Krypto.`,
+    // „Was ihr tun müsst“: the plan's steps in the route panel, every figure the server's
+    // (goal_path.actions, rules/goal/path.py `actions_of`)
+    stepsTitle: "Was ihr tun müsst",
+    stepSave: (amount: string) => `Jeden Monat ${amount} sparen und anlegen`,
+    stepInvestNow: (amount: string) => `Jetzt ${amount} anlegen`,
+    stepSplit: (funds: string, crypto: string) => `davon ${funds} in Fonds, ${crypto} in Krypto`,
+    stepReserve: (amount: string) => `Reserve von ${amount} halten`,
+    stepWantCut: (label: string, mean: string, budget: string) => `${label}: ${mean} → ${budget} im Monat`,
+    stepWantsWithinTarget: (amount: string, percent: string) => `Wünsche: nichts zu kürzen – ihr liegt mit ${amount} unter eurem Ziel von ${percent}`,
+    stepWantsWithinSuggestion: (amount: string, kept: string) => `Wünsche: nichts zu kürzen – ihr liegt mit ${amount} unter dem Vorschlag von ${kept}`,
+    stepWantsAbove: (amount: string) => `Wünsche: nichts zu kürzen – der Plan geht auch mit euren ${amount} im Monat auf`,
+    stepReturn: (rate: string) => `Eure Anlagen müssten ${rate} im Jahr bringen`,
+    stepsReached: (target: string, month: string) => `Dann erreicht ihr ${target} im ${month}.`,
     atYourRates: "Bei euren Raten",
     funds: (rate: string) => `Fonds ${rate}`,
     crypto: (rate: string) => `Krypto ${rate}`,
@@ -158,8 +167,17 @@ export const goalPathText = defineMessages({
     mixTitle: "What the comparison weighs",
     mixToday: "Invested today",
     mixFuture: "Still to come, at your split",
-    investNowText: (funds, crypto) =>
-      `Invest now: the plan counts the money above the reserve target as invested in the first month, at your split: ${funds} in funds and securities, ${crypto} in crypto.`,
+    stepsTitle: "What to do",
+    stepSave: (amount) => `Save and invest ${amount} every month`,
+    stepInvestNow: (amount) => `Invest ${amount} now`,
+    stepSplit: (funds, crypto) => `of which ${funds} in funds, ${crypto} in crypto`,
+    stepReserve: (amount) => `Keep a reserve of ${amount}`,
+    stepWantCut: (label, mean, budget) => `${label}: ${mean} → ${budget} a month`,
+    stepWantsWithinTarget: (amount, percent) => `Wants: nothing to cut – at ${amount} you are below your target of ${percent}`,
+    stepWantsWithinSuggestion: (amount, kept) => `Wants: nothing to cut – at ${amount} you are below the suggestion of ${kept}`,
+    stepWantsAbove: (amount) => `Wants: nothing to cut – the plan works with your ${amount} a month too`,
+    stepReturn: (rate) => `Your investments would need to return ${rate} a year`,
+    stepsReached: (target, month) => `Then you reach ${target} in ${month}.`,
     atYourRates: "At your rates",
     funds: (rate) => `Funds ${rate}`,
     crypto: (rate) => `Crypto ${rate}`,

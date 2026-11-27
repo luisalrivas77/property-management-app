@@ -532,10 +532,10 @@ function CeilingPanel({ view }: { view: PathView }) {
 function RoutePanel({ view, due, target }: { view: PathView; due: string | null; target: string | null }) {
   const t = useT(goalPathText);
   const p = usePlanFormat();
-  const budgets = view.path.wants_budget ?? [];
   const history = historyLine(t, view);
   return (
     <>
+      <PlanSteps view={view} target={target} />
       {view.state === "ambitious" && view.windows != null && view.reached_windows != null ? <p>{t.ambitiousText(view.reached_windows, view.windows)}</p> : null}
       {view.state === "hardly" ? <p>{view.windows != null ? t.hardlyText : t.hardlyNoHistory}</p> : null}
       {(view.state === "ambitious" || view.state === "hardly") && view.path.why && due ? (
@@ -548,9 +548,6 @@ function RoutePanel({ view, due, target }: { view: PathView; due: string | null;
         <p>{t.windowsLine(view.path.window_years, view.reached_windows, view.windows)}</p>
       ) : null}
       {history ? <p className="goal-note">{history}</p> : null}
-      {hasGap(view.path.above_target) && view.path.above_target_depot != null && view.path.above_target_crypto != null ? (
-        <p>{t.investNowText(p.euro(view.path.above_target_depot), p.euro(view.path.above_target_crypto))}</p>
-      ) : null}
       {view.path.mix_today_share != null && view.path.mix_future_share != null ? (
         <>
           <h3 className="goal-kicker">{t.mixTitle}</h3>
@@ -566,22 +563,49 @@ function RoutePanel({ view, due, target }: { view: PathView; due: string | null;
           </div>
         </>
       ) : null}
-      {budgets.length > 0 && (view.state === "on_track" || view.state === "doable_rates" || view.state === "doable_return") ? (
-        <>
-          <h3 className="goal-kicker">{t.wantsBudget}</h3>
-          <div className="goal-rows">
-            {budgets.map((budget) => (
-              <div key={budget.code} className="goal-rw goal-rw-sub">
-                <span>{ALLOCATION_CATEGORY[budget.code] ?? budget.code}</span>
-                <b>
-                  {p.euro(budget.mean)} → {p.euro(budget.budget)}
-                </b>
-              </div>
-            ))}
-          </div>
-        </>
-      ) : null}
       {view.path.adoptable ? <p className="goal-one">{t.adoptText}</p> : null}
+    </>
+  );
+}
+
+/** „Was ihr tun müsst“, the plan's steps at the top of the route panel in every state: each a
+ * sentence with the server's figure (goal_path.actions), and the month the plan then reaches the
+ * goal (goal_path.plan_reached). Nothing is summed here; a step the server sends without its
+ * figure is left out. */
+function PlanSteps({ view, target }: { view: PathView; target: string | null }) {
+  const t = useT(goalPathText);
+  const p = usePlanFormat();
+  const rows: { key: string; text: string; sub?: string }[] = [];
+  for (const [i, a] of (view.path.actions ?? []).entries()) {
+    const key = `${a.kind}-${a.code ?? i}`;
+    const split = a.amount_depot != null && a.amount_crypto != null ? t.stepSplit(p.euro(a.amount_depot), p.euro(a.amount_crypto)) : undefined;
+    if (a.kind === "save_monthly" && a.amount != null) rows.push({ key, text: t.stepSave(p.euro(a.amount)), sub: split });
+    else if (a.kind === "invest_now" && a.amount != null) rows.push({ key, text: t.stepInvestNow(p.euro(a.amount)), sub: split });
+    else if (a.kind === "keep_reserve" && a.amount != null) rows.push({ key, text: t.stepReserve(p.euro(a.amount)) });
+    else if (a.kind === "wants_cut" && a.code && a.mean != null && a.amount != null)
+      rows.push({ key, text: t.stepWantCut(ALLOCATION_CATEGORY[a.code] ?? a.code, p.euro(a.mean), p.euro(a.amount)) });
+    else if (a.kind === "wants_none" && a.amount != null) {
+      if (!a.within_target) rows.push({ key, text: t.stepWantsAbove(p.euro(a.amount)) });
+      else if (a.wants_percent != null) rows.push({ key, text: t.stepWantsWithinTarget(p.euro(a.amount), p.percentValue(a.wants_percent)) });
+      else rows.push({ key, text: t.stepWantsWithinSuggestion(p.euro(a.amount), p.euro(view.path.ceiling.wants_kept)) });
+    } else if (a.kind === "return_needed" && a.rate != null) rows.push({ key, text: t.stepReturn(p.ratio(a.rate)) });
+  }
+  if (rows.length === 0) return null;
+  // without a path and without a return needed the month is the why's, which the panel's
+  // „realistic“ sentence below already names
+  const reached = !view.path.adoptable && view.path.return_needed == null ? null : view.path.plan_reached;
+  return (
+    <>
+      <h3 className="goal-kicker">{t.stepsTitle}</h3>
+      <ol className="goal-steps" data-testid="path-steps">
+        {rows.map((row) => (
+          <li key={row.key}>
+            {row.text}
+            {row.sub ? <span className="goal-steps-sub">{row.sub}</span> : null}
+          </li>
+        ))}
+      </ol>
+      {reached && target ? <p className="goal-one">{t.stepsReached(p.euro(target), p.month(reached))}</p> : null}
     </>
   );
 }
