@@ -15,6 +15,7 @@ from db.test_household_goal import _goal
 from db.test_services_health_snapshots import NOW, TODAY
 from sqlalchemy import func, select, update
 
+from hausbuch.api.kept_answers import read_data_version
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import workspace as workspace_table
@@ -22,6 +23,7 @@ from hausbuch.rules.errors import HOUSEHOLD_SCENARIO_PATH_INVALID
 from hausbuch.schemas.goal import GoalInvestment, GoalSpending, GoalTrackingWord, GoalWord
 from hausbuch.schemas.health import HealthTodoCode
 from hausbuch.schemas.plan import (
+    GoalPathMonth,
     GoalPathState,
     HouseholdScenarioCreate,
     ValueChange,
@@ -114,7 +116,9 @@ def test_adopt_supersedes_the_default_once_with_its_event(world):
     _goal_world(world)
     before = world.query(household_scenarios.default_scenario)
     path = _answer(world).goal_path
+    version = read_data_version(world.engine, world.ws)
     row = _adopt(world)
+    assert read_data_version(world.engine, world.ws) != version  # kept answers recomputed
     assert row.supersedes_id == before.id and row.is_default and row.name == before.name
     lever = row.levers.goal_path
     assert lever is not None
@@ -154,6 +158,23 @@ def test_adopting_again_with_nothing_moved_writes_nothing(world):
     again = _adopt(world)
     assert again.id == first.id and again.levers.goal_path == first.levers.goal_path
     assert world.query(household_scenarios.default_scenario).id == first.id
+
+
+def test_adopting_again_after_a_move_computes_without_the_paths_own_budget(world):
+    """A typed rate changed after adopting, then adopted again: the new path is computed
+    from the measured household, not under the first path's wants budget (under which the goal
+    reads on track at „Anlegbar“ alone), so it stores the extra its walk needs."""
+    _goal_world(world)
+    first = _adopt(world)
+    _save(world, value_change=ValueChange(depot=Decimal("0.040")))
+    second = _adopt(world)
+    assert second.id != first.id
+    lever = second.levers.goal_path
+    assert lever.adopted_on == TODAY and lever.value_change.depot == Decimal("0.040")
+    assert lever.state is not GoalPathState.ON_TRACK
+    assert lever.extra > 0 and lever.monthly == lever.anlegbar + lever.extra
+    assert second.levers.spending_changes  # its own cut, not the first path's carried
+    assert _created_events(world, second.id) == 1
 
 
 def test_a_path_that_cannot_be_adopted_is_refused(world):
@@ -215,13 +236,21 @@ def test_tracking_rows_for_each_stored_month_end_since_the_day_adopted(world):
     """A path adopted on 2 January 2027 (written through the adopt flag with that day, as the
     command would have on that day): one row and one point per closed month-end with a stored
     run, January to March; each month's purchases (the depot's and the broker's), its wants
-    (the 300 € at the restaurant), the stored net worth."""
+    (the 300 € at the restaurant), the stored net worth against the path's walk (given here a
+    January 100 € above the stored total and a February 100 € below it; March has none)."""
     _goal_world(world)
     for end in (date(2027, 1, 31), date(2027, 2, 28)):
         world.cmd(net_worth.capture_month_end, end)
     lever = _adopt(world).levers.goal_path
     current = world.query(household_scenarios.default_scenario)
-    early = lever.model_copy(update={"adopted_on": date(2027, 1, 2)})
+    stored = {t.month_end: t.total for t in world.query(goal_tracking.run_totals)}
+    jan, feb = date(2027, 1, 31), date(2027, 2, 28)
+    walk = [
+        GoalPathMonth(month="2027-01", net_worth=stored[jan] + 100),
+        GoalPathMonth(month="2027-02", net_worth=stored[feb] - 100),
+        *lever.months,
+    ]
+    early = lever.model_copy(update={"adopted_on": date(2027, 1, 2), "months": walk})
     choice = current.levers.goal_choice.model_copy(
         update={"investment_chosen_on": date(2027, 1, 2)}
     )
@@ -253,7 +282,7 @@ def test_tracking_rows_for_each_stored_month_end_since_the_day_adopted(world):
     assert all(r.invested_gap == Decimal("531.00") - r.invested for r in got.rows)
     assert all(r.waiting is None for r in got.rows)  # no split saved
     assert all(r.wants == Decimal("300.00") for r in got.rows)
-    assert all(r.path_net_worth is None for r in got.rows)  # the walk starts in April
+    assert [r.path_net_worth for r in got.rows] == [stored[jan] + 100, stored[feb] - 100, None]
+    assert [r.net_worth_gap for r in got.rows] == [Decimal("100.00"), None, None]
     assert all(r.word is GoalTrackingWord.BEHIND for r in got.rows)
-    stored = {t.month_end: t.total for t in world.query(goal_tracking.run_totals)}
     assert [r.net_worth for r in got.rows] == [stored[r.month_end] for r in got.rows]

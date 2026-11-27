@@ -199,7 +199,10 @@ def adopt_path(ctx: CommandContext) -> HouseholdScenario:
     browser sends nothing. RuleViolationError household_scenario.path_invalid without a goal
     or a path that can be adopted, or when the path would invest less than nothing a month.
     A path adopted and followed whose inputs have not moved (rules/goal/path.py `moved`) is
-    kept: adopting again writes nothing and returns the row in force."""
+    kept: adopting again writes nothing and returns the row in force. Adopted again after its
+    inputs moved, the path is computed without the wants budget an earlier path wrote
+    (`_without_path_budget`): under that budget the goal reads on track, and a path computed
+    there would store only „Anlegbar“ as its monthly amount while the walk counts the cut."""
     conn = ctx.conn
     scenarios._lock(ctx)
     today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
@@ -208,8 +211,9 @@ def adopt_path(ctx: CommandContext) -> HouseholdScenario:
     if row is None or row.levers.goal is None:
         raise _refused("there is no goal in the default scenario")
     levers = row.levers
-    reads = inputs.ended_reads(levers_one_off_codes(levers))
-    built = goal_inputs(conn, today, row, levers, reads, inputs)
+    basis = _without_path_budget(levers)
+    reads = inputs.ended_reads(levers_one_off_codes(basis))
+    built = goal_inputs(conn, today, row, basis, reads, inputs)
     if isinstance(built, HouseholdGoal):
         raise _refused("the goal has no answer yet")
     answer = with_path(household_goal(built.goal), built, levers)
@@ -256,7 +260,8 @@ def adopt_path(ctx: CommandContext) -> HouseholdScenario:
         "investment": GoalInvestment.PATH.value,
         "investment_chosen_on": today,
     }
-    changes = levers.spending_changes
+    choice = basis.goal_choice or GoalChoice()
+    changes = basis.spending_changes
     if path.state is not GoalPathState.ON_TRACK:
         changes = list(path.spending_changes)
         update |= {"spending": GoalSpending.OWN, "spending_chosen_on": today}
@@ -274,6 +279,23 @@ def adopt_path(ctx: CommandContext) -> HouseholdScenario:
         supersedes_id=row.id,
     )
     return scenarios.create_scenario(ctx, data, adopt=True)
+
+
+def _without_path_budget(levers: HouseholdLevers) -> HouseholdLevers:
+    """The levers without the wants budget an adopted path wrote: a path of step 1 or 2 stores
+    its cut as the spending changes with the spending choice of its own day (`adopt_path`); a
+    budget adopted on another day („Als Budget übernehmen“) is the household's and stays."""
+    stored, choice = levers.goal_path, levers.goal_choice
+    if stored is None or choice is None or stored.state is GoalPathState.ON_TRACK:
+        return levers
+    if choice.spending != GoalSpending.OWN or choice.spending_chosen_on != stored.adopted_on:
+        return levers
+    return levers.model_copy(
+        update={
+            "spending_changes": [],
+            "goal_choice": choice.model_copy(update={"spending": None, "spending_chosen_on": None}),
+        }
+    )
 
 
 def _refused(message: str) -> RuleViolationError:

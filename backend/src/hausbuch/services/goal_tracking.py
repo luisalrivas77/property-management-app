@@ -14,14 +14,14 @@ readings are rules/goal/tracker.py; this module reads:
   between two counted accounts; a move to or from a reserve depot counts.
 
 For the path adopted (§7.11 (i) items 6, 12; route `path` with the lever `goal_path`), one row
-and one chart point per closed month-end since the day adopted (the window's closed months
-from that day's month on): the month's saved and its purchases per kind (rules/
-investment_split.py, a reserve depot left out), its wants (the month's regular spending on the
-codes the Budget counts as Wünsche), the stored month-end net worth (the newest run; a month
-whose month-end is not stored yet gets no row) against the path's own walk, and the counted
-accounts' value at that month-end (GET /assets/overview on that day) with their flows after
-the day adopted up to it. A flow without euros counts nothing there (the summary above names
-it as unpriced).
+and one chart point per closed month-end since the day adopted (every closed month from that
+day's month on, beyond the key figures' window of 12): the month's saved and its purchases per
+kind (rules/investment_split.py, a reserve depot left out), its wants (the month's regular
+spending on the codes the Budget counts as Wünsche), the stored month-end net worth (the newest
+run; a month whose month-end is not stored yet gets no row) against the path's own walk, and the
+counted accounts' value at that month-end (GET /assets/overview on that day) with their flows
+after the day adopted up to it. A flow without euros counts nothing there (the summary above
+names it as unpriced).
 
 Residual: a depot whose cash statements begin after the day chosen while it already held funds
 then counts its first statement's value (its START) as money in, as Anlagen's own figures do
@@ -110,7 +110,8 @@ def _path_rows(
     path was adopted (the module doc)."""
     day = lever.adopted_on
     first = day.strftime("%Y-%m")
-    months = [m.month for m in built.parts.months if m.month >= first and m.month in reads]
+    # every closed month since the day, not only the key figures' window of at most 12
+    months = sorted(m for m, r in reads.items() if m >= first and r.closed.closed)
     stored = {t.month_end: t.total for t in run_totals(conn)}
     ends = {m: _month_end(m) for m in months}
     months = [m for m in months if ends[m] in stored and ends[m] < today]
