@@ -83,6 +83,7 @@ from hausbuch.schemas.goal import (
 from hausbuch.schemas.health import HealthTodo
 from hausbuch.schemas.household import BudgetClass
 from hausbuch.schemas.plan import (
+    ADOPTABLE_STATES,
     Goal,
     GoalChoice,
     GoalKind,
@@ -321,6 +322,26 @@ def _plan_path(
         **head,
         **step,
     )
+
+
+def path_months(i: GoalInputs, path: GoalPath) -> tuple[tuple[str, Decimal], ...]:
+    """The path's walk to the due month, (YYYY-MM, net worth) per month, for adopting it
+    (§7.11 (i) item 6): step 1 at the typed rates with its extra, step 2 at the return needed
+    with the whole room, both without spending changes (the extra is the cut, D311); on track
+    with the household's adopted budget when it has one. Empty without a projection."""
+    p = i.projection
+    if p is None or path.state not in ADOPTABLE_STATES:
+        return ()
+    if i.goal.kind is not GoalKind.NET_WORTH:
+        p = replace(p, split=None)
+    if path.state is GoalPathState.DOABLE_RETURN:
+        assert path.return_needed is not None
+        p = _at_rate(p, path.return_needed)
+    budget = i.choice is not None and i.choice.spending is not None
+    changes = i.household_changes if path.state is GoalPathState.ON_TRACK and budget else ()
+    first = add_months(current_month(i.today), 1)
+    w = walk(p, changes, until=i.goal.due_month, extra=path.extra or ZERO, extra_from=first)
+    return tuple((m.month, m.net_worth) for m in w.months)
 
 
 def _step_2(

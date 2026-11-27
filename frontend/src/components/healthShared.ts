@@ -343,6 +343,9 @@ export function fillLevers(levers: HouseholdLevers | null | undefined): Househol
     // Phase 10 §7.11 (a) 2 (D301): the household's investment split, kept on every save (no
     // screen sets it yet; a save without it would drop it).
     investment_split: levers?.investment_split ?? null,
+    // Phase 10 §7.11 (i) (D311): the adopted path, carried unaltered (only POST
+    // /household-goal/path/adopt writes a new one; a save without it would drop it).
+    goal_path: levers?.goal_path ?? null,
     // Every key, so a lever added to the schema and not carried here fails the typecheck instead
     // of being dropped by a save.
   } satisfies Required<HouseholdLevers>;

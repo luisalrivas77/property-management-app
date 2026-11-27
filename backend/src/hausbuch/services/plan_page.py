@@ -34,7 +34,7 @@ from hausbuch.schemas.health import HealthTodo, HealthTodoCode, Reserve
 from hausbuch.schemas.plan import AssumptionKind, HouseholdLevers
 from hausbuch.schemas.plan_page import PlanPage, PlanSwitches, PlanView
 
-from .goal import _reserve_depots, goal_inputs, reserve_today
+from .goal import _reserve_depots, goal_inputs, reserve_today, with_path
 from .health import levers_one_off_codes
 from .plan import _scenario, flat_scenarios, plan_lines
 from .plan_inputs import PlanInputs
@@ -71,7 +71,7 @@ def plan_page(
     built = goal_inputs(conn, today, row, levers, reads, inputs)
     if isinstance(built, HouseholdGoal):  # below three closed months
         return _page(view, switches, word=built.word, issue=built.issue, todos=built.todos)
-    answer = household_goal(built.goal)
+    answer = with_path(household_goal(built.goal), built, levers)
     reserve = reserve_today(conn, today, levers, reads, inputs, built.now)
     flats, _, flat_assumptions = inputs.part(
         ("flat_scenarios",), lambda c: flat_scenarios(c, today)

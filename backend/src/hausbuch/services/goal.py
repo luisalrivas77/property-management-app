@@ -32,7 +32,7 @@ the coins' committed series and the funds series of the workspace's newest downl
 
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
 from sqlalchemy import Connection, select
@@ -40,25 +40,45 @@ from sqlalchemy.orm import aliased
 
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.rules.budget import budget as B
+from hausbuch.rules.errors import HOUSEHOLD_SCENARIO_PATH_INVALID
 from hausbuch.rules.goal import GoalInputs, current_month, household_goal, none_set
 from hausbuch.rules.goal import history as H
+from hausbuch.rules.goal import path as PA
 from hausbuch.rules.goal import series as reference_series
+from hausbuch.rules.goal.goal import path_months
 from hausbuch.rules.plan import spending as SP
 from hausbuch.rules.plan.surplus import mean_cent
+from hausbuch.schemas.advice import AdviceMode
 from hausbuch.schemas.enums import AccountKind
-from hausbuch.schemas.goal import GoalIssue, HouseholdGoal
-from hausbuch.schemas.health import Reserve
+from hausbuch.schemas.goal import (
+    GoalInvestment,
+    GoalIssue,
+    GoalPathAdopted,
+    GoalPathToday,
+    HouseholdGoal,
+)
+from hausbuch.schemas.health import HealthTodo, HealthTodoCode, Reserve
 from hausbuch.schemas.household import NetWorthClass
 from hausbuch.schemas.net_worth import NetWorth
 from hausbuch.schemas.plan import (
+    GoalChoice,
     GoalKind,
+    GoalPathLever,
+    GoalPathMonth,
+    GoalPathState,
+    GoalSpending,
     HouseholdLevers,
     HouseholdPlan,
     HouseholdScenario,
+    HouseholdScenarioCreate,
     SurplusKey,
 )
 
+from . import household_scenarios as scenarios
 from . import reference_returns
+from .context import CommandContext
+from .documents import LOCAL_TIME_ZONE
+from .errors import RuleViolationError
 from .health import MonthRead, _reserve_balances, _window, key_figures, levers_one_off_codes
 from .plan import PlanParts, _net_worth, _scenario, advice_mode, plan_parts, previewed
 from .plan_inputs import PlanInputs
@@ -99,7 +119,165 @@ def _goal(
     built = goal_inputs(conn, today, row, levers, reads, inputs)
     if isinstance(built, HouseholdGoal):
         return built
-    return household_goal(built.goal)
+    return with_path(household_goal(built.goal), built, levers)
+
+
+# --- The path's reads (§7.11 (i) items 5, 7) ---------------------------------------------------
+
+PLAN_PAGE_HREF = "/household/plan"
+ZERO = Decimal("0.00")
+CENT = Decimal("0.01")
+
+
+def plan_check_todo() -> HealthTodo:
+    """„Plan prüfen“ (§7.11 (i) 5): the adopted path was computed from figures that moved; the
+    path stays as adopted until the household adopts it again."""
+    return HealthTodo(
+        code=HealthTodoCode.PLAN_CHECK,
+        text=(
+            "Seit ihr den Plan übernommen habt, hat sich geändert, womit er gerechnet wurde "
+            "(das Ziel, die Renditen, das Budget für Wünsche oder eure Monate). Prüft den Plan "
+            "und übernehmt ihn neu, wenn er passt."
+        ),
+        action="Plan prüfen",
+        href=PLAN_PAGE_HREF,
+    )
+
+
+def with_path(answer: HouseholdGoal, built: "GoalReads", levers: HouseholdLevers) -> HouseholdGoal:
+    """The path's „Heute angelegt“ (item 7: the window's purchases a month, the detected savings
+    plans, the saved but not invested) and, with a path adopted, the stored path with whether
+    its inputs moved (item 5), the to-do „Plan prüfen“ then added. Without a path unchanged."""
+    path = answer.goal_path
+    if path is None:
+        return answer
+    months = len(built.parts.months)
+    prefill = built.plan.investment_split_prefill
+    bought = ZERO if prefill is None else sum(prefill.bought.values(), ZERO)
+    invested = (bought / months).quantize(CENT, ROUND_HALF_UP) if months else ZERO
+    saved = built.goal.heute
+    generic = built.goal.mode is AdviceMode.GENERIC
+    update: dict = {
+        "today": GoalPathToday(
+            invested=invested,
+            saved=saved,
+            saved_not_invested=max(ZERO, saved - invested),
+            plans=[] if generic else list(built.plan.plans),
+        )
+    }
+    todos = list(answer.todos)
+    lever = levers.goal_path
+    if lever is not None:
+        moved = PA.moved(
+            lever, levers.goal, levers.value_change, levers.budget_targets.wants_max, path.anlegbar
+        )
+        update["adopted"] = GoalPathAdopted(
+            adopted_on=lever.adopted_on,
+            state=lever.state,
+            monthly=lever.monthly,
+            extra=lever.extra,
+            rate=lever.rate,
+            return_needed=lever.return_needed,
+            windows=lever.windows,
+            reached_windows=lever.reached_windows,
+            wants_budget_total=lever.wants_budget_total,
+            moved=moved,
+        )
+        if moved:
+            todos.append(plan_check_todo())
+    return answer.model_copy(update={"goal_path": path.model_copy(update=update), "todos": todos})
+
+
+def adopt_path(ctx: CommandContext) -> HouseholdScenario:
+    """POST /household-goal/path/adopt (§7.11 (i) 5, D311): „Diesen Plan übernehmen“. The goal
+    of the default scenario in force is computed again here, on today's data, and its path of
+    step 1 or step 2 is written into one new row superseding the default (D248, append-only,
+    with its `household_scenario.created` event): the lever `goal_path` (what the path counts
+    on, what it was computed from and its walk to the due month), the wants budget as the
+    spending changes (as „Als Budget übernehmen“ stores them; on track the household's own
+    budget is kept), and `goal_choice` with the return followed `path` and today's day. The
+    browser sends nothing. RuleViolationError household_scenario.path_invalid without a goal
+    or a path that can be adopted, or when the path would invest less than nothing a month.
+    A path adopted and followed whose inputs have not moved (rules/goal/path.py `moved`) is
+    kept: adopting again writes nothing and returns the row in force."""
+    conn = ctx.conn
+    scenarios._lock(ctx)
+    today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
+    inputs = PlanInputs(conn, today)
+    row = scenarios.default_scenario(conn)
+    if row is None or row.levers.goal is None:
+        raise _refused("there is no goal in the default scenario")
+    levers = row.levers
+    reads = inputs.ended_reads(levers_one_off_codes(levers))
+    built = goal_inputs(conn, today, row, levers, reads, inputs)
+    if isinstance(built, HouseholdGoal):
+        raise _refused("the goal has no answer yet")
+    answer = with_path(household_goal(built.goal), built, levers)
+    path = answer.goal_path
+    if path is None:
+        raise _refused("the goal has no path that can be adopted")
+    stored = levers.goal_path
+    choice = levers.goal_choice or GoalChoice()
+    if (
+        stored is not None
+        and choice.investment == GoalInvestment.PATH.value
+        and not PA.moved(
+            stored, levers.goal, levers.value_change, levers.budget_targets.wants_max, path.anlegbar
+        )
+    ):
+        # Adopted and followed, its inputs unmoved: the path stays as adopted. The answer read
+        # under the adopted wants budget may differ (it reads „Auf Kurs“ once the budget's cut
+        # is in the scenario), which is no reason to write a second path.
+        return row
+    if not path.adoptable:
+        raise _refused("the goal has no path that can be adopted")
+    assert path.monthly is not None and path.extra is not None
+    assert path.wants_budget_total is not None
+    if path.monthly < 0:
+        raise _refused("the path would invest less than nothing a month")
+    lever = GoalPathLever(
+        adopted_on=today,
+        state=path.state,
+        monthly=path.monthly,
+        extra=path.extra,
+        rate=path.rate,
+        return_needed=path.return_needed,
+        windows=path.windows,
+        reached_windows=path.reached_windows,
+        wants_budget_total=path.wants_budget_total,
+        goal=levers.goal,
+        value_change=levers.value_change,
+        wants_max=levers.budget_targets.wants_max,
+        anlegbar=path.anlegbar,
+        room=path.room,
+        months=[GoalPathMonth(month=m, net_worth=v) for m, v in path_months(built.goal, path)],
+    )
+    update: dict = {
+        "investment": GoalInvestment.PATH.value,
+        "investment_chosen_on": today,
+    }
+    changes = levers.spending_changes
+    if path.state is not GoalPathState.ON_TRACK:
+        changes = list(path.spending_changes)
+        update |= {"spending": GoalSpending.OWN, "spending_chosen_on": today}
+    new = levers.model_copy(
+        update={
+            "goal_path": lever,
+            "spending_changes": changes,
+            "goal_choice": choice.model_copy(update=update),
+        }
+    )
+    data = HouseholdScenarioCreate(
+        name=row.name,
+        is_default=True,
+        levers=HouseholdLevers.model_validate(new.model_dump(mode="json")),
+        supersedes_id=row.id,
+    )
+    return scenarios.create_scenario(ctx, data, adopt=True)
+
+
+def _refused(message: str) -> RuleViolationError:
+    return RuleViolationError([HOUSEHOLD_SCENARIO_PATH_INVALID], message)
 
 
 @dataclass(frozen=True)

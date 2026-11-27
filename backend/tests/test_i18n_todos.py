@@ -26,6 +26,7 @@ from hausbuch.schemas.health import (
     Window,
 )
 from hausbuch.schemas.net_worth import NetWorthTodo, NetWorthTodoCode
+from hausbuch.services import goal as goal_service
 from hausbuch.services import health, plan, plan_page, todo_texts
 from hausbuch.services.todo_texts import ACTIONS, PATTERNS
 
@@ -173,6 +174,7 @@ def _producers() -> list[HealthTodo | NetWorthTodo]:
         plan_page.living_area_todo(
             PlanTodo(LIVING_AREA_MISSING, uuid4(), "Wohnfläche eintragen", "/properties/x")
         ),
+        goal_service.plan_check_todo(),
         *(plan._scenario_check(text) for text in PLAN_TEXTS),
         *(_gap(text) for text in NET_WORTH_TEXTS),
     ]

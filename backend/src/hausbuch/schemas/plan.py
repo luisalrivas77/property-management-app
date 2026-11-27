@@ -334,6 +334,16 @@ ADOPTABLE_STATES = frozenset(
 )
 
 
+class GoalPathMonth(Schema):
+    """One month of the adopted path's walk (§7.11 (i) item 6): the net worth the path reaches
+    at that month's end, stored when the path is adopted, so a month that closes later is
+    compared with the path as it was adopted (the live walk starts after the newest closed
+    month and cannot give a past month)."""
+
+    month: YearMonth
+    net_worth: Money
+
+
 class GoalPathLever(Schema):
     """The path the household adopted for its goal (phase 10 §7.11 (i), D311), written by
     `POST /household-goal/path/adopt` from the server's own answer at that moment, never from
@@ -356,6 +366,9 @@ class GoalPathLever(Schema):
     wants_max: BudgetPercent | None = None
     anlegbar: Money
     room: NonNegativeMoney
+    # The path's walk from the month after the newest closed one to the due month, at most the
+    # walk's forty years
+    months: list[GoalPathMonth] = Field(default_factory=list, max_length=481)
 
     @model_validator(mode="after")
     def _path(self) -> Self:
@@ -365,6 +378,9 @@ class GoalPathLever(Schema):
             raise ValueError(f"{LEVER_INVALID}: a path is Anlegbar + an extra within the room")
         if (self.state is GoalPathState.DOABLE_RETURN) != (self.return_needed is not None):
             raise ValueError(f"{LEVER_INVALID}: a return is needed exactly on step 2")
+        seen = [m.month for m in self.months]
+        if seen != sorted(set(seen)) or any(m > self.goal.due_month for m in seen):
+            raise ValueError(f"{LEVER_INVALID}: the path's months, in order, up to the due month")
         return self
 
 

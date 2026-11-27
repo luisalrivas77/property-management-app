@@ -13,26 +13,50 @@ readings are rules/goal/tracker.py; this module reads:
   the day chosen as GET /assets/performance lists them (rules/performance), less a move
   between two counted accounts; a move to or from a reserve depot counts.
 
+For the path adopted (§7.11 (i) items 6, 12; route `path` with the lever `goal_path`), one row
+and one chart point per closed month-end since the day adopted (the window's closed months
+from that day's month on): the month's saved and its purchases per kind (rules/
+investment_split.py, a reserve depot left out), its wants (the month's regular spending on the
+codes the Budget counts as Wünsche), the stored month-end net worth (the newest run; a month
+whose month-end is not stored yet gets no row) against the path's own walk, and the counted
+accounts' value at that month-end (GET /assets/overview on that day) with their flows after
+the day adopted up to it. A flow without euros counts nothing there (the summary above names
+it as unpriced).
+
 Residual: a depot whose cash statements begin after the day chosen while it already held funds
 then counts its first statement's value (its START) as money in, as Anlagen's own figures do
 for the days before the app knew it.
 """
 
+import calendar
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import Connection
 
+from hausbuch.rules import investment_split as X
 from hausbuch.rules.goal import household_goal
+from hausbuch.rules.goal import path as PA
 from hausbuch.rules.goal import tracker as T
+from hausbuch.rules.plan import spending as SP
 from hausbuch.schemas.advice import AdviceMode
-from hausbuch.schemas.goal import GoalTracking, GoalTrackingReason, HouseholdGoal
+from hausbuch.schemas.goal import (
+    GoalInvestment,
+    GoalPathPoint,
+    GoalPathRow,
+    GoalTracking,
+    GoalTrackingReason,
+    HouseholdGoal,
+)
+from hausbuch.schemas.household import BudgetClass
+from hausbuch.schemas.plan import GoalPathLever, HouseholdLevers, PlanClass
+from hausbuch.schemas.portfolio import AssetsPerformance
 from hausbuch.schemas.prices import AssetsOverview
 
-from .goal import goal_inputs
-from .health import levers_one_off_codes
-from .plan import _scenario, advice_mode
+from .goal import GoalReads, _reserve_depots, goal_inputs
+from .health import MonthRead, levers_one_off_codes, run_totals
+from .plan import _scenario, advice_mode, plan_lines
 from .plan_inputs import PlanInputs
 from .portfolio_performance import assets_performance
 from .prices.overview import ASSET_ACCOUNT_KINDS, assets_overview
@@ -61,12 +85,104 @@ def goal_tracking(conn: Connection, today: date) -> GoalTracking:
         followed: T.Followed | GoalTrackingReason = GoalTrackingReason.GOAL_ISSUE
         projection = None
     else:
-        followed = T.followed_of(household_goal(built.goal), route)
+        followed = T.followed_of(household_goal(built.goal), route, levers.goal_path)
         projection = built.goal.projection
     chosen = choice.investment_chosen_on
     assert chosen is not None  # GoalChoice requires the day with the route
     actual = _actual(conn, today, min(chosen, today))
-    return T.tracking(T.TrackerInputs(today, mode, goal, choice, followed, projection, actual))
+    answer = T.tracking(T.TrackerInputs(today, mode, goal, choice, followed, projection, actual))
+    lever = levers.goal_path
+    if route is not GoalInvestment.PATH or lever is None or isinstance(built, HouseholdGoal):
+        return answer
+    rows, points = _path_rows(conn, today, lever, levers, built, reads)
+    return answer.model_copy(update={"rows": rows, "points": points})
+
+
+def _path_rows(
+    conn: Connection,
+    today: date,
+    lever: GoalPathLever,
+    levers: HouseholdLevers,
+    built: GoalReads,
+    reads: dict[str, MonthRead],
+) -> tuple[list[GoalPathRow], list[GoalPathPoint]]:
+    """§7.11 (i) items 6, 12: one row and one point per closed month-end since the day the
+    path was adopted (the module doc)."""
+    day = lever.adopted_on
+    first = day.strftime("%Y-%m")
+    months = [m.month for m in built.parts.months if m.month >= first and m.month in reads]
+    stored = {t.month_end: t.total for t in run_totals(conn)}
+    ends = {m: _month_end(m) for m in months}
+    months = [m for m in months if ends[m] in stored and ends[m] < today]
+    if not months:
+        return [], []
+    lines = plan_lines(conn, months)
+    reserve = _reserve_depots(built.parts.reserve)
+    walk = {p.month: p.net_worth for p in lever.months}
+    classes = built.goal.classes
+    then = assets_overview(conn, day)
+    performance = assets_performance(conn, today)
+    overviews = {m: assets_overview(conn, ends[m]) for m in months}
+    members = _members([then, *overviews.values()], performance)
+    split = levers.investment_split
+    out: list[PA.PathMonth] = []
+    for month in months:
+        end = ends[month]
+        r = reads[month]
+        bought = X.bought(lines, [month], reserve)
+        codes = SP.month_spending(
+            r.private.cashflow, r.private.lines, r.one_off_ids, r.one_off_codes
+        )
+        wants = sum((v for c, v in codes.items() if classes.get(c) is BudgetClass.WANT), ZERO)
+        flows = [
+            (f.on, f.amount_eur)
+            for p in performance.portfolios
+            if p.account_id in members
+            for f in p.flows
+            if day < f.on <= end
+            and f.counterpart_account_id not in members
+            and f.amount_eur is not None
+        ]
+        out.append(
+            PA.PathMonth(
+                month_end=end,
+                saved=r.household.saved,
+                invested=sum(bought.values(), ZERO),
+                crypto_bought=bought.get(PlanClass.CRYPTO, ZERO),
+                wants=wants,
+                net_worth=stored[end],
+                path_net_worth=walk.get(month),
+                value_now=_value(overviews[month], members)[0],
+                flows=sorted(flows, key=lambda f: f[0]),
+            )
+        )
+    return PA.track(
+        day,
+        lever.monthly,
+        lever.wants_budget_total,
+        lever.rate,
+        None if split is None else split.crypto,
+        _value(then, members)[0],
+        out,
+    )
+
+
+def _members(overviews: list[AssetsOverview], performance: AssetsPerformance) -> set[UUID]:
+    """The counted accounts as `_actual` counts them, over every day read."""
+    reserve = {a.account_id for o in overviews for a in o.accounts if a.counts_to_reserve}
+    members = {
+        p.account_id
+        for p in performance.portfolios
+        if p.kind in ASSET_ACCOUNT_KINDS and p.account_id not in reserve
+    }
+    for o in overviews:
+        members |= _counted(o, reserve)
+    return members
+
+
+def _month_end(month: str) -> date:
+    year, number = int(month[:4]), int(month[5:7])
+    return date(year, number, calendar.monthrange(year, number)[1])
 
 
 def _actual(conn: Connection, today: date, chosen: date) -> T.Actual:

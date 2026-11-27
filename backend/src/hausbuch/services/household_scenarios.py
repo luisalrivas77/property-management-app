@@ -50,6 +50,11 @@ beyond HouseholdScenarioCreate's own validator (HouseholdLevers checks the range
   target above 0 and a reserve goal's months (up to 24, in half months) are Goal's own
   checks. A goal carried unaltered is never refused, so a goal whose month has passed does
   not block saving another lever; GET /household-goal names it (`issue` due_passed).
+- the goal's path (phase 10 §7.11 (i) 5, D311): the lever `goal_path` and the followed
+  return `path` are written by POST /household-goal/path/adopt only (services.goal.adopt_path,
+  from the server's own answer); any other save may carry them unaltered (as the row it
+  supersedes or the default in force holds them) or drop them, never write a new or altered
+  one (`household_scenario.path_invalid`);
 - the investment split and the reserve's yearly rate (phase 10 §7.11 (a) 2, D301, D304) are
   checked by HouseholdLevers alone (InvestmentSplit: shares with one place adding up to 100;
   ValueChange.reserve: the depot's and crypto's range); no further rule here.
@@ -83,6 +88,7 @@ from hausbuch.rules.errors import (
     HOUSEHOLD_SCENARIO_NOT_CURRENT,
     HOUSEHOLD_SCENARIO_ONE_OFF_CODE_INVALID,
     HOUSEHOLD_SCENARIO_ONE_OFF_OUTSIDE,
+    HOUSEHOLD_SCENARIO_PATH_INVALID,
     HOUSEHOLD_SCENARIO_SPENDING_INVALID,
     HOUSEHOLD_SCENARIO_WITHDRAWAL_INVALID,
 )
@@ -170,14 +176,19 @@ def default_scenario(conn: Connection) -> HouseholdScenario | None:
 # --- Writes ------------------------------------------------------------------------------
 
 
-def create_scenario(ctx: CommandContext, data: HouseholdScenarioCreate) -> HouseholdScenario:
+def create_scenario(
+    ctx: CommandContext, data: HouseholdScenarioCreate, *, adopt: bool = False
+) -> HouseholdScenario:
     """POST /household-scenarios: one new row and its event (see the module doc for the
     checks). NotFoundError for an unknown superseded row or reserve account;
-    RuleViolationError household_scenario.not_current, .account_invalid, .one_off_outside or
-    .withdrawal_invalid. Nothing is written then."""
+    RuleViolationError household_scenario.not_current, .account_invalid, .one_off_outside,
+    .withdrawal_invalid or .path_invalid. Nothing is written then. `adopt`: the call of
+    services.goal.adopt_path, the one writer of a new goal path."""
     _lock(ctx)
     old = None if data.supersedes_id is None else _check_supersedes(ctx.conn, data)
     if not data.withdrawn:
+        if not adopt:
+            _check_path(data.levers, old, default_scenario(ctx.conn))
         today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
         previous = [] if old is None else old.levers.spending_changes
         means = check_levers(
@@ -286,6 +297,30 @@ def _check_investment(levers: HouseholdLevers, previous: GoalChoice | None) -> N
         raise RuleViolationError(
             [HOUSEHOLD_SCENARIO_GOAL_INVALID],
             f"a followed return {choice.investment!r}, which is not more_return, balanced or path",
+        )
+
+
+def _check_path(levers: HouseholdLevers, *rows: HouseholdScenario | None) -> None:
+    """Phase 10 §7.11 (i) 5: a goal path carried unaltered from `rows` (the row superseded,
+    the default in force) or dropped; never a new or altered one, which only the adopt command
+    writes from the server's own answer."""
+    carried = [r.levers for r in rows if r is not None]
+    path = levers.goal_path
+    if path is not None and all(c.goal_path != path for c in carried):
+        raise RuleViolationError(
+            [HOUSEHOLD_SCENARIO_PATH_INVALID],
+            "a goal path is adopted through POST /household-goal/path/adopt only",
+        )
+    choice = levers.goal_choice
+    if choice is None or choice.investment != GoalInvestment.PATH.value:
+        return
+    if all(
+        c.goal_choice is None or c.goal_choice.investment != GoalInvestment.PATH.value
+        for c in carried
+    ):
+        raise RuleViolationError(
+            [HOUSEHOLD_SCENARIO_PATH_INVALID],
+            "the path's return is followed through POST /household-goal/path/adopt only",
         )
 
 
