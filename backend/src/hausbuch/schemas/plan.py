@@ -344,6 +344,16 @@ class GoalPathMonth(Schema):
     net_worth: Money
 
 
+class GoalPathBudgetChange(Schema):
+    """One spending change the adopted path wrote as its wants budget (§7.11 (i) 5): the code
+    and its planned amount a month. The months are left out on purpose: they run from the
+    month after the newest closed one to the due month, and „Durchspielen“ moves a change's
+    first month to today's, so a change still at this code and amount is still the path's."""
+
+    code: AllocationCategory
+    monthly: NonNegativeMoney
+
+
 class GoalPathLever(Schema):
     """The path the household adopted for its goal (phase 10 §7.11 (i), D311), written by
     `POST /household-goal/path/adopt` from the server's own answer at that moment, never from
@@ -366,6 +376,13 @@ class GoalPathLever(Schema):
     wants_max: BudgetPercent | None = None
     anlegbar: Money
     room: NonNegativeMoney
+    # The investment split in force that day (None: unset), stored for a later check of a
+    # moved split; rules/goal/path.py `moved` does not read it yet.
+    investment_split: InvestmentSplit | None = None
+    # The wants budget the path wrote as the spending changes (empty on track, where the
+    # household's own budget is kept), so adopting again strips only that budget while the
+    # spending changes in force still are it (services.goal._without_path_budget)
+    budget: list[GoalPathBudgetChange] = Field(default_factory=list, max_length=200)
     # The path's walk from the month after the newest closed one to the due month, at most the
     # walk's forty years
     months: list[GoalPathMonth] = Field(default_factory=list, max_length=481)

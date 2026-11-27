@@ -23686,6 +23686,26 @@
         "title": "GoalPathAdopted",
         "description": "The path the household adopted (the default scenario's `goal_path` lever), as stored,\nand whether what it was computed from has moved since („Plan prüfen“)."
       },
+      "GoalPathBudgetChange": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "monthly": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Monthly"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "monthly"
+        ],
+        "title": "GoalPathBudgetChange",
+        "description": "One spending change the adopted path wrote as its wants budget (§7.11 (i) 5): the code\nand its planned amount a month. The months are left out on purpose: they run from the\nmonth after the newest closed one to the due month, and „Durchspielen“ moves a change's\nfirst month to today's, so a change still at this code and amount is still the path's."
+      },
       "GoalPathCeiling": {
         "properties": {
           "income": {
@@ -23843,6 +23863,24 @@
             "type": "string",
             "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Room"
+          },
+          "investment_split": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvestmentSplit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "budget": {
+            "items": {
+              "$ref": "#/components/schemas/GoalPathBudgetChange"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Budget"
           },
           "months": {
             "items": {

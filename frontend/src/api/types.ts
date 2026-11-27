@@ -9164,6 +9164,18 @@ export interface components {
             moved: boolean;
         };
         /**
+         * GoalPathBudgetChange
+         * @description One spending change the adopted path wrote as its wants budget (§7.11 (i) 5): the code
+         *     and its planned amount a month. The months are left out on purpose: they run from the
+         *     month after the newest closed one to the due month, and „Durchspielen“ moves a change's
+         *     first month to today's, so a change still at this code and amount is still the path's.
+         */
+        GoalPathBudgetChange: {
+            code: components["schemas"]["AllocationCategory"];
+            /** Monthly */
+            monthly: string;
+        };
+        /**
          * GoalPathCeiling
          * @description Item 1: what the household can save at most a month: Anlegbar's free cash with the
          *     wants cut to the wants kept, less the buffer kept from it as phase 9 keeps it from a free
@@ -9224,6 +9236,9 @@ export interface components {
             anlegbar: string;
             /** Room */
             room: string;
+            investment_split?: components["schemas"]["InvestmentSplit"] | null;
+            /** Budget */
+            budget?: components["schemas"]["GoalPathBudgetChange"][];
             /** Months */
             months?: components["schemas"]["GoalPathMonth"][];
         };

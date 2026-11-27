@@ -63,6 +63,7 @@ from hausbuch.schemas.net_worth import NetWorth
 from hausbuch.schemas.plan import (
     GoalChoice,
     GoalKind,
+    GoalPathBudgetChange,
     GoalPathLever,
     GoalPathMonth,
     GoalPathState,
@@ -71,6 +72,7 @@ from hausbuch.schemas.plan import (
     HouseholdPlan,
     HouseholdScenario,
     HouseholdScenarioCreate,
+    SpendingChange,
     SurplusKey,
 )
 
@@ -147,7 +149,8 @@ def plan_check_todo() -> HealthTodo:
 def with_path(answer: HouseholdGoal, built: "GoalReads", levers: HouseholdLevers) -> HouseholdGoal:
     """The path's „Heute angelegt“ (item 7: the window's purchases a month, the detected savings
     plans, the saved but not invested) and, with a path adopted, the stored path with whether
-    its inputs moved (item 5), the to-do „Plan prüfen“ then added. Without a path unchanged."""
+    its inputs moved (item 5), the to-do „Plan prüfen“ then added while the path is the return
+    followed. Without a path unchanged."""
     path = answer.goal_path
     if path is None:
         return answer
@@ -183,7 +186,10 @@ def with_path(answer: HouseholdGoal, built: "GoalReads", levers: HouseholdLevers
             wants_budget_total=lever.wants_budget_total,
             moved=moved,
         )
-        if moved:
+        choice = levers.goal_choice
+        if moved and choice is not None and choice.investment == GoalInvestment.PATH.value:
+            # „Plan prüfen“ only while the path is the route followed: after another route was
+            # chosen the stored path is history, shown but no longer a plan to check
             todos.append(plan_check_todo())
     return answer.model_copy(update={"goal_path": path.model_copy(update=update), "todos": todos})
 
@@ -239,6 +245,12 @@ def adopt_path(ctx: CommandContext) -> HouseholdScenario:
     assert path.wants_budget_total is not None
     if path.monthly < 0:
         raise _refused("the path would invest less than nothing a month")
+    choice = basis.goal_choice or GoalChoice()
+    changes = basis.spending_changes
+    budget: list[GoalPathBudgetChange] = []
+    if path.state is not GoalPathState.ON_TRACK:
+        changes = list(path.spending_changes)
+        budget = [_budget_change(c) for c in changes]
     lever = GoalPathLever(
         adopted_on=today,
         state=path.state,
@@ -254,16 +266,15 @@ def adopt_path(ctx: CommandContext) -> HouseholdScenario:
         wants_max=levers.budget_targets.wants_max,
         anlegbar=path.anlegbar,
         room=path.room,
+        investment_split=levers.investment_split,
+        budget=budget,
         months=[GoalPathMonth(month=m, net_worth=v) for m, v in path_months(built.goal, path)],
     )
     update: dict = {
         "investment": GoalInvestment.PATH.value,
         "investment_chosen_on": today,
     }
-    choice = basis.goal_choice or GoalChoice()
-    changes = basis.spending_changes
     if path.state is not GoalPathState.ON_TRACK:
-        changes = list(path.spending_changes)
         update |= {"spending": GoalSpending.OWN, "spending_chosen_on": today}
     new = levers.model_copy(
         update={
@@ -283,12 +294,22 @@ def adopt_path(ctx: CommandContext) -> HouseholdScenario:
 
 def _without_path_budget(levers: HouseholdLevers) -> HouseholdLevers:
     """The levers without the wants budget an adopted path wrote: a path of step 1 or 2 stores
-    its cut as the spending changes with the spending choice of its own day (`adopt_path`); a
-    budget adopted on another day („Als Budget übernehmen“) is the household's and stays."""
+    its cut as the spending changes with the spending choice `own` (`adopt_path`) and keeps
+    that budget on its lever. The spending changes are stripped only while they still are that
+    budget, code by code at the same planned amount (their months and `mean_at_save` are not
+    compared: „Durchspielen“ moves a first month to today's and a save rewrites the mean). A
+    budget the household changed or saved since, on any day, is the household's and stays."""
     stored, choice = levers.goal_path, levers.goal_choice
     if stored is None or choice is None or stored.state is GoalPathState.ON_TRACK:
         return levers
-    if choice.spending != GoalSpending.OWN or choice.spending_chosen_on != stored.adopted_on:
+    if choice.spending != GoalSpending.OWN:
+        return levers
+    current = [c for c in levers.spending_changes if c.monthly is not None]
+    if len(current) != len(levers.spending_changes):
+        return levers  # a percent change is the household's: the path writes amounts only
+    if sorted((c.code.value, c.monthly) for c in current) != sorted(
+        (b.code.value, b.monthly) for b in stored.budget
+    ):
         return levers
     return levers.model_copy(
         update={
@@ -296,6 +317,11 @@ def _without_path_budget(levers: HouseholdLevers) -> HouseholdLevers:
             "goal_choice": choice.model_copy(update={"spending": None, "spending_chosen_on": None}),
         }
     )
+
+
+def _budget_change(change: SpendingChange) -> GoalPathBudgetChange:
+    assert change.monthly is not None  # the path writes planned amounts (rules/goal `_changes`)
+    return GoalPathBudgetChange(code=change.code, monthly=change.monthly)
 
 
 def _refused(message: str) -> RuleViolationError:

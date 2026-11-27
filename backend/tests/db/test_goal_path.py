@@ -23,9 +23,12 @@ from hausbuch.rules.errors import HOUSEHOLD_SCENARIO_PATH_INVALID
 from hausbuch.schemas.goal import GoalInvestment, GoalSpending, GoalTrackingWord, GoalWord
 from hausbuch.schemas.health import HealthTodoCode
 from hausbuch.schemas.plan import (
+    GoalPathBudgetChange,
     GoalPathMonth,
     GoalPathState,
     HouseholdScenarioCreate,
+    InvestmentSplit,
+    SpendingChange,
     ValueChange,
 )
 from hausbuch.services import goal as goal_service
@@ -177,6 +180,77 @@ def test_adopting_again_after_a_move_computes_without_the_paths_own_budget(world
     assert _created_events(world, second.id) == 1
 
 
+def test_the_lever_keeps_the_budget_it_wrote_and_the_split_of_that_day(world):
+    _goal_world(world)
+    split = InvestmentSplit(depot=Decimal("80"), crypto=Decimal("20"))
+    _save(world, investment_split=split)
+    row = _adopt(world)
+    lever = row.levers.goal_path
+    assert lever.investment_split == split
+    assert lever.budget == [
+        GoalPathBudgetChange(code=c.code, monthly=c.monthly) for c in row.levers.spending_changes
+    ]
+    assert lever.budget  # step 1 cuts the wants
+
+
+def test_the_paths_budget_moved_to_another_first_month_is_still_the_paths(world):
+    """„Durchspielen“ moves a change's first month to today's and a save rewrites its mean:
+    the same codes at the same planned amounts are still the path's budget, stripped."""
+    _goal_world(world)
+    first = _adopt(world)
+    rebased = [
+        c.model_copy(update={"from_month": "2027-05"}) for c in first.levers.spending_changes
+    ]
+    row = _save(world, spending_changes=rebased)
+    assert goal_service._without_path_budget(row.levers).spending_changes == []
+
+
+def test_a_household_edit_of_the_paths_budget_survives_adopting_again(world):
+    """After adopting, the household edits one change of the path's budget in „Durchspielen“
+    (the screen carries goal_choice, already `own` of the adopt day). The goal is then lowered
+    so it is on track: adopting again keeps the household's spending changes in force."""
+    _goal_world(world)
+    first = _adopt(world)
+    edited = [
+        first.levers.spending_changes[0].model_copy(
+            update={
+                "monthly": first.levers.spending_changes[0].monthly + Decimal("1.00"),
+                "from_month": "2027-05",
+            }
+        ),
+        *first.levers.spending_changes[1:],
+    ]
+    row = _save(world, spending_changes=edited)
+    assert row.levers.goal_choice.spending_chosen_on == TODAY  # carried as the screen does
+    assert goal_service._without_path_budget(row.levers) == row.levers
+    _save(world, goal=_goal("300000.00"))
+    second = _adopt(world)
+    assert second.levers.goal_path.state is GoalPathState.ON_TRACK
+    assert second.levers.goal_path.budget == []
+    assert [(c.code, c.monthly) for c in second.levers.spending_changes] == [
+        (c.code, c.monthly) for c in edited
+    ]
+
+
+def test_a_household_budget_saved_on_the_adopt_day_survives_adopting_again(world):
+    """„Als Budget übernehmen“ or „Eigene Aufteilung“ on the day the path was adopted writes
+    `own` and that same day: compared by amount, it is the household's and stays."""
+    _goal_world(world)
+    first = _adopt(world)
+    code = first.levers.spending_changes[0].code
+    own = [SpendingChange(code=code, monthly=Decimal("2.00"), from_month="2027-05")]
+    choice = first.levers.goal_choice.model_copy(
+        update={"spending": GoalSpending.OWN, "spending_chosen_on": TODAY}
+    )
+    _save(world, spending_changes=own, goal_choice=choice)
+    _save(world, goal=_goal("300000.00"))
+    second = _adopt(world)
+    assert second.levers.goal_path.state is GoalPathState.ON_TRACK
+    assert [(c.code, c.monthly) for c in second.levers.spending_changes] == [
+        (code, Decimal("2.00"))
+    ]
+
+
 def test_a_path_that_cannot_be_adopted_is_refused(world):
     _followed_world(world)
     _save(world, goal=None)
@@ -221,6 +295,19 @@ def test_moved_inputs_raise_plan_pruefen_and_keep_the_path(world):
     assert (todo.action, todo.href) == ("Plan prüfen", "/household/plan")
     page = world.query(plan_page.plan_page, TODAY)
     assert HealthTodoCode.PLAN_CHECK in {t.code for t in page.todos}
+
+
+def test_no_plan_pruefen_once_another_route_is_followed(world):
+    """The path adopted, then route 3 followed instead: the stored path stays and reads moved
+    after a typed rate changes, but „Plan prüfen“ is not raised for a plan no longer followed."""
+    _goal_world(world)
+    lever = _adopt(world).levers.goal_path
+    _follow(world, "more_return", chosen=TODAY)
+    _save(world, value_change=ValueChange(depot=Decimal("0.040")))
+    got = _answer(world)
+    assert world.query(household_scenarios.default_scenario).levers.goal_path == lever
+    assert got.goal_path.adopted is not None and got.goal_path.adopted.moved
+    assert HealthTodoCode.PLAN_CHECK not in {t.code for t in got.todos}
 
 
 def test_generic_mode_lists_no_savings_plan(world):
@@ -286,3 +373,50 @@ def test_tracking_rows_for_each_stored_month_end_since_the_day_adopted(world):
     assert [r.net_worth_gap for r in got.rows] == [Decimal("100.00"), None, None]
     assert all(r.word is GoalTrackingWord.BEHIND for r in got.rows)
     assert [r.net_worth for r in got.rows] == [stored[r.month_end] for r in got.rows]
+
+
+def _adopted_in_january(world: World):
+    """The path adopted, then moved to 2 January 2027 (as the command would have written it
+    that day), so the tracking has a row for each closed month-end January to March."""
+    for end in (date(2027, 1, 31), date(2027, 2, 28)):
+        world.cmd(net_worth.capture_month_end, end)
+    lever = _adopt(world).levers.goal_path
+    current = world.query(household_scenarios.default_scenario)
+    choice = current.levers.goal_choice.model_copy(
+        update={"investment_chosen_on": date(2027, 1, 2)}
+    )
+    early = lever.model_copy(update={"adopted_on": date(2027, 1, 2)})
+    world.cmd(
+        household_scenarios.create_scenario,
+        HouseholdScenarioCreate(
+            name="Basis",
+            is_default=True,
+            supersedes_id=current.id,
+            levers=current.levers.model_copy(update={"goal_path": early, "goal_choice": choice}),
+        ),
+        adopt=True,
+    )
+    return early
+
+
+def test_tracking_counts_the_money_waiting_for_crypto_under_a_saved_split(world):
+    """A split saved (§7.11 (i) item 12): the crypto share of the path's 531 € a month not yet
+    bought counts as waiting, up to what was saved but not invested that month. No coin is
+    bought in this world, so at 100 % crypto the share (531 €) is above the month's saved but
+    not invested (510 € saved less 75, 85 and 75 € invested): the cap binds and the waiting is
+    435, 425 and 435 €. At 50 % the share 265.50 € is below it. At 0 % nothing waits: 0.00,
+    not None."""
+    _goal_world(world)
+    _adopted_in_january(world)
+    _save(world, investment_split=InvestmentSplit(depot=Decimal("0"), crypto=Decimal("100")))
+    rows = world.query(goal_tracking.goal_tracking, TODAY).rows
+    assert [r.invested for r in rows] == [Decimal("75.00"), Decimal("85.00"), Decimal("75.00")]
+    assert [r.waiting for r in rows] == [Decimal("435.00"), Decimal("425.00"), Decimal("435.00")]
+    assert all(r.invested_gap == Decimal("531.00") - r.invested - r.waiting for r in rows)
+    _save(world, investment_split=InvestmentSplit(depot=Decimal("50"), crypto=Decimal("50")))
+    rows = world.query(goal_tracking.goal_tracking, TODAY).rows
+    assert [r.waiting for r in rows] == [Decimal("265.50")] * 3
+    _save(world, investment_split=InvestmentSplit(depot=Decimal("100"), crypto=Decimal("0")))
+    rows = world.query(goal_tracking.goal_tracking, TODAY).rows
+    assert [r.waiting for r in rows] == [Decimal("0.00")] * 3
+    assert all(r.invested_gap == Decimal("531.00") - r.invested for r in rows)
