@@ -813,6 +813,8 @@ test("„Jetzt anlegen“ on the path's plan card in every state, its split in t
     { kind: "wants_none", amount: "640.00", within_target: true, wants_percent: null },
   ];
   state.goal = withPath({ ...stepOne(), above_target: "0.00", above_target_depot: null, above_target_crypto: null, actions: kept, plan_reached: reached });
+  // a hash change alone does not load the page again, so load it first for the new answer
+  await page.goto("/household/plan");
   await page.goto("/household/plan#d-plan-weg");
   await expect(main.getByTestId("path-plan")).toBeVisible();
   await expect(main.getByTestId("path-invest-now")).toHaveCount(0);
