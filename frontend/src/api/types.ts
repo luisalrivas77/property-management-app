@@ -9165,9 +9165,10 @@ export interface components {
         };
         /**
          * GoalPathCeiling
-         * @description Item 1: what the household can save at most a month. ceiling = income + rental cash
-         *     (when positive) − need − wants kept − buffer; the buffer is kept from that free cash as
-         *     phase 9 keeps it from a free month.
+         * @description Item 1: what the household can save at most a month: Anlegbar's free cash with the
+         *     wants cut to the wants kept, less the buffer kept from it as phase 9 keeps it from a free
+         *     month. Its rows add up: ceiling = income + rental cash (when positive) − need − wants kept
+         *     − other spending − buffer.
          */
         GoalPathCeiling: {
             /** Income */
@@ -9178,6 +9179,8 @@ export interface components {
             need: string;
             /** Wants Kept */
             wants_kept: string;
+            /** Other Spending */
+            other_spending: string;
             /** Suggested */
             suggested: boolean;
             /** Buffer */

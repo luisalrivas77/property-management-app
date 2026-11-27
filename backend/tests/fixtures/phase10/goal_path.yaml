@@ -15,9 +15,13 @@
 # goal by Dec 2029 (37 months left, windows of 3 years); 738,173.93 at 31 Dec 2029.
 #
 # Rules this file pins (rules/goal/path.py):
-# 1. Ceiling (item 1) = income + max(rental cash, 0) − need − wants kept − buffer, the buffer
-#    buffer_of(income + max(rental, 0) − need − wants kept) as phase 9 keeps it from a free
-#    month. Wants kept = min(Σ the wants' means, wants_max % × income), else, with no wants
+# 1. Ceiling (item 1) = free − buffer_of(free), free = income − regular spending + rental cash
+#    + (Σ the wants' positive means − wants kept): Anlegbar's free cash with the wants cut to
+#    the wants kept, the buffer kept as phase 9 keeps it from a free month (amended 27 Nov 2026
+#    from income + max(rental, 0) − need − wants kept, which left out regular spending outside
+#    the need and the wants, such as a refund). Its rows add up: other spending = income +
+#    max(rental, 0) − need − wants kept − free, signed, 0 where the codes are needs and wants
+#    only (every case before `spending_outside_the_classes`). Wants kept = min(Σ the wants' means, wants_max % × income), else, with no wants
 #    target saved, the suggestion: half of each want's mean, rounded down to the cent
 #    (`suggested: true`). Anlegbar = free − buffer_of(free), free = income − regular spending +
 #    rental cash (phase 9 §7.1; one-offs stay out, the walk carries the planned ones month by
@@ -76,6 +80,33 @@ cases:
       room: '450.00'
       extra: '0.00'
       monthly: '2000.00'
+      rate: '0.06'
+      wants_budget: {}
+      wants_budget_total: '900.00'
+      adoptable: true
+
+- id: spending_outside_the_classes
+  description: >-
+    regular spending 2,950 holds a refund of −100 (hh_refund, a want netting negative, so
+    outside the wants' positive means) and 50 uncategorised (no class): other spending 2,950 −
+    2,100 − 900 = −50; free = 5,000 − 2,950 + (900 − 450) = 2,500, the ceiling 2,500 (the rows:
+    5,000 − 2,100 − 450 + 50 = 2,500); Anlegbar 2,050, the room 450. 370,000 by Jun 2036 is on
+    track (the household's walk reaches 374,035.42 at 2,000 a month)
+  <<: *household
+  month: {mean_income: '5000.00', mean_regular_spending: '2950.00', mean_rental_cash: '0.00', buffer_percent: '0'}
+  means: {hh_rent: '1500.00', hh_supermarket: '600.00', hh_restaurant: '600.00', hh_streaming: '300.00', hh_refund: '-100.00', uncategorized: '50.00'}
+  levers:
+    goal: {kind: net_worth, target: '370000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    value_change: {depot: '0.06'}
+  expect:
+    word: on_track
+    path:
+      state: on_track
+      ceiling: {income: '5000.00', need: '2100.00', wants_kept: '450.00', other_spending: '-50.00', suggested: true, buffer: '0.00', ceiling: '2500.00'}
+      anlegbar: '2050.00'
+      room: '450.00'
+      extra: '0.00'
+      monthly: '2050.00'
       rate: '0.06'
       wants_budget: {}
       wants_budget_total: '900.00'

@@ -23708,6 +23708,11 @@
             "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Wants Kept"
           },
+          "other_spending": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Other Spending"
+          },
           "suggested": {
             "type": "boolean",
             "title": "Suggested"
@@ -23730,12 +23735,13 @@
           "rental_cash",
           "need",
           "wants_kept",
+          "other_spending",
           "suggested",
           "buffer",
           "ceiling"
         ],
         "title": "GoalPathCeiling",
-        "description": "Item 1: what the household can save at most a month. ceiling = income + rental cash\n(when positive) − need − wants kept − buffer; the buffer is kept from that free cash as\nphase 9 keeps it from a free month."
+        "description": "Item 1: what the household can save at most a month: Anlegbar's free cash with the\nwants cut to the wants kept, less the buffer kept from it as phase 9 keeps it from a free\nmonth. Its rows add up: ceiling = income + rental cash (when positive) − need − wants kept\n− other spending − buffer."
       },
       "GoalPathLever": {
         "properties": {

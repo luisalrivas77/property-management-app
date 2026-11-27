@@ -245,14 +245,18 @@ class GoalUnreachable(Schema):
 
 
 class GoalPathCeiling(Schema):
-    """Item 1: what the household can save at most a month. ceiling = income + rental cash
-    (when positive) − need − wants kept − buffer; the buffer is kept from that free cash as
-    phase 9 keeps it from a free month."""
+    """Item 1: what the household can save at most a month: Anlegbar's free cash with the
+    wants cut to the wants kept, less the buffer kept from it as phase 9 keeps it from a free
+    month. Its rows add up: ceiling = income + rental cash (when positive) − need − wants kept
+    − other spending − buffer."""
 
     income: Money
     rental_cash: NonNegativeMoney  # the rental cash when positive, else 0
-    need: Money  # the reserve's monthly need, needs only (§7.11 (g))
+    need: Money  # the reserve's monthly need, needs only (§7.11 (g)), with the flat's shortfall
     wants_kept: NonNegativeMoney
+    # The regular spending outside the need and the wants' positive means, signed: a refund
+    # or a code netting negative lowers it, an uncategorised line raises it.
+    other_spending: Money
     suggested: bool  # no wants target saved: the wants kept are the app's suggestion
     buffer: NonNegativeMoney
     ceiling: Money

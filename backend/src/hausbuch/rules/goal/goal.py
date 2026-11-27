@@ -279,7 +279,13 @@ def _plan_path(
     b = p.basis
     wants = {c: m for c, m in _codes(i).items() if i.classes[c] is BudgetClass.WANT}
     ceiling = PA.ceiling_of(
-        b.mean_income, b.mean_rental_cash, i.need, wants, i.wants_max, b.buffer_percent
+        b.mean_income,
+        b.mean_regular_spending,
+        b.mean_rental_cash,
+        i.need,
+        wants,
+        i.wants_max,
+        b.buffer_percent,
     )
     anlegbar = PA.anlegbar_of(
         b.mean_income, b.mean_regular_spending, b.mean_rental_cash, b.buffer_percent

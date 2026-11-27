@@ -3,11 +3,15 @@ household can save, adopted and tracked. Pure, Decimal; pinned by
 tests/fixtures/phase10/goal_path.yaml. rules/goal/goal.py walks the steps (it owns the walk);
 this module holds the arithmetic around them:
 
-1. The ceiling (item 1) = income + max(rental cash, 0) − need − wants kept − buffer, the buffer
-   kept from that free cash as phase 9 keeps it from a free month. Wants kept = min(Σ the
-   wants' means, wants target × income), else, with no wants target saved, the suggestion: half
-   of each want's mean, rounded down to the cent. Anlegbar = free − buffer, free = income −
-   regular spending + rental cash. Room = max(0, ceiling − Anlegbar).
+1. The ceiling (item 1) = Anlegbar's free cash with the wants cut to the wants kept, less the
+   buffer kept from it as phase 9 keeps it from a free month: free = income − regular spending
+   + rental cash + (Σ the wants' means − wants kept). So spending outside the need and the
+   wants (a refund, a code netting negative, an uncategorised line) counts as Anlegbar counts
+   it; the row `other_spending` holds it, signed, so income + max(rental cash, 0) − need −
+   wants kept − other spending − buffer = ceiling. Wants kept = min(Σ the wants' means, wants
+   target × income), else, with no wants target saved, the suggestion: half of each want's
+   mean, rounded down to the cent. Anlegbar = free − buffer, free = income − regular spending
+   + rental cash. Room = max(0, ceiling − Anlegbar).
 2. The state from the steps: on_track, doable_rates (an extra within the room at the typed
    rates), else step 2 (own use, a net-worth goal): the return needed with the whole room,
    reached in at least half the windows doable_return, in some but under half ambitious, in
@@ -45,25 +49,30 @@ PERCENT_PLACES = Decimal("0.01")
 
 def ceiling_of(
     income: Decimal,
+    regular: Decimal,
     rental_cash: Decimal,
     need: Decimal,
     wants: Mapping[AllocationCategory, Decimal],
     wants_max: Decimal | None,
     buffer_percent: Decimal,
 ) -> GoalPathCeiling:
+    """`regular`: the mean regular spending Anlegbar reads; `need`: the reserve's need, which
+    holds the flat's shortfall when the rental cash is negative; `wants`: the want codes'
+    positive means."""
     total = sum(wants.values(), ZERO)
     if wants_max is None:
         kept = sum((_floor_cent(Fraction(m) / 2) for m in wants.values()), ZERO)
     else:
         kept = min(total, (wants_max * income / 100).quantize(CENT, ROUND_HALF_UP))
     rental = max(rental_cash, ZERO)
-    free = income + rental - need - kept
+    free = income - regular + rental_cash + (total - kept)
     buffer = buffer_of(free, buffer_percent)
     return GoalPathCeiling(
         income=income,
         rental_cash=rental,
         need=need,
         wants_kept=kept,
+        other_spending=income + rental - need - kept - free,
         suggested=wants_max is None,
         buffer=buffer,
         ceiling=free - buffer,

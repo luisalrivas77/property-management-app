@@ -19,6 +19,10 @@
 # room is 0, and with nothing invested there is no step 2. Every case that read feasible reads
 # hardly, with `later` its month reached without change and `reaches_by_due` its projected
 # value; every other figure is unchanged.
+# Amended again 27 Nov 2026 (§7.11 (i) item 1, the ceiling counts all regular spending): the
+# ceiling = 5,000 − 3,000 + (900 − 450) = 2,450, the room 450 (the need of 3,000 no longer
+# enters it; its rows carry other spending −900). Every hardly case here needs more than 450 a
+# month and nothing is invested, so no word moves.
 #
 # Input at rule level: what services.plan already has for phase 9's projection (the month
 # basis, the stored run at the newest closed month-end as `start`, the reserve and its monthly

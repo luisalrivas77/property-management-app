@@ -1078,6 +1078,9 @@ class PathCeilingExpect(Schema):
     income: Money
     need: Money
     wants_kept: Money
+    # The regular spending outside the need and the wants' positive means, signed (a refund
+    # lowers it, an uncategorised line raises it); 0 where the codes are needs and wants only.
+    other_spending: Money = ZERO
     suggested: bool  # no wants target saved: the wants kept are the suggestion (half of each)
     buffer: Money
     ceiling: Money

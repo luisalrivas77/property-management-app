@@ -27,14 +27,25 @@ def test_goal_path(case) -> None:
     assert path is not None
     assert path.state.value == expect.state
     c, ce = path.ceiling, expect.ceiling
-    assert (c.income, c.need, c.wants_kept, c.suggested, c.buffer, c.ceiling) == (
+    assert (
+        c.income,
+        c.need,
+        c.wants_kept,
+        c.other_spending,
+        c.suggested,
+        c.buffer,
+        c.ceiling,
+    ) == (
         ce.income,
         ce.need,
         ce.wants_kept,
+        ce.other_spending,
         ce.suggested,
         ce.buffer,
         ce.ceiling,
     )
+    rows = c.income + c.rental_cash - c.need - c.wants_kept - c.other_spending - c.buffer
+    assert rows == c.ceiling, "the ceiling's rows add up to it"
     for name in (
         "anlegbar",
         "room",

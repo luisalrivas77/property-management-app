@@ -79,7 +79,7 @@ cases:
   split: null
   levers: *goal
   expect:
-    word: hardly                 # §7.11 (i), D311: the need of 3,000 leaves no room (was feasible)
+    word: feasible               # §7.11 (i) item 1: E = 60 within the room 450 (hardly while the need of 3,000 entered the ceiling)
     above_target: '12000.00'
     reserve_at: {'2026-11': '32000.00'}
     net_worth_at: {'2040-12': '390000.00'}
