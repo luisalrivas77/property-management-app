@@ -319,10 +319,13 @@ class GoalPathAction(Schema):
     """One step of „Was ihr tun müsst“. `amount`: save_monthly, invest_now and keep_reserve
     their euros, wants_cut the want's budget a month, wants_none the wants' net mean a month;
     `amount_depot` and `amount_crypto` the part into funds and crypto at the walk's split (funds
-    half-up to the cent, crypto the rest), None when the walk invests none of it. wants_cut:
-    `code` and its `mean`. wants_none: `within_target` whether the wants already lie within
-    the wants kept, `wants_percent` the household's wants target (None: the app's suggestion).
-    return_needed: `rate`. Every figure by code."""
+    half-up to the cent, crypto the rest), None when the walk invests none of it (for the
+    monthly saving also while the reserve is below its target: the walk fills it first).
+    keep_reserve: `within_target` whether the reserve is at its target today (else it is filled
+    first). wants_cut: `code` and its `mean`. wants_none: `within_target` whether the wants
+    already lie within the wants kept, `wants_percent` the household's wants target (None: the
+    app's suggestion), `adopted_budget` whether the plan counts on the spending budget the
+    household adopted (on track). return_needed: `rate`. Every figure by code."""
 
     kind: GoalPathActionKind
     amount: Money | None = None
@@ -332,6 +335,7 @@ class GoalPathAction(Schema):
     mean: NonNegativeMoney | None = None
     within_target: bool | None = None
     wants_percent: BudgetPercent | None = None
+    adopted_budget: bool | None = None
     rate: GoalReturn | None = None
 
 

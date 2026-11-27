@@ -283,16 +283,26 @@ def test_the_plans_steps_per_state(case) -> None:
     for a in path.actions:
         if a.amount_depot is not None:
             assert a.amount_depot + a.amount_crypto == a.amount, "the parts add up"
-    # the reserve kept only when the walk invests above it (a net-worth goal with a split)
+    # the reserve kept only when the walk invests above it (a net-worth goal with a split);
+    # below its target the reserve is filled first, so the monthly saving names no parts
     p = inputs.projection
     walks = p is not None and p.split is not None and p.target is not None
     assert len(by["keep_reserve"]) == (1 if walks else 0)
+    full = walks and p.reserve_start >= p.target
+    for a in by["keep_reserve"]:
+        assert a.within_target == full
+    if not full:
+        assert all(a.amount_depot is None for a in by["save_monthly"])
     assert by["invest_now"] == [], "no money above the target is given here"
     # the wants: one row per cut (on a path the wants budget), else one row that nothing is cut
     if path.adoptable:
         assert [(a.code, a.amount, a.mean) for a in by["wants_cut"]] == [
             (b.code, b.budget, b.mean) for b in path.wants_budget
         ]
+    for a in by["wants_cut"]:  # every state: a real cut of a want, never „400 → 400“
+        assert inputs.classes[a.code].value == "want"
+        assert a.mean > 0 and 0 <= a.amount < a.mean
+    assert len({a.code for a in by["wants_cut"]}) == len(by["wants_cut"])
     assert (len(by["wants_cut"]) > 0) != (len(by["wants_none"]) == 1)
     for a in by["wants_none"]:
         assert a.within_target == (a.amount <= path.ceiling.wants_kept)
@@ -347,6 +357,7 @@ def test_the_plans_steps_on_sample_numbers() -> None:
         ceiling=ceiling,
         wants_max=d("10"),
         return_needed=d("6.500"),
+        reserve_start=d("14500.00"),  # the target plus the 2,500.00 above it
     )
     K = GoalPathActionKind
     got = [
@@ -381,6 +392,17 @@ def test_the_plans_steps_on_sample_numbers() -> None:
         (K.WANTS_CUT, None),
         (K.RETURN_NEEDED, None),
     ]
+    # the reserve 3,000.00 below its target: the walk fills it first, so the monthly saving
+    # names no parts, nothing is invested now and the reserve row says it is not full yet
+    low = PA.actions_of(replace(figures, reserve_start=d("9000.00"), above_target=None))
+    assert [(a.kind, a.amount_depot, a.within_target) for a in low][:2] == [
+        (K.SAVE_MONTHLY, None, None),
+        (K.KEEP_RESERVE, None, False),
+    ]
+    assert next(a for a in PA.actions_of(figures) if a.kind is K.KEEP_RESERVE).within_target is True
+    # on track with an adopted budget: the wants row says the plan counts on it
+    budget = PA.actions_of(replace(figures, cuts=[], return_needed=None, adopted_budget=True))
+    assert budget[-1].kind is K.WANTS_NONE and budget[-1].adopted_budget is True
     # the plans alone above the monthly amount: no parts rather than a negative rest
     plans_above = PA.monthly_split(d("120.00"), figures.split, figures.target, d("100"), d("50"))
     assert plans_above is None

@@ -248,7 +248,9 @@ class PlanFigures:
     the plan's saving a month (on a path its monthly amount, without one Anlegbar + the whole
     room the why and the return needed are computed with); `cuts`: each want the plan cuts;
     `wants_net`: the want class's net mean; `target`: the reserve target, `split` the walk's
-    (None for a goal of a sum or the reserve: nothing moves out of it)."""
+    (None for a goal of a sum or the reserve: nothing moves out of it); `reserve_start` the
+    reserve the walk starts from; `adopted_budget` on track with the household's adopted
+    spending budget, which the walk then counts on."""
 
     monthly: Decimal | None
     split: InvestmentSplit | None
@@ -261,16 +263,22 @@ class PlanFigures:
     ceiling: GoalPathCeiling
     wants_max: Decimal | None
     return_needed: Decimal | None
+    reserve_start: Decimal | None = None
+    adopted_budget: bool = False
 
 
 def actions_of(f: PlanFigures) -> list[GoalPathAction]:
     """„Was ihr tun müsst“, in order, each only when its figure exists: save a month (with its
-    funds and crypto parts), invest the money above the reserve target now, keep the reserve
+    funds and crypto parts once the reserve is at its target: below it the walk fills the
+    reserve first), invest the money above the reserve target now, keep (or fill) the reserve
     at its target (both only when the walk invests above it), one row per want cut or one row
     that nothing is cut, and the return needed (step 2 only)."""
     out: list[GoalPathAction] = []
+    full = f.target is not None and f.reserve_start is not None and f.reserve_start >= f.target
     if f.monthly is not None and f.monthly > 0:
-        parts = monthly_split(f.monthly, f.split, f.target, f.plans_depot, f.plans_crypto)
+        parts = None
+        if full:
+            parts = monthly_split(f.monthly, f.split, f.target, f.plans_depot, f.plans_crypto)
         out.append(_action(GoalPathActionKind.SAVE_MONTHLY, f.monthly, parts))
     invests = f.split is not None and f.target is not None
     now = above_target_split(f.above_target, f.split, f.target)
@@ -279,7 +287,9 @@ def actions_of(f: PlanFigures) -> list[GoalPathAction]:
     if invests:
         assert f.target is not None
         reserve = f.target.quantize(CENT, ROUND_HALF_UP)
-        out.append(GoalPathAction(kind=GoalPathActionKind.KEEP_RESERVE, amount=reserve))
+        out.append(
+            GoalPathAction(kind=GoalPathActionKind.KEEP_RESERVE, amount=reserve, within_target=full)
+        )
     if f.cuts:
         out += [
             GoalPathAction(
@@ -295,6 +305,7 @@ def actions_of(f: PlanFigures) -> list[GoalPathAction]:
                 amount=net,
                 within_target=net <= f.ceiling.wants_kept,
                 wants_percent=f.wants_max,
+                adopted_budget=f.adopted_budget,
             )
         )
     if f.return_needed is not None:

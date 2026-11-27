@@ -774,7 +774,7 @@ test("„Jetzt anlegen“ on the path's plan card in every state, its split in t
   const actions: GoalPath["actions"] = [
     { kind: "save_monthly", amount: "1350.00", amount_depot: "810.00", amount_crypto: "540.00" },
     { kind: "invest_now", amount: "12340.00", amount_depot: "7404.00", amount_crypto: "4936.00" },
-    { kind: "keep_reserve", amount: "18000.00" },
+    { kind: "keep_reserve", amount: "18000.00", within_target: true },
     { kind: "wants_cut", code: "hh_restaurant", mean: "400.00", amount: "150.00" },
   ];
   const reached = monthsAhead(50);
@@ -804,11 +804,12 @@ test("„Jetzt anlegen“ on the path's plan card in every state, its split in t
   await expect(main.getByTestId("path-realistic").getByTestId("path-invest-now")).toContainText(/12\.340\s€/);
   await expect(main.getByTestId("path-invest-now")).toHaveCount(1);
 
-  // Nothing above the target and no want cut: no row, no step to invest now, and one step that
-  // says the wants need no cut, below the app's suggestion (no wants target saved).
+  // The reserve below its target and no want cut: no row, no step to invest now, the monthly
+  // saving without a split (the walk fills the reserve first), the reserve to fill, and one step
+  // that says the wants need no cut, below the app's suggestion (no wants target saved).
   const kept: GoalPath["actions"] = [
-    { kind: "save_monthly", amount: "1350.00", amount_depot: "810.00", amount_crypto: "540.00" },
-    { kind: "keep_reserve", amount: "18000.00" },
+    { kind: "save_monthly", amount: "1350.00", amount_depot: null, amount_crypto: null },
+    { kind: "keep_reserve", amount: "18000.00", within_target: false },
     { kind: "wants_none", amount: "640.00", within_target: true, wants_percent: null },
   ];
   state.goal = withPath({ ...stepOne(), above_target: "0.00", above_target_depot: null, above_target_crypto: null, actions: kept, plan_reached: reached });
@@ -818,6 +819,8 @@ test("„Jetzt anlegen“ on the path's plan card in every state, its split in t
   const none = detail(page, "Der Plan").getByTestId("path-steps");
   await expect(none.locator("li")).toHaveCount(3);
   await expect(none).not.toContainText(/Jetzt .* anlegen/);
+  await expect(none.locator("li").nth(0)).not.toContainText("davon");
+  await expect(none.locator("li").nth(1)).toContainText(/Reserve zuerst auf 18\.000\s€ auffüllen/);
   await expect(none.locator("li").nth(2)).toContainText(/Wünsche: nichts zu kürzen – ihr liegt mit 640\s€ unter dem Vorschlag von 870\s€/);
 });
 

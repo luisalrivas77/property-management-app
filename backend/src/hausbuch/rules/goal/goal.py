@@ -323,6 +323,9 @@ def _plan_path(
             ceiling=ceiling,
             wants_max=i.wants_max,
             return_needed=return_needed,
+            reserve_start=p.reserve_start,
+            # on track the path's walk counts on the adopted budget (`_path_walk`)
+            adopted_budget=on_track and i.choice is not None and i.choice.spending is not None,
         )
 
     step: dict = {}

@@ -581,11 +581,17 @@ function PlanSteps({ view, target }: { view: PathView; target: string | null }) 
     const split = a.amount_depot != null && a.amount_crypto != null ? t.stepSplit(p.euro(a.amount_depot), p.euro(a.amount_crypto)) : undefined;
     if (a.kind === "save_monthly" && a.amount != null) rows.push({ key, text: t.stepSave(p.euro(a.amount)), sub: split });
     else if (a.kind === "invest_now" && a.amount != null) rows.push({ key, text: t.stepInvestNow(p.euro(a.amount)), sub: split });
-    else if (a.kind === "keep_reserve" && a.amount != null) rows.push({ key, text: t.stepReserve(p.euro(a.amount)) });
+    else if (a.kind === "keep_reserve" && a.amount != null)
+      // below its target the walk fills the reserve before it invests anything
+      rows.push({ key, text: a.within_target === false ? t.stepReserveFill(p.euro(a.amount)) : t.stepReserve(p.euro(a.amount)) });
     else if (a.kind === "wants_cut" && a.code && a.mean != null && a.amount != null)
       rows.push({ key, text: t.stepWantCut(ALLOCATION_CATEGORY[a.code] ?? a.code, p.euro(a.mean), p.euro(a.amount)) });
     else if (a.kind === "wants_none" && a.amount != null) {
-      if (!a.within_target) rows.push({ key, text: t.stepWantsAbove(p.euro(a.amount)) });
+      // on track by the adopted budget the plan counts on it; „the plan works with your X“ only
+      // on plain on track; elsewhere a neutral row
+      if (a.adopted_budget) rows.push({ key, text: t.stepWantsBudget(p.euro(a.amount)) });
+      else if (!a.within_target && view.state === "on_track") rows.push({ key, text: t.stepWantsAbove(p.euro(a.amount)) });
+      else if (!a.within_target) rows.push({ key, text: t.stepWantsKeep(p.euro(a.amount)) });
       else if (a.wants_percent != null) rows.push({ key, text: t.stepWantsWithinTarget(p.euro(a.amount), p.percentValue(a.wants_percent)) });
       else rows.push({ key, text: t.stepWantsWithinSuggestion(p.euro(a.amount), p.euro(view.path.ceiling.wants_kept)) });
     } else if (a.kind === "return_needed" && a.rate != null) rows.push({ key, text: t.stepReturn(p.ratio(a.rate)) });
