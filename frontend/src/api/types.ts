@@ -9074,6 +9074,10 @@ export interface components {
             thin: boolean;
             /** Left Out */
             left_out?: components["schemas"]["GoalLeftOut"][];
+            /** Mix Today Share */
+            mix_today_share?: string | null;
+            /** Mix Future Share */
+            mix_future_share?: string | null;
             /** Sources */
             sources?: components["schemas"]["GoalReferenceSource"][];
         };
@@ -9122,6 +9126,10 @@ export interface components {
             short_history?: boolean | null;
             /** Years */
             years?: number[] | null;
+            /** Mix Today Share */
+            mix_today_share?: string | null;
+            /** Mix Future Share */
+            mix_future_share?: string | null;
             /** Wants Budget */
             wants_budget?: components["schemas"]["GoalBudget"][];
             /** Wants Budget Total */

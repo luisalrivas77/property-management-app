@@ -23346,6 +23346,30 @@
             "type": "array",
             "title": "Left Out"
           },
+          "mix_today_share": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mix Today Share"
+          },
+          "mix_future_share": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mix Future Share"
+          },
           "sources": {
             "items": {
               "$ref": "#/components/schemas/GoalReferenceSource"
@@ -23523,6 +23547,30 @@
               }
             ],
             "title": "Years"
+          },
+          "mix_today_share": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mix Today Share"
+          },
+          "mix_future_share": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mix Future Share"
           },
           "wants_budget": {
             "items": {
