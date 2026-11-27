@@ -324,7 +324,8 @@ def _plan_path(
         monthly=anlegbar + extra,
         rate=typed if step.get("return_needed") is None else step["return_needed"],
         wants_budget=budgets,
-        wants_budget_total=net - sum(cuts.values(), ZERO),
+        # never below 0: refunds above the wants of the window leave a budget of 0, not less
+        wants_budget_total=max(net, ZERO) - sum(cuts.values(), ZERO),
         spending_changes=_changes(i.code_means, cuts, first, i.goal.due_month),
         adoptable=True,
         **head,

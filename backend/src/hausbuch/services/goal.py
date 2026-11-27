@@ -205,8 +205,9 @@ def adopt_path(ctx: CommandContext) -> HouseholdScenario:
     step 1 or step 2 is written into one new row superseding the default (D248, append-only,
     with its `household_scenario.created` event): the lever `goal_path` (what the path counts
     on, what it was computed from and its walk to the due month), the wants budget as the
-    spending changes (as „Als Budget übernehmen“ stores them; on track the household's own
-    budget is kept), and `goal_choice` with the return followed `path` and today's day. The
+    spending changes (as „Als Budget übernehmen“ stores them; a path that cuts nothing, on
+    track or not, keeps the household's own spending changes and spending choice, Q-O193),
+    and `goal_choice` with the return followed `path` and today's day. The
     browser sends nothing. RuleViolationError household_scenario.path_invalid without a goal
     or a path that can be adopted, or when the path would invest less than nothing a month.
     A path adopted and followed whose inputs have not moved (rules/goal/path.py `moved`) is

@@ -408,9 +408,10 @@ def _adopted_in_january(world: World):
 
 def test_tracking_counts_the_money_waiting_for_crypto_under_a_saved_split(world):
     """A split saved (§7.11 (i) item 12): the crypto share of the path's 531 € a month not yet
-    bought counts as waiting, up to what was saved but not invested that month. No coin is
-    bought in this world, so at 100 % crypto the share (531 €) is above the month's saved but
-    not invested (510 € saved less 75, 85 and 75 € invested): the cap binds and the waiting is
+    bought counts as waiting, up to what was saved that month less the loan's repayment, the
+    payments into the property and what was invested (Q-O194; this world has neither of the
+    first two). No coin is bought in this world, so at 100 % crypto the share (531 €) is above
+    the cap (510 € saved less 75, 85 and 75 € invested): the cap binds and the waiting is
     435, 425 and 435 €. At 50 % the share 265.50 € is below it. At 0 % nothing waits: 0.00,
     not None."""
     _goal_world(world)

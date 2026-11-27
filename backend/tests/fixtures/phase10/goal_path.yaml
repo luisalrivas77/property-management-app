@@ -152,6 +152,39 @@ cases:
       wants_budget_total: '900.00'
       adoptable: true
 
+- id: refunds_above_the_wants_keep_a_budget_of_zero
+  description: >-
+    refunds of −400 above the window's wants (restaurant 300) net the wants to −100: no wants
+    target is saved, so the suggestion (half of 300 = 150) is capped at max(wants net, 0) = 0,
+    nothing can be cut, the ceiling equals Anlegbar 2,000 and the room is 0; the wants budget
+    total is 0, never below; regular spending 3,000 holds 1,000 uncategorised, so other
+    spending 5,000 − 2,100 − 0 − 2,000 = 900 (the uncategorised 1,000 less the 100 the refunds
+    exceed the wants by). 410,000 by Jun 2036 then needs 7.9 % as in room_zero_short_history
+  <<: *household
+  means: {hh_rent: '1500.00', hh_supermarket: '600.00', hh_restaurant: '300.00', hh_refund: '-400.00', uncategorized: '1000.00'}
+  levers:
+    goal: {kind: net_worth, target: '410000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    value_change: {depot: '0.06'}
+  expect:
+    word: feasible
+    path:
+      state: doable_return
+      ceiling: {income: '5000.00', need: '2100.00', wants_kept: '0.00', other_spending: '900.00', suggested: true, buffer: '0.00', ceiling: '2000.00'}
+      anlegbar: '2000.00'
+      room: '0.00'
+      extra: '0.00'
+      monthly: '2000.00'
+      rate: '0.079'
+      return_needed: '0.079'
+      window_years: 9
+      windows: 3
+      reached_windows: 3
+      short_history: true
+      years: [2015, 2025]
+      wants_budget: {}
+      wants_budget_total: '0.00'
+      adoptable: true
+
 - id: doable_rates_suggested_wants
   description: >-
     „Machbar“ at the typed 6 %: 410,000 by Jun 2036 needs 234 a month more (410,013.79; 233
