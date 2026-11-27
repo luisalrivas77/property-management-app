@@ -724,6 +724,8 @@ cases:
       reason: history_short
       left_out:
       - {kind: coin, symbol: SOL, share: '64.4', reason: no_series}   # 250,000 of 388,000
+      mix_today_share: null        # no count: no shares
+      mix_future_share: null
 
 - id: route3_future_lifts_the_coin
   description: >-

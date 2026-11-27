@@ -426,6 +426,37 @@ def test_reference_returns_in_euros() -> None:
         assert H.pegged_returns(currency, fx) == _exact(want), currency
 
 
+def test_future_crypto_spreads_over_the_coins_held_by_their_value() -> None:
+    """§7.11 (j), D312: the money still to come joins at the split, its crypto share spread over
+    the coins held today by their value, a coin without a series left out with its blended
+    share. Funds 60,000, BTC 30,000 and XYZ 10,000 (no series) with 80,000 still to come at
+    50/50: funds 60,000 + 40,000 = 100,000, BTC 30,000 + 40,000 × 3/4 = 60,000, XYZ 10,000 +
+    40,000 × 1/4 = 20,000, of 180,000. XYZ is left out with 20/180 = 11.1 %; the funds weigh
+    100/160 = 5/8 and BTC 60/160 = 3/8: 2020 5/8 × 0.1 + 3/8 × 1.0 = 0.4375, 2021 5/8 × 0.2 +
+    3/8 × (−0.5) = −0.0625. Held 100,000 of 180,000: 55.6 % and 44.4 %."""
+    invested = H.Invested(
+        funds=Decimal("60000.00"), coins={"BTC": Decimal("30000.00"), "XYZ": Decimal("10000.00")}
+    )
+    history = H.History(
+        funds=_series("funds", {2020: "0.1", 2021: "0.2"}),
+        coins={"BTC": _series("BTC", {2020: "1.0", 2021: "-0.5"})},
+    )
+    split = InvestmentSplit(depot=Decimal("50"), crypto=Decimal("50"))
+    mix = H.mix_of(invested, split, history, 1, future=Decimal("80000.00"))
+    assert isinstance(mix, H.Mix)
+    assert [(x.symbol, x.share, x.reason.value) for x in mix.left_out] == [
+        ("XYZ", Decimal("11.1"), "no_series")
+    ]
+    assert mix.weights == (Fraction(5, 8), Fraction(3, 8))
+    assert mix.returns == {2020: Fraction(7, 16), 2021: Fraction(-1, 16)}
+    assert (mix.today_share, mix.future_share) == (Decimal("55.6"), Decimal("44.4"))
+    # without the money still to come (the weak-markets risk) the weights are today's alone
+    alone = H.mix_of(invested, split, history, 1)
+    assert isinstance(alone, H.Mix)
+    assert alone.weights == (Fraction(2, 3), Fraction(1, 3))
+    assert (alone.today_share, alone.future_share) == (None, None)
+
+
 def _kept_at_year_turn(loans_from_year: int) -> N.Projection:
     """A kept flat at the year turn: today in January 2027, the newest closed month 2026-11, its
     loan 300,000 € in the stored run, then 295,000 € on 31 Dec 2027 and 5,000 € less a year."""
