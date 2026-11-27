@@ -1101,7 +1101,7 @@ function BasisPanel({ goal, write, dirty }: { goal: HouseholdGoal; write: Write;
   return (
     <div className="stack goal-panel">
       {/* §7.11 (i) item 10: the split and „Aufteilung ändern“; an unsaved draft of the levers
-          (Budget, Reserve) holds the save, since saving that draft posts its own split. */}
+          (the Budget's class panel) holds the save, since saving that draft posts its own split. */}
       {plan ? (
         <SplitSection
           plan={plan}

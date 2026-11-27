@@ -62,8 +62,9 @@ export async function saveSplit(split: InvestmentSplit): Promise<void> {
 
 /** The split the plan invests in, what it uses until one is saved, and „Aufteilung ändern“.
  * `save` writes the split and reads the plan again; `blocked` holds the save while the Haushalt
- * tabs' unsaved draft of the levers (Budget, Reserve), whose save posts every lever, would write
- * the old split back. */
+ * tabs' unsaved draft of the levers (the Budget's class panel), whose save posts every lever of
+ * the draft, would write the old split back. Durchspielen and the Reserve form read the stored
+ * scenario fresh when they save, so they keep a saved split and do not hold it. */
 export function SplitSection({
   plan,
   save,

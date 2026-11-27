@@ -6,8 +6,9 @@
 // from GET /household-plan's `not_invested`; the server sends it only while the amount is above 0
 // and leaves out the kinds in `generic` mode (D251), where the card names the amount only. A
 // fact, never advice: no button, no colour, no reminder; how the amount is computed sits in the
-// side panel („Cards, not text“). Nothing is summed here. Its own read, outside the tab's, so a
-// slow plan never holds the rest of Anlagen.
+// side panel („Cards, not text“). Nothing is summed here. Its own read of GET /household-plan,
+// beside the one the tab's PlanProvider makes (the server keeps the answer per data version), so
+// a failed or slow read hides only this card.
 import Link from "next/link";
 import { useCallback } from "react";
 
