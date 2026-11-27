@@ -16,6 +16,8 @@
 //   pair, PATCH /assets/{id}) and „Kurs eintragen“ (POST /assets/{id}/prices) in the panel.
 // - „Für euer Ziel“ (./GoalTracking.tsx, §7.9 (e) 3) after the gain card, once the household
 //   follows a return on Haushalt › Ziel; GET /household-goal/tracking, its panel in the hash.
+// - „Noch nicht angelegt“ (./NotInvested.tsx, §7.11 (a) 6) after it, once a split is saved and
+//   the purchases fall short of it; GET /household-plan's `not_invested`, its own read.
 //
 // A wallet whose read movements wait for a person (a first sync proposes the whole history) is
 // counted nowhere yet: its line names the coins not yet counted and links „Transaktionen prüfen“.
@@ -36,6 +38,7 @@ import { assets } from "@/i18n/assets";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { type GoalTracking, GoalTrackingCard, GoalTrackingPanel, loadTracking, TRACKING_DETAIL, TRACKING_ID } from "./GoalTracking";
+import { NOT_INVESTED_ID, NotInvestedCard, NotInvestedPanel, useNotInvested } from "./NotInvested";
 import { type AssetsPerformance, GainKpi, gainSub, loadPerformance } from "./Performance";
 import { MoneyBack } from "./Property";
 import { assetKindLabel, sourceLabel } from "./words";
@@ -91,12 +94,15 @@ function Overview({
   const f = useFormat();
   const router = useRouter();
   const goalDetail = useDetail(TRACKING_DETAIL);
+  const notInvested = useNotInvested();
   const panel = priceFor ? (
     <DetailPanel title={t.typePrice} backLabel={t.tabOverview} onClose={() => router.replace("/assets", { scroll: false })}>
       <PriceForms assetId={priceFor} day={priceDay} onSaved={onSaved} titled />
     </DetailPanel>
   ) : tracking?.shown && goalDetail.id === TRACKING_ID ? (
     <GoalTrackingPanel tracking={tracking} backLabel={t.tabOverview} />
+  ) : notInvested && goalDetail.id === NOT_INVESTED_ID ? (
+    <NotInvestedPanel value={notInvested} backLabel={t.tabOverview} />
   ) : null;
   const hasProperty = (payback?.properties ?? []).length > 0 || Number(performance.property_estimate_eur) !== 0;
   if ((overview.accounts ?? []).length === 0 && !hasProperty) {
@@ -112,9 +118,10 @@ function Overview({
             </p>
           </section>
           {/* A followed route with nothing invested yet still says how far it is (§7.9 (e) 3). */}
-          {tracking?.shown ? (
+          {tracking?.shown || notInvested ? (
             <div className="planning-kpis">
-              <GoalTrackingCard tracking={tracking} />
+              {tracking?.shown ? <GoalTrackingCard tracking={tracking} /> : null}
+              {notInvested ? <NotInvestedCard value={notInvested} /> : null}
             </div>
           ) : null}
         </div>
@@ -135,6 +142,7 @@ function Overview({
         <div className="planning-kpis">
           <GainKpi title={t.investedGain} figures={performance.invested} portfolios={portfolios} main />
           {tracking?.shown ? <GoalTrackingCard tracking={tracking} /> : null}
+          {notInvested ? <NotInvestedCard value={notInvested} /> : null}
           <KindCard
             title={t.kindEtf}
             href="/assets?tab=etf"
