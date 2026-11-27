@@ -5,20 +5,23 @@ this module holds the arithmetic around them:
 
 1. The ceiling (item 1) = Anlegbar's free cash with the wants cut to the wants kept, less the
    buffer kept from it as phase 9 keeps it from a free month: free = income − regular spending
-   + rental cash + (Σ the wants' means − wants kept). So spending outside the need and the
-   wants (a refund, a code netting negative, an uncategorised line) counts as Anlegbar counts
-   it; the row `other_spending` holds it, signed, so income + max(rental cash, 0) − need −
-   wants kept − other spending − buffer = ceiling. Wants kept = min(Σ the wants' means, wants
-   target × income), else, with no wants target saved, the suggestion: half of each want's
-   mean, rounded down to the cent. Anlegbar = free − buffer, free = income − regular spending
-   + rental cash. Room = max(0, ceiling − Anlegbar).
+   + rental cash + max(0, wants net − wants kept). The wants net is the want class's net mean,
+   every want code with a refund (`hh_refund`) netted, as the Budget's Wünsche line counts it
+   (rules/budget, D273); the cut, when there is one, is shared over the positive wants (3.).
+   So spending outside the need and the wants (an uncategorised line) counts as Anlegbar
+   counts it; the row `other_spending` holds it, signed, so income + max(rental cash, 0) −
+   need − wants kept − other spending − buffer = ceiling. Wants kept = min(wants net, wants
+   target × income), else, with no wants target saved, the suggestion: half of each positive
+   want's mean, rounded down to the cent, at most the wants net; never below 0. Anlegbar =
+   free − buffer, free = income − regular spending + rental cash. Room = max(0, ceiling −
+   Anlegbar).
 2. The state from the steps: on_track, doable_rates (an extra within the room at the typed
    rates), else step 2 (own use, a net-worth goal): the return needed with the whole room,
    reached in at least half the windows doable_return, in some but under half ambitious, in
    none, out of range or without a history hardly.
 3. The wants budget the path stores: its extra grossed up for a buffer (÷ (1 − b), up to the
-   cent, + 0.01 when b > 0), at most Σ wants − wants kept, shared by the wants' means, each up
-   to the cent.
+   cent, + 0.01 when b > 0), at most wants net − wants kept, shared by the positive wants'
+   means, each up to the cent; its total the wants net less the cuts.
 4. The tracking rows since the day adopted (item 6, 12) and whether the path's inputs moved.
 
 Nothing here proposes a goal, a rate or a product (D247, D289).
@@ -53,19 +56,22 @@ def ceiling_of(
     rental_cash: Decimal,
     need: Decimal,
     wants: Mapping[AllocationCategory, Decimal],
+    wants_net: Decimal,
     wants_max: Decimal | None,
     buffer_percent: Decimal,
 ) -> GoalPathCeiling:
     """`regular`: the mean regular spending Anlegbar reads; `need`: the reserve's need, which
     holds the flat's shortfall when the rental cash is negative; `wants`: the want codes'
-    positive means."""
-    total = sum(wants.values(), ZERO)
+    positive means (the suggestion's halves); `wants_net`: the want class's net mean, every
+    want code with its refunds (the Budget's Wünsche)."""
+    net = max(wants_net, ZERO)
     if wants_max is None:
-        kept = sum((_floor_cent(Fraction(m) / 2) for m in wants.values()), ZERO)
+        suggested = sum((_floor_cent(Fraction(m) / 2) for m in wants.values()), ZERO)
+        kept = min(suggested, net)
     else:
-        kept = min(total, (wants_max * income / 100).quantize(CENT, ROUND_HALF_UP))
+        kept = min(net, (wants_max * income / 100).quantize(CENT, ROUND_HALF_UP))
     rental = max(rental_cash, ZERO)
-    free = income - regular + rental_cash + (total - kept)
+    free = income - regular + rental_cash + cuttable(wants_net, kept)
     buffer = buffer_of(free, buffer_percent)
     return GoalPathCeiling(
         income=income,
@@ -77,6 +83,11 @@ def ceiling_of(
         buffer=buffer,
         ceiling=free - buffer,
     )
+
+
+def cuttable(wants_net: Decimal, kept: Decimal) -> Decimal:
+    """What the wants can give up: the wants net above the wants kept, never below 0."""
+    return max(ZERO, wants_net - kept)
 
 
 def anlegbar_of(
@@ -114,18 +125,19 @@ def step_2_state(reached: int | None, windows: int | None) -> GoalPathState:
 
 def wants_cuts(
     wants: Mapping[AllocationCategory, Decimal],
-    kept: Decimal,
+    cut_at_most: Decimal,
     extra: Decimal,
     buffer_percent: Decimal,
 ) -> dict[AllocationCategory, Decimal]:
-    """Item 3: the cut per want for the path's extra; empty when nothing is cut."""
+    """Item 3: the cut per positive want for the path's extra, at most `cut_at_most`
+    (`cuttable`: the wants net above the wants kept); empty when nothing is cut."""
     total = sum(wants.values(), ZERO)
     if extra <= 0 or total <= 0:
         return {}
     wanted = extra
     if buffer_percent > 0:
         wanted = _ceil_cent(Fraction(extra) / (1 - Fraction(buffer_percent) / 100)) + CENT
-    wanted = min(wanted, max(ZERO, total - kept))
+    wanted = min(wanted, max(ZERO, cut_at_most))
     if wanted <= 0:
         return {}
     cuts = {}
@@ -142,12 +154,26 @@ def moved(
     value_change: ValueChange,
     wants_max: Decimal | None,
     anlegbar: Decimal,
+    investment_split: InvestmentSplit | None,
 ) -> bool:
-    """Whether what the adopted path was computed from has moved: the goal, the typed rates
-    or the wants target changed, or „Anlegbar“ moved by more than the room of that day."""
+    """Whether what the adopted path was computed from has moved: the goal, the typed rates,
+    the wants target or the investment split lever changed (by value: two splits of the same
+    percentages are equal however written, None equals None), or „Anlegbar“ moved by more
+    than the room of that day or 5 % of the path's monthly amount, whichever is larger
+    (Q-O192)."""
     if lever.goal != goal or lever.value_change != value_change or lever.wants_max != wants_max:
         return True
-    return abs(anlegbar - lever.anlegbar) > lever.room
+    if _split_key(lever.investment_split) != _split_key(investment_split):
+        return True
+    tolerance = max(lever.room, lever.monthly * MOVED_SHARE)
+    return abs(anlegbar - lever.anlegbar) > tolerance
+
+
+MOVED_SHARE = Decimal("0.05")  # Q-O192: 5 % of the path's monthly amount
+
+
+def _split_key(split: InvestmentSplit | None) -> tuple[Decimal, Decimal] | None:
+    return None if split is None else (split.depot.normalize(), split.crypto.normalize())
 
 
 # --- Tracking (item 6, 12) --------------------------------------------------------------------
@@ -161,6 +187,8 @@ class PathMonth:
 
     month_end: date
     saved: Decimal
+    principal: Decimal  # the month's loan repayment (HouseholdMonth.principal, saved in S)
+    invested_property: Decimal  # paid into the property (HouseholdMonth's, D234, signed)
     invested: Decimal
     crypto_bought: Decimal
     wants: Decimal
@@ -187,7 +215,13 @@ def track(
         waiting = None
         if crypto_percent is not None:
             share = max(ZERO, (monthly * crypto_percent / 100) - m.crypto_bought)
-            waiting = min(share, max(ZERO, m.saved - m.invested)).quantize(CENT, ROUND_HALF_UP)
+            # What is left of the month's saving once the loan's repayment, the payments into
+            # the property and the purchases are taken out (Q-O194): never below 0. A month
+            # whose loan payout exceeds what the property took (D234's figure below 0) frees
+            # none of the saving: the payout is no saving, so it counts as 0 here.
+            into_property = max(ZERO, m.invested_property)
+            left = m.saved - m.principal - into_property - m.invested
+            waiting = min(share, max(ZERO, left)).quantize(CENT, ROUND_HALF_UP)
         put = m.invested + (waiting or ZERO)
         invested_gap = _gap(monthly - put)
         wants_gap = _gap(m.wants - wants_budget)
@@ -255,6 +289,7 @@ __all__ = [
     "PathMonth",
     "anlegbar_of",
     "ceiling_of",
+    "cuttable",
     "moved",
     "room_of",
     "step_2_state",

@@ -278,12 +278,14 @@ def _plan_path(
     room against the invested mix's history, else why (rules/goal/path.py)."""
     b = p.basis
     wants = {c: m for c, m in _codes(i).items() if i.classes[c] is BudgetClass.WANT}
+    net = wants_net(i)
     ceiling = PA.ceiling_of(
         b.mean_income,
         b.mean_regular_spending,
         b.mean_rental_cash,
         i.need,
         wants,
+        net,
         i.wants_max,
         b.buffer_percent,
     )
@@ -311,7 +313,7 @@ def _plan_path(
             reached=reached_in(i.goal, with_room, target),
         )
         return GoalPath(state=state, adoptable=False, why=why, **head, **step)
-    cuts = PA.wants_cuts(wants, ceiling.wants_kept, extra, b.buffer_percent)
+    cuts = PA.wants_cuts(wants, PA.cuttable(net, ceiling.wants_kept), extra, b.buffer_percent)
     budgets = [
         GoalBudget(code=c, budget_class=BudgetClass.WANT, mean=wants[c], budget=wants[c] - cuts[c])
         for c in sorted(cuts, key=lambda c: c.value)
@@ -322,7 +324,7 @@ def _plan_path(
         monthly=anlegbar + extra,
         rate=typed if step.get("return_needed") is None else step["return_needed"],
         wants_budget=budgets,
-        wants_budget_total=sum(wants.values(), ZERO) - sum(cuts.values(), ZERO),
+        wants_budget_total=net - sum(cuts.values(), ZERO),
         spending_changes=_changes(i.code_means, cuts, first, i.goal.due_month),
         adoptable=True,
         **head,
@@ -579,6 +581,12 @@ def _scenarios(
     ):
         out.append(_cut(i, p, target, kind, {c: codes[c] for c in chosen}, wanted, first))
     return out
+
+
+def wants_net(i: GoalInputs) -> Decimal:
+    """The want class's net mean: every want code's mean, a refund (negative) and a code
+    netting to 0 included, as the Budget's Wünsche line nets them (rules/budget, D273)."""
+    return sum((m for c, m in i.code_means.items() if i.classes.get(c) is BudgetClass.WANT), ZERO)
 
 
 def _codes(i: GoalInputs) -> dict[AllocationCategory, Decimal]:

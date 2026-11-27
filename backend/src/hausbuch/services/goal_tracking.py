@@ -148,6 +148,8 @@ def _path_rows(
             PA.PathMonth(
                 month_end=end,
                 saved=r.household.saved,
+                principal=r.household.principal,
+                invested_property=r.household.invested_property,
                 invested=sum(bought.values(), ZERO),
                 crypto_bought=bought.get(PlanClass.CRYPTO, ZERO),
                 wants=wants,

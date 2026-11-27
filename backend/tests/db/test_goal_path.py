@@ -10,8 +10,10 @@ from decimal import Decimal
 
 import pytest
 from db.matching_support import World
-from db.test_goal_tracking import _follow, _followed_world
+from db.test_goal_tracking import _follow, _followed_world, _series
 from db.test_household_goal import _goal
+from db.test_plan_inputs import _projected
+from db.test_services_health import _book
 from db.test_services_health_snapshots import NOW, TODAY
 from sqlalchemy import func, select, update
 
@@ -20,6 +22,9 @@ from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.rules.errors import HOUSEHOLD_SCENARIO_PATH_INVALID
+from hausbuch.rules.goal.goal import wants_net
+from hausbuch.schemas.allocation import AllocationCategory as C
+from hausbuch.schemas.budget import BudgetLineKey
 from hausbuch.schemas.goal import GoalInvestment, GoalSpending, GoalTrackingWord, GoalWord
 from hausbuch.schemas.health import HealthTodoCode
 from hausbuch.schemas.plan import (
@@ -31,9 +36,11 @@ from hausbuch.schemas.plan import (
     SpendingChange,
     ValueChange,
 )
+from hausbuch.services import budget, goal_tracking, household_scenarios, net_worth, plan_page
 from hausbuch.services import goal as goal_service
-from hausbuch.services import goal_tracking, household_scenarios, net_worth, plan_page
 from hausbuch.services.errors import RuleViolationError
+from hausbuch.services.health import levers_one_off_codes
+from hausbuch.services.plan_inputs import PlanInputs
 
 pytestmark = pytest.mark.db
 
@@ -418,5 +425,99 @@ def test_tracking_counts_the_money_waiting_for_crypto_under_a_saved_split(world)
     assert [r.waiting for r in rows] == [Decimal("265.50")] * 3
     _save(world, investment_split=InvestmentSplit(depot=Decimal("100"), crypto=Decimal("0")))
     rows = world.query(goal_tracking.goal_tracking, TODAY).rows
+    assert [r.waiting for r in rows] == [Decimal("0.00")] * 3
+    assert all(r.invested_gap == Decimal("531.00") - r.invested for r in rows)
+
+
+# --- Round 2: Luis's answers of 27 Nov 2026 (Q-O192–Q-O195) and the wants net ------------------
+
+
+def test_the_wants_net_equals_the_budgets_wants_line(world):
+    """The ceiling's wants net (rules/goal/goal.py `wants_net`, every want code's mean with a
+    refund netted) is the Budget's Wünsche line (services/budget, D273) for the same window:
+    a refund of 40 € in February lowers both by the same 13.33 € a month."""
+    _, private = _projected(world)
+    line = private.line(date(2027, 2, 20), "40.00", name="Trattoria Muster")
+    _book(world, line, "40.00", C.HH_REFUND)
+    _series(world)
+    _follow(world, None, goal=_goal(DOABLE))
+    with workspace_transaction(world.engine, world.ws) as conn:
+        row = household_scenarios.default_scenario(conn)
+        inputs = PlanInputs(conn, TODAY)
+        reads = inputs.ended_reads(levers_one_off_codes(row.levers))
+        built = goal_service.goal_inputs(conn, TODAY, row, row.levers, reads, inputs)
+        view = budget.household_budget(conn, TODAY)
+    net = wants_net(built.goal)
+    wants = next(li for li in view.lines if li.key is BudgetLineKey.WANT)
+    assert built.goal.code_means[C.HH_REFUND] == Decimal("-13.33")
+    # equal here; in general within a cent, since each side apportions its means to the cent
+    # in its own way (the goal within the regular spending, the Budget within E's mean)
+    assert net == wants.monthly, (net, wants.monthly)
+    budget_means = {c.category: c.monthly for c in wants.codes}
+    assert budget_means[C.HH_REFUND] == Decimal("-13.33")  # the Budget nets it in Wünsche too
+    assert net == Decimal("286.67")
+    assert _answer(world).goal_path.ceiling.wants_kept <= net
+
+
+def _no_room(world: World) -> None:
+    """A wants target of 100 %: every want is kept, so nothing can be cut (room 0) and the
+    path is step 2's, adoptable, with an empty wants budget."""
+    current = world.query(household_scenarios.default_scenario)
+    targets = current.levers.budget_targets.model_copy(update={"wants_max": Decimal("100.0")})
+    _save(world, budget_targets=targets)
+
+
+def test_an_empty_path_budget_keeps_the_households_spending_plan_on_adopt(world):
+    """Q-O193: a path whose budget cuts nothing leaves the household's spending changes (a plan
+    saved in „Durchspielen“) and its spending choice exactly as they are."""
+    _goal_world(world)
+    plan_saved = [
+        SpendingChange(code=C.HH_RESTAURANT, monthly=Decimal("280.00"), from_month="2027-05")
+    ]
+    _save(world, spending_changes=plan_saved)
+    _no_room(world)
+    before = world.query(household_scenarios.default_scenario)
+    path = _answer(world).goal_path
+    assert path.room == Decimal("0.00") and path.spending_changes == []
+    assert path.state is not GoalPathState.ON_TRACK and path.adoptable, path.state
+    row = _adopt(world)
+    assert row.levers.goal_path.budget == []
+    assert [(c.code, c.monthly, c.from_month) for c in row.levers.spending_changes] == [
+        (C.HH_RESTAURANT, Decimal("280.00"), "2027-05")
+    ]
+    old, new = before.levers.goal_choice, row.levers.goal_choice
+    assert (new.spending, new.spending_chosen_on) == (old.spending, old.spending_chosen_on)
+    assert new.investment == GoalInvestment.PATH.value
+
+
+def test_a_changed_split_raises_plan_pruefen_and_the_same_split_does_not(world):
+    """Q-O195: the split lever against the path's stored split, by value."""
+    _goal_world(world)
+    _save(world, investment_split=InvestmentSplit(depot=Decimal("80"), crypto=Decimal("20")))
+    _adopt(world)
+    same = InvestmentSplit.model_validate({"depot": "80.0", "crypto": "20.0"})
+    _save(world, investment_split=same)
+    got = _answer(world)
+    assert not got.goal_path.adopted.moved
+    assert HealthTodoCode.PLAN_CHECK not in {t.code for t in got.todos}
+    _save(world, investment_split=InvestmentSplit(depot=Decimal("70"), crypto=Decimal("30")))
+    got = _answer(world)
+    assert got.goal_path.adopted.moved
+    assert HealthTodoCode.PLAN_CHECK in {t.code for t in got.todos}
+
+
+def test_nothing_waits_when_the_repayment_took_the_crypto_share(world):
+    """Q-O194: the cap is saved − the loan's repayment − the payments into the property −
+    invested. Each month repays 450 € on the loan from the rental account (saved, so S stays
+    510 €): 510 − 450 − 75 (or 85) leaves nothing, so nothing waits at 100 % crypto."""
+    _goal_world(world)
+    _adopted_in_january(world)
+    loan = world.loan()
+    for month in (1, 2, 3):
+        tx = world.line(date(2027, month, 28), "-450.00")
+        _book(world, tx, "-450.00", C.LOAN_PRINCIPAL, loan_id=loan, property_id=world.property_id)
+    _save(world, investment_split=InvestmentSplit(depot=Decimal("0"), crypto=Decimal("100")))
+    rows = world.query(goal_tracking.goal_tracking, TODAY).rows
+    assert [r.invested for r in rows] == [Decimal("75.00"), Decimal("85.00"), Decimal("75.00")]
     assert [r.waiting for r in rows] == [Decimal("0.00")] * 3
     assert all(r.invested_gap == Decimal("531.00") - r.invested for r in rows)

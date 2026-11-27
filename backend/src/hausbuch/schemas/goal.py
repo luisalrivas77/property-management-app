@@ -254,8 +254,8 @@ class GoalPathCeiling(Schema):
     rental_cash: NonNegativeMoney  # the rental cash when positive, else 0
     need: Money  # the reserve's monthly need, needs only (§7.11 (g)), with the flat's shortfall
     wants_kept: NonNegativeMoney
-    # The regular spending outside the need and the wants' positive means, signed: a refund
-    # or a code netting negative lowers it, an uncategorised line raises it.
+    # The regular spending outside the need and the wants net (the want class's net mean, a
+    # refund netted as the Budget's Wünsche nets it), signed: an uncategorised line raises it.
     other_spending: Money
     suggested: bool  # no wants target saved: the wants kept are the app's suggestion
     buffer: NonNegativeMoney

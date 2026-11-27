@@ -172,7 +172,12 @@ def with_path(answer: HouseholdGoal, built: "GoalReads", levers: HouseholdLevers
     lever = levers.goal_path
     if lever is not None:
         moved = PA.moved(
-            lever, levers.goal, levers.value_change, levers.budget_targets.wants_max, path.anlegbar
+            lever,
+            levers.goal,
+            levers.value_change,
+            levers.budget_targets.wants_max,
+            path.anlegbar,
+            levers.investment_split,
         )
         update["adopted"] = GoalPathAdopted(
             adopted_on=lever.adopted_on,
@@ -232,7 +237,12 @@ def adopt_path(ctx: CommandContext) -> HouseholdScenario:
         stored is not None
         and choice.investment == GoalInvestment.PATH.value
         and not PA.moved(
-            stored, levers.goal, levers.value_change, levers.budget_targets.wants_max, path.anlegbar
+            stored,
+            levers.goal,
+            levers.value_change,
+            levers.budget_targets.wants_max,
+            path.anlegbar,
+            levers.investment_split,
         )
     ):
         # Adopted and followed, its inputs unmoved: the path stays as adopted. The answer read
@@ -248,7 +258,10 @@ def adopt_path(ctx: CommandContext) -> HouseholdScenario:
     choice = basis.goal_choice or GoalChoice()
     changes = basis.spending_changes
     budget: list[GoalPathBudgetChange] = []
-    if path.state is not GoalPathState.ON_TRACK:
+    # A path whose wants budget cuts nothing (on track, or step 2 with no room) leaves the
+    # household's spending changes and its spending choice exactly as they are (Q-O193).
+    writes_budget = path.state is not GoalPathState.ON_TRACK and bool(path.spending_changes)
+    if writes_budget:
         changes = list(path.spending_changes)
         budget = [_budget_change(c) for c in changes]
     lever = GoalPathLever(
@@ -274,7 +287,7 @@ def adopt_path(ctx: CommandContext) -> HouseholdScenario:
         "investment": GoalInvestment.PATH.value,
         "investment_chosen_on": today,
     }
-    if path.state is not GoalPathState.ON_TRACK:
+    if writes_budget:
         update |= {"spending": GoalSpending.OWN, "spending_chosen_on": today}
     new = levers.model_copy(
         update={

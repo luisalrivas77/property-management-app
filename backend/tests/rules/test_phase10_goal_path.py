@@ -113,6 +113,8 @@ def test_path_tracking(case) -> None:
         PA.PathMonth(
             month_end=m.month_end,
             saved=m.saved,
+            principal=m.principal,
+            invested_property=m.invested_property,
             invested=m.invested,
             crypto_bought=m.crypto_bought,
             wants=m.wants,
@@ -173,7 +175,71 @@ def test_moved_when_anlegbar_drifts_past_the_room() -> None:
         anlegbar=Decimal("2000.00"),
         room=Decimal("450.00"),
     )
-    assert not PA.moved(lever, goal, vc, None, Decimal("2450.00"))
-    assert PA.moved(lever, goal, vc, None, Decimal("2450.01"))
-    assert PA.moved(lever, goal, ValueChange(depot=Decimal("0.07")), None, Decimal("2000.00"))
-    assert PA.moved(lever, goal, vc, Decimal("20.0"), Decimal("2000.00"))
+    assert not PA.moved(lever, goal, vc, None, Decimal("2450.00"), None)
+    assert PA.moved(lever, goal, vc, None, Decimal("2450.01"), None)
+    assert PA.moved(lever, goal, ValueChange(depot=Decimal("0.07")), None, Decimal("2000.00"), None)
+    assert PA.moved(lever, goal, vc, Decimal("20.0"), Decimal("2000.00"), None)
+
+
+def _lever(room: str, split=None):
+    from datetime import date
+
+    from hausbuch.schemas.plan import Goal, GoalKind, GoalPathLever, ValueChange
+
+    goal = Goal(
+        kind=GoalKind.NET_WORTH,
+        target=Decimal("100000.00"),
+        due_month="2030-12",
+        set_on=date(2026, 11, 1),
+    )
+    vc = ValueChange(depot=Decimal("0.06"))
+    lever = GoalPathLever(
+        adopted_on=date(2026, 11, 27),
+        state=GoalPathState.DOABLE_RATES,
+        monthly=Decimal("2000.00"),
+        extra=Decimal("0.00"),
+        rate=Decimal("0.060"),
+        wants_budget_total=Decimal("666.00"),
+        goal=goal,
+        value_change=vc,
+        anlegbar=Decimal("2000.00"),
+        room=Decimal(room),
+        investment_split=split,
+    )
+    return lever, goal, vc
+
+
+def test_moved_with_no_room_tolerates_five_percent_of_the_monthly_amount() -> None:
+    """Q-O192: with room 0 the tolerance is 5 % of the stored monthly amount (100 of 2,000):
+    a 1 % drift (20) raises no to-do, a 6 % drift (120) does, either way."""
+    lever, goal, vc = _lever("0.00")
+    for anlegbar, want in (
+        ("2020.00", False),
+        ("1980.00", False),
+        ("2100.00", False),
+        ("2100.01", True),
+        ("2120.00", True),
+        ("1880.00", True),
+    ):
+        assert PA.moved(lever, goal, vc, None, Decimal(anlegbar), None) is want, anlegbar
+    # the room still wins when it is larger than 5 %
+    lever, goal, vc = _lever("300.00")
+    assert not PA.moved(lever, goal, vc, None, Decimal("2300.00"), None)
+    assert PA.moved(lever, goal, vc, None, Decimal("2300.01"), None)
+
+
+def test_moved_when_the_investment_split_changes() -> None:
+    """Q-O195: the split lever against the stored split, by value; None equals None."""
+    from hausbuch.schemas.plan import InvestmentSplit
+
+    split = InvestmentSplit(depot=Decimal("80"), crypto=Decimal("20"))
+    lever, goal, vc = _lever("0.00", split)
+    same = InvestmentSplit.model_validate({"depot": "80.0", "crypto": "20.0"})
+    assert not PA.moved(lever, goal, vc, None, Decimal("2000.00"), same)
+    assert not PA.moved(lever, goal, vc, None, Decimal("2000.00"), split)
+    other = InvestmentSplit(depot=Decimal("75"), crypto=Decimal("25"))
+    assert PA.moved(lever, goal, vc, None, Decimal("2000.00"), other)
+    assert PA.moved(lever, goal, vc, None, Decimal("2000.00"), None)
+    lever, goal, vc = _lever("0.00", None)
+    assert not PA.moved(lever, goal, vc, None, Decimal("2000.00"), None)
+    assert PA.moved(lever, goal, vc, None, Decimal("2000.00"), split)

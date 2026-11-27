@@ -1149,6 +1149,8 @@ class PathAdoptedIn(Schema):
 class PathMonthIn(Schema):
     month_end: date
     saved: Money
+    principal: Money = Decimal("0.00")  # Q-O194: the month's loan repayment
+    invested_property: Money = Decimal("0.00")  # Q-O194: paid into the property (D234)
     invested: Money
     crypto_bought: Money
     wants: Money
