@@ -309,6 +309,10 @@ class Walk:
     # With `draw_invested` (§7.11 (h), the income gap of „Euer Plan“): what was taken out of the
     # invested funds and crypto when the reserve row fell below 0, in all, to the cent
     drawn: Decimal = ZERO
+    # §7.11 (j), D312: the money the walk invests in the funds and crypto in all, undiscounted,
+    # to the cent: what moves above the reserve target and each month's savings plans; a month
+    # that draws from the investments adds nothing
+    invested: Decimal = ZERO
 
     def at(self, month: str) -> WalkMonth | None:
         for m in self.months:
@@ -330,6 +334,7 @@ class _Run:
     months: list[WalkMonth] = field(default_factory=list)
     used_up: str | None = None
     drawn: Fraction = Fraction(0)
+    invested: Fraction = Fraction(0)
 
 
 def last_month(p: Projection) -> str:
@@ -357,7 +362,12 @@ def walk(
     shortfall is the reserve used up, as without it."""
     end = last_month(p) if until is None else min(until, last_month(p))
     run = _walk(p, end, spending_changes, extra, extra_from, monthly=True, draw=draw_invested)
-    return Walk(months=tuple(run.months), used_up=run.used_up, drawn=_cent(run.drawn))
+    return Walk(
+        months=tuple(run.months),
+        used_up=run.used_up,
+        drawn=_cent(run.drawn),
+        invested=_cent(run.invested),
+    )
 
 
 def _walk(
@@ -432,6 +442,8 @@ def _walk(
             )
             pays[c].append(pay)
             paid[c] += pay
+            if not taken:
+                out.invested += pay
         bank = _cent(Fraction(start.bank) + reserve - r0)
         if monthly:
             now = {

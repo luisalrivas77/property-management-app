@@ -30,7 +30,9 @@ GOAL = phase10.load("goal").cases
 # invested, the walk past each sale) changed rules/plan; it was 2b975321... until then.
 # §7.11 (h) (26 Nov 2026, „Euer Plan“'s income gap: `walk(draw_invested=...)`, off by default,
 # so every existing answer is unchanged) changed rules/plan; it was 5f75a985... until then.
-RULE_VERSION = "95bb50becb8276c0d43ceb4b819340a35d49ef35a7018fc9c4f140b7b278162e"
+# §7.11 (j) (27 Nov 2026, D312: `Walk.invested`, read only by the goal's history check) changed
+# rules/plan; it was 95bb50be... until then.
+RULE_VERSION = "749708febaa684a151b8402de196d5c03078575c799a6f6b778083abd181af1b"
 
 
 def _projection(case) -> Projection:
@@ -341,6 +343,8 @@ def test_goal_routes(case) -> None:
             "median",
             "best",
             "thin",
+            "mix_today_share",
+            "mix_future_share",
         ):
             if name in expect.model_fields_set:
                 assert getattr(r, name) == getattr(expect, name), name

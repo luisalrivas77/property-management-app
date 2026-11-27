@@ -180,6 +180,11 @@ class GoalMoreReturn(Schema):
     verdict: GoalVerdict | None = None
     thin: bool = False
     left_out: list[GoalLeftOut] = Field(default_factory=list)
+    # §7.11 (j), D312: what the mix weighs, the part held today („Heute angelegt“) and the
+    # money still to come at the split („Kommt noch dazu, nach eurer Aufteilung“), in percent
+    # to 0.1; None without a count
+    mix_today_share: GoalShare | None = None
+    mix_future_share: GoalShare | None = None
     sources: list[GoalReferenceSource] = Field(default_factory=list)
 
 
@@ -316,6 +321,9 @@ class GoalPath(Schema):
     reached_windows: int | None = None
     short_history: bool | None = None  # under 5 windows: judged, and labelled
     years: list[int] | None = None  # the mix's first and last year
+    # D312: step 2's mix, the part held today and the money still to come, in percent to 0.1
+    mix_today_share: GoalShare | None = None
+    mix_future_share: GoalShare | None = None
     wants_budget: list[GoalBudget] = Field(default_factory=list)  # each want cut
     wants_budget_total: NonNegativeMoney | None = None
     spending_changes: list[SpendingChange] = Field(default_factory=list)  # the cut, adopted

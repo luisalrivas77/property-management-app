@@ -39,7 +39,11 @@
 #    reached × 2 ≥ windows (and windows > 0): doable_return, its monthly amount Anlegbar +
 #    room; 0 < reached and reached × 2 < windows: ambitious, never adoptable; reached 0, out of
 #    range or no history: hardly. Fewer than 5 windows: judged the same, `short_history` with
-#    the mix's first and last year. In `generic` mode no step 2: hardly.
+#    the mix's first and last year. In `generic` mode no step 2: hardly. The mix (§7.11 (j),
+#    D312, amended 27 Nov 2026) weighs today's holdings with the money the walk at the whole
+#    room invests from next month to the due month (undiscounted, at the split): shown as
+#    `mix_today_share` and `mix_future_share`, percent to 0.1, null without a count. Here the
+#    split is all funds and only funds are held, so the mix's returns are the funds' as before.
 # 4. The wants budget the path stores: the cut the plan needs, wanted = e, grossed up for a
 #    buffer as the spending scenarios do (e ÷ (1 − b), up to the cent, + 0.01 when b > 0), at
 #    most wants net − wants kept, shared by the positive wants' means and each rounded up to
@@ -148,6 +152,8 @@ cases:
       reached_windows: 3
       short_history: true
       years: [2015, 2025]
+      mix_today_share: '0.0'   # nothing held today: all of it still to come
+      mix_future_share: '100.0'
       wants_budget: {}
       wants_budget_total: '900.00'
       adoptable: true
@@ -181,6 +187,8 @@ cases:
       reached_windows: 3
       short_history: true
       years: [2015, 2025]
+      mix_today_share: '0.0'   # nothing held today: all of it still to come
+      mix_future_share: '100.0'
       wants_budget: {}
       wants_budget_total: '0.00'
       adoptable: true
@@ -307,6 +315,8 @@ cases:
       reached_windows: 3
       short_history: true
       years: [2015, 2025]
+      mix_today_share: '0.0'   # nothing held today: all of it still to come
+      mix_future_share: '100.0'
       wants_budget: {}
       wants_budget_total: '900.00'
       adoptable: true
@@ -356,6 +366,8 @@ cases:
       reached_windows: 7
       short_history: false
       years: [2015, 2025]
+      mix_today_share: '82.0'   # D312: 500,000 held of 610,050 (19,400 in Nov, 2,450 × 37)
+      mix_future_share: '18.0'
       wants_budget: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # the whole room: 450 = 900 − 450
       wants_budget_total: '450.00'
       adoptable: true
@@ -382,6 +394,8 @@ cases:
       reached_windows: 3
       short_history: false
       years: [2015, 2025]
+      mix_today_share: '82.0'   # D312: 500,000 held of 610,050 (19,400 in Nov, 2,450 × 37)
+      mix_future_share: '18.0'
       adoptable: false
       why: {due_value: '756374.09', reached: '2033-09'}   # the whole room at 6 %
 
@@ -404,6 +418,8 @@ cases:
       reached_windows: 0
       short_history: false
       years: [2015, 2025]
+      mix_today_share: '82.0'   # D312: 500,000 held of 610,050 (19,400 in Nov, 2,450 × 37)
+      mix_future_share: '18.0'
       adoptable: false
       why: {due_value: '756374.09', reached: '2038-12'}
 
@@ -426,6 +442,8 @@ cases:
       reached_windows: null
       short_history: false
       years: [2015, 2025]
+      mix_today_share: '82.0'   # D312: 500,000 held of 610,050 (19,400 in Nov, 2,450 × 37)
+      mix_future_share: '18.0'
       adoptable: false
       why: {due_value: '756374.09', reached: '2058-07'}
 
@@ -456,6 +474,8 @@ cases:
       reached_windows: 2
       short_history: true
       years: [2020, 2025]
+      mix_today_share: '82.0'   # D312: 500,000 held of 610,050 (19,400 in Nov, 2,450 × 37)
+      mix_future_share: '18.0'
       wants_budget: {hh_restaurant: '300.00', hh_streaming: '150.00'}
       wants_budget_total: '450.00'
       adoptable: true

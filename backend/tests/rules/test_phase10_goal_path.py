@@ -57,6 +57,8 @@ def test_goal_path(case) -> None:
         "windows",
         "reached_windows",
         "short_history",
+        "mix_today_share",
+        "mix_future_share",
         "wants_budget_total",
         "adoptable",
     ):

@@ -360,7 +360,9 @@ def _step_2(
     if i.mode is AdviceMode.GENERIC or i.goal.kind is not GoalKind.NET_WORTH:
         return GoalPathState.HARDLY, {}
     years = H.window_years(left)
-    mix = H.mix_of(i.invested, p.split, i.history, years)
+    # D312: the money still to come is what the walk at the whole room invests
+    coming = walk(p, until=i.goal.due_month, extra=room, extra_from=first).invested
+    mix = H.mix_of(i.invested, p.split, i.history, years, future=coming)
     if isinstance(mix, H.NoCount):
         return GoalPathState.HARDLY, {}
     products = H.window_products(mix.returns, years)
@@ -373,6 +375,8 @@ def _step_2(
         "reached_windows": reached,
         "short_history": len(products) < H.THIN_BELOW,
         "years": [min(mix.returns), max(mix.returns)] if mix.returns else None,
+        "mix_today_share": mix.today_share,
+        "mix_future_share": mix.future_share,
     }
     return PA.step_2_state(reached, len(products)), shown
 
@@ -436,7 +440,9 @@ def _more_return(
     if i.goal.kind is not GoalKind.NET_WORTH:  # a sum saved or the reserve: nothing invested
         return GoalMoreReturn(reason=GoalRouteReason.NOTHING_INVESTED), None
     years = H.window_years(left)
-    mix = H.mix_of(i.invested, p.split, i.history, years)
+    # D312: the money still to come is what the household's own walk invests
+    coming = walk(p, until=i.goal.due_month).invested
+    mix = H.mix_of(i.invested, p.split, i.history, years, future=coming)
     if isinstance(mix, H.NoCount):
         return GoalMoreReturn(reason=mix.reason, left_out=list(mix.left_out)), None
     products = H.window_products(mix.returns, years)
@@ -449,6 +455,8 @@ def _more_return(
         "best": H.annualised(max(products), years),
         "thin": thin,
         "left_out": list(mix.left_out),
+        "mix_today_share": mix.today_share,
+        "mix_future_share": mix.future_share,
         "sources": [
             GoalReferenceSource(
                 key=s.key,
