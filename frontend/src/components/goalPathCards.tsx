@@ -18,6 +18,7 @@ import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { useT } from "@/i18n";
 import { goalPathText } from "@/i18n/goalPath";
+import { planPageText } from "@/i18n/planPage";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { HOUSEHOLD_BUDGET, HOUSEHOLD_PLAN_PAGE } from "@/lib/planningRoutes";
 
@@ -97,7 +98,8 @@ export function PathCards({ goal, tracking, onAdopted }: { goal: HouseholdGoal; 
       {view.state === "hardly" ? (
         <>
           <WhyCard view={view} />
-          <RealisticCard view={view} goal={goal} budgetLink />
+          {/* „Kaum erreichbar“ has no plan card: „Jetzt anlegen“ goes on this one */}
+          <RealisticCard view={view} goal={goal} budgetLink investNow />
         </>
       ) : null}
       {view.adopted ? <MonthCard view={view} row={rows.length > 0 ? rows[rows.length - 1]! : null} /> : null}
@@ -161,6 +163,24 @@ function AdoptButton({ view, onAdopted }: { view: PathView; onAdopted: () => voi
   );
 }
 
+/** „Jetzt anlegen“: the money above the reserve target today (the server's `above_target`),
+ * which the plan invests in its first month; on the path's plan card in every state, only
+ * when above 0. Its split in funds and crypto is in the card's panel. */
+function InvestNowRow({ view }: { view: PathView }) {
+  const t = useT(planPageText);
+  const p = usePlanFormat();
+  const amount = view.path.above_target;
+  if (!hasGap(amount)) return null;
+  return (
+    <div className="goal-rows" data-testid="path-invest-now">
+      <div className="goal-rw">
+        <span>{t.investNow}</span>
+        <b>{p.euro(amount)}</b>
+      </div>
+    </div>
+  );
+}
+
 /** „Der Plan“ at step 1 (the typed rates) or step 2 (the return needed, within the room). */
 function PlanCard({ view, onAdopted }: { view: PathView; onAdopted: () => void }) {
   const t = useT(goalPathText);
@@ -191,6 +211,7 @@ function PlanCard({ view, onAdopted }: { view: PathView; onAdopted: () => void }
           </p>
         </>
       )}
+      <InvestNowRow view={view} />
       <AdoptedLine view={view} />
       <AdoptButton view={view} onAdopted={onAdopted} />
     </div>
@@ -232,6 +253,7 @@ function ReturnCard({ view }: { view: PathView }) {
         ) : null}
       </Stats>
       {history ? <p className="goal-one">{history}</p> : null}
+      <InvestNowRow view={view} />
     </div>
   );
 }
@@ -257,7 +279,17 @@ function WhyCard({ view }: { view: PathView }) {
 }
 
 /** What the most that can be invested reaches: the value at the due month and the month reached. */
-function RealisticCard({ view, goal, budgetLink = false }: { view: PathView; goal: HouseholdGoal; budgetLink?: boolean }) {
+function RealisticCard({
+  view,
+  goal,
+  budgetLink = false,
+  investNow = false,
+}: {
+  view: PathView;
+  goal: HouseholdGoal;
+  budgetLink?: boolean;
+  investNow?: boolean;
+}) {
   const t = useT(goalPathText);
   const p = usePlanFormat();
   const why = view.path.why;
@@ -269,6 +301,7 @@ function RealisticCard({ view, goal, budgetLink = false }: { view: PathView; goa
         <Stat value={p.euro(why.due_value)} label={t.byDue(p.month(goal.goal.due_month))} />
         <Stat value={why.reached ? p.month(why.reached) : t.notReached} label={t.targetReached(p.euro(goal.goal.target))} />
       </Stats>
+      {investNow ? <InvestNowRow view={view} /> : null}
       <div className="goal-path-links">
         <Link href={GOAL_FORM_HREF} className="goal-lnk">
           {t.changeGoal} ›
@@ -515,6 +548,9 @@ function RoutePanel({ view, due, target }: { view: PathView; due: string | null;
         <p>{t.windowsLine(view.path.window_years, view.reached_windows, view.windows)}</p>
       ) : null}
       {history ? <p className="goal-note">{history}</p> : null}
+      {hasGap(view.path.above_target) && view.path.above_target_depot != null && view.path.above_target_crypto != null ? (
+        <p>{t.investNowText(p.euro(view.path.above_target_depot), p.euro(view.path.above_target_crypto))}</p>
+      ) : null}
       {view.path.mix_today_share != null && view.path.mix_future_share != null ? (
         <>
           <h3 className="goal-kicker">{t.mixTitle}</h3>

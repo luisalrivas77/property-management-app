@@ -765,6 +765,39 @@ test("the path when it cannot hold: no adopt button; Ehrgeizig and Kaum erreichb
   expect(posts).toHaveLength(0);
 });
 
+test("„Jetzt anlegen“ on the path's plan card in every state, its split in the panel", async ({ page, signedIn }) => {
+  void signedIn;
+  await planApi(page);
+  // The server's figures: 12.340 € above the reserve target, 60/40 into funds and crypto.
+  const above = { above_target: "12340.00", above_target_depot: "7404.00", above_target_crypto: "4936.00" };
+  const state = { goal: withPath({ ...stepOne(), ...above }), tracking: tracking([]) };
+  await pathApi(page, state, () => ({ status: 201, json: {} }));
+  await page.goto("/household/plan");
+  const main = page.locator(".planp-cards");
+  const now = main.getByTestId("path-plan").getByTestId("path-invest-now");
+  await expect(now).toContainText(/Jetzt anlegen\s*12\.340\s€/);
+  await page.goto("/household/plan#d-plan-weg");
+  await expect(detail(page, "Der Plan")).toContainText(/im ersten Monat als angelegt, nach eurer Aufteilung: 7\.404\s€ in Fonds und Wertpapiere, 4\.936\s€ in Krypto/);
+
+  const notHeld = { extra: null, monthly: null, rate: null, adoptable: false, why: { due_value: "441000.00", reached: null } };
+  state.goal = withPath({ ...stepOne(), ...above, ...notHeld, state: "ambitious", return_needed: "0.142", windows: 4, reached_windows: 1 });
+  await page.goto("/household/plan");
+  await expect(main.getByTestId("path-return").getByTestId("path-invest-now")).toContainText(/12\.340\s€/);
+  await expect(main.getByTestId("path-invest-now")).toHaveCount(1);
+
+  state.goal = withPath({ ...stepOne(), ...above, ...notHeld, state: "hardly", return_needed: null, windows: null, reached_windows: null });
+  await page.reload();
+  await expect(main.getByTestId("path-realistic").getByTestId("path-invest-now")).toContainText(/12\.340\s€/);
+  await expect(main.getByTestId("path-invest-now")).toHaveCount(1);
+
+  // Nothing above the target: no row, no line in the panel.
+  state.goal = withPath({ ...stepOne(), above_target: "0.00", above_target_depot: null, above_target_crypto: null });
+  await page.goto("/household/plan#d-plan-weg");
+  await expect(main.getByTestId("path-plan")).toBeVisible();
+  await expect(main.getByTestId("path-invest-now")).toHaveCount(0);
+  await expect(detail(page, "Der Plan")).not.toContainText("Jetzt anlegen");
+});
+
 test("a refused adopt (the path moved) shows the server's reason, and nothing is adopted", async ({ page, signedIn }) => {
   void signedIn;
   await planApi(page);

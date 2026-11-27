@@ -34,6 +34,10 @@ export const goalPathText = defineMessages({
     mixTitle: "Was der Vergleich wiegt",
     mixToday: "Heute angelegt",
     mixFuture: "Kommt noch dazu, nach eurer Aufteilung",
+    // „Jetzt anlegen“ (the row's label is planPageText's investNow): the money above the
+    // reserve target, which the walk invests in its first month at the split
+    investNowText: (funds: string, crypto: string) =>
+      `Jetzt anlegen: Der Plan zählt das Geld über dem Reserve-Ziel schon im ersten Monat als angelegt, nach eurer Aufteilung: ${funds} in Fonds und Wertpapiere, ${crypto} in Krypto.`,
     atYourRates: "Bei euren Raten",
     funds: (rate: string) => `Fonds ${rate}`,
     crypto: (rate: string) => `Krypto ${rate}`,
@@ -154,6 +158,8 @@ export const goalPathText = defineMessages({
     mixTitle: "What the comparison weighs",
     mixToday: "Invested today",
     mixFuture: "Still to come, at your split",
+    investNowText: (funds, crypto) =>
+      `Invest now: the plan counts the money above the reserve target as invested in the first month, at your split: ${funds} in funds and securities, ${crypto} in crypto.`,
     atYourRates: "At your rates",
     funds: (rate) => `Funds ${rate}`,
     crypto: (rate) => `Crypto ${rate}`,
