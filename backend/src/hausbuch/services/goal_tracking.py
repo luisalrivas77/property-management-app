@@ -131,6 +131,13 @@ def _path_rows(
         end = ends[month]
         r = reads[month]
         bought = X.bought(lines, [month], reserve)
+        # §7.11 (k): only what was bought after the day can pay „Jetzt anlegen“, since the amount
+        # adopted is net of the purchases before it (it is read on that day's balances)
+        after = (
+            X.bought([ln for ln in lines if ln.booked > day], [month], reserve)
+            if month == first
+            else None
+        )
         codes = SP.month_spending(
             r.private.cashflow, r.private.lines, r.one_off_ids, r.one_off_codes
         )
@@ -157,6 +164,8 @@ def _path_rows(
                 path_net_worth=walk.get(month),
                 value_now=_value(overviews[month], members)[0],
                 flows=sorted(flows, key=lambda f: f[0]),
+                invested_since=None if after is None else sum(after.values(), ZERO),
+                crypto_since=None if after is None else after.get(PlanClass.CRYPTO, ZERO),
             )
         )
     return PA.track(
@@ -167,7 +176,15 @@ def _path_rows(
         None if split is None else split.crypto,
         _value(then, members)[0],
         out,
+        _invest_now(lever),
     )
+
+
+def _invest_now(lever: GoalPathLever) -> tuple[Decimal, Decimal] | None:
+    """„Jetzt anlegen“ as adopted (§7.11 (k)): the amount and its crypto part, or None."""
+    if lever.above_target is None or lever.above_target <= 0:
+        return None
+    return lever.above_target, lever.above_target_crypto or ZERO
 
 
 def _members(overviews: list[AssetsOverview], performance: AssetsPerformance) -> set[UUID]:

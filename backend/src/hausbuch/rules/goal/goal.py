@@ -675,7 +675,10 @@ def _balanced(
     i: GoalInputs, reaches: Reaches, extra: Decimal | None, first: str
 ) -> GoalBalanced | None:
     """„Ausgewogener Weg“: half of the extra from the wants, within their limit, the rest
-    saved."""
+    saved. The wants can give up only what the want class nets above the wants kept (the
+    path's `cuttable`, so refunds booked as wants lower it as the Budget's Wünsche line
+    does); that room is shared over the positive want codes by their means, and without a
+    wants target no code gives up more than half of its mean (the suggestion)."""
     if extra is None:
         return None
     wants = {c: m for c, m in _codes(i).items() if i.classes[c] is BudgetClass.WANT}
@@ -683,14 +686,16 @@ def _balanced(
     half = _ceil_cent(Fraction(extra) / 2)
     cuts: dict[AllocationCategory, Decimal] = {}
     if total > 0:
+        net = wants_net(i)
+        room = PA.cuttable(net, PA.wants_kept(i.mean_income, wants, net, i.wants_max))
+        limits = {
+            c: _floor_cent(Fraction(room) * Fraction(m) / Fraction(total)) for c, m in wants.items()
+        }
+        # never more than a code's mean: the net wants can exceed the playable ones (a refund's
+        # code, or a code moved to Wünsche that no change can play, counts in the net only)
+        limits = {c: min(v, wants[c]) for c, v in limits.items()}
         if i.wants_max is None:
-            limits = {c: _floor_cent(Fraction(m) / 2) for c, m in wants.items()}
-        else:
-            room = max(ZERO, total - i.wants_max * i.mean_income / 100)
-            limits = {
-                c: _floor_cent(Fraction(room) * Fraction(m) / Fraction(total))
-                for c, m in wants.items()
-            }
+            limits = {c: min(v, _floor_cent(Fraction(wants[c]) / 2)) for c, v in limits.items()}
         for code, mean in wants.items():
             share = _ceil_cent(Fraction(mean) * Fraction(half) / Fraction(total))
             if (cut := min(limits[code], share)) > 0:

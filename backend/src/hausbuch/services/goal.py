@@ -275,6 +275,8 @@ def adopt_path(ctx: CommandContext) -> HouseholdScenario:
         windows=path.windows,
         reached_windows=path.reached_windows,
         wants_budget_total=path.wants_budget_total,
+        above_target=path.above_target,
+        above_target_crypto=path.above_target_crypto,
         goal=levers.goal,
         value_change=levers.value_change,
         wants_max=levers.budget_targets.wants_max,

@@ -369,6 +369,11 @@ class GoalPathLever(Schema):
     windows: int | None = Field(default=None, ge=0)
     reached_windows: int | None = Field(default=None, ge=0)
     wants_budget_total: NonNegativeMoney
+    # „Jetzt anlegen“ that day (§7.11 (k)): the money above the reserve target the walk invests
+    # in its first month and its crypto part, so the tracking's first row plans it; None when
+    # the walk invests none of it, and on a path adopted before 27 Nov 2026
+    above_target: NonNegativeMoney | None = None
+    above_target_crypto: NonNegativeMoney | None = None
     # What it was computed from: the goal, the typed rates, the wants target, and „Anlegbar“
     # and the room of that day.
     goal: Goal

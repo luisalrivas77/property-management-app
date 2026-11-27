@@ -550,3 +550,28 @@ def test_the_screens_read_fields_follow_the_walks() -> None:
         if missed:
             checked.add("short")
     assert checked == {"balanced", "sales", "short"}
+
+
+def test_the_balanced_cut_never_exceeds_a_wants_mean() -> None:
+    """§7.11 (c): the net wants can exceed the playable ones (a positive mean on a code no
+    change can play, here the refund code), so the room shared over the playable wants is
+    capped at each code's mean: no budget below 0, never a crash on a negative spending
+    change. The household of balanced_wants_net_of_a_refund with restaurant 100, refund +800
+    and the 15 % wants target (750): room 900 − 750 = 150 against 100 of playable wants."""
+    from decimal import Decimal as D
+
+    from hausbuch.schemas.allocation import AllocationCategory as C
+
+    base = next(c for c in ROUTES if c.id == "balanced_wants_net_of_a_refund")
+    means = {
+        C("hh_rent"): D("1500.00"),
+        C("hh_supermarket"): D("600.00"),
+        C("hh_restaurant"): D("100.00"),
+        C("hh_refund"): D("800.00"),
+    }
+    case = base.model_copy(update={"means": means})
+    inputs, _, _ = _route_inputs(case)
+    got = household_goal(inputs)
+    assert got.balanced is not None
+    for b in got.balanced.budgets:
+        assert D("0.00") <= b.budget <= b.mean

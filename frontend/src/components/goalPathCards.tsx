@@ -345,7 +345,11 @@ function RowFigures({ row, day }: { row: GoalPathRow; day: string | null }) {
   return (
     <div className="goal-path-row" data-testid="path-row">
       <h4 className="goal-kicker">{t.lastCard(p.month(row.month_end))}</h4>
-      <PathLine label={t.rowInvested} sub={t.ofPlan(p.euro(row.planned))} value={p.euro(row.invested)}>
+      <PathLine
+        label={t.rowInvested}
+        sub={row.invest_now != null ? t.ofPlanNow(p.euro(row.planned), p.euro(row.invest_now)) : t.ofPlan(p.euro(row.planned))}
+        value={p.euro(row.invested)}
+      >
         <OnPath t={t} behind={hasGap(row.invested_gap)} text={hasGap(row.invested_gap) ? t.short(p.euro(row.invested_gap)) : undefined} />
       </PathLine>
       {hasGap(row.waiting) ? <p className="goal-note">{t.waiting(p.euro(row.waiting))}</p> : null}
@@ -623,6 +627,7 @@ function TrackingPanel({ view }: { view: PathView }) {
       <p>{t.monthText}</p>
       {view.followed ? <p>{t.trackingText}</p> : null}
       <p className="goal-note">{t.waitingText}</p>
+      <p className="goal-note">{t.investNowText}</p>
     </>
   );
 }
@@ -641,7 +646,7 @@ export function PathTileRows({ goal, tracking }: { goal: HouseholdGoal; tracking
     <Link href={HOUSEHOLD_PLAN_PAGE} className="tile-goal-path" data-testid="goal-tile-path">
       <span className="tile-goal-path-head">{t.tilePlan(p.month(row.month_end))} ›</span>
       <span className="tile-goal-path-row">
-        <span>{t.tileInvest(p.euro(row.planned))}</span>
+        <span>{row.invest_now != null ? t.tileInvestNow(p.euro(row.planned), p.euro(row.invest_now)) : t.tileInvest(p.euro(row.planned))}</span>
         <OnPath t={t} behind={hasGap(row.invested_gap)} text={hasGap(row.invested_gap) ? t.short(p.euro(row.invested_gap)) : undefined} />
       </span>
       <span className="tile-goal-path-row">

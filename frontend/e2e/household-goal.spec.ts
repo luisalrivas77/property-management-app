@@ -353,6 +353,10 @@ test("the goal at phone width, light and dark", async ({ page, signedIn }) => {
     await page.goto("/household?tab=ziel#d-ziel-wants_only");
     await expect(detail(page, "Nur Wünsche kürzen")).toBeVisible();
   });
+  // With a panel open on the phone the page behind it keeps the full width: the two-column
+  // grid is for the computer only (it had squeezed the page into the phone's left half).
+  const main = await page.locator(".detail-main").first().boundingBox();
+  expect(main?.width ?? 0).toBeGreaterThan(390 - 2 * 40);
   await phoneScreens(page, "goal-tile", async () => {
     await page.goto("/");
     await expect(page.getByRole("region", { name: "Auf einen Blick" }).getByRole("link", { name: /Euer Ziel/ })).toContainText("Machbar");

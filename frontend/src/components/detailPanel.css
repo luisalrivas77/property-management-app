@@ -1,11 +1,15 @@
 /* The detail panel (phase 10 D267, DetailPanel.tsx): a column beside the list from 1100 px,
    a sheet sliding in from the right below that. */
 
-.detail-layout[data-open] {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--panel-width);
-  gap: 24px;
-  align-items: start;
+/* The two columns only where the panel is a column: below 1100 px the panel is a dialog over
+   the page, and a second grid column would squeeze the page into the left part of the phone. */
+@media (min-width: 1100px) {
+  .detail-layout[data-open] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--panel-width);
+    gap: 24px;
+    align-items: start;
+  }
 }
 
 .detail-main {

@@ -510,6 +510,12 @@ cases:
 #   a month whose loan payout exceeds what the property took counts 0 there, the payout being
 #   no saving); principal and invested_property default to 0 in a month that names neither;
 #   the invested mark compares invested + waiting with planned (gap = what is short).
+# - „Jetzt anlegen“ (§7.11 (k), 27 Nov 2026; `now` and `now_crypto` on the adopted path):
+#   invest_now = what of it is still open at the month's start (None when nothing is); the
+#   month's purchases pay it first (its crypto part from the crypto bought), up to what is
+#   open, and only the rest is the month's own investing in the waiting formula (invested and
+#   crypto bought less what paid the lump); the invested mark compares invested + waiting with
+#   planned + invest_now, so a lump not bought in the month adopted stays planned until it is.
 # - wants against the path's wants budget total; net worth against the path's walk at that
 #   month-end.
 # - value change = value now − value at the day − money in since the day; implied change =
@@ -561,3 +567,36 @@ tracking:
   - {month_end: '2026-11-30', word: behind, waiting: '0.00', invested_gap: '534.00', wants_gap: null, net_worth_gap: null, value_change: '100.00', implied_change: '5.49', actual_percent: '0.85', needed_percent: '0.05', value_behind: false}
   - {month_end: '2026-12-31', word: behind, waiting: '100.00', invested_gap: '634.00', wants_gap: '34.00', net_worth_gap: null, value_change: '100.00', implied_change: '69.06', actual_percent: '0.76', needed_percent: '0.52', value_behind: false}
   - {month_end: '2027-01-31', word: behind, waiting: '66.00', invested_gap: '334.00', wants_gap: null, net_worth_gap: '500.00', value_change: '-34.00', implied_change: '142.65', actual_percent: '-0.23', needed_percent: '0.95', value_behind: true}
+
+- id: invest_now_carried_until_bought
+  description: >-
+    §7.11 (k): the path of rows_with_waiting_crypto adopted with „Jetzt anlegen“ 60,000, crypto
+    part 15,000. Nov: exactly the monthly 2,234 bought, 558.50 of it crypto, which pays the
+    month's own amount and leaves the lump open, so 60,000 is short and nothing waits; Dec: the
+    open 60,000 (its crypto part 15,000 of the 15,558.50 crypto bought) and the month's 2,234
+    bought reads on the path; Jan: nothing open, 1,675.50 bought and 558.50 waiting is the
+    monthly amount
+  adopted: {day: '2026-11-27', monthly: '2234.00', wants_budget: '666.00', rate: '0.06', crypto_percent: '25', now: '60000.00', now_crypto: '15000.00'}
+  value_then: '10000.00'
+  months:
+  - {month_end: '2026-11-30', saved: '2300.00', invested: '2234.00', crypto_bought: '558.50', wants: '650.00', net_worth: '53000.00', path_net_worth: '52000.00', value_now: '12334.00', flows: [['2026-11-28', '2234.00']]}
+  - {month_end: '2026-12-31', saved: '2300.00', invested: '62234.00', crypto_bought: '15558.50', wants: '650.00', net_worth: '55000.00', path_net_worth: '54300.00', value_now: '74768.00', flows: [['2026-11-28', '2234.00'], ['2026-12-10', '62234.00']]}
+  - {month_end: '2027-01-31', saved: '2300.00', invested: '1675.50', crypto_bought: '0.00', wants: '600.00', net_worth: '57000.00', path_net_worth: '56500.00', value_now: '76834.00', flows: [['2026-11-28', '2234.00'], ['2026-12-10', '62234.00'], ['2027-01-10', '1675.50']]}
+  expect:
+  - {month_end: '2026-11-30', word: behind, invest_now: '60000.00', waiting: '0.00', invested_gap: '60000.00', wants_gap: null, net_worth_gap: null, value_change: '100.00', implied_change: '5.67', actual_percent: '0.82', needed_percent: '0.05', value_behind: false}
+  - {month_end: '2026-12-31', word: on_path, invest_now: '60000.00', waiting: '0.00', invested_gap: null, wants_gap: null, net_worth_gap: null, value_change: '300.00', implied_change: '282.84', actual_percent: '0.40', needed_percent: '0.38', value_behind: false}
+  - {month_end: '2027-01-31', word: on_path, invest_now: null, waiting: '558.50', invested_gap: null, wants_gap: null, net_worth_gap: null, value_change: '690.50', implied_change: '668.11', actual_percent: '0.91', needed_percent: '0.88', value_behind: false}
+- id: invest_now_only_from_purchases_after_the_day
+  description: >-
+    §7.11 (k): adopted on 20 Nov with „Jetzt anlegen“ 5,000 and no split. Nov: 30,000 bought
+    in all, 2,000 of it after the day; the amount adopted is net of the 28,000 bought before it,
+    so only the 2,000 after the day pays it (the month's own 2,234 is met by the month in full),
+    and 3,000 stays open; Dec: the monthly 2,234 bought, the 3,000 still open
+  adopted: {day: '2026-11-20', monthly: '2234.00', wants_budget: '666.00', rate: '0.06', crypto_percent: null, now: '5000.00', now_crypto: '0.00'}
+  value_then: '10000.00'
+  months:
+  - {month_end: '2026-11-30', saved: '2300.00', invested: '30000.00', crypto_bought: '0.00', invested_since: '2000.00', crypto_since: '0.00', wants: '650.00', net_worth: '53000.00', path_net_worth: '52000.00', value_now: '12100.00', flows: [['2026-11-25', '2000.00']]}
+  - {month_end: '2026-12-31', saved: '2300.00', invested: '2234.00', crypto_bought: '0.00', wants: '650.00', net_worth: '55000.00', path_net_worth: '54300.00', value_now: '14534.00', flows: [['2026-11-25', '2000.00'], ['2026-12-10', '2234.00']]}
+  expect:
+  - {month_end: '2026-11-30', word: behind, invest_now: '5000.00', waiting: null, invested_gap: '3000.00', wants_gap: null, net_worth_gap: null, value_change: '100.00', implied_change: '18.08', actual_percent: '0.83', needed_percent: '0.15', value_behind: false}
+  - {month_end: '2026-12-31', word: behind, invest_now: '3000.00', waiting: null, invested_gap: '3000.00', wants_gap: null, net_worth_gap: null, value_change: '300.00', implied_change: '86.94', actual_percent: '2.11', needed_percent: '0.61', value_behind: false}

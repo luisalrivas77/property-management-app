@@ -72,12 +72,7 @@ def ceiling_of(
     holds the flat's shortfall when the rental cash is negative; `wants`: the want codes'
     positive means (the suggestion's halves); `wants_net`: the want class's net mean, every
     want code with its refunds (the Budget's Wünsche)."""
-    net = max(wants_net, ZERO)
-    if wants_max is None:
-        suggested = sum((_floor_cent(Fraction(m) / 2) for m in wants.values()), ZERO)
-        kept = min(suggested, net)
-    else:
-        kept = min(net, (wants_max * income / 100).quantize(CENT, ROUND_HALF_UP))
+    kept = wants_kept(income, wants, wants_net, wants_max)
     rental = max(rental_cash, ZERO)
     free = income - regular + rental_cash + cuttable(wants_net, kept)
     buffer = buffer_of(free, buffer_percent)
@@ -91,6 +86,22 @@ def ceiling_of(
         buffer=buffer,
         ceiling=free - buffer,
     )
+
+
+def wants_kept(
+    income: Decimal,
+    wants: Mapping[AllocationCategory, Decimal],
+    wants_net: Decimal,
+    wants_max: Decimal | None,
+) -> Decimal:
+    """The wants a plan keeps: the household's wants target of the income, else the
+    suggestion (half of each want's positive mean, rounded down to the cent), never more than
+    the want class's net mean (never below 0)."""
+    net = max(wants_net, ZERO)
+    if wants_max is None:
+        suggested = sum((_floor_cent(Fraction(m) / 2) for m in wants.values()), ZERO)
+        return min(suggested, net)
+    return min(net, (wants_max * income / 100).quantize(CENT, ROUND_HALF_UP))
 
 
 def cuttable(wants_net: Decimal, kept: Decimal) -> Decimal:
@@ -204,6 +215,11 @@ class PathMonth:
     path_net_worth: Decimal | None
     value_now: Decimal
     flows: Sequence[tuple[date, Decimal]]
+    # §7.11 (k): the purchases and the crypto bought after the day adopted, which alone can pay
+    # „Jetzt anlegen“ (the amount adopted is net of what was bought before it); None: the
+    # month's figures, as in every month after the one adopted in
+    invested_since: Decimal | None = None
+    crypto_since: Decimal | None = None
 
 
 def above_target_split(
@@ -332,24 +348,47 @@ def track(
     crypto_percent: Decimal | None,
     value_then: Decimal,
     months: Sequence[PathMonth],
+    now: tuple[Decimal, Decimal] | None = None,
 ) -> tuple[list[GoalPathRow], list[GoalPathPoint]]:
+    """`now`: „Jetzt anlegen“ as adopted, (the amount, its crypto part), or None (§7.11 (k)).
+    It is planned on top of the monthly amount in the first row and, as far as it is not yet
+    bought, in every row after it, so a lump invested in a later month still counts. A month's
+    purchases pay the month's own amount first, and only what was bought beyond it (after the
+    day adopted, in the month adopted) pays what is open of the lump, its crypto part from the
+    crypto bought beyond the month's crypto share: ordinary monthly investing never uses the
+    lump up, and the monthly crypto share bought never reads as waiting."""
     from .tracker import implied  # tracker imports goal, which imports this module
 
     rows: list[GoalPathRow] = []
     points: list[GoalPathPoint] = []
+    open_total, open_crypto = now if now is not None and now[0] > 0 else (ZERO, ZERO)
+    open_crypto = min(open_crypto, open_total)
+    crypto_share = ZERO if crypto_percent is None else monthly * crypto_percent / 100
     for m in months:
+        invest_now = open_total if open_total > 0 else None
+        since = m.invested if m.invested_since is None else m.invested_since
+        crypto_since = m.crypto_bought if m.crypto_since is None else m.crypto_since
+        beyond = max(ZERO, min(since, m.invested - monthly))
+        to_now = min(open_total, beyond)
+        crypto_beyond = max(ZERO, min(crypto_since, m.crypto_bought - crypto_share))
+        crypto_to_now = min(open_crypto, crypto_beyond, to_now)
+        open_total -= to_now
+        open_crypto = min(open_crypto - crypto_to_now, open_total)
+        invested_month = m.invested - to_now
         waiting = None
         if crypto_percent is not None:
-            share = max(ZERO, (monthly * crypto_percent / 100) - m.crypto_bought)
+            bought = m.crypto_bought - crypto_to_now
+            share = max(ZERO, (monthly * crypto_percent / 100) - bought)
             # What is left of the month's saving once the loan's repayment, the payments into
             # the property and the purchases are taken out (Q-O194): never below 0. A month
             # whose loan payout exceeds what the property took (D234's figure below 0) frees
             # none of the saving: the payout is no saving, so it counts as 0 here.
             into_property = max(ZERO, m.invested_property)
-            left = m.saved - m.principal - into_property - m.invested
+            left = m.saved - m.principal - into_property - invested_month
             waiting = min(share, max(ZERO, left)).quantize(CENT, ROUND_HALF_UP)
-        put = m.invested + (waiting or ZERO)
-        invested_gap = _gap(monthly - put)
+        # the month's own amount short (less what waits in the saving), plus the lump still open
+        own_short = max(ZERO, monthly - invested_month - (waiting or ZERO))
+        invested_gap = _gap(own_short + open_total)
         wants_gap = _gap(m.wants - wants_budget)
         nw_gap = None if m.path_net_worth is None else _gap(m.path_net_worth - m.net_worth)
         paid = sum((a for _, a in m.flows), ZERO)
@@ -369,6 +408,7 @@ def track(
                 month_end=m.month_end,
                 word=word,
                 planned=monthly,
+                invest_now=invest_now,
                 invested=m.invested,
                 waiting=waiting,
                 invested_gap=invested_gap,
@@ -419,6 +459,7 @@ __all__ = [
     "anlegbar_of",
     "ceiling_of",
     "cuttable",
+    "wants_kept",
     "monthly_split",
     "moved",
     "room_of",
