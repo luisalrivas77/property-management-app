@@ -2852,23 +2852,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/household-goal/properties": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Household Goal Properties */
-        get: operations["household_goal_properties_api_household_goal_properties_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/household-goal/plan": {
         parameters: {
             query?: never;
@@ -9377,72 +9360,6 @@ export interface components {
             as_is: string;
             /** Balanced */
             balanced?: string | null;
-        };
-        /**
-         * GoalProperties
-         * @description `GET /household-goal/properties`: one card per property the goal's walk values at the
-         *     due month with its default scenario (none for a property kept without one, none for one
-         *     sold before the due month). Computed on read, never stored; own use only.
-         */
-        GoalProperties: {
-            /** Shown */
-            shown: boolean;
-            reason?: components["schemas"]["GoalPropertiesReason"] | null;
-            /** Properties */
-            properties?: components["schemas"]["GoalPropertyGrowth"][];
-        };
-        /**
-         * GoalPropertiesReason
-         * @description Why no property card is shown.
-         * @enum {string}
-         */
-        GoalPropertiesReason: "generic_mode" | "no_goal" | "not_net_worth" | "goal_issue";
-        /**
-         * GoalPropertyGrowth
-         * @description One property's card on Anlagen › Immobilie: the yearly value growth this property alone
-         *     would need for the goal to be reached at the due month at today's saving (the typed fund
-         *     and crypto rates kept; smallest to 0.1 % between −50 % and +100 %), beside the German house
-         *     price index over every window of `window_years` (Q4 to Q4 from 2005; prices only, no rent
-         *     and no costs): `reached_windows` of `windows` reached it, their `median` and `best`
-         *     annualised (each floored to 0.1 %), and the `verdict` as route 3 gives it. Under 5 windows
-         *     `thin`. `available` false with `reason` out_of_range (no growth in range reaches it, the
-         *     windows still shown) or history_short (no window: the growth still shown).
-         */
-        GoalPropertyGrowth: {
-            /**
-             * Property Id
-             * Format: uuid
-             */
-            property_id: string;
-            /**
-             * Available
-             * @default false
-             */
-            available: boolean;
-            reason?: components["schemas"]["GoalRouteReason"] | null;
-            /** Typed Growth */
-            typed_growth: string;
-            /** Needed Growth */
-            needed_growth?: string | null;
-            /** Sale Year */
-            sale_year: number;
-            /** Window Years */
-            window_years: number;
-            /** Windows */
-            windows: number;
-            /** Reached Windows */
-            reached_windows?: number | null;
-            /** Median */
-            median?: string | null;
-            /** Best */
-            best?: string | null;
-            verdict?: components["schemas"]["GoalVerdict"] | null;
-            /**
-             * Thin
-             * @default false
-             */
-            thin: boolean;
-            source?: components["schemas"]["GoalReferenceSource"] | null;
         };
         /**
          * GoalReferenceSource
@@ -24484,35 +24401,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GoalTracking"];
-                };
-            };
-            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    household_goal_properties_api_household_goal_properties_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GoalProperties"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

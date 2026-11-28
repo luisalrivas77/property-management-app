@@ -8,8 +8,6 @@
 // yearly return to the sale (the projection's `sale.irr`) and „Steuerfrei verkaufbar ab“ (the
 // projection's `sale.tax_free_from`, ten years after the notarised purchase). With several
 // properties, one card per property, each opening its own Planung. Every figure is the server's.
-// Beside them „Wertzuwachs fürs Ziel“ (./PropertyGrowth.tsx, §7.9 (e) items 1, 2) when the goal's
-// walk sells this property at or after its due month; its panel in the hash.
 // The old links (/planning?section=immobilie, ?immobilie=<id>) land here with their levers.
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -17,7 +15,6 @@ import { useCallback } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
-import { DetailLayout, useDetail } from "@/components/DetailPanel";
 import { PlanningScreen } from "@/components/planning";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -25,7 +22,6 @@ import { useFormat, useT } from "@/i18n";
 import { assets } from "@/i18n/assets";
 
 import { type AssetsPerformance, loadPerformance, percentOne } from "./Performance";
-import { GROWTH_DETAIL, type GoalPropertyGrowth, growthOf, loadGrowth, PropertyGrowthCard, PropertyGrowthPanel } from "./PropertyGrowth";
 
 type PropertiesPayback = components["schemas"]["PropertiesPayback"];
 type PropertyPayback = components["schemas"]["PropertyPayback"];
@@ -43,20 +39,18 @@ export function PropertyTab() {
   const search = useSearchParams();
   const requested = search.get("immobilie");
   const load = useCallback(async () => {
-    const [properties, performance, payback, growth] = await Promise.all([
+    const [properties, performance, payback] = await Promise.all([
       ok(api.GET("/api/properties")),
       loadPerformance(),
       ok(api.GET("/api/properties/payback")).catch(() => null),
-      loadGrowth(),
     ]);
-    return { properties, performance, payback, growth };
+    return { properties, performance, payback };
   }, []);
   const state = useLoad(load);
   const t = useT(assets);
-  const growthDetail = useDetail(GROWTH_DETAIL);
   return (
     <Loading state={state}>
-      {({ properties, performance, payback, growth }) => {
+      {({ properties, performance, payback }) => {
         const property = properties.find((p) => p.id === requested) ?? properties[0];
         if (!property) {
           return (
@@ -69,12 +63,8 @@ export function PropertyTab() {
           );
         }
         const perProperty = payback?.properties ?? [];
-        const card = growthOf(growth, property.id);
-        const panel =
-          card && growthDetail.id === property.id ? <PropertyGrowthPanel card={card} label={property.label} backLabel={t.tabProperty} /> : null;
         return (
-          <DetailLayout panel={panel}>
-            <div className="stack">
+          <div className="stack">
               {properties.length > 1 ? (
                 <div className="planning-kpis">
                   {properties.map((p) => {
@@ -103,13 +93,10 @@ export function PropertyTab() {
                     payback={properties.length > 1 ? (perProperty.find((row) => row.property_id === property.id) ?? null) : payback}
                     projection={projection}
                     showEquity={properties.length === 1}
-                    growth={card}
-                    label={property.label}
                   />
                 )}
               />
-            </div>
-          </DetailLayout>
+          </div>
         );
       }}
     </Loading>
@@ -121,17 +108,12 @@ function PropertyKpis({
   payback,
   projection,
   showEquity,
-  growth,
-  label,
 }: {
   performance: AssetsPerformance;
   payback: Pick<PropertiesPayback | PropertyPayback, "cash_back" | "paid_in"> | null;
   projection: Projection | undefined;
   /** The equity is the household's over every property; shown on its own only for one. */
   showEquity: boolean;
-  /** „Wertzuwachs fürs Ziel“ for this property, when the goal's walk sells it (§7.9 (e)). */
-  growth: GoalPropertyGrowth | null;
-  label: string;
 }) {
   const t = useT(assets);
   const f = useFormat();
@@ -163,7 +145,6 @@ function PropertyKpis({
           <p className="planning-kpi-sub">{t.taxFreeSaleSub}</p>
         </div>
       ) : null}
-      {growth ? <PropertyGrowthCard card={growth} label={label} /> : null}
     </div>
   );
 }

@@ -9,7 +9,6 @@ from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated
-from uuid import UUID
 
 from pydantic import Field
 
@@ -540,51 +539,3 @@ class GoalTracking(Schema):
     # points begin with the day adopted at 0 % (§7.13 (d) 3), so the chart has one from that day
     rows: list[GoalPathRow] = Field(default_factory=list)
     points: list[GoalPathPoint] = Field(default_factory=list)
-
-
-# --- The property scenario (§7.9 (e), „(e) as decided for the build“ 1, 2; D289, D298) -------
-
-
-class GoalPropertiesReason(StrEnum):
-    """Why no property card is shown."""
-
-    GENERIC_MODE = "generic_mode"  # `advice_mode = generic`: nothing shown or computed (D289)
-    NO_GOAL = "no_goal"
-    NOT_NET_WORTH = "not_net_worth"  # a sum saved or the reserve counts no property
-    GOAL_ISSUE = "goal_issue"  # no projection, due passed, beyond it, the reserve used up
-
-
-class GoalPropertyGrowth(Schema):
-    """One property's card on Anlagen › Immobilie: the yearly value growth this property alone
-    would need for the goal to be reached at the due month at today's saving (the typed fund
-    and crypto rates kept; smallest to 0.1 % between −50 % and +100 %), beside the German house
-    price index over every window of `window_years` (Q4 to Q4 from 2005; prices only, no rent
-    and no costs): `reached_windows` of `windows` reached it, their `median` and `best`
-    annualised (each floored to 0.1 %), and the `verdict` as route 3 gives it. Under 5 windows
-    `thin`. `available` false with `reason` out_of_range (no growth in range reaches it, the
-    windows still shown) or history_short (no window: the growth still shown)."""
-
-    property_id: UUID
-    available: bool = False
-    reason: GoalRouteReason | None = None
-    typed_growth: ReturnRate  # the default scenario's value growth
-    needed_growth: GoalReturn | None = None
-    sale_year: int
-    window_years: int
-    windows: int
-    reached_windows: int | None = None
-    median: GoalReturn | None = None
-    best: GoalReturn | None = None
-    verdict: GoalVerdict | None = None
-    thin: bool = False
-    source: GoalReferenceSource | None = None  # None without a window
-
-
-class GoalProperties(Schema):
-    """`GET /household-goal/properties`: one card per property the goal's walk values at the
-    due month with its default scenario (none for a property kept without one, none for one
-    sold before the due month). Computed on read, never stored; own use only."""
-
-    shown: bool
-    reason: GoalPropertiesReason | None = None
-    properties: list[GoalPropertyGrowth] = Field(default_factory=list)

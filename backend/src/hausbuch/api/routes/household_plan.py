@@ -47,11 +47,6 @@ replaces (supersedes_id); services/household_scenarios.py holds the checks.
   Übersicht, the return followed against the money put in and the value change since the day
   chosen (services.goal_tracking); `shown` false in `generic` mode, without a goal or without
   a return followed.
-- GET /household-goal/properties (phase 10 §7.9 (e) items 1, 2, D289, D298): per property the
-  goal's walk sells at or after the due month with its default scenario, the yearly value
-  growth it alone would need beside the German house price index's windows
-  (services.goal_properties); `shown` false in `generic` mode, without a goal, for a goal that
-  is not a net worth or one the walk cannot answer.
 - POST /household-goal/preview {levers, scenario_id?} (phase 10 §7.10 (a), D299): the goal
   for typed levers, checked and run on the same row as POST /household-plan/preview (same
   422s and 404s); word `none` when the levers hold no goal; stores nothing, so it runs as a
@@ -85,7 +80,6 @@ from hausbuch.schemas.advice import (
 )
 from hausbuch.schemas.budget import BudgetView
 from hausbuch.schemas.goal import (
-    GoalProperties,
     GoalTracking,
     HouseholdGoal,
     HouseholdScenarioAdopted,
@@ -102,7 +96,7 @@ from hausbuch.schemas.plan_page import PlanPage, PlanSwitches, PlanView
 from hausbuch.services import advice as advice_service
 from hausbuch.services import budget as budget_service
 from hausbuch.services import goal as goal_service
-from hausbuch.services import goal_properties, goal_tracking, reference_returns
+from hausbuch.services import goal_tracking, reference_returns
 from hausbuch.services import household_scenarios as scenarios
 from hausbuch.services import plan as plan_service
 from hausbuch.services import plan_page as plan_page_service
@@ -173,11 +167,6 @@ def household_goal_get(cmd: Cmd) -> HouseholdGoal:
 @router.get("/household-goal/tracking")
 def household_goal_tracking(cmd: Cmd) -> GoalTracking:
     return cmd.read(goal_tracking.goal_tracking, _today())
-
-
-@router.get("/household-goal/properties")
-def household_goal_properties(cmd: Cmd) -> GoalProperties:
-    return cmd.read(goal_properties.goal_properties, _today())
 
 
 @router.get("/household-goal/plan")
