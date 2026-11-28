@@ -66,7 +66,12 @@ tests/api/test_kept_answers.py also requests every kept route and fails if one r
 session or passkey tables.
 
 The warm step (jobs/kept_answers.py) asks the page's routes once per enrolled member after the
-morning jobs, through `internal_get`, which runs the whole ASGI app as a request would.
+morning jobs, through `internal_get`, which runs the whole ASGI app as a request would. Since
+§7.13 (e) 1 it asks every kept route of Übersicht, Haushalt, Anlagen and Konten with the
+frontend's own query strings (WARMED); every other kept route is in NOT_WARMED with its
+reason, and a test fails when a kept route is in neither. §7.13 (e) 2: a person's miss within
+a day of an answer stored for the same path logs once which part of the key differed
+(`explain_miss`), by part name, with values only for a version, a day or a language.
 
 §7.5 (c): the store also records, per member, the paths (with their query) that member's own
 requests found kept or stored (never an internal request's, never an answer the store did not
@@ -77,6 +82,7 @@ checks (`check`, `compare_all`) recompute a kept answer with the store bypassed 
 the bytes; a difference empties the store and is logged as an error.
 """
 
+import json
 import logging
 import re
 import threading
@@ -118,6 +124,11 @@ MAX_BYTES = 32 * 1024 * 1024
 MAX_RECORDED_PATHS = 200  # per member, the least recently asked dropped first
 MAX_RECORDED_MEMBERS = 50
 RECORDED_FOR = timedelta(days=3)
+# §7.13 (e) 2: a person's miss within this long of an answer stored for the same path is
+# explained once in the log (which part of the key differed); at most this many stored keys
+# are remembered for it, the oldest dropped first.
+EXPLAIN_MISS_WITHIN = timedelta(days=1)
+MAX_STORED_KEYS = 4000
 
 # The GET routes whose answers are kept: what Übersicht and Zu prüfen load (perf_probe.PageRun,
 # components/inbox.tsx loadInbox), less the routes the audit excluded, and since §7.5 (a) every
@@ -371,6 +382,36 @@ class CheckOutcome:
     result: str  # same, different, moved (version, day or expiry passed), failed
 
 
+@dataclass
+class StoredKey:
+    """The last key an answer was stored under for one member and path (§7.13 (e) 2); kept
+    beside the store, so it outlives the answer `put` drops under an older version."""
+
+    key: Key
+    stored_at: datetime
+    explained: bool = False
+
+
+def key_difference(stored: Key, asked: Key) -> dict[str, Any]:
+    """The parts of `asked` that differ from `stored`, for the log: each part by name, with
+    its two values only where they are a version, a day or a language. Never an id, a path or
+    a query value: a differing query is named by its parameter names alone."""
+    parts: dict[str, Any] = {}
+    if stored.path != asked.path:
+        parts["path"] = True
+    if stored.query != asked.query:
+        was, now = dict(stored.query), dict(asked.query)
+        parts["query"] = sorted(n for n in was.keys() | now.keys() if was.get(n) != now.get(n))
+    for name in ("version", "berlin_day", "utc_day"):
+        was_value, now_value = getattr(stored.stamp, name), getattr(asked.stamp, name)
+        if was_value != now_value:
+            parts[name] = [str(was_value), str(now_value)]
+    for name in ("locale", "app_version", "rule_version"):
+        if getattr(stored, name) != getattr(asked, name):
+            parts[name] = [getattr(stored, name), getattr(asked, name)]
+    return parts
+
+
 def canonical_query(query_string: bytes) -> tuple[tuple[str, str], ...]:
     # By name only, and stable: FastAPI takes the last of a repeated parameter, so the
     # order of one name's values is part of the answer while the order of names is not.
@@ -400,6 +441,9 @@ class KeptAnswers:
         self._lock = threading.Lock()
         self._locales: dict[UUID, str] = {}
         self._recorded: OrderedDict[tuple[UUID, UUID], RecordedMember] = OrderedDict()
+        # §7.13 (e) 2: per member, path and query (and per member and path), the last key an
+        # answer was stored under, to explain a person's miss.
+        self._stored_keys: OrderedDict[tuple[Any, ...], StoredKey] = OrderedDict()
         self.in_flight = 0  # a person's requests running now (§7.5 (c))
         self.internal_in_flight = 0  # internal_get requests running now
         # time.monotonic() when a person's request last ended, so the refresh waits for a
@@ -477,7 +521,43 @@ class KeptAnswers:
             while self._bytes > self.max_bytes:
                 _, dropped = self._entries.popitem(last=False)
                 self._bytes -= dropped.size
+            member = (key.workspace_id, key.user_id, key.path)
+            for side in ((*member, key.query), member):
+                self._stored_keys.pop(side, None)
+                self._stored_keys[side] = StoredKey(key, self.clock())
+            while len(self._stored_keys) > MAX_STORED_KEYS:
+                self._stored_keys.popitem(last=False)
         return True
+
+    def explain_miss(self, key: Key, template: str) -> dict[str, Any] | None:
+        """§7.13 (e) 2: a person's request missed. When an answer was stored for the same
+        member and path within EXPLAIN_MISS_WITHIN (the same query's first, else the path's
+        latest), log once which part of the key differed; a stored key is explained at most
+        once. Returns the logged parts (None when nothing was logged)."""
+        member = (key.workspace_id, key.user_id, key.path)
+        with self._lock:
+            stored = self._stored_keys.get((*member, key.query)) or self._stored_keys.get(member)
+            if stored is None or stored.explained:
+                return None  # the clock is read only below: nothing else may move it
+            now = self.clock()
+            if now - stored.stored_at > EXPLAIN_MISS_WITHIN:
+                return None
+            if stored.key == key:  # dropped as least recently used, or expired: no key part
+                parts: dict[str, Any] = {"dropped": True}
+            else:
+                parts = key_difference(stored.key, key)
+            for side in ((*member, stored.key.query), member):
+                if (found := self._stored_keys.get(side)) is not None and found.key == stored.key:
+                    found.explained = True
+        fields = {
+            "event": "kept_answer_miss_explained",
+            "route": template,
+            "parts": sorted(parts),
+            "differences": parts,
+            "stored_minutes_ago": int((now - stored.stored_at).total_seconds() // 60),
+        }
+        logger.info("a kept answer missed", extra={"fields": fields})
+        return parts
 
     def clear(self) -> None:
         with self._lock:
@@ -773,6 +853,8 @@ class KeptAnswersMiddleware:
                 await send({"type": "http.response.body", "body": entry.body})
                 return
             kept.counters.misses += 1
+            if not internal:
+                kept.explain_miss(key, template)
 
         status = 0
         headers: tuple[tuple[bytes, bytes], ...] = ()
@@ -822,13 +904,117 @@ class WarmResult:
     members: int = 0
     requests: int = 0
     failed: int = 0
+    # Answered with a refusal the page expects (EXPECTED_REFUSALS): not kept, not a failure.
+    expected: int = 0
     paths: list[str] = field(default_factory=list)
+    templates: set[str] = field(default_factory=set)  # every template asked
 
 
 def last_full_month(today: date) -> str:
     """The month before today's, as the page asks for it (components/cashflow.tsx)."""
-    year, month = (today.year, today.month - 1) if today.month > 1 else (today.year - 1, 12)
-    return f"{year:04d}-{month:02d}"
+    return shift_month(f"{today.year:04d}-{today.month:02d}", -1)
+
+
+def shift_month(month: str, by: int) -> str:
+    """ "2026-01" shifted by -1 → "2025-12" (components/cashflow.tsx shiftMonth)."""
+    year, mon = int(month[:4]), int(month[5:7])
+    index = year * 12 + (mon - 1) + by
+    return f"{index // 12:04d}-{index % 12 + 1:02d}"
+
+
+def months_up_to(month: str, count: int) -> list[str]:
+    """The `count` months ending at `month`, oldest first (components/cashflow.tsx)."""
+    return [shift_month(month, i - count + 1) for i in range(count)]
+
+
+# Haushalt › Monat shows the twelve months ending at the chosen one (household/page.tsx
+# MONTHS_SHOWN); the page opens on the last full month.
+HOUSEHOLD_MONTHS_SHOWN = 12
+
+# A refusal a page expects and shows as a to-do of its own, per template: the warm counts it
+# as answered, not as a failure. GET /owners/{id}/anlage-n answers 422 anlage_n.no_pay for an
+# owner with no pay source in the year, which Übersicht's to-dos read as „Arbeitslohn fehlt“
+# (components/overviewTodos.tsx); the query is the page's own (§7.13 (e) 7).
+EXPECTED_REFUSALS: dict[str, frozenset[str]] = {
+    "/api/owners/{owner_id}/anlage-n": frozenset({"anlage_n.no_pay"}),
+}
+
+# The kept routes the warm step does not ask, each with its reason (§7.13 (e) 1). Every
+# other KEPT_ROUTES template is asked by `warm_member` as the pages ask it (WARMED);
+# tests/api/test_kept_answers.py fails when a kept route is in neither list, or when the warm
+# asks a template listed here or misses one it should ask. A route left out is still kept
+# once a person asks it, and refreshed after a change (§7.5 (c)).
+_NO_SCREEN = "no screen reads it with GET"
+_DETAIL = (
+    "a detail page opened from one record (Immobilien, Mieter, Darlehen, Dokumente, Steuern), "
+    "not one of the pages the warm prepares (Übersicht, Haushalt, Anlagen, Konten); kept on "
+    "its first open and refreshed after a change"
+)
+_PER_LINE = "one per bank line or document, opened by a click; too many to ask ahead"
+NOT_WARMED: dict[str, str] = {
+    "/api/health/net-worth-series": _NO_SCREEN + " (GET /health carries its series)",
+    "/api/accounts/auto-rate": _NO_SCREEN,
+    "/api/accounts/{account_id}/ownership": "read by the account's edit form only",
+    "/api/accounts/{account_id}/bank-statements": (
+        "read by the Bankabruf card after its connection, which is not kept"
+    ),
+    "/api/imports/{import_id}": _NO_SCREEN,
+    "/api/transactions/{transaction_id}/allocations": _PER_LINE,
+    "/api/transfers/open": _NO_SCREEN,
+    "/api/net-worth": _NO_SCREEN,
+    "/api/net-worth/snapshots": _NO_SCREEN + " (the screens POST it)",
+    "/api/net-worth/snapshots/{run_id}": _NO_SCREEN,
+    "/api/wallets/holdings": _NO_SCREEN,
+    "/api/wallets/{account_id}/lots": _NO_SCREEN,
+    "/api/owners/{owner_id}": _DETAIL,
+    "/api/owners/{owner_id}/anlage-n/exports": _DETAIL,
+    "/api/income-inputs": _DETAIL,
+    "/api/tax-rate": _DETAIL,
+    "/api/return-inputs": _DETAIL,
+    "/api/return-inputs/{return_input_id}/evidence": _PER_LINE,
+    "/api/tax/anlage-n/years": _DETAIL,
+    "/api/tax/questionnaire": _DETAIL,
+    "/api/tax/{tax_year}/guide": _DETAIL,
+    "/api/properties/{property_id}/ownership": _DETAIL,
+    "/api/properties/{property_id}/acquisition-costs": _DETAIL,
+    "/api/properties/{property_id}/price-splits": _DETAIL,
+    "/api/properties/{property_id}/purchase-summary": _DETAIL,
+    "/api/properties/{property_id}/documents": _DETAIL,
+    "/api/properties/{property_id}/tax-inputs": _DETAIL,
+    "/api/properties/{property_id}/anlage-v/sources": _DETAIL,
+    "/api/properties/{property_id}/anlage-v/exports": _DETAIL,
+    "/api/properties/{property_id}/performance/actuals": _DETAIL,
+    "/api/properties/{property_id}/performance/projection": _DETAIL,
+    "/api/properties/{property_id}/scenarios": _DETAIL,
+    "/api/units/{unit_id}": _DETAIL,
+    "/api/units/{unit_id}/documents": _DETAIL,
+    "/api/tenants/{tenant_id}/documents": _DETAIL,
+    "/api/tenants/{tenant_id}/tenancies": _DETAIL,
+    "/api/tenancies/{tenancy_id}": _DETAIL,
+    "/api/tenancies/{tenancy_id}/deposits": _DETAIL,
+    "/api/tenancies/{tenancy_id}/rent-schedule": _DETAIL,
+    "/api/tenancies/{tenancy_id}/rent": _DETAIL,
+    "/api/tenancies/{tenancy_id}/documents": _DETAIL,
+    "/api/loans/{loan_id}": _DETAIL,
+    "/api/loans/{loan_id}/summary": _DETAIL,
+    "/api/loans/{loan_id}/documents": _DETAIL,
+    "/api/documents/{document_id}/links": _PER_LINE,
+    "/api/documents/{document_id}/retention": _PER_LINE,
+    "/api/documents/{document_id}/proposals": _PER_LINE,
+    "/api/proposals/{proposal_id}": _PER_LINE,
+}
+WARMED: tuple[str, ...] = tuple(t for t in KEPT_ROUTES if t not in NOT_WARMED)
+
+
+def _refusal_codes(body: bytes) -> set[str]:
+    try:
+        parsed = json.loads(body)
+    except ValueError:
+        return set()
+    if not isinstance(parsed, dict):
+        return set()
+    codes = [*(parsed.get("codes") or ()), parsed.get("code")]
+    return {code for code in codes if isinstance(code, str)}
 
 
 async def warm_member(
@@ -838,18 +1024,29 @@ async def warm_member(
     *,
     before: Callable[[], Awaitable[None]] | None = None,
 ) -> WarmResult:
-    """Ask the kept routes of Übersicht and Zu prüfen once as `auth`, in the order and with
-    the parameters the pages use, so their answers are kept. A failed route is counted and
-    logged by its template only; the others still run. `before`, when given, is awaited right
-    before each route, with nothing awaited between it and the request."""
+    """Ask the kept routes of Übersicht, Haushalt, Anlagen and Konten once as `auth`, in the
+    order the pages are likeliest opened and with the parameters the pages send (§7.13 (e) 1:
+    the frontend's own query strings), so their answers are kept. A path asked twice is asked
+    once. A failed route is counted and logged by its template only; the others still run.
+    `before`, when given, is awaited right before each route, with nothing awaited between it
+    and the request."""
     result = WarmResult(members=1)
-    month = last_full_month(today)
+    month = last_full_month(today)  # every page opens on the last full month
+    running = f"{today.year:04d}-{today.month:02d}"  # Konten › Umsätze's month card
     year = today.year
+    asked: dict[tuple[str, tuple[tuple[str, str], ...]], Any] = {}
 
     async def get(path: str, query: dict[str, Any] | None = None) -> Any:
+        query = query or {}
+        template = kept_route(path)
+        once = (path, canonical_query(urlencode(query).encode()))
+        if once in asked:
+            return asked[once]
         if before is not None:
             await before()
         result.requests += 1
+        if template is not None:
+            result.templates.add(template)
         try:
             response = await kept.internal_get(auth, path, query)
         except Exception as exc:  # noqa: BLE001 - class name only
@@ -857,57 +1054,112 @@ async def warm_member(
             exc_type = type(exc).__name__
         else:
             exc_type = None
+        parsed: Any = None
+        expected = EXPECTED_REFUSALS.get(template or "", frozenset())
+        if (
+            response is not None
+            and response.status == 422
+            and _refusal_codes(response.body) & expected
+        ):
+            result.expected += 1
+            asked[once] = None
+            return None
         if response is None or response.status != 200:
             result.failed += 1
             fields = {
                 "event": "kept_answer_warm_failed",
-                "route": kept_route(path),
+                "route": template,
                 "status": None if response is None else response.status,
                 "exc_type": exc_type,
             }
             logger.warning("a kept answer was not warmed", extra={"fields": fields})
-            return None
-        result.paths.append(path)
-        import json
+        else:
+            result.paths.append(path)
+            try:
+                parsed = json.loads(response.body)
+            except ValueError:
+                parsed = None
+        asked[once] = parsed
+        return parsed
 
-        try:
-            return json.loads(response.body)
-        except ValueError:
-            return None
-
-    properties = await get("/api/properties") or []
-    await get("/api/tenants")
-    await get("/api/reminders")
+    # Übersicht (page.tsx): the tiles first, then the to-dos (overviewTodos.tsx).
     await get("/api/net-worth/overview")
-    await get("/api/health")
+    health = await get("/api/health") or {}
+    await get("/api/household-goal")
     await get("/api/household/cashflow", {"month": month})
     await get("/api/health/months", {"from": month, "to": month})
+    await get("/api/inbox")  # every page's menu count; Zu prüfen's list (§7.5 (b))
     await get("/api/properties/equity")
     await get("/api/properties/payback")
+    await get("/api/reminders")
+    properties = await get("/api/properties") or []
+    await get("/api/household-plan")
+    await get("/api/household-goal/tracking")
     owners = await get("/api/owners") or []
     await get("/api/tax/return-estimate", {"tax_year": year})
-    await get("/api/health/net-worth-series")
-    await get("/api/household-scenarios", {"include_history": "true"})
-    accounts = await get("/api/accounts") or []
-    await get("/api/inbox")  # every page's menu count; Zu prüfen's list (§7.5 (b))
-    await get("/api/inbox/lines")
-    await get("/api/possible-duplicates")
-    await get("/api/documents")
     for prop in properties:
         base = f"/api/properties/{prop['id']}"
-        units = await get(f"{base}/units") or []
-        await get(f"{base}/loans")
-        for unit in units:
-            await get(f"/api/units/{unit['id']}/tenancies")
         await get(f"{base}/flat-rate-check")
         checklist = await get(f"{base}/checklist")
         if checklist is not None:
             await get(f"{base}/anlage-v", {"tax_year": checklist["tax_year"]})
     for owner in owners:
         await get(f"/api/owners/{owner['id']}/anlage-n", {"tax_year": year})
+    # Zu prüfen (components/inbox.tsx)
+    await get("/api/inbox/lines")
+    await get("/api/possible-duplicates")
+    await get("/api/documents")
+    await get("/api/tenants")
+    # Haushalt › Monat (household/page.tsx loadYear, healthFigures.tsx, householdRecurring.tsx)
+    shown = months_up_to(month, HOUSEHOLD_MONTHS_SHOWN)
+    for each in shown:
+        await get("/api/household/cashflow", {"month": each})
+    await get("/api/transfers", {"month": month})
+    await get("/api/health/months", {"from": shown[0], "to": month})
+    await get("/api/household-plan/comparison", {"month": month})
+    window = [m for m in (health.get("window") or {}).get("months") or [] if isinstance(m, str)]
+    for each in window:  # the „Ø“ columns' months, when outside the twelve shown
+        await get("/api/household/cashflow", {"month": each})
+    await get("/api/household-budget")
+    await get("/api/household-scenarios", {"include_history": "true"})
+    accounts = await get("/api/accounts") or []
+    await get("/api/household/recurring")
+    # Haushalt › Budget, Reserve (householdPlan.tsx) and Ziel; „Euer Plan“ (householdPlanPage)
+    if window:
+        await get("/api/health/months", {"from": window[0], "to": window[-1]})
+    await get("/api/household-plan/explanation")
+    await get("/api/household-goal/plan", {"view": "own"})
+    # Anlagen (assets/page.tsx, Overview, Performance, Crypto, PropertyGrowth)
+    await get("/api/assets/overview")
+    await get("/api/assets")
+    await get("/api/assets/etf")
+    await get("/api/assets/performance")
+    await get("/api/holdings/crypto")
+    await get("/api/household-goal/properties")
+    # Konten (accounts/page.tsx): each account's row, the loans; then each account's page
+    for prop in properties:
+        base = f"/api/properties/{prop['id']}"
+        units = await get(f"{base}/units") or []
+        loans = await get(f"{base}/loans") or []
+        for loan in loans:
+            await get(f"/api/loans/{loan['id']}/schedule")
+        for unit in units:
+            await get(f"/api/units/{unit['id']}/tenancies")
     for account in accounts:
-        if account.get("kind") in ("exchange", "wallet"):
+        base = f"/api/accounts/{account['id']}"
+        if account.get("kind") == "wallet":  # wallet.tsx, wallet-cards.tsx
+            wallet = f"/api/wallets/{account['id']}"
+            await get(wallet)
+            await get(f"{wallet}/groups")
+            await get(f"{wallet}/answered")
+            await get(f"{wallet}/hidden-tokens")
             continue
-        await get(f"/api/accounts/{account['id']}/imports")
-        await get(f"/api/accounts/{account['id']}/transactions")
+        await get(f"{base}/imports")
+        await get(base)
+        await get(f"{base}/transactions")
+        if account.get("kind") == "exchange":  # exchange.tsx
+            await get(f"{base}/exchange")
+            await get(f"{base}/movements")
+        else:  # Konten › Umsätze (accountLines.tsx MonthCard)
+            await get(f"{base}/month", {"month": running})
     return result

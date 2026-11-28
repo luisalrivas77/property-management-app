@@ -51,6 +51,7 @@ class WarmRun:
     members: int = 0
     requests: int = 0
     failed: int = 0
+    expected: int = 0  # refusals a page expects (kept_answers.EXPECTED_REFUSALS)
 
 
 def enrolled_members(deps: JobDeps) -> list[AuthContext]:
@@ -95,12 +96,14 @@ async def run_warm(
         run.members += 1
         run.requests += result.requests
         run.failed += result.failed
+        run.expected += result.expected
     fields = {
         "event": "kept_answers_warmed",
         "trigger": trigger,
         "members": run.members,
         "requests": run.requests,
         "failed": run.failed,
+        "expected": run.expected,
         "kept": len(kept),
         "bytes": kept.size_bytes,
     }

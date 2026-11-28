@@ -27,7 +27,10 @@ from api_support import (
 from sqlalchemy import text
 
 from hausbuch.api.kept_answers import (
+    EXPECTED_REFUSALS,
     KEPT_ROUTES,
+    NOT_WARMED,
+    WARMED,
     Entry,
     KeptAnswers,
     Key,
@@ -650,3 +653,144 @@ def test_no_kept_route_reads_the_session_or_passkey_tables(
         event.remove(app_engine, "before_cursor_execute", record)
     assert requested | _NOT_REQUESTED == set(KEPT_ROUTES)
     assert not requested & _NOT_REQUESTED
+
+
+def test_every_kept_route_is_warmed_or_named_with_a_reason():
+    """§7.13 (e) 1: a kept route the warm does not ask is listed with why; a route added to
+    KEPT_ROUTES without either fails here."""
+    assert set(WARMED) | set(NOT_WARMED) == set(KEPT_ROUTES)
+    assert not set(WARMED) & set(NOT_WARMED)
+    assert set(NOT_WARMED) <= set(KEPT_ROUTES), set(NOT_WARMED) - set(KEPT_ROUTES)
+    assert all(reason.strip() for reason in NOT_WARMED.values())
+    assert set(EXPECTED_REFUSALS) <= set(WARMED)
+
+
+def test_the_warm_asks_every_warmed_route_as_the_pages_ask_it(client_a, kept, auth_a, dbname):
+    """In a world with a property, a unit, a loan, two owners (one with pay, one without), a
+    bank account, an exchange and a wallet, the warm asks exactly the WARMED templates; an
+    owner with no pay answers anlage_n.no_pay, which Übersicht expects (§7.13 (e) 7)."""
+    from db.db_support import _admin
+
+    with _admin(dbname) as conn:  # the member exists, so created_by (FK to app_user) is real
+        conn.execute(
+            "INSERT INTO app_user (id, workspace_id, email, display_name)"
+            " VALUES (%s, %s, %s, 'Test')",
+            (auth_a.user_id, auth_a.workspace_id, f"{auth_a.user_id}@example.test"),
+        )
+    prop = new_property(client_a, notarized_on="2026-01-15", purchase_date="2026-03-01")
+    new_unit(client_a, prop["id"])
+    loan = loan_body(
+        prop["id"],
+        disbursed_on="2026-02-27",
+        first_payment_on="2026-03-30",
+        fixed_until="2036-02-28",
+    )
+    create(client_a, "/api/loans", loan)
+    paid = create(client_a, "/api/owners", {"full_name": "Owner A"})["id"]
+    create(client_a, "/api/owners", {"full_name": "Owner B"})
+    pay = {"kind": "expected_gross_pay", "tax_year": 2026, "value": {"amount": "50000.00"}}
+    create(client_a, "/api/income-inputs", pay | {"owner_id": paid})
+    _account(client_a, label="Giro", iban="DE50100000000000000001")
+    _account(client_a, label="Börse", kind="exchange", provider="BISON")
+    _account(client_a, label="Wallet", kind="wallet", provider="Testwallet")
+
+    result = asyncio.run(warm_member(kept, auth_a, date(2026, 11, 21)))
+
+    assert result.failed == 0
+    assert result.expected == 1  # Owner B: anlage_n.no_pay
+    assert result.templates == set(WARMED), set(WARMED) ^ result.templates
+    assert result.requests == len(kept) + result.expected  # every other answer is kept
+    # Haushalt › Monat's twelve months up to the last full one, as the page asks them.
+    months = {key.query for key, _ in kept.items() if key.path == "/api/household/cashflow"}
+    assert (("month", "2025-11"),) in months
+    assert (("month", "2026-10"),) in months
+    # Konten › Umsätze's month card: the running month.
+    assert any(
+        key.path.endswith("/month") and key.query == (("month", "2026-11"),)
+        for key, _ in kept.items()
+    )
+
+
+def _stored_key(**changes) -> Key:
+    ws = uuid.UUID(int=7)
+    fields = {
+        "path": "/api/household/cashflow",
+        "query": (("month", "2026-10"),),
+        "workspace_id": ws,
+        "user_id": ws,
+        "stamp": Stamp(3, date(2026, 11, 21), date(2026, 11, 21)),
+        "locale": "de",
+        "app_version": "v1",
+        "rule_version": "r1",
+    }
+    return Key(**(fields | changes))
+
+
+def test_a_miss_names_the_key_parts_that_differed_once(caplog):
+    """§7.13 (e) 2: a person's miss within a day of a stored answer for the same path logs
+    which part of the key differed, by name, with a version, day or language as its values
+    and a query by its parameter names only; each stored key is explained once."""
+    now = [datetime(2026, 11, 21, 10, tzinfo=UTC)]
+    store = KeptAnswers(clock=lambda: now[0])
+    stored = _stored_key()
+    store.put(stored, _entry(10))
+    asked = _stored_key(locale="en", stamp=Stamp(4, date(2026, 11, 21), date(2026, 11, 21)))
+    caplog.set_level("INFO", logger="hausbuch.api.kept_answers")
+    parts = store.explain_miss(asked, "/api/household/cashflow")
+    assert parts == {"locale": ["de", "en"], "version": ["3", "4"]}
+    logged = [
+        r.fields
+        for r in caplog.records
+        if getattr(r, "fields", {}).get("event") == "kept_answer_miss_explained"
+    ]
+    assert logged == [
+        {
+            "event": "kept_answer_miss_explained",
+            "route": "/api/household/cashflow",
+            "parts": ["locale", "version"],
+            "differences": {"locale": ["de", "en"], "version": ["3", "4"]},
+            "stored_minutes_ago": 0,
+        }
+    ]
+    assert store.explain_miss(asked, "/api/household/cashflow") is None  # once
+
+
+def test_a_miss_on_another_query_names_the_parameter_never_its_value():
+    store = KeptAnswers(clock=lambda: datetime(2026, 11, 21, 10, tzinfo=UTC))
+    store.put(_stored_key(), _entry(10))
+    asked = _stored_key(query=(("month", "2026-09"),))
+    assert store.explain_miss(asked, "/api/household/cashflow") == {"query": ["month"]}
+
+
+def test_a_miss_a_day_after_the_answer_was_stored_is_not_explained():
+    now = [datetime(2026, 11, 21, 10, tzinfo=UTC)]
+    store = KeptAnswers(clock=lambda: now[0])
+    store.put(_stored_key(), _entry(10))
+    now[0] += timedelta(days=1, minutes=1)
+    berlin = Stamp(3, date(2026, 11, 22), date(2026, 11, 22))
+    assert store.explain_miss(_stored_key(stamp=berlin), "/api/household/cashflow") is None
+
+
+def test_a_miss_after_a_write_is_explained_though_the_answer_was_dropped():
+    """`put` under a newer version drops the older answers; the side record still names the
+    version as what differed."""
+    store = KeptAnswers(clock=lambda: datetime(2026, 11, 21, 10, tzinfo=UTC))
+    store.put(_stored_key(), _entry(10))
+    newer = Stamp(4, date(2026, 11, 21), date(2026, 11, 21))
+    store.put(_stored_key(path="/api/properties", stamp=newer), _entry(10))
+    assert store.get(_stored_key()) is None
+    parts = store.explain_miss(_stored_key(stamp=newer), "/api/household/cashflow")
+    assert parts == {"version": ["3", "4"]}
+
+
+def test_a_persons_miss_in_another_language_is_explained(client_a, kept, caplog):
+    ok(client_a.get("/api/properties"))
+    caplog.set_level("INFO", logger="hausbuch.api.kept_answers")
+    ok(client_a.get("/api/properties", headers={"accept-language": "en"}))
+    explained = [
+        r.fields
+        for r in caplog.records
+        if getattr(r, "fields", {}).get("event") == "kept_answer_miss_explained"
+    ]
+    assert [e["parts"] for e in explained] == [["locale"]]
+    assert explained[0]["route"] == "/api/properties"
