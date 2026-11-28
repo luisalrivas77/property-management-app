@@ -230,29 +230,6 @@ function FormLink({ href, children, className, ariaLabel }: { href: string; chil
   );
 }
 
-/** Übersicht's panel for „Euer Ziel“: the same card, and while the goal has no word, why and
- * what to do (principle 7: every gap with its button). The rest is on Haushalt › Ziel. */
-export function GoalOverviewPanel({ goal, formHref, onChanged }: { goal: HouseholdGoal; formHref: string; onChanged: () => void }) {
-  const t = useT(goalText);
-  const p = usePlanFormat();
-  if (!goal.goal) return null;
-  return (
-    <div className="stack">
-      <div className="goal-c">
-        <div className="goal-ch">
-          <h3>{t.title}</h3>
-          <FormLink href={formHref} className="goal-lnk" ariaLabel={t.changeGoal}>
-            {t.change}
-          </FormLink>
-        </div>
-        <GoalTileBody goal={goal} />
-        {goal.percent != null ? <p className="goal-one">{t.percentReached(p.percentValue(goal.percent))}</p> : null}
-      </div>
-      <GoalIssue goal={goal} formHref={formHref} onChanged={onChanged} />
-    </div>
-  );
-}
-
 function GoalIssue({ goal, formHref, onChanged }: { goal: HouseholdGoal; formHref: string; onChanged: () => void }) {
   const t = useT(goalText);
   const p = usePlanFormat();

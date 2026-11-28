@@ -240,10 +240,11 @@ test("no goal: Übersicht leads to the form, saving the goal shows its word ther
   await expect(tile).toContainText("Auf Kurs");
   await expect(tile.locator(".goal-word")).toHaveAttribute("data-word", "on_track");
   await expect(tile).toContainText(/Weiter 1\.800\s€ im Monat sparen und anlegen/);
+  // Straight to Haushalt › Ziel, no side panel (§7.13 (d) 6, D316).
+  await expect(tile).toHaveAttribute("href", "/household?tab=ziel");
   await tile.click();
-  const panel = detail(page, "Euer Ziel");
-  await expect(panel).toContainText("Auf Kurs");
-  await expect(panel.getByRole("link", { name: "Zum Ziel" })).toHaveAttribute("href", "/household?tab=ziel");
+  await expect(page).toHaveURL(/\/household\?tab=ziel$/);
+  await expect(page.getByRole("region", { name: "Euer Ziel" })).toContainText("Auf Kurs");
 });
 
 test("a goal the projection cannot reach yet says why, and its to-do leads to Anlagen › Immobilie", async ({ page, signedIn }) => {
@@ -284,9 +285,7 @@ test("a goal the projection cannot reach yet says why, and its to-do leads to An
   const tile = page.getByRole("region", { name: "Auf einen Blick" }).getByRole("link", { name: /Euer Ziel/ });
   await expect(tile).toContainText("Noch nicht berechnet");
   await expect(tile.locator(".goal-word")).toHaveCount(0);
-  await tile.click();
-  const panel = detail(page, "Euer Ziel");
-  await expect(panel.getByRole("link", { name: "Szenario anlegen" })).toHaveAttribute("href", "/assets?tab=immobilie");
+  await expect(tile).toHaveAttribute("href", "/household?tab=ziel");
 });
 
 test("a spending scenario is adopted as the budget after the in-page confirmation", async ({ page, signedIn }) => {
@@ -382,7 +381,7 @@ test("on the computer the goal sits under Finanzielle Gesundheit, without a side
   await page.goto("/");
   const tiles = page.getByRole("region", { name: "Auf einen Blick" });
   await expect(tiles.getByRole("link", { name: /Euer Ziel/ })).toContainText("Auf Kurs");
-  // The card (19f panel 1: the summary link and „Zum Ziel ›“ inside it).
+  // The card (19f panel 1: the link to Haushalt › Ziel and „Euer Plan ›“ beside it).
   const goalTile = tiles.locator(".tile-goal");
   const health = await tiles.getByRole("link", { name: /Finanzielle Gesundheit/ }).boundingBox();
   const own = await goalTile.boundingBox();
