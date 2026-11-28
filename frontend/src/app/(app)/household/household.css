@@ -131,14 +131,22 @@ a.household-group-row .household-share {
     padding: 12px;
     min-width: 0;
   }
+}
 
-  .household-month-tiles .planning-kpi p.planning-kpi-value {
-    font-size: 20px;
-  }
+/* A label breaks between words, a figure never inside itself (§7.13 (g)): the tile's figure
+ * shrinks with the tile instead, down to 15 px, so „-12.345,00 €“ stays on one line. */
+.household-month-tiles .planning-kpi {
+  container-type: inline-size;
 }
 
 .household-month-tiles .planning-kpi p {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+.household-month-tiles .planning-kpi p.planning-kpi-value {
+  white-space: nowrap;
+  font-size: clamp(15px, 14cqi, 24px);
 }
 
 /* The Budget tile: a link like a tile, its classes with their dots under the count. */
@@ -150,6 +158,11 @@ a.household-group-row .household-share {
 
 .household-budget-tile:hover {
   border-color: var(--accent-strong);
+}
+
+/* The gap („+260 €“) is one figure: it never breaks before its „€“ (§7.13 (g)). */
+.household-budget-gap {
+  white-space: nowrap;
 }
 
 .household-budget-dots {

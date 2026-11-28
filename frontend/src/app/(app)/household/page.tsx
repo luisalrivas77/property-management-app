@@ -621,7 +621,12 @@ function BudgetTile({ budget: state }: { budget: Loaded<BudgetView> }) {
             return (
               <li key={key}>
                 <span className={`budget-dot budget-dot-${mark.colour}`} aria-hidden="true" /> {lineLabel(tp, key)}
-                {gap !== null ? ` ${under ? "−" : "+"}${p.euro(gap.replace(/^[-+]/, ""))}` : ""}
+                {gap !== null ? (
+                  <>
+                    {" "}
+                    <span className="household-budget-gap">{`${under ? "−" : "+"}${p.euro(gap.replace(/^[-+]/, ""))}`}</span>
+                  </>
+                ) : null}
               </li>
             );
           })}
