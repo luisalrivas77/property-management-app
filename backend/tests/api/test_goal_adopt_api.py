@@ -26,6 +26,7 @@ pytestmark = pytest.mark.db
 
 ADOPT = "/api/household-goal/path/adopt"
 GOAL = "/api/household-goal"
+TRACKING = "/api/household-goal/tracking"
 
 
 class _Frozen(datetime):
@@ -71,3 +72,18 @@ def test_the_adopt_answer_carries_the_goal_the_next_get_answers(client_a, world)
     assert again.status_code == 201, again.text
     assert again.json()["id"] == body["id"]
     assert again.json()["goal"] == body["goal"]
+
+
+def test_the_tracking_card_shows_on_the_day_adopted(client_a, world):
+    """The card „Für euer Ziel“ did not show after „Diesen Plan übernehmen“ (§7.13 (d) 3).
+    On the day adopted no month-end has closed since, so the path has no row yet; the read
+    still shows the card, from the day adopted, with its chart starting at that day at 0 %."""
+    _goal_world(world)
+    assert client_a.post(ADOPT).status_code == 201
+    got = ok(client_a.get(TRACKING))
+    assert got["shown"] is True, got
+    assert (got["route"], got["chosen_on"]) == ("path", TODAY.isoformat())
+    assert got["rows"] == []
+    (start,) = got["points"]
+    assert start["month_end"] == TODAY.isoformat()
+    assert (start["needed"], start["actual"], start["behind"]) == ("0.00", "0.00", False)

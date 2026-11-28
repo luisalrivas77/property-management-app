@@ -9,7 +9,9 @@
 //
 // Following the adopted path (§7.11 (i), D311, mockup 19j frame 8), the card draws the
 // investments' growth against the growth needed per closed month-end (`points`), and the panel
-// the same chart with its axis and legend; the points are the server's.
+// the same chart with its axis and legend; the points are the server's. The chart starts on the
+// day adopted at 0 % (the server's first point), so the card draws from that day on, before a
+// month-end has closed; a failed read shows as its own card, never as no card (§7.13 (d) 3).
 import Link from "next/link";
 
 import { api, ok } from "@/api/client";
@@ -27,9 +29,27 @@ type T = Translation<(typeof assets)["de"]>;
 export const TRACKING_DETAIL = "fuerziel";
 export const TRACKING_ID = "pfad";
 
-/** The tracking read; Anlagen shows without it. */
-export const loadTracking = (): Promise<GoalTracking | null> =>
-  ok(api.GET("/api/household-goal/tracking")).catch(() => null);
+/** The tracking read, or `"failed"`: Anlagen shows without it, the card saying it failed. */
+export const loadTracking = (): Promise<GoalTracking | "failed"> =>
+  ok(api.GET("/api/household-goal/tracking")).catch(() => "failed" as const);
+
+/** „Für euer Ziel“ when its read failed: the title, „Nicht geladen“ and a button to read again. */
+export function GoalTrackingFailedCard({ onRetry }: { onRetry: () => void }) {
+  const t = useT(assets);
+  return (
+    <div className="planning-kpi asset-kind-card" data-testid="goal-tracking-failed" role="status">
+      <p className="planning-kpi-label">{t.goalTitle}</p>
+      <p className="planning-kpi-sub">
+        <strong>{t.goalReadFailed}</strong>
+      </p>
+      <p className="planning-kpi-sub">
+        <button type="button" className="link" onClick={onRetry}>
+          {t.goalReadFailedLine}
+        </button>
+      </p>
+    </div>
+  );
+}
 
 function wordText(t: T, tracking: GoalTracking): string {
   if (tracking.word === "on_path") return t.goalOnPath;
@@ -56,7 +76,7 @@ export function GoalTrackingCard({ tracking }: { tracking: GoalTracking }) {
           <strong>{wordText(t, tracking)}</strong>
         </p>
       )}
-      {tracking.route === "path" && (tracking.points ?? []).length > 1 ? <PathGrowthChart points={tracking.points ?? []} rate={tracking.rate ?? null} compact /> : null}
+      {tracking.route === "path" && (tracking.points ?? []).length > 0 ? <PathGrowthChart points={tracking.points ?? []} rate={tracking.rate ?? null} compact /> : null}
       <p className="planning-kpi-sub">{line}</p>
     </a>
   );

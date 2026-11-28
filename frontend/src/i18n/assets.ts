@@ -323,6 +323,9 @@ const de = {
   goalRoute: (route: string) => (({ more_return: "Mehr Rendite", balanced: "Ausgewogener Weg", path: "Euer Plan" }) as Record<string, string>)[route] ?? route,
   goalPaidOf: (paid: string, planned: string) => `${paid} von ${planned} eingezahlt`,
   goalSince: (route: string, day: string) => `${route} · seit ${day}`,
+  // A failed read of the tracking is a card, never a missing one (§7.13 (d) 3).
+  goalReadFailed: "Nicht geladen",
+  goalReadFailedLine: "Erneut laden",
   goalWordOnPath: "Ihr zahlt so viel ein, wie der Weg bis heute plant, und euer Fonds- und Kryptowert wächst so, wie seine Rendite es braucht.",
   goalWordBehindPaid: "Ihr habt bis heute weniger eingezahlt, als der Weg plant.",
   goalWordBehindValue: "Euer Fonds- und Kryptowert ist weniger gewachsen, als die Rendite des Wegs braucht.",
@@ -721,6 +724,8 @@ const en: Messages = {
   goalRoute: (route) => (({ more_return: "More return", balanced: "Balanced route", path: "Your plan" }) as Record<string, string>)[route] ?? route,
   goalPaidOf: (paid, planned) => `${paid} of ${planned} paid in`,
   goalSince: (route, day) => `${route} · since ${day}`,
+  goalReadFailed: "Not loaded",
+  goalReadFailedLine: "Load again",
   goalWordOnPath: "You pay in as much as the route plans by today, and your funds and crypto grow as its return needs.",
   goalWordBehindPaid: "By today you have paid in less than the route plans.",
   goalWordBehindValue: "Your funds and crypto have grown less than the route's return needs.",

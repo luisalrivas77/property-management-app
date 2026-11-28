@@ -107,8 +107,11 @@ def _path_rows(
     reads: dict[str, MonthRead],
 ) -> tuple[list[GoalPathRow], list[GoalPathPoint]]:
     """§7.11 (i) items 6, 12: one row and one point per closed month-end since the day the
-    path was adopted (the module doc)."""
+    path was adopted (the module doc). The chart's first point is the day adopted itself, both
+    changes 0 % since nothing has changed yet, so the card draws from its day, the day adopted
+    included, before a month-end has closed (§7.13 (d) 3)."""
     day = lever.adopted_on
+    start = GoalPathPoint(month_end=day, needed=ZERO, actual=ZERO, behind=False)
     first = day.strftime("%Y-%m")
     # every closed month since the day, not only the key figures' window of at most 12
     months = sorted(m for m, r in reads.items() if m >= first and r.closed.closed)
@@ -116,7 +119,7 @@ def _path_rows(
     ends = {m: _month_end(m) for m in months}
     months = [m for m in months if ends[m] in stored and ends[m] < today]
     if not months:
-        return [], []
+        return [], [start]
     lines = plan_lines(conn, months)
     reserve = _reserve_depots(built.parts.reserve)
     walk = {p.month: p.net_worth for p in lever.months}
@@ -168,7 +171,7 @@ def _path_rows(
                 crypto_since=None if after is None else after.get(PlanClass.CRYPTO, ZERO),
             )
         )
-    return PA.track(
+    rows, points = PA.track(
         day,
         lever.monthly,
         lever.wants_budget_total,
@@ -178,6 +181,7 @@ def _path_rows(
         out,
         _invest_now(lever),
     )
+    return rows, [start, *points]
 
 
 def _invest_now(lever: GoalPathLever) -> tuple[Decimal, Decimal] | None:

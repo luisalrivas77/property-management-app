@@ -380,6 +380,50 @@ test("following the adopted path, „Für euer Ziel“ draws the growth against 
   await page.screenshot({ path: test.info().outputPath("goal-track-path-panel.png") });
 });
 
+test("the path on the day adopted: the card shows with its chart from the day; a failed read is a card", async ({ page, signedIn }) => {
+  void signedIn;
+  await holdings(page);
+  // §7.13 (d) 3: on the day adopted no month-end has closed, so there is no row yet; the server's
+  // first point is the day adopted at 0 % and the card draws from it. Invented figures.
+  const tracking: GoalTracking = {
+    shown: true,
+    reason: null,
+    route: "path",
+    chosen_on: "2026-11-28",
+    rate: "0.068",
+    word: "on_path",
+    short: [],
+    reserve_depots: 0,
+    rows: [],
+    points: [{ month_end: "2026-11-28", needed: "0.00", actual: "0.00", behind: false }],
+  };
+  let fail = false;
+  await page.route(
+    (url) => url.pathname === "/api/household-goal/tracking",
+    (route: Route) =>
+      route.request().method() !== "GET"
+        ? route.fallback()
+        : fail
+          ? route.fulfill({ status: 500, json: { error: "internal" } })
+          : route.fulfill({ json: tracking }),
+  );
+  await page.goto("/assets");
+  const card = page.getByTestId("goal-tracking");
+  await expect(card).toContainText("Auf dem Pfad");
+  await expect(card.getByTestId("path-chart")).toBeVisible();
+  await expect(page.getByTestId("goal-tracking-failed")).toHaveCount(0);
+
+  fail = true;
+  await page.reload();
+  const failed = page.getByTestId("goal-tracking-failed");
+  await expect(failed).toContainText("Für euer Ziel");
+  await expect(failed).toContainText("Nicht geladen");
+  await expect(page.getByTestId("goal-tracking")).toHaveCount(0);
+  fail = false;
+  await failed.getByRole("button", { name: "Erneut laden" }).click();
+  await expect(page.getByTestId("goal-tracking")).toContainText("Auf dem Pfad");
+});
+
 test("„Wertzuwachs fürs Ziel“ on Immobilie opens its windows, with no sideways scroll on a phone", async ({ page, signedIn }) => {
   void signedIn;
   const property = await apiCall<{ id: string }>(page, "POST", "/api/properties", {

@@ -9268,7 +9268,8 @@ export interface components {
         };
         /**
          * GoalPathPoint
-         * @description The chart on Anlagen: the change needed and the change made, cumulative, per row.
+         * @description The chart on Anlagen: the change needed and the change made, cumulative, per row; the
+         *     first point is the day adopted (`month_end` that day, both 0), §7.13 (d) 3.
          */
         GoalPathPoint: {
             /**

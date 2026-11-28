@@ -502,7 +502,8 @@ class GoalPathRow(Schema):
 
 
 class GoalPathPoint(Schema):
-    """The chart on Anlagen: the change needed and the change made, cumulative, per row."""
+    """The chart on Anlagen: the change needed and the change made, cumulative, per row; the
+    first point is the day adopted (`month_end` that day, both 0), §7.13 (d) 3."""
 
     month_end: date
     needed: GoalChangePercent | None = None
@@ -535,7 +536,8 @@ class GoalTracking(Schema):
     word: GoalTrackingWord | None = None
     short: list[GoalTrackingShort] = Field(default_factory=list)
     reserve_depots: int = 0  # depots counted in the reserve, left out
-    # §7.11 (i) item 6: for an adopted path, one row and one point per closed month-end
+    # §7.11 (i) item 6: for an adopted path, one row and one point per closed month-end; the
+    # points begin with the day adopted at 0 % (§7.13 (d) 3), so the chart has one from that day
     rows: list[GoalPathRow] = Field(default_factory=list)
     points: list[GoalPathPoint] = Field(default_factory=list)
 
