@@ -92,6 +92,24 @@ def test_plan_page(case) -> None:
         assert "todos" not in got.get("risks", {}), "the to-dos are never shared"
 
 
+def test_the_shared_reserve_gap_adds_up() -> None:
+    """„Zum Teilen“ rounds the reserve and its target to the reserve's step and takes the gap
+    from the two rounded figures, so „6.000 € von 18.000 €, noch 12.000 €“ adds up even where
+    the gap rounded on its own (12,500 → 13,000) would not (§7.13 (d) 2)."""
+    case = next(c for c in FIXTURE.cases if c.id == "income_gap_empties_reserve")
+    cards = plan_cards(_inputs(case))
+    assert cards.heute is not None
+    heute = replace(cards.heute, reserve=Decimal("5500.00"), reserve_gap=Decimal("12500.00"))
+    got = share(replace(cards, heute=heute))["heute"]
+    assert (got["reserve"], got["reserve_target"], got["reserve_gap"]) == (
+        Decimal("6000.00"),
+        Decimal("18000.00"),
+        Decimal("12000.00"),
+    )
+    unrounded = share(replace(cards, heute=heute), round_amounts=False)["heute"]
+    assert unrounded["reserve_gap"] == Decimal("12500.00")
+
+
 def test_rules() -> None:
     r, want = plan_rules(), FIXTURE.rules
     assert r.income_gap_months == want["income_gap_months"]

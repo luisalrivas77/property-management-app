@@ -328,6 +328,7 @@ function IssueCard({ plan }: { plan: PlanPage }) {
 
 function HeuteCard({ plan }: { plan: PlanPage }) {
   const t = useT(planPageText);
+  const g = useT(goalText);
   const p = usePlanFormat();
   const heute = plan.heute!;
   return (
@@ -335,9 +336,25 @@ function HeuteCard({ plan }: { plan: PlanPage }) {
       <CardHead kind={KIND} id={P.heute} title={t.heute} />
       <Stats count={3}>
         <Stat value={<StatAmount plan={plan} value={heute.net_worth} />} label={t.netWorth} />
+        {/* The reserve always as „X € von Y €“ with „erreicht“ or „noch Z € bis zum Ziel“
+            (§7.13 (d) 2, D316); its months are in the panel. */}
         <Stat
-          value={heute.reserve_months != null ? p.short(heute.reserve_months) : <StatAmount plan={plan} value={heute.reserve} />}
-          label={heute.reserve_months != null ? t.reserveMonths("", heute.reserve_full === true).trim() : t.reserveNone}
+          value={
+            heute.reserve_target != null ? (
+              <>
+                <StatAmount plan={plan} value={heute.reserve} /> {g.reserveOfWord} <StatAmount plan={plan} value={heute.reserve_target} />
+              </>
+            ) : (
+              <StatAmount plan={plan} value={heute.reserve} />
+            )
+          }
+          label={
+            heute.reserve_gap == null
+              ? t.reserveNone
+              : heute.reserve_full === true
+                ? g.reserveReached
+                : g.reserveStill(amount(t, p, plan, heute.reserve_gap))
+          }
         />
         <Stat value={<StatAmount plan={plan} value={heute.saved_mean} />} label={t.savedMean} />
       </Stats>
@@ -684,6 +701,7 @@ function HeutePanel({ plan }: { plan: PlanPage }) {
   return (
     <>
       <p>{t.heuteReserve(amount(t, p, plan, heute.reserve))}</p>
+      {heute.reserve_months != null ? <p>{t.reserveMonths(p.short(heute.reserve_months), heute.reserve_full === true)}</p> : null}
       {heute.reserve_full != null ? <p>{heute.reserve_full ? t.heuteReserveFull : t.heuteReserveShort}</p> : null}
       {heute.reserve_accounts && heute.reserve_accounts.length > 0 ? (
         <>

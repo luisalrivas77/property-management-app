@@ -466,6 +466,9 @@ class HeuteCard:
     saved_mean: Decimal
     reserve_accounts: list[str]
     above_target: Decimal | None = None  # the plan's „Anlegbar jetzt“, read, never computed here
+    # §7.13 (d) 2: „X € von Y €“ with „erreicht“ or „noch Z € bis zum Ziel“; None without a target
+    reserve_target: Decimal | None = None
+    reserve_gap: Decimal | None = None  # max(0, target − reserve)
 
 
 @dataclass(frozen=True)
@@ -600,6 +603,10 @@ def plan_cards(i: PlanInputs, answer: HouseholdGoal | None = None) -> PlanCards:
             else (i.reserve_today / gi.need).quantize(MONTHS_PLACES, ROUND_HALF_UP)
         ),
         reserve_full=None if reserve_target is None else i.reserve_today >= reserve_target,
+        reserve_target=reserve_target,
+        reserve_gap=(
+            None if reserve_target is None else max(ZERO, reserve_target - i.reserve_today)
+        ),
         saved_mean=gi.heute,
         reserve_accounts=list(i.reserve_accounts),
         above_target=i.above_target,

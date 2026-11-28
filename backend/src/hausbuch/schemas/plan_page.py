@@ -90,6 +90,10 @@ class PlanHeute(_Absent):
     # `above_target`; read by the on-track plan card („Jetzt anlegen“). Rounded like the reserve
     # in „Zum Teilen“.
     above_target: NonNegativeMoney | None = None
+    # §7.13 (d) 2: the reserve „X € von Y €“, the target and what is still missing to it (0 once
+    # reached); None without a target. The gap is the server's, the browser only formats it.
+    reserve_target: Money | None = None
+    reserve_gap: NonNegativeMoney | None = None
     window_from: YearMonth | None = None  # the closed months the mean is taken over
     window_to: YearMonth | None = None
     reserve_accounts: list[str] = Field(default_factory=list)

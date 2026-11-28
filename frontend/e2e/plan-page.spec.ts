@@ -51,6 +51,8 @@ function ownPlan(): PlanPage {
       reserve: "21340.00",
       reserve_months: "7.6",
       reserve_full: true,
+      reserve_target: "16800.00",
+      reserve_gap: "0.00",
       saved_mean: "1840.00",
       window_from: monthsAhead(-12),
       window_to: monthsAhead(-1),
@@ -268,8 +270,13 @@ test("Für euch: seven cards, a card opens its explanation in the side panel", a
   await expect(main).toContainText("0 von 2");
   expect(asked.every((query) => query.get("view") === "own")).toBe(true);
 
+  // The reserve as „X € von Y €“ with „erreicht“, its months in the panel (§7.13 (d) 2).
+  const heute = main.locator(".goal-c", { has: page.getByRole("link", { name: /^Heute$/ }) });
+  await expect(heute).toContainText(/21\.340\s€ von 16\.800\s€/);
+  await expect(heute).toContainText("erreicht");
   await main.getByRole("link", { name: /^Heute$/ }).click();
   const panel = detail(page, "Heute");
+  await expect(panel).toContainText("7,6 Mon. Reserve, voll");
   await expect(panel).toContainText("Konten der Reserve");
   await expect(panel).toContainText(GIRO);
   await expect(page).toHaveURL(/#d-plan-heute$/);

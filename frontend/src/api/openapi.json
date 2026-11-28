@@ -33786,6 +33786,30 @@
             ],
             "title": "Above Target"
           },
+          "reserve_target": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Target"
+          },
+          "reserve_gap": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Gap"
+          },
           "window_from": {
             "anyOf": [
               {
@@ -45889,6 +45913,18 @@
               }
             ],
             "title": "Target"
+          },
+          "gap": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gap"
           },
           "target_months": {
             "anyOf": [

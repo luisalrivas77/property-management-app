@@ -13148,6 +13148,10 @@ export interface components {
             saved_mean: string;
             /** Above Target */
             above_target?: string | null;
+            /** Reserve Target */
+            reserve_target?: string | null;
+            /** Reserve Gap */
+            reserve_gap?: string | null;
             /** Window From */
             window_from?: string | null;
             /** Window To */
@@ -17793,6 +17797,8 @@ export interface components {
             months?: string | null;
             /** Target */
             target?: string | null;
+            /** Gap */
+            gap?: string | null;
             /** Target Months */
             target_months?: string | null;
             /** Good */

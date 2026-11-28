@@ -268,6 +268,11 @@ export const goalText = defineMessages({
     // Haushalt › Reserve (mockup 19f panel 6)
     reserveTitle: "Reserve",
     reserveToday: "heute",
+    // §7.13 (d) 2: the reserve always as „X € von Y €“ with „erreicht“ or the gap the server serves
+    reserveOf: (amount: string, target: string) => `${amount} von ${target}`,
+    reserveReached: "erreicht",
+    reserveOfWord: "von",
+    reserveStill: (gap: string) => `noch ${gap} bis zum Ziel`,
     reserveMonths: (months: string) => `${months} Mon.`,
     reserveTarget: (months: string) => `Ziel ${months} Mon.`,
     reserveRateLabel: "eure Annahme",
@@ -561,6 +566,10 @@ export const goalText = defineMessages({
     lessSpendingIntro: "How you could close the gap with less spending alone. You choose; Hausbuch adopts nothing by itself.",
     reserveTitle: "Reserve",
     reserveToday: "today",
+    reserveOf: (amount, target) => `${amount} of ${target}`,
+    reserveReached: "reached",
+    reserveOfWord: "of",
+    reserveStill: (gap) => `${gap} still to the target`,
     reserveMonths: (months) => `${months} mo.`,
     reserveTarget: (months) => `target ${months} mo.`,
     reserveRateLabel: "your assumption",

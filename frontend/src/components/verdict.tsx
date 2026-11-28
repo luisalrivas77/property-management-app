@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 
 import type { components } from "@/api/types";
 import { type Translation, useT } from "@/i18n";
+import { goalText } from "@/i18n/goal";
 import { verdictText } from "@/i18n/verdict";
 
 import { formatOneDecimal } from "./healthShared";
@@ -83,8 +84,17 @@ function oneDecimal(p: PlanFormat, value: string | null | undefined): string {
   return p.locale === "de" ? formatOneDecimal(value) : p.short(value);
 }
 
-function partValue(p: PlanFormat, part: VerdictPart): string {
-  if (part.figure === "reserve") return part.amount != null ? p.euro(part.amount) : "–";
+/** Zero or below: the server's gap reads as reached. */
+function noGap(value: string): boolean {
+  return value.startsWith("-") || /^0*(\.0*)?$/.test(value);
+}
+
+function partValue(g: Translation<typeof goalText.de>, p: PlanFormat, part: VerdictPart): string {
+  // The reserve always as „X € von Y €“ (§7.13 (d) 2); the gap under it is the server's.
+  if (part.figure === "reserve") {
+    if (part.amount == null) return "–";
+    return part.target != null ? g.reserveOf(p.euro(part.amount), p.euro(part.target)) : p.euro(part.amount);
+  }
   if (part.no_loan) return "–";
   return part.value != null ? p.ratio(part.value) : "–";
 }
@@ -137,6 +147,7 @@ export function VerdictWordLine({ verdict, big = false }: { verdict: Verdict; bi
  * holds what the figure is made of, where a screen shows it. */
 export function VerdictPartCard({ part, children }: { part: VerdictPart; children?: ReactNode }) {
   const t = useT(verdictText);
+  const g = useT(goalText);
   const p = usePlanFormat();
   const label = partLabel(t, part.figure);
   const limits = part.state === "missing" || part.no_loan ? [] : limitsShown(t, p, part);
@@ -145,8 +156,11 @@ export function VerdictPartCard({ part, children }: { part: VerdictPart; childre
       <p className="verdict-question">{part.question}</p>
       <p className="verdict-figure">
         <span className="verdict-label">{label}</span>
-        <span className="verdict-value">{partValue(p, part)}</span>
+        <span className="verdict-value">{partValue(g, p, part)}</span>
       </p>
+      {part.figure === "reserve" && part.gap != null ? (
+        <p className="verdict-gap">{noGap(part.gap) ? g.reserveReached : g.reserveStill(p.euro(part.gap))}</p>
+      ) : null}
       {part.figure === "reserve" && part.months != null && part.target_months != null ? (
         <p className="muted">
           {t.reserveMonths(oneDecimal(p, part.months))} · {t.reserveTarget(p.short(part.target_months))}
