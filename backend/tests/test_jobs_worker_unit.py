@@ -15,6 +15,7 @@ class FakeJobManager:
         self.fail = fail
         self.sweeps = 0
         self.retried: list = []
+        self.finished: list = []
 
     async def get_stalled_jobs(self, **kwargs):
         self.sweeps += 1
@@ -26,6 +27,9 @@ class FakeJobManager:
 
     async def retry_job(self, job):
         self.retried.append(job.id)
+
+    async def finish_job(self, job, status, delete_job):
+        self.finished.append((job.id, status.value, delete_job))
 
 
 class FakeApp:
@@ -117,8 +121,15 @@ def test_retry_strategy_retries_only_when_asked():
     assert strategy.get_retry_decision(exception=RuntimeError("x"), job=job) is None
 
 
-def _job(job_id: int) -> Job:
-    return Job(id=job_id, queue="default", lock="doc:x", queueing_lock=None, task_name="t")
+def _job(job_id: int, attempts: int = 0) -> Job:
+    return Job(
+        id=job_id,
+        queue="default",
+        lock="doc:x",
+        queueing_lock=None,
+        task_name="t",
+        attempts=attempts,
+    )
 
 
 def test_stalled_jobs_are_retried_at_start_and_then_periodically():
@@ -156,3 +167,16 @@ def test_a_failing_sweep_is_logged_and_the_worker_keeps_running(caplog):
     assert app.runs == 1  # the worker loop was never restarted by a sweep failure
     assert "stalled_sweep_failed" in str([getattr(r, "fields", None) for r in caplog.records])
     assert "db.internal" not in caplog.text
+
+
+def test_a_job_stalled_again_and_again_is_failed_not_retried(caplog):
+    """28 Nov 2026: a price run that ran the container out of memory was retried at every
+    start; after MAX_STALLED_ATTEMPTS it is failed, so the next start comes up clean."""
+    manager = FakeJobManager(stalled=[_job(7, attempts=2), _job(8, attempts=3)])
+    worker = _worker(FakeApp(job_manager=manager))
+
+    assert asyncio.run(worker.sweep_stalled_jobs()) == 1
+    assert manager.retried == [7]
+    assert manager.finished == [(8, "failed", False)]
+    events = [getattr(r, "fields", {}).get("event") for r in caplog.records]
+    assert events == ["stalled_job_retried", "stalled_job_failed"]
