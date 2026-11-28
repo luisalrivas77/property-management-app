@@ -13014,12 +13014,14 @@ export interface components {
         };
         /**
          * PlanAssumptions
-         * @description Card 4 „Eure Annahmen“: nothing the app chose.
+         * @description Card 4 „Eure Annahmen“: nothing the app chose. `house_price_source` names the index
+         *     the properties' `house_prices` count over, present when one of them has it.
          */
         PlanAssumptions: {
             rates: components["schemas"]["PlanRates"];
             /** Properties */
             properties?: components["schemas"]["PlanPropertyAssumption"][];
+            house_price_source?: components["schemas"]["PlanSource"] | null;
         };
         /**
          * PlanClass
@@ -13118,6 +13120,25 @@ export interface components {
             window_to?: string | null;
             /** Reserve Accounts */
             reserve_accounts?: string[];
+        };
+        /**
+         * PlanHousePrices
+         * @description „Noch nie erreicht“ (§7.13 (d) 5, D316): the property's typed yearly value change against
+         *     the German house price index, every run of `window_years` (the goal's years left, at least
+         *     1) Q4 to Q4: `reached` of `windows` grew at least as fast; `never` when none did, the mark;
+         *     `thin` under five windows. A mark beside the lever, never a block.
+         */
+        PlanHousePrices: {
+            /** Window Years */
+            window_years: number;
+            /** Windows */
+            windows: number;
+            /** Reached */
+            reached: number;
+            /** Never */
+            never: boolean;
+            /** Thin */
+            thin: boolean;
         };
         /**
          * PlanIncomeGap
@@ -13234,6 +13255,7 @@ export interface components {
             sale_year: number | null;
             /** Value Change */
             value_change: string | null;
+            house_prices?: components["schemas"]["PlanHousePrices"] | null;
             /** Label */
             label?: string | null;
         };
@@ -13325,7 +13347,7 @@ export interface components {
         };
         /**
          * PlanSource
-         * @description A source of a size in risks.yaml (the maintenance rate).
+         * @description A source of a size in risks.yaml (the maintenance rate), or of the house price index.
          */
         PlanSource: {
             /** Name */

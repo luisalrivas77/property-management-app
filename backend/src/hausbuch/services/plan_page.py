@@ -28,6 +28,7 @@ from hausbuch.rules.goal.risks import (
     plan_rules,
 )
 from hausbuch.rules.goal.risks import PlanInputs as CardInputs
+from hausbuch.rules.goal.series import house_price_series
 from hausbuch.rules.goal.share import plain, share
 from hausbuch.schemas.goal import GoalWord, HouseholdGoal
 from hausbuch.schemas.health import HealthTodo, HealthTodoCode, Reserve
@@ -99,6 +100,7 @@ def plan_page(
                 )
                 for key in flats
             ),
+            house_prices=house_price_series(),  # „Noch nie erreicht“ (§7.13 (d) 5)
             invested_this_month=invested,
             budget_adopted=_budget_adopted(levers, answer),
             # „Jetzt anlegen“ on the on-track plan card: GET /household-plan's own figure
@@ -163,8 +165,16 @@ def page(
         other["return_windows"] = more.windows
         other["return_reached_windows"] = more.reached_windows
         other["return_verdict"] = more.verdict
-    for p in (out.get("assumptions") or {}).get("properties", []):
+    assumptions = out.get("assumptions")
+    for p in (assumptions or {}).get("properties", []):
         p["kind"] = next((k for key, k in kinds.items() if str(key) == p["key"]), None)
+    if assumptions is not None and any(p.get("house_prices") for p in assumptions["properties"]):
+        s = house_price_series()
+        assumptions["house_price_source"] = {
+            "name": s.source,
+            "url": s.url,
+            "read_on": "" if s.read_on is None else s.read_on.isoformat(),
+        }
     return _page(
         view,
         switches,

@@ -459,6 +459,37 @@ test("on track with nothing above the reserve target: no „Jetzt anlegen“", a
   await expect(panel).not.toContainText("(heute");
 });
 
+test("„Noch nie erreicht“ beside a property's typed value change, its windows and source in the panel", async ({ page, signedIn }) => {
+  void signedIn;
+  const never = (): PlanPage => {
+    const plan = ownPlan();
+    plan.assumptions = {
+      ...plan.assumptions!,
+      properties: [
+        {
+          key: "p1",
+          kind: "etw",
+          kept: false,
+          sale_year: 2038,
+          value_change: "0.090000",
+          label: FLAT,
+          house_prices: { window_years: 5, windows: 16, reached: 0, never: true, thin: false },
+        },
+      ],
+      house_price_source: { name: "Eurostat, House price index (prc_hpi_q)", url: "https://ec.europa.eu/eurostat/", read_on: "2026-11-26" },
+    };
+    return plan;
+  };
+  await planApi(page, never);
+  await page.goto("/household/plan");
+  await expect(page.getByTestId("house-prices-never")).toContainText("Noch nie erreicht");
+  await page.goto("/household/plan#d-plan-annahmen");
+  const panel = detail(page, "Eure Annahmen");
+  await expect(panel.getByTestId("house-prices-row")).toContainText("0 von 16 Zeiträumen à 5 Jahren");
+  await expect(panel).toContainText("keine Sperre");
+  await expect(panel).toContainText("Eurostat");
+});
+
 async function screens(page: Page, name: string, width: number, open: () => Promise<void>) {
   await page.setViewportSize({ width, height: width < 800 ? 844 : 900 });
   const backgrounds: string[] = [];

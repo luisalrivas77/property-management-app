@@ -17,6 +17,7 @@ from hausbuch.rules.goal.risks import (
     plan_cards,
     plan_rules,
 )
+from hausbuch.rules.goal.series import house_price_series
 from hausbuch.rules.goal.share import plain, round_to, share
 from hausbuch.rules.plan.levers import add_months
 from hausbuch.rules.plan.projection import walk
@@ -38,6 +39,7 @@ def _inputs(case) -> PlanInputs:
         ),
         invested_this_month=case.invested_this_month,
         budget_adopted=case.budget_adopted,
+        house_prices=None if case.house_index is None else house_price_series(case.house_index),
     )
 
 

@@ -20,7 +20,7 @@
 // enum has no balanced value; the step counts as done once the default's changes are the route's).
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { type ReactNode, useCallback, useId, useState } from "react";
+import { Fragment, type ReactNode, useCallback, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
@@ -449,12 +449,13 @@ function AssumptionsCard({ plan }: { plan: PlanPage }) {
   const t = useT(planPageText);
   const p = usePlanFormat();
   const a = plan.assumptions!;
-  const chips: { key: string; label: string; value: string }[] = [];
+  const chips: { key: string; label: string; value: string; never?: boolean }[] = [];
   if (a.rates.depot != null) chips.push({ key: "depot", label: t.funds, value: p.ratio(a.rates.depot) });
   if (a.rates.crypto != null) chips.push({ key: "crypto", label: t.crypto, value: p.ratio(a.rates.crypto) });
   if (a.rates.reserve != null) chips.push({ key: "reserve", label: t.reserve, value: p.ratio(a.rates.reserve) });
   for (const property of a.properties ?? [])
-    if (property.value_change != null) chips.push({ key: property.key, label: t.propertyKind(property.kind), value: p.ratio(property.value_change) });
+    if (property.value_change != null)
+      chips.push({ key: property.key, label: t.propertyKind(property.kind), value: p.ratio(property.value_change), never: property.house_prices?.never });
   return (
     <div className="goal-c">
       <CardHead kind={KIND} id={P.assumptions} title={t.assumptionsCard} />
@@ -463,6 +464,12 @@ function AssumptionsCard({ plan }: { plan: PlanPage }) {
           {chips.map((chip) => (
             <li key={chip.key}>
               {chip.label} <b>{chip.value}</b>
+              {chip.never ? (
+                <span className="planp-mark" data-testid="house-prices-never">
+                  {" · "}
+                  {t.neverReached}
+                </span>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -825,15 +832,33 @@ function AssumptionsPanel({ plan }: { plan: PlanPage }) {
           </div>
         ) : null}
         {(a.properties ?? []).map((property) => (
-          <div key={property.key} className="goal-rw">
-            <span>{property.label ?? t.propertyKind(property.kind)}</span>
-            <b>
-              {property.value_change != null ? `${p.ratio(property.value_change)} · ` : ""}
-              {property.kept || property.sale_year == null ? t.keptProperty : t.soldIn(property.sale_year)}
-            </b>
-          </div>
+          <Fragment key={property.key}>
+            <div className="goal-rw">
+              <span>{property.label ?? t.propertyKind(property.kind)}</span>
+              <b>
+                {property.value_change != null ? `${p.ratio(property.value_change)} · ` : ""}
+                {property.kept || property.sale_year == null ? t.keptProperty : t.soldIn(property.sale_year)}
+              </b>
+            </div>
+            {property.house_prices ? (
+              <div className="goal-rw" data-testid="house-prices-row">
+                <span>{property.house_prices.never ? t.neverReached : t.housePrices}</span>
+                <b>{t.housePricesReached(property.house_prices.reached, property.house_prices.windows, property.house_prices.window_years)}</b>
+              </div>
+            ) : null}
+          </Fragment>
         ))}
       </div>
+      {(a.properties ?? []).some((property) => property.house_prices) ? <p className="goal-one">{t.housePricesText}</p> : null}
+      {a.house_price_source ? (
+        <ul className="planp-list planp-sources">
+          <li>
+            <a href={a.house_price_source.url} target="_blank" rel="noreferrer">
+              {a.house_price_source.read_on ? t.source(a.house_price_source.name, p.date(a.house_price_source.read_on)) : a.house_price_source.name}
+            </a>
+          </li>
+        </ul>
+      ) : null}
       {plan.view === "own" ? (
         <Link href={assumptionsHref("", "rendite")} className="goal-lnk">
           {t.toRates} ›

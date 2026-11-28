@@ -112,6 +112,11 @@
   font-size: 13px;
 }
 
+.planp-mark {
+  color: var(--warn);
+  font-weight: 600;
+}
+
 .planp-steps {
   display: flex;
   flex-direction: column;

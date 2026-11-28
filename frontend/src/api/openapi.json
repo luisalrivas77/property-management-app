@@ -33404,6 +33404,16 @@
             },
             "type": "array",
             "title": "Properties"
+          },
+          "house_price_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -33412,7 +33422,7 @@
           "rates"
         ],
         "title": "PlanAssumptions",
-        "description": "Card 4 „Eure Annahmen“: nothing the app chose."
+        "description": "Card 4 „Eure Annahmen“: nothing the app chose. `house_price_source` names the index\nthe properties' `house_prices` count over, present when one of them has it."
       },
       "PlanClass": {
         "type": "string",
@@ -33734,6 +33744,41 @@
         ],
         "title": "PlanHeute",
         "description": "Card 2 „Heute“: the net worth, the reserve in months of its need (D305) and the mean saved\nper month of the window; the reserve's accounts (D304) with their provider, „Für euch“ or\nwith the switch `accounts` only."
+      },
+      "PlanHousePrices": {
+        "properties": {
+          "window_years": {
+            "type": "integer",
+            "title": "Window Years"
+          },
+          "windows": {
+            "type": "integer",
+            "title": "Windows"
+          },
+          "reached": {
+            "type": "integer",
+            "title": "Reached"
+          },
+          "never": {
+            "type": "boolean",
+            "title": "Never"
+          },
+          "thin": {
+            "type": "boolean",
+            "title": "Thin"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "window_years",
+          "windows",
+          "reached",
+          "never",
+          "thin"
+        ],
+        "title": "PlanHousePrices",
+        "description": "„Noch nie erreicht“ (§7.13 (d) 5, D316): the property's typed yearly value change against\nthe German house price index, every run of `window_years` (the goal's years left, at least\n1) Q4 to Q4: `reached` of `windows` grew at least as fast; `never` when none did, the mark;\n`thin` under five windows. A mark beside the lever, never a block."
       },
       "PlanIncomeGap": {
         "properties": {
@@ -34127,6 +34172,16 @@
             ],
             "title": "Value Change"
           },
+          "house_prices": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanHousePrices"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "anyOf": [
               {
@@ -34488,7 +34543,7 @@
           "read_on"
         ],
         "title": "PlanSource",
-        "description": "A source of a size in risks.yaml (the maintenance rate)."
+        "description": "A source of a size in risks.yaml (the maintenance rate), or of the house price index."
       },
       "PlanStep": {
         "properties": {
