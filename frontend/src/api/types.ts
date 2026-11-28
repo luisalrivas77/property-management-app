@@ -4992,57 +4992,6 @@ export interface components {
             document_id?: string | null;
         };
         /**
-         * AllocationFact
-         * @description A confirmed allocation as the draft sees it. Amount signed (income +, costs −); a 0.00
-         *     row may be present and is ignored by every rule (D70). invoice_net is this allocation's
-         *     share of the linked invoice extraction's amount_net (a magnitude), for the 15 % tracker
-         *     (D56): the whole net for a payment of the whole bill, net × part ÷ gross for one part of a
-         *     bill split by its lines (phase 2 D135).
-         */
-        AllocationFact: {
-            /**
-             * Allocation Id
-             * Format: uuid
-             */
-            allocation_id: string;
-            /**
-             * Booking Date
-             * Format: date
-             */
-            booking_date: string;
-            /** Value Date */
-            value_date?: string | null;
-            /** Amount */
-            amount: string;
-            category: components["schemas"]["AllocationCategory"];
-            /**
-             * Recurring
-             * @default false
-             */
-            recurring: boolean;
-            service_period?: components["schemas"]["ServicePeriod"] | null;
-            /** Due On */
-            due_on?: string | null;
-            /** Transaction Id */
-            transaction_id?: string | null;
-            /** Property Id */
-            property_id?: string | null;
-            /** Unit Id */
-            unit_id?: string | null;
-            /** Tenancy Id */
-            tenancy_id?: string | null;
-            /** Loan Id */
-            loan_id?: string | null;
-            /** Document Id */
-            document_id?: string | null;
-            /** Invoice Net */
-            invoice_net?: string | null;
-            /** Counterparty Iban Masked */
-            counterparty_iban_masked?: string | null;
-            /** @default rental */
-            account_purpose: components["schemas"]["AccountPurpose"];
-        };
-        /**
          * AllocationMethod
          * @description allocation.method (migration 0007): who proposed the allocation set.
          * @enum {string}
@@ -15951,6 +15900,62 @@ export interface components {
             unvalued_positions: number;
         };
         /**
+         * SourcePayment
+         * @description One payment of the sources drawer (GET …/anlage-v/sources): the AllocationFact the draft
+         *     reads, plus receipt_missing (phase 10 §7.13 (c) 4, D315): a counted rental payment of a
+         *     category whose bill the checklist asks for (cost_receipt, D64) with no Beleg linked, so the
+         *     drawer says „Rechnung fehlt“ with „Rechnung hochladen“ instead of nothing (principle 7).
+         *     Read by no tax rule.
+         */
+        SourcePayment: {
+            /**
+             * Allocation Id
+             * Format: uuid
+             */
+            allocation_id: string;
+            /**
+             * Booking Date
+             * Format: date
+             */
+            booking_date: string;
+            /** Value Date */
+            value_date?: string | null;
+            /** Amount */
+            amount: string;
+            category: components["schemas"]["AllocationCategory"];
+            /**
+             * Recurring
+             * @default false
+             */
+            recurring: boolean;
+            service_period?: components["schemas"]["ServicePeriod"] | null;
+            /** Due On */
+            due_on?: string | null;
+            /** Transaction Id */
+            transaction_id?: string | null;
+            /** Property Id */
+            property_id?: string | null;
+            /** Unit Id */
+            unit_id?: string | null;
+            /** Tenancy Id */
+            tenancy_id?: string | null;
+            /** Loan Id */
+            loan_id?: string | null;
+            /** Document Id */
+            document_id?: string | null;
+            /** Invoice Net */
+            invoice_net?: string | null;
+            /** Counterparty Iban Masked */
+            counterparty_iban_masked?: string | null;
+            /** @default rental */
+            account_purpose: components["schemas"]["AccountPurpose"];
+            /**
+             * Receipt Missing
+             * @default false
+             */
+            receipt_missing: boolean;
+        };
+        /**
          * SpamVerdict
          * @description POST /assets/{id}/promote and /demote: the token's verdict now and the number of
          *     groups the flip changed (D187 (3)).
@@ -25786,7 +25791,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AllocationFact"][];
+                    "application/json": components["schemas"]["SourcePayment"][];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

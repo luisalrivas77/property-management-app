@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import Query
 
-from hausbuch.schemas.tax import AllocationFact, AnlageVDraft
+from hausbuch.schemas.tax import AnlageVDraft, SourcePayment
 from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.services.tax import anlage_v_draft, anlage_v_sources
 
@@ -38,7 +38,7 @@ def property_anlage_v_sources(
     property_id: UUID,
     cmd: Cmd,
     tax_year: Annotated[int, Query(ge=2000, le=2100)],
-) -> list[AllocationFact]:
+) -> list[SourcePayment]:
     """The payments the draft's lines cite (the sources drawer): every confirmed allocation
     the draft reads, with its date, amount, category, period, transaction and Beleg, and the
     counterparty as a masked IBAN only (D5). Same checks and error codes as the draft."""
