@@ -6,6 +6,8 @@ from decimal import Decimal
 import pytest
 
 from hausbuch.rules.budget.differences import (
+    category_differences,
+    compared_by_category,
     compared_by_group,
     compared_group,
     differences,
@@ -136,3 +138,74 @@ def test_compared_by_group_is_month_cashflow_less_one_offs_and_refunds(category)
     }
     assert compared_by_group([(category, Decimal("-10.00"))]) == expected
     assert compared_group(category) == (next(iter(expected)) if expected else None)
+
+
+# --- Per category for any chosen month (phase 10 §7.13 (b) 2, D314) ----------------------
+
+
+def code_months(*amounts: str, code: C = C.HH_SUPERMARKET) -> list[dict[C, Decimal]]:
+    return [{code: D(a)} if D(a) else {} for a in amounts]
+
+
+@pytest.mark.parametrize(
+    ("case", "now", "final", "expected"),
+    [
+        ("more, a closed month", "384.00", True, "84.00"),
+        ("more, the month in progress", "384.00", False, "84.00"),
+        ("less, a closed month", "200.00", True, "-100.00"),
+        ("less while the month runs: not named", "200.00", False, None),
+        ("below the thresholds", "320.00", True, None),
+    ],
+)
+def test_a_code_against_its_mean(case, now, final, expected):
+    del case
+    named = category_differences(
+        {C.HH_SUPERMARKET: D(now)}, code_months("300.00", "300.00", "300.00"), final=final
+    )
+    assert named is not None
+    if expected is None:
+        assert named == []
+        return
+    (one,) = named
+    assert (one.category, one.group, one.mean) == (C.HH_SUPERMARKET, G.GROCERIES, D("300.00"))
+    assert one.difference == D(expected)
+    assert one.words is (DifferenceWords.MORE if one.difference > 0 else DifferenceWords.LESS)
+
+
+@pytest.mark.parametrize(("count", "shown"), [(0, False), (2, False), (3, True)])
+def test_per_code_three_earlier_closed_months_are_needed(count, shown):
+    named = category_differences(
+        {C.HH_SUPERMARKET: D("500.00")}, code_months(*["100.00"] * count), final=True
+    )
+    assert (named is not None) is shown
+
+
+def test_every_code_is_named_the_largest_first_then_groups_then_codes():
+    before = [{C.HH_SUPERMARKET: D("100.00"), C.HH_BAKERY: D("100.00"), C.HH_FUEL: D("100.00")}]
+    now = {
+        C.HH_SUPERMARKET: D("200.00"),  # +100, groceries
+        C.HH_BAKERY: D("200.00"),  # +100, groceries, a tie in the same group
+        C.HH_FUEL: D("200.00"),  # +100, mobility
+        C.HH_RESTAURANT: D("400.00"),  # new: +400
+    }
+    named = category_differences(now, before * 3, final=True)
+    order = {c: i for i, c in enumerate(C)}
+    ties = sorted([C.HH_SUPERMARKET, C.HH_BAKERY], key=order.__getitem__)
+    assert [d.category for d in named] == [C.HH_RESTAURANT, *ties, C.HH_FUEL]
+    assert len(named) == 4  # no cap of three: the screen folds the list
+
+
+def test_compared_by_category_leaves_out_one_offs_refunds_and_what_is_not_spending():
+    rows = [
+        (C.HH_SUPERMARKET, D("-80.00")),
+        (C.HH_SUPERMARKET, D("-20.00")),
+        (C.HH_SALARY, D("3000.00")),
+        (C.HH_INVESTMENT_PROPERTY, D("-500.00")),
+        (C.HH_REFUND, D("15.00")),
+        (C.HH_CAR_PURCHASE, D("-9000.00")),  # one-off by the taxonomy
+    ]
+    assert compared_by_category(rows) == {C.HH_SUPERMARKET: D("100.00")}
+    assert compared_by_category(rows, one_off_codes=frozenset()) == {
+        C.HH_SUPERMARKET: D("100.00"),
+        C.HH_CAR_PURCHASE: D("9000.00"),
+    }

@@ -778,6 +778,72 @@ class MonthDifferences(Schema):
     groups: list[GroupDifference] = Field(default_factory=list)
 
 
+class CategoryDifference(Schema):
+    """A spending code whose month differs from its own mean over the closed months before it
+    (phase 10 §7.13 (b) 2, D314: „Supermarkt +84 €“); `difference` = `amount` − `mean`, both
+    the code's regular spending (one-off codes, marked payments and refunds left out)."""
+
+    category: AllocationCategory
+    group: HouseholdGroup
+    amount: Money
+    mean: Money
+    difference: Money
+    words: DifferenceWords
+
+    @model_validator(mode="after")
+    def _difference(self) -> Self:
+        if self.difference != self.amount - self.mean:
+            raise ValueError("difference = amount − mean")
+        return self
+
+
+class CategoryDifferences(Schema):
+    """GET /household/differences?month= (phase 10 §7.13 (b) 2, D314): the chosen month's
+    spending codes against their mean over the closed months before it (`baseline`, the
+    unbroken run ending before the month, three to twelve, oldest first). `final`: the month
+    is closed (ended, nothing waiting); until then only codes already above their mean are
+    named. `enough`: at least three months in `baseline`; below, `categories` is empty.
+    Every named code, the largest difference first; figures only, no colour, no advice."""
+
+    month: YearMonth
+    final: bool
+    enough: bool
+    baseline: list[YearMonth]
+    categories: list[CategoryDifference] = Field(default_factory=list)
+
+
+class CategoryPayment(GroupPayment):
+    """One payment behind a code's month (GET /household/lines); `one_off`: a person marked
+    it one-off, so it counts in the code's month but not in the comparison."""
+
+    one_off: bool = False
+
+
+class CategoryLines(Schema):
+    """GET /household/lines?month=&category= (phase 10 §7.13 (b) 2, 3, D314): the confirmed
+    private allocations counted under one spending code in the month (D234's recode applied,
+    as month_cashflow counts them), oldest booking first, each signed as spending (a refund
+    under the code negative). `total`: their sum, the code's figure in the month's spending
+    by category; `regular`: the total less the payments marked one-off, the figure „Was
+    diesen Monat anders ist“ compares. `group` None for a code that is no spending."""
+
+    month: YearMonth
+    category: AllocationCategory
+    group: HouseholdGroup | None = None
+    total: Money
+    regular: Money
+    payments: list[CategoryPayment] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _sums(self) -> Self:
+        if self.total != sum((p.amount for p in self.payments), Decimal("0.00")):
+            raise ValueError("total = Σ payments")
+        regular = sum((p.amount for p in self.payments if not p.one_off), Decimal("0.00"))
+        if self.regular != regular:
+            raise ValueError("regular = Σ payments not marked one-off")
+        return self
+
+
 # --- GET /health, the stored month, the closing check -----------------------------------
 
 
