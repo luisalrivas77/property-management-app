@@ -49,6 +49,11 @@ TRIGGER = "bump_data_version"
 MARK = "mark_data_version"
 PENDING = "workspace_data_version_pending"
 EXCLUDED = {"auth_session", "auth_passkey"}
+# Tables added after 0050 that get no marks either, each with its reason (0050's own list,
+# EXCLUDED, is fixed with that migration).
+EXCLUDED_SINCE = {
+    "member_locale": "0058: a member's language, for the warm only; no kept answer reads it",
+}
 
 
 def _version(dbname: str, ws: uuid.UUID) -> int | None:
@@ -285,9 +290,9 @@ def test_the_app_role_cannot_see_another_workspaces_version(dbname, fresh_worksp
 
 def test_every_table_with_workspace_id_carries_the_mark_triggers(dbname):
     """Coverage: a table added later with workspace_id and without the marks fails here,
-    unless it is added to EXCLUDED with a reason (and api/kept_answers.py keeps no answer
-    reading it). Each mark is a plain AFTER row trigger for one event whose WHEN asks
-    data_version_queue_first; the one deferred trigger sits on the pending table."""
+    unless it is added to EXCLUDED (or EXCLUDED_SINCE) with a reason (and api/kept_answers.py
+    keeps no answer reading it). Each mark is a plain AFTER row trigger for one event whose WHEN
+    asks data_version_queue_first; the one deferred trigger sits on the pending table."""
     with _admin(dbname) as conn:
         tables = {
             row[0]
@@ -314,7 +319,7 @@ def test_every_table_with_workspace_id_carries_the_mark_triggers(dbname):
         ).fetchall()
     # Both hold workspace_id but are the counter itself.
     assert {"workspace_data_version", PENDING} <= tables
-    expected = tables - EXCLUDED - {"workspace_data_version", PENDING}
+    expected = tables - EXCLUDED - set(EXCLUDED_SINCE) - {"workspace_data_version", PENDING}
     assert len(expected) >= 60
     missing = sorted(expected - set(marks))
     assert missing == [], f"tables with workspace_id but no data-version marks: {missing}"

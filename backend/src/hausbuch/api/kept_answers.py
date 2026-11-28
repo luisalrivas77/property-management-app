@@ -118,6 +118,7 @@ ROUTE_SCOPE_KEY = "hausbuch.kept_route"
 INTERNAL_SCOPE_KEY = "hausbuch.kept_internal"
 # Set by a route (`keep_until`) in the request state: when its answer may change (§7.5 (b)).
 EXPIRES_STATE_KEY = "kept_expires_at"
+LOCALE_STATE_KEY = "kept_locale_changed"  # §7.13 (e) 3: stored after the answer is sent
 
 MAX_BYTES = 32 * 1024 * 1024
 # §7.5 (c): what a member's own requests found kept, asked again after a change.
@@ -648,12 +649,55 @@ class KeptAnswers:
         """A person's request or an internal one is running."""
         return self.in_flight > 0 or self.internal_in_flight > 0
 
-    def remember_locale(self, user_id: UUID, locale: str) -> None:
-        self._locales[user_id] = locale
+    def remember_locale(self, user_id: UUID, locale: str) -> bool:
+        """Remember the language of a person's kept request; True when it changed (or the
+        process had not seen this member yet), so the caller stores it (`store_locale`)."""
+        with self._lock:
+            changed = self._locales.get(user_id) != locale
+            self._locales[user_id] = locale
+        return changed
 
     def locale_of(self, user_id: UUID) -> str:
         """The language this member's last kept request asked for (German by default)."""
         return self._locales.get(user_id, i18n.DE)
+
+    def store_locale(self, workspace_id: UUID, user_id: UUID, locale: str) -> None:
+        """§7.13 (e) 3: keep a member's language across a start (`member_locale`, migration
+        0058, outside the data version). The row is written only when the language differs
+        from the stored one, so a start's first request in an unchanged language writes
+        nothing. A failure is logged by its class name only; the language stays in memory."""
+        if self.engine is None:
+            return
+        statement = text(
+            "INSERT INTO member_locale (workspace_id, user_id, locale) "
+            "VALUES (:ws, :user, :locale) "
+            "ON CONFLICT (workspace_id, user_id) DO UPDATE "
+            "SET locale = EXCLUDED.locale, updated_at = now() "
+            "WHERE member_locale.locale IS DISTINCT FROM EXCLUDED.locale"
+        )
+        try:
+            with workspace_transaction(self.engine, workspace_id) as conn:
+                conn.execute(statement, {"ws": workspace_id, "user": user_id, "locale": locale})
+        except Exception as exc:  # noqa: BLE001 - never fails the request; class name only
+            fields = {"event": "member_locale_not_stored", "exc_type": type(exc).__name__}
+            logger.warning("a member's language was not stored", extra={"fields": fields})
+
+    def load_locales(self, workspace_ids: Iterable[UUID]) -> int:
+        """§7.13 (e) 3: read the stored languages of these workspaces' members, for the warm
+        after a start; a language this process has already seen wins (it is newer). Returns
+        how many were taken."""
+        if self.engine is None:
+            return 0
+        taken = 0
+        for workspace_id in workspace_ids:
+            with workspace_transaction(self.engine, workspace_id) as conn:
+                rows = conn.execute(text("SELECT user_id, locale FROM member_locale")).all()
+            with self._lock:
+                for user_id, locale in rows:
+                    if user_id not in self._locales and locale in i18n.LOCALES:
+                        self._locales[user_id] = locale
+                        taken += 1
+        return taken
 
     # --- Internal requests (the warm step, the checks) ---------------------------------
 
@@ -804,6 +848,9 @@ class KeptAnswersMiddleware:
         self.kept._count("in_flight", 1)
         try:
             await self._handle(scope, receive, send)
+            changed = scope.get("state", {}).pop(LOCALE_STATE_KEY, None)
+            if changed is not None:  # after the answer was sent: the person never waits for it
+                await run_in_threadpool(self.kept.store_locale, *changed)
         finally:
             self.kept._person_ended()
 
@@ -835,8 +882,10 @@ class KeptAnswersMiddleware:
             return
         key = kept.key(scope, auth, before)
         if not bypass:
-            if not internal:  # the refresh asks in a recorded path's language (C1)
-                kept.remember_locale(auth.user_id, key.locale)
+            # The refresh asks in a recorded path's language (C1); a changed one is stored once
+            # the answer is sent (§7.13 (e) 3), never before it.
+            if not internal and kept.remember_locale(auth.user_id, key.locale):
+                state[LOCALE_STATE_KEY] = (auth.workspace_id, auth.user_id, key.locale)
             entry = kept.get(key)
             if entry is not None:
                 kept.counters.hits += 1

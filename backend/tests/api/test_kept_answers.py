@@ -29,6 +29,7 @@ from sqlalchemy import text
 from hausbuch.api.kept_answers import (
     EXPECTED_REFUSALS,
     KEPT_ROUTES,
+    MAX_BYTES,
     NOT_WARMED,
     WARMED,
     Entry,
@@ -37,6 +38,7 @@ from hausbuch.api.kept_answers import (
     Stamp,
     canonical_query,
     kept_route,
+    read_data_version,
     warm_member,
 )
 from hausbuch.auth.events import append_user_event
@@ -490,7 +492,7 @@ _NOT_REQUESTED = {
 }
 # Tables a kept answer must never read: the data version does not cover them (module
 # docstring), so an answer that read them would outlive a sign-in or a revoked passkey.
-_UNVERSIONED_TABLES = ("auth_session", "auth_passkey")
+_UNVERSIONED_TABLES = ("auth_session", "auth_passkey", "member_locale")  # 0058 too
 
 
 def _exempt_types() -> tuple[str, ...]:
@@ -709,6 +711,9 @@ def test_the_warm_asks_every_warmed_route_as_the_pages_ask_it(client_a, kept, au
         key.path.endswith("/month") and key.query == (("month", "2026-11"),)
         for key, _ in kept.items()
     )
+    # §7.13 (e) 3: the added routes keep the store far below its cap (one member, one language).
+    print(f"kept after the warm: {len(kept)} answers, {kept.size_bytes} bytes")
+    assert kept.size_bytes < MAX_BYTES // 50
 
 
 def _stored_key(**changes) -> Key:
@@ -794,3 +799,73 @@ def test_a_persons_miss_in_another_language_is_explained(client_a, kept, caplog)
     ]
     assert [e["parts"] for e in explained] == [["locale"]]
     assert explained[0]["route"] == "/api/properties"
+
+
+def _member_exists(dbname: str, auth) -> None:
+    """The fake resolver's member as a real app_user row (member_locale refers to it)."""
+    from db.db_support import _admin
+
+    with _admin(dbname) as conn:
+        conn.execute(
+            "INSERT INTO app_user (id, workspace_id, email, display_name)"
+            " VALUES (%s, %s, %s, 'Test')",
+            (auth.user_id, auth.workspace_id, f"{auth.user_id}@example.test"),
+        )
+
+
+def _stored_locales(dbname: str, ws: uuid.UUID) -> list[tuple[str, datetime]]:
+    from db.db_support import _admin
+
+    with _admin(dbname) as conn:
+        return conn.execute(
+            "SELECT locale, updated_at FROM member_locale WHERE workspace_id = %s", (ws,)
+        ).fetchall()
+
+
+def test_a_members_language_is_stored_once_and_only_when_it_changes(client_a, kept, auth_a, dbname):
+    """§7.13 (e) 3: the language of a person's kept request is stored after the answer, only
+    when it changed; the row is outside the data version, so the version stays."""
+    _member_exists(dbname, auth_a)
+    ws = auth_a.workspace_id
+    version = read_data_version(kept.engine, ws)
+    ok(client_a.get("/api/properties", headers={"Accept-Language": "en"}))
+    [(locale, first)] = _stored_locales(dbname, ws)
+    assert locale == "en"
+    ok(client_a.get("/api/reminders", headers={"Accept-Language": "en"}))
+    kept._locales.clear()  # a start: the first request writes, the row stays as it was
+    ok(client_a.get("/api/properties", headers={"Accept-Language": "en"}))
+    assert _stored_locales(dbname, ws) == [("en", first)]
+    ok(client_a.get("/api/properties", headers={"Accept-Language": "de"}))
+    [(locale, changed)] = _stored_locales(dbname, ws)
+    assert locale == "de" and changed >= first
+    assert read_data_version(kept.engine, ws) == version
+
+
+def test_the_warm_after_a_start_asks_in_the_stored_language(
+    client_a, kept, app_engine, settings, blob_store, auth_a, dbname
+):
+    _member_exists(dbname, auth_a)
+    new_property(client_a)
+    ok(client_a.get("/api/properties", headers={"Accept-Language": "en"}))
+    kept.clear()
+    kept._locales.clear()  # a new process: nothing in memory
+    deps = JobDeps(
+        engine=app_engine,
+        settings=settings,
+        blob_store=blob_store,
+        model_client=None,
+        clock=kept.clock,
+        kept_answers=kept,
+    )
+    run = asyncio.run(run_warm(deps, members=[auth_a]))
+    assert run.failed == 0
+    assert {key.locale for key, _ in kept.items()} == {"en"}
+    assert kept.locale_of(auth_a.user_id) == "en"
+
+
+def test_the_language_a_process_saw_wins_over_the_stored_one(kept, auth_a, client_a, dbname):
+    _member_exists(dbname, auth_a)
+    ok(client_a.get("/api/properties", headers={"Accept-Language": "en"}))
+    kept._locales[auth_a.user_id] = "de"  # seen since the row was written
+    assert kept.load_locales([auth_a.workspace_id]) == 0
+    assert kept.locale_of(auth_a.user_id) == "de"

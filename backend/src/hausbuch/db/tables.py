@@ -1297,3 +1297,14 @@ reference_return = Table(
     Column("commercial_use", Boolean, nullable=False, server_default=text("false")),
     _timestamp("fetched_at"),
 )
+
+# Phase 10 §7.13 (e) 3 (migration 0058): the language each member last used, for the warm of
+# the kept answers; outside the data version (no marks), no event.
+member_locale = Table(
+    "member_locale",
+    metadata,
+    Column("workspace_id", UUID(as_uuid=True), primary_key=True),
+    Column("user_id", UUID(as_uuid=True), primary_key=True),
+    _text("locale"),
+    _timestamp("updated_at"),
+)

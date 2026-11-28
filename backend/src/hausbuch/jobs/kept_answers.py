@@ -6,9 +6,11 @@ the month-end and the key figures (scrub 03:15 and reminders 06:00 before), so t
 load of Übersicht and Zu prüfen finds its answers kept.
 Once per enrolled member (a user with a passkey) of every provisioned workspace, the page's
 kept routes are asked through the whole app (KeptAnswers.internal_get) in the language the
-member last asked in. Nothing is warmed after a person's own change: the first load after it
-computes. A write after 09:00 (a late bank sync, the plan's explanation the 08:30 step queued,
-a document read) moves the version and the warmed answers are simply not served.
+member last asked in, kept across a start in `member_locale` (§7.13 (e) 3, migration 0058;
+read before the members are warmed). Nothing is warmed after a person's own change: the first
+load after it computes. A write after 09:00 (a late bank sync, the plan's explanation the
+08:30 step queued, a document read) moves the version and the warmed answers are simply not
+served.
 
 Check, daily at 15:00 UTC: one kept answer still current (its version and day unchanged) is
 computed again with the store bypassed and compared byte for byte, the route rotating by day.
@@ -88,6 +90,8 @@ async def run_warm(
         return run
     if members is None:
         members = await run_in_threadpool(enrolled_members, deps)
+    # §7.13 (e) 3: each member's last language, kept across a start (member_locale).
+    await run_in_threadpool(kept.load_locales, sorted({m.workspace_id for m in members}))
     from hausbuch.services.documents import LOCAL_TIME_ZONE
 
     today = deps.clock().astimezone(LOCAL_TIME_ZONE).date()
