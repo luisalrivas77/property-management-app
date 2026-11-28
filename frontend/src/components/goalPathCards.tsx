@@ -10,7 +10,9 @@
 //
 // The one write: „Diesen Plan übernehmen“ posts POST /household-goal/path/adopt (no body); the
 // server writes the default scenario's `goal_path` lever and follows it, refusing a path that is
-// no longer adoptable (422 `household_scenario.path_invalid`). The page then reads again.
+// no longer adoptable (422 `household_scenario.path_invalid`). Its answer carries the goal as
+// the next GET answers it (§7.13 (d) 7): the page shows that goal and reads again only what the
+// write touched, the plan and the tracking.
 import Link from "next/link";
 import { type ReactNode, useState } from "react";
 
@@ -23,7 +25,7 @@ import { ErrorNotice } from "@/lib/ErrorNotice";
 import { HOUSEHOLD_BUDGET, HOUSEHOLD_PLAN_PAGE } from "@/lib/planningRoutes";
 
 import { hasGap, type PathView, usePathWord } from "./goalPathWord";
-import { CardHead, GOAL_FORM_HREF, Stat, Stats } from "./householdGoal";
+import { CardHead, dueYear, GOAL_FORM_HREF, Stat, Stats } from "./householdGoal";
 import { ALLOCATION_CATEGORY } from "./labels";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
 
@@ -44,8 +46,10 @@ const KIND = "plan";
 export const loadPathTracking = (): Promise<GoalTracking | null> =>
   ok(api.GET("/api/household-goal/tracking")).catch(() => null);
 
-export async function adoptPath(): Promise<void> {
-  await ok(api.POST("/api/household-goal/path/adopt"));
+/** POST /household-goal/path/adopt; its answer carries the goal as the next GET answers it
+ * (§7.13 (d) 7), so the page shows the adopted path without a second read of the goal. */
+export async function adoptPath(): Promise<HouseholdGoal> {
+  return (await ok(api.POST("/api/household-goal/path/adopt"))).goal;
 }
 
 function signedPercent(p: PlanFormat, value: string | null | undefined): string {
@@ -73,7 +77,7 @@ function OnPath({ t, behind, text }: { t: T; behind: boolean; text?: string }) {
 // --- „Euer Plan“ -------------------------------------------------------------------------------
 
 /** The cards of the path in place of the plan's route and month cards („Für euch“ only). */
-export function PathCards({ goal, tracking, onAdopted }: { goal: HouseholdGoal; tracking: GoalTracking | null; onAdopted: () => void }) {
+export function PathCards({ goal, tracking, onAdopted }: { goal: HouseholdGoal; tracking: GoalTracking | null; onAdopted: (goal: HouseholdGoal) => void }) {
   const word = usePathWord(goal);
   if (!word) return null;
   const view = word.view;
@@ -136,7 +140,7 @@ function AdoptedLine({ view }: { view: PathView }) {
 }
 
 /** „Diesen Plan übernehmen“: only while the path is adoptable and not already the one followed. */
-function AdoptButton({ view, onAdopted }: { view: PathView; onAdopted: () => void }) {
+function AdoptButton({ view, onAdopted }: { view: PathView; onAdopted: (goal: HouseholdGoal) => void }) {
   const t = useT(goalPathText);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -145,8 +149,8 @@ function AdoptButton({ view, onAdopted }: { view: PathView; onAdopted: () => voi
     setBusy(true);
     setError(null);
     try {
-      await adoptPath();
-      onAdopted();
+      // Busy until the adopted goal is shown: the answer carries it (§7.13 (d) 7).
+      onAdopted(await adoptPath());
     } catch (caught) {
       setError(caught);
     } finally {
@@ -182,7 +186,7 @@ function InvestNowRow({ view }: { view: PathView }) {
 }
 
 /** „Der Plan“ at step 1 (the typed rates) or step 2 (the return needed, within the room). */
-function PlanCard({ view, onAdopted }: { view: PathView; onAdopted: () => void }) {
+function PlanCard({ view, onAdopted }: { view: PathView; onAdopted: (goal: HouseholdGoal) => void }) {
   const t = useT(goalPathText);
   const p = usePlanFormat();
   const atReturn = view.state === "doable_return";
@@ -298,7 +302,7 @@ function RealisticCard({
     <div className="goal-c" data-testid="path-realistic">
       <CardHead kind={KIND} id={PATH_IDS.route} title={t.realisticTitle} />
       <Stats count={2}>
-        <Stat value={p.euro(why.due_value)} label={t.byDue(p.month(goal.goal.due_month))} />
+        <Stat value={p.euro(why.due_value)} label={t.byDue(dueYear(goal.goal))} />
         <Stat value={why.reached ? p.month(why.reached) : t.notReached} label={t.targetReached(p.euro(goal.goal.target))} />
       </Stats>
       {investNow ? <InvestNowRow view={view} /> : null}
@@ -539,12 +543,13 @@ function RoutePanel({ view, due, target }: { view: PathView; due: string | null;
   const history = historyLine(t, view);
   return (
     <>
+      {view.state === "doable_return" && view.rate != null ? <p>{t.feasibleIf(p.ratio(view.rate))}</p> : null}
       <PlanSteps view={view} target={target} />
       {view.state === "ambitious" && view.windows != null && view.reached_windows != null ? <p>{t.ambitiousText(view.reached_windows, view.windows)}</p> : null}
       {view.state === "hardly" ? <p>{view.windows != null ? t.hardlyText : t.hardlyNoHistory}</p> : null}
       {(view.state === "ambitious" || view.state === "hardly") && view.path.why && due ? (
         <p>
-          {t.realisticText(p.month(due), p.euro(view.path.why.due_value))}
+          {t.realisticText(dueYear({ due_month: due }), p.euro(view.path.why.due_value))}
           {view.path.why.reached && target ? ` ${t.realisticReached(p.euro(target), p.month(view.path.why.reached))}` : ""}
         </p>
       ) : null}

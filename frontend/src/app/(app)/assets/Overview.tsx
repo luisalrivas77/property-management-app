@@ -37,7 +37,7 @@ import { useFormat, useT, type Formatter, type Translation } from "@/i18n";
 import { assets } from "@/i18n/assets";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
-import { type GoalTracking, GoalTrackingCard, GoalTrackingPanel, loadTracking, TRACKING_DETAIL, TRACKING_ID } from "./GoalTracking";
+import { type GoalTracking, GoalTrackingCard, GoalTrackingFailedCard, GoalTrackingPanel, loadTracking, TRACKING_DETAIL, TRACKING_ID } from "./GoalTracking";
 import { NOT_INVESTED_ID, NotInvestedCard, NotInvestedPanel, useNotInvested } from "./NotInvested";
 import { type AssetsPerformance, GainKpi, gainSub, loadPerformance } from "./Performance";
 import { MoneyBack } from "./Property";
@@ -56,14 +56,15 @@ const KIND_COLOUR: Record<string, string> = {
 
 export function OverviewTab({ priceFor, priceDay = null }: { priceFor: string | null; priceDay?: string | null }) {
   const load = useCallback(async () => {
-    const [overview, performance, payback, tracking] = await Promise.all([
+    const [overview, performance, payback, read] = await Promise.all([
       ok(api.GET("/api/assets/overview")),
       loadPerformance(),
       // The Immobilie card's „Geld zurück“ only; Anlagen shows without it.
       ok(api.GET("/api/properties/payback")).catch(() => null),
       loadTracking(),
     ]);
-    return { overview, performance, payback, tracking };
+    const trackingFailed = read === "failed";
+    return { overview, performance, payback, tracking: trackingFailed ? null : read, trackingFailed };
   }, []);
   const state = useLoad(load);
   return (
@@ -78,6 +79,7 @@ function Overview({
   performance,
   payback,
   tracking,
+  trackingFailed,
   priceFor,
   priceDay,
   onSaved,
@@ -86,6 +88,7 @@ function Overview({
   performance: AssetsPerformance;
   payback: PropertiesPayback | null;
   tracking: GoalTracking | null;
+  trackingFailed: boolean;
   priceFor: string | null;
   priceDay: string | null;
   onSaved: () => void;
@@ -118,9 +121,10 @@ function Overview({
             </p>
           </section>
           {/* A followed route with nothing invested yet still says how far it is (§7.9 (e) 3). */}
-          {tracking?.shown || notInvested ? (
+          {tracking?.shown || trackingFailed || notInvested ? (
             <div className="planning-kpis">
               {tracking?.shown ? <GoalTrackingCard tracking={tracking} /> : null}
+              {trackingFailed ? <GoalTrackingFailedCard onRetry={onSaved} /> : null}
               {notInvested ? <NotInvestedCard value={notInvested} /> : null}
             </div>
           ) : null}
@@ -142,6 +146,7 @@ function Overview({
         <div className="planning-kpis">
           <GainKpi title={t.investedGain} figures={performance.invested} portfolios={portfolios} main />
           {tracking?.shown ? <GoalTrackingCard tracking={tracking} /> : null}
+          {trackingFailed ? <GoalTrackingFailedCard onRetry={onSaved} /> : null}
           {notInvested ? <NotInvestedCard value={notInvested} /> : null}
           <KindCard
             title={t.kindEtf}

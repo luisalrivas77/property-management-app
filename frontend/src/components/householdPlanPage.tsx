@@ -20,12 +20,13 @@
 // enum has no balanced value; the step counts as done once the default's changes are the route's).
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { type ReactNode, useCallback, useId, useState } from "react";
+import { Fragment, type ReactNode, useCallback, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { useT } from "@/i18n";
 import { goalText } from "@/i18n/goal";
+import { goalPathText } from "@/i18n/goalPath";
 import { planPageText } from "@/i18n/planPage";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { deviceSetting, useDeviceSetting } from "@/lib/deviceSetting";
@@ -37,7 +38,7 @@ import { type GoalTracking, loadPathTracking, PathCards, PathPanelBody, usePathP
 import { pathView, usePathWord } from "./goalPathWord";
 import { HealthTodoList } from "./healthFigures";
 import { currentDefault, fillLevers, loadScenarioHistory, saveDefaultScenario } from "./healthShared";
-import { CardHead, GOAL_FORM_HREF, GOAL_PAGE, type HouseholdGoal, loadGoal, Stat, Stats, WordPill } from "./householdGoal";
+import { CardHead, dueYear, GOAL_FORM_HREF, GOAL_PAGE, type HouseholdGoal, loadGoal, Stat, Stats, WordPill } from "./householdGoal";
 import { SplitOnPlanPage } from "./investmentSplit";
 import { ALLOCATION_CATEGORY } from "./labels";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
@@ -60,13 +61,10 @@ interface PathData {
   tracking: GoalTracking | null;
 }
 
-async function loadPathData(): Promise<PathData> {
-  const [goal, tracking] = await Promise.all([loadGoal().catch(() => null), loadPathTracking()]);
-  return { goal, tracking };
-}
+const loadPathGoal = (): Promise<HouseholdGoal | null> => loadGoal().catch(() => null);
 
-async function loadNoPath(): Promise<PathData> {
-  return { goal: null, tracking: null };
+async function loadNothing(): Promise<null> {
+  return null;
 }
 
 /** The side panels' detail kind and the cards' ids. */
@@ -130,7 +128,11 @@ export function PlanPageView() {
   const code = useDeviceSetting(PLAN_SHARE_SETTING);
   const load = useCallback(() => loadPlan(share, code), [share, code]);
   const state = useLoad(load);
-  const pathState = useLoad(share ? loadNoPath : loadPathData);
+  // The goal and the tracking apart, so an adopt reads again only the tracking (§7.13 (d) 7).
+  const goalState = useLoad(share ? loadNothing : loadPathGoal);
+  const trackingState = useLoad(share ? loadNothing : loadPathTracking);
+  // The goal an adopt answered with, shown until the goal is read again.
+  const [adopted, setAdopted] = useState<{ goal: HouseholdGoal; of: HouseholdGoal | null | undefined } | null>(null);
   const detail = useDetail(KIND);
 
   const setView = (next: boolean) => {
@@ -144,10 +146,18 @@ export function PlanPageView() {
   // Only an answer of the view asked for is shown: never „Für euch“'s figures under „Zum Teilen“.
   const data = state.data?.view === (share ? "share" : "own") ? state.data : undefined;
   // The path only under „Für euch“, gated on the view asked for, never on the answer loaded.
-  const path = !share && data?.view === "own" ? (pathState.data ?? null) : null;
+  const goal = adopted && adopted.of === goalState.data ? adopted.goal : (goalState.data ?? null);
+  const path: PathData | null = !share && data?.view === "own" ? { goal, tracking: trackingState.data ?? null } : null;
   const reloadAll = () => {
     state.reload();
-    pathState.reload();
+    goalState.reload();
+    trackingState.reload();
+  };
+  // After an adopt: the goal from its answer, then the plan and the tracking read again.
+  const onAdopted = (next: HouseholdGoal) => {
+    setAdopted({ goal: next, of: goalState.data });
+    state.reload();
+    trackingState.reload();
   };
   const panel =
     data && detail.id ? (
@@ -177,7 +187,7 @@ export function PlanPageView() {
         </a>
       ) : null}
       <DetailLayout panel={panel}>
-        <Loading state={{ ...state, data }}>{(plan) => <Cards plan={plan} path={path} onAdopted={reloadAll} />}</Loading>
+        <Loading state={{ ...state, data }}>{(plan) => <Cards plan={plan} path={path} onAdopted={onAdopted} />}</Loading>
       </DetailLayout>
     </section>
   );
@@ -209,7 +219,7 @@ function StatAmount({ plan, value }: { plan: PlanPage; value: string | null | un
   );
 }
 
-function Cards({ plan, path, onAdopted }: { plan: PlanPage; path: PathData | null; onAdopted: () => void }) {
+function Cards({ plan, path, onAdopted }: { plan: PlanPage; path: PathData | null; onAdopted: (goal: HouseholdGoal) => void }) {
   const t = useT(planPageText);
   const goal = path?.goal ?? null;
   const withPath = plan.view === "own" && pathView(goal) != null;
@@ -262,7 +272,7 @@ function wordText(g: ReturnType<typeof useT<typeof goalText.de>>, word: GoalWord
 
 function targetText(t: PT, p: PlanFormat, plan: PlanPage): string {
   const goal = plan.goal!;
-  const month = p.month(goal.due_month);
+  const month = dueYear(goal);
   if (goal.kind === "reserve_months") return t.targetReserve(p.short(goal.target), month);
   return t.targetMoney(p.euro(goal.target), month);
 }
@@ -278,13 +288,17 @@ function GoalCard({ plan, goal: household }: { plan: PlanPage; goal: HouseholdGo
   const g = useT(goalText);
   const p = usePlanFormat();
   const goal = plan.goal!;
-  // With the goal's path, its word („Machbar mit 9,4 %“), as Übersicht and Ziel read it.
+  // With the goal's path, its word and the return it needs as its own labelled figure, as
+  // Übersicht and Ziel read it (§7.13 (d) 1, D316).
   const pathWord = usePathWord(household);
   return (
     <div className="goal-c goal-c-excess planp-goal">
       <CardHead kind={KIND} id={P.goal} title={targetText(t, p, plan)} />
       {pathWord ? (
-        <WordPill word={pathWord.word} text={pathWord.text} />
+        <>
+          <WordPill word={pathWord.word} text={pathWord.text} />
+          {pathWord.figure ? <span className="tile-sub">{pathWord.figure}</span> : null}
+        </>
       ) : (
         <WordPill word={goal.word ?? "none"} text={wordText(g, goal.word, plan.issue)} />
       )}
@@ -295,7 +309,7 @@ function GoalCard({ plan, goal: household }: { plan: PlanPage; goal: HouseholdGo
           </span>
           <div className="planp-goal-foot">
             <span>{t.today(amount(t, p, plan, goal.value_today))}</span>
-            <b>{p.percentValue(goal.percent)}</b>
+            <b>{g.percentReached(p.percentValue(goal.percent))}</b>
           </div>
         </>
       ) : null}
@@ -323,6 +337,7 @@ function IssueCard({ plan }: { plan: PlanPage }) {
 
 function HeuteCard({ plan }: { plan: PlanPage }) {
   const t = useT(planPageText);
+  const g = useT(goalText);
   const p = usePlanFormat();
   const heute = plan.heute!;
   return (
@@ -330,9 +345,25 @@ function HeuteCard({ plan }: { plan: PlanPage }) {
       <CardHead kind={KIND} id={P.heute} title={t.heute} />
       <Stats count={3}>
         <Stat value={<StatAmount plan={plan} value={heute.net_worth} />} label={t.netWorth} />
+        {/* The reserve always as „X € von Y €“ with „erreicht“ or „noch Z € bis zum Ziel“
+            (§7.13 (d) 2, D316); its months are in the panel. */}
         <Stat
-          value={heute.reserve_months != null ? p.short(heute.reserve_months) : <StatAmount plan={plan} value={heute.reserve} />}
-          label={heute.reserve_months != null ? t.reserveMonths("", heute.reserve_full === true).trim() : t.reserveNone}
+          value={
+            heute.reserve_target != null ? (
+              <>
+                <StatAmount plan={plan} value={heute.reserve} /> {g.reserveOfWord} <StatAmount plan={plan} value={heute.reserve_target} />
+              </>
+            ) : (
+              <StatAmount plan={plan} value={heute.reserve} />
+            )
+          }
+          label={
+            heute.reserve_gap == null
+              ? t.reserveNone
+              : heute.reserve_full === true
+                ? g.reserveReached
+                : g.reserveStill(amount(t, p, plan, heute.reserve_gap))
+          }
         />
         <Stat value={<StatAmount plan={plan} value={heute.saved_mean} />} label={t.savedMean} />
       </Stats>
@@ -418,12 +449,13 @@ function AssumptionsCard({ plan }: { plan: PlanPage }) {
   const t = useT(planPageText);
   const p = usePlanFormat();
   const a = plan.assumptions!;
-  const chips: { key: string; label: string; value: string }[] = [];
+  const chips: { key: string; label: string; value: string; never?: boolean }[] = [];
   if (a.rates.depot != null) chips.push({ key: "depot", label: t.funds, value: p.ratio(a.rates.depot) });
   if (a.rates.crypto != null) chips.push({ key: "crypto", label: t.crypto, value: p.ratio(a.rates.crypto) });
   if (a.rates.reserve != null) chips.push({ key: "reserve", label: t.reserve, value: p.ratio(a.rates.reserve) });
   for (const property of a.properties ?? [])
-    if (property.value_change != null) chips.push({ key: property.key, label: t.propertyKind(property.kind), value: p.ratio(property.value_change) });
+    if (property.value_change != null)
+      chips.push({ key: property.key, label: t.propertyKind(property.kind), value: p.ratio(property.value_change), never: property.house_prices?.never });
   return (
     <div className="goal-c">
       <CardHead kind={KIND} id={P.assumptions} title={t.assumptionsCard} />
@@ -432,6 +464,12 @@ function AssumptionsCard({ plan }: { plan: PlanPage }) {
           {chips.map((chip) => (
             <li key={chip.key}>
               {chip.label} <b>{chip.value}</b>
+              {chip.never ? (
+                <span className="planp-mark" data-testid="house-prices-never">
+                  {" · "}
+                  {t.neverReached}
+                </span>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -481,6 +519,7 @@ function RisksCard({ plan }: { plan: PlanPage }) {
 
 function OtherCard({ plan }: { plan: PlanPage }) {
   const t = useT(planPageText);
+  const tp = useT(goalPathText);
   const p = usePlanFormat();
   const o = plan.other_routes!;
   return (
@@ -493,7 +532,7 @@ function OtherCard({ plan }: { plan: PlanPage }) {
         </div>
         <div className="goal-rw">
           <span>{t.onlyMoreReturn}</span>
-          <b>{o.needed_return != null ? p.ratio(o.needed_return) : t.unavailable}</b>
+          <b>{o.needed_return != null ? tp.perYear(p.ratio(o.needed_return)) : t.unavailable}</b>
         </div>
         <div className="goal-rw">
           <span>{t.onlyLessSpending}</span>
@@ -588,7 +627,7 @@ function Panel({
   if (!title) return null;
   let body: ReactNode = null;
   if (id === P.share) body = share ? <SharePanel code={code} /> : null;
-  else if (id === P.goal) body = <GoalPanel plan={data} />;
+  else if (id === P.goal) body = <GoalPanel plan={data} household={data.view === "own" ? (path?.goal ?? null) : null} />;
   else if (id === P.heute && data.heute) body = <HeutePanel plan={data} />;
   else if (id === P.route && data.plan) body = <RoutePanel plan={data} onWritten={onWritten} />;
   else if (id === P.assumptions && data.assumptions) body = <AssumptionsPanel plan={data} />;
@@ -642,10 +681,14 @@ function SharePanel({ code }: { code: string }) {
   );
 }
 
-function GoalPanel({ plan }: { plan: PlanPage }) {
+function GoalPanel({ plan, household }: { plan: PlanPage; household: HouseholdGoal | null }) {
   const t = useT(planPageText);
+  const tp = useT(goalPathText);
   const p = usePlanFormat();
   const goal = plan.goal!;
+  // The sentence the card leaves out, with how often the household's own mix reached it.
+  const pathWord = usePathWord(household);
+  const view = pathWord?.view ?? null;
   const words: Record<string, string> = { on_track: t.wordOnTrack, feasible: t.wordFeasible, ambitious: t.wordAmbitious, hardly: t.wordHardly };
   return (
     <>
@@ -653,6 +696,10 @@ function GoalPanel({ plan }: { plan: PlanPage }) {
         <p>{t.goalPanelText(targetText(t, p, plan), amount(t, p, plan, goal.value_today), p.percentValue(goal.percent))}</p>
       ) : null}
       <p className="goal-one">{t.goalPanelWord}</p>
+      {pathWord?.sentence ? <p>{pathWord.sentence}</p> : null}
+      {pathWord?.sentence && view?.windows != null && view.reached_windows != null && view.path.window_years != null ? (
+        <p>{tp.windowsLine(view.path.window_years, view.reached_windows, view.windows)}</p>
+      ) : null}
       {goal.word && words[goal.word] ? <p>{words[goal.word]}</p> : null}
       {plan.view === "own" ? (
         <Link href={GOAL_FORM_HREF} className="goal-lnk">
@@ -670,6 +717,7 @@ function HeutePanel({ plan }: { plan: PlanPage }) {
   return (
     <>
       <p>{t.heuteReserve(amount(t, p, plan, heute.reserve))}</p>
+      {heute.reserve_months != null ? <p>{t.reserveMonths(p.short(heute.reserve_months), heute.reserve_full === true)}</p> : null}
       {heute.reserve_full != null ? <p>{heute.reserve_full ? t.heuteReserveFull : t.heuteReserveShort}</p> : null}
       {heute.reserve_accounts && heute.reserve_accounts.length > 0 ? (
         <>
@@ -784,15 +832,33 @@ function AssumptionsPanel({ plan }: { plan: PlanPage }) {
           </div>
         ) : null}
         {(a.properties ?? []).map((property) => (
-          <div key={property.key} className="goal-rw">
-            <span>{property.label ?? t.propertyKind(property.kind)}</span>
-            <b>
-              {property.value_change != null ? `${p.ratio(property.value_change)} · ` : ""}
-              {property.kept || property.sale_year == null ? t.keptProperty : t.soldIn(property.sale_year)}
-            </b>
-          </div>
+          <Fragment key={property.key}>
+            <div className="goal-rw">
+              <span>{property.label ?? t.propertyKind(property.kind)}</span>
+              <b>
+                {property.value_change != null ? `${p.ratio(property.value_change)} · ` : ""}
+                {property.kept || property.sale_year == null ? t.keptProperty : t.soldIn(property.sale_year)}
+              </b>
+            </div>
+            {property.house_prices ? (
+              <div className="goal-rw" data-testid="house-prices-row">
+                <span>{property.house_prices.never ? t.neverReached : t.housePrices}</span>
+                <b>{t.housePricesReached(property.house_prices.reached, property.house_prices.windows, property.house_prices.window_years)}</b>
+              </div>
+            ) : null}
+          </Fragment>
         ))}
       </div>
+      {(a.properties ?? []).some((property) => property.house_prices) ? <p className="goal-one">{t.housePricesText}</p> : null}
+      {a.house_price_source ? (
+        <ul className="planp-list planp-sources">
+          <li>
+            <a href={a.house_price_source.url} target="_blank" rel="noreferrer">
+              {a.house_price_source.read_on ? t.source(a.house_price_source.name, p.date(a.house_price_source.read_on)) : a.house_price_source.name}
+            </a>
+          </li>
+        </ul>
+      ) : null}
       {plan.view === "own" ? (
         <Link href={assumptionsHref("", "rendite")} className="goal-lnk">
           {t.toRates} ›

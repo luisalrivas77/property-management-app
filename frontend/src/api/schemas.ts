@@ -229,7 +229,10 @@ export type MovedPayment = Schemas["MovedPayment"];
 export type LimitStatus = Schemas["LimitStatus"];
 export type AfaLine = Schemas["AfaLine"];
 export type PurchaseSummary = Schemas["PurchaseSummary"];
-export type AllocationFact = Schemas["AllocationFact"];
+/** A payment of GET …/anlage-v/sources: the AllocationFact the draft reads, plus receipt_missing
+ * (phase 10 §7.13 (c) 4); the API serves no bare AllocationFact. */
+export type SourcePayment = Schemas["SourcePayment"];
+export type AllocationFact = SourcePayment;
 export type TaxExport = Schemas["TaxExport"];
 export type TaxExportKind = Schemas["TaxExportKind"];
 export type TaxExportState = Schemas["TaxExportState"];

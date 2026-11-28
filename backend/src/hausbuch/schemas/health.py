@@ -702,6 +702,9 @@ class VerdictPart(Schema):
     amount: Money | None = None  # the reserve
     months: ReserveMonths | None = None
     target: Money | None = None  # the reserve target, its good limit
+    # The reserve: what is still missing to the target, max(0, target − amount), so the card
+    # reads „X € von Y €“ with „erreicht“ or „noch Z € bis zum Ziel“ (phase 10 §7.13 (d) 2)
+    gap: Money | None = None
     target_months: TargetMonths | None = None
     good: LimitValue | None = None  # a ratio's good limit (None for the reserve: its target)
     strained: LimitValue | None = None  # a ratio's strained limit; the reserve's share

@@ -51,6 +51,8 @@ function ownPlan(): PlanPage {
       reserve: "21340.00",
       reserve_months: "7.6",
       reserve_full: true,
+      reserve_target: "16800.00",
+      reserve_gap: "0.00",
       saved_mean: "1840.00",
       window_from: monthsAhead(-12),
       window_to: monthsAhead(-1),
@@ -268,8 +270,13 @@ test("Für euch: seven cards, a card opens its explanation in the side panel", a
   await expect(main).toContainText("0 von 2");
   expect(asked.every((query) => query.get("view") === "own")).toBe(true);
 
+  // The reserve as „X € von Y €“ with „erreicht“, its months in the panel (§7.13 (d) 2).
+  const heute = main.locator(".goal-c", { has: page.getByRole("link", { name: /^Heute$/ }) });
+  await expect(heute).toContainText(/21\.340\s€ von 16\.800\s€/);
+  await expect(heute).toContainText("erreicht");
   await main.getByRole("link", { name: /^Heute$/ }).click();
   const panel = detail(page, "Heute");
+  await expect(panel).toContainText("7,6 Mon. Reserve, voll");
   await expect(panel).toContainText("Konten der Reserve");
   await expect(panel).toContainText(GIRO);
   await expect(page).toHaveURL(/#d-plan-heute$/);
@@ -419,7 +426,7 @@ test("on track, the plan card says what keeps you there: saving, investing now, 
   await expect(card).toContainText(/12\.340\s€/);
   await expect(card).toContainText("Bei euren Raten");
   await expect(card).toContainText(/Fonds 6,0\s%\s·\sKrypto 8,0\s%/);
-  await expect(card).toContainText("Am Ziel");
+  await expect(card).toContainText("Voraussichtlich am Ziel");
   await expect(card).not.toContainText("+ mehr anlegen");
 
   await card.getByRole("link", { name: /^Ihr seid auf Kurs$/ }).click();
@@ -450,6 +457,37 @@ test("on track with nothing above the reserve target: no „Jetzt anlegen“", a
   const panel = detail(page, "Ihr seid auf Kurs");
   await expect(panel).toContainText("legt das Geld über dem Reserve-Ziel an und eure Anlagen");
   await expect(panel).not.toContainText("(heute");
+});
+
+test("„Noch nie erreicht“ beside a property's typed value change, its windows and source in the panel", async ({ page, signedIn }) => {
+  void signedIn;
+  const never = (): PlanPage => {
+    const plan = ownPlan();
+    plan.assumptions = {
+      ...plan.assumptions!,
+      properties: [
+        {
+          key: "p1",
+          kind: "etw",
+          kept: false,
+          sale_year: 2038,
+          value_change: "0.090000",
+          label: FLAT,
+          house_prices: { window_years: 5, windows: 16, reached: 0, never: true, thin: false },
+        },
+      ],
+      house_price_source: { name: "Eurostat, House price index (prc_hpi_q)", url: "https://ec.europa.eu/eurostat/", read_on: "2026-11-26" },
+    };
+    return plan;
+  };
+  await planApi(page, never);
+  await page.goto("/household/plan");
+  await expect(page.getByTestId("house-prices-never")).toContainText("Noch nie erreicht");
+  await page.goto("/household/plan#d-plan-annahmen");
+  const panel = detail(page, "Eure Annahmen");
+  await expect(panel.getByTestId("house-prices-row")).toContainText("0 von 16 Zeiträumen à 5 Jahren");
+  await expect(panel).toContainText("keine Sperre");
+  await expect(panel).toContainText("Eurostat");
 });
 
 async function screens(page: Page, name: string, width: number, open: () => Promise<void>) {
@@ -674,10 +712,11 @@ test("the path at step 1: the plan card, „Woher“ and „Diesen Plan überneh
   void signedIn;
   await planApi(page);
   const state = { goal: withPath(stepOne()), tracking: tracking([]) };
+  // The adopt answers with the goal it wrote (§7.13 (d) 7): the page shows that goal without
+  // reading GET /household-goal again, which here still serves the goal from before.
   const posts = await pathApi(page, state, () => {
-    state.goal = withPath({ ...stepOne(), adopted: ADOPTED }, FOLLOWED);
     state.tracking = tracking([ROW]);
-    return { status: 201, json: state.goal };
+    return { status: 201, json: { goal: withPath({ ...stepOne(), adopted: ADOPTED }, FOLLOWED) } };
   });
   await page.goto("/household/plan");
   const main = page.locator(".planp-cards");
@@ -715,6 +754,24 @@ test("the path at step 1: the plan card, „Woher“ and „Diesen Plan überneh
   await expect(row).toContainText(/250\s€ zu wenig/);
   await expect(row).toContainText(/1\.000\s€ dahinter/);
   await expect(main.getByTestId("path-since")).toContainText(/Angelegt 1\.100\s€/);
+});
+
+test("the path at a higher return: the card says Machbar and the return with its label, the sentence in the panel", async ({ page, signedIn }) => {
+  void signedIn;
+  await planApi(page);
+  const higher: GoalPath = { ...stepOne(), state: "doable_return", rate: "0.094", return_needed: "0.094", window_years: 5, windows: 4, reached_windows: 3 };
+  const state = { goal: withPath(higher), tracking: tracking([]) };
+  await pathApi(page, state, () => ({ status: 201, json: {} }));
+  await page.goto("/household/plan");
+  const card = page.locator(".planp-cards .planp-goal");
+  // No sentence and no bare percent on the card (§7.13 (d) 1, D316).
+  await expect(card.locator(".goal-word")).toHaveText("Machbar");
+  await expect(card).toContainText(/9,4\s%\sRendite nötig/);
+  await expect(card).not.toContainText("wenn eure Anlagen");
+  await page.goto("/household/plan#d-plan-ziel");
+  const panel = detail(page, "Euer Ziel");
+  await expect(panel).toContainText(/Machbar, wenn eure Anlagen 9,4\s% im Jahr bringen/);
+  await expect(panel).toContainText("erreicht in 3 von 4");
 });
 
 test("the path when it cannot hold: no adopt button; Ehrgeizig and Kaum erreichbar say why", async ({ page, signedIn }) => {

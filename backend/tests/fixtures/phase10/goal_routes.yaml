@@ -121,6 +121,22 @@
 # ambitious, step 2's 17.9 % reached by 3 of 9); its history_short pin moves to
 # route3_history_short_blended. New: route3_future_lifts_the_coin, route3_future_crypto_no_coin,
 # route3_lump_above_reserve, route3_due_next_month.
+#
+# Amended 28 Nov 2026 by §7.13 (d) 8, D316 (Luis: the goal is judged by its year): the goal is
+# reached when the walk reaches the target at any month-end of its year up to 31 Dec; „Nötig im
+# Monat“, the routes, the word and the path all solve for 31 Dec of that year, and a goal stored
+# with a month keeps its year (read-side, no migration). The cases due Jun 2036 now read 2036
+# (stored as Dec 2036; stored_month_keeps_its_year pins a stored Jun): from Nov 2026 to Dec
+# 2036, 121 months left (it was 115), 31 Dec 2036 funds 353,817.33, net worth 391,817.33 (projected).
+# Recomputed with a scratch walk written apart from the rule that first reproduced every Jun
+# 2036 figure below as it stood. Changed: on_track's projected; closed_by_spending and
+# generic_mode E 196 → 50; closed_by_saving E 3,448 → 3,093; balanced_wants_target and
+# balanced_wants_net_of_a_refund E 1,822 → 1,572; nothing_held E 1,027 → 877 (its wants_only
+# now closes); sale_before_goal E 802 → 581; property_without_scenario E 235 → 50; with them
+# their scenarios and balanced routes. The words hold (E within the room 450: feasible; above
+# it with no series: hardly). The route3_* cases are due Dec 2029 and unchanged. New:
+# stored_month_keeps_its_year; a goal reached in its year and below the target again by
+# December is pinned in goal.yaml (reached_in_the_year_then_below).
 bases:
   household: &household
     today: '2026-11-24'
@@ -146,14 +162,14 @@ bases:
 
 cases:
 - id: on_track
-  description: route 1 reaches 360,000 by Jun 2036 on the growth; nötig is Heute, no route shown
+  description: route 1 reaches 360,000 in 2036 on the growth; nötig is Heute, no route shown
   <<: *household
   levers:
-    goal: {kind: net_worth, target: '360000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '360000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
     word: on_track
-    projected: '369991.55'
+    projected: '391817.33'
     reached: '2036-04'           # 362,796.29 at 30 Apr 2036
     noetig: '2000.00'            # E = 0
     more_saving: {extra: '0.00', noetig: '2000.00'}
@@ -163,53 +179,55 @@ cases:
 
 - id: closed_by_spending
   description: >-
-    „Machbar“: 400,000 by Jun 2036 needs 196 a month more (195 leaves 399,973.53); „Nur
-    Wünsche kürzen“ closes it; the balanced route cuts half from the wants and saves the rest
+    „Machbar“: 400,000 in 2036 needs 50 a month more (49 leaves 399,868.52 at 31 Dec 2036);
+    „Nur Wünsche kürzen“ closes it; the balanced route cuts half from the wants and saves the
+    rest
   <<: *household
   levers:
-    goal: {kind: net_worth, target: '400000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '400000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
-    word: feasible  # §7.11 (i) item 1: E = 196 within the room 450
-    projected: '369991.55'
+    word: feasible  # §7.11 (i) item 1: E = 50 within the room 450
+    projected: '391817.33'
     reached: '2037-03'
-    noetig: '2196.00'            # 196: 400,127.28 at 30 Jun 2036
-    more_saving: {extra: '196.00', noetig: '2196.00'}
+    noetig: '2050.00'            # 50: 400,032.83 at 31 Dec 2036
+    more_saving: {extra: '50.00', noetig: '2050.00'}
     more_return: {available: false, reason: series_missing}
     scenarios:
-      wants_only: {closes: true, cut: '196.01'}   # 600×196/900 = 130.666… → 130.67; 65.34
-      all_equal: {closes: true, cut: '196.00'}    # 98.00 + 39.20 + 39.20 + 19.60
+      wants_only: {closes: true, cut: '50.01'}    # 600×50/900 = 33.333… → 33.34; 16.67
+      all_equal: {closes: true, cut: '50.00'}     # 25.00 + 10.00 + 10.00 + 5.00
     balanced:
-      cuts: {hh_restaurant: '65.34', hh_streaming: '32.67'}   # half 98.00 × 600/900, × 300/900
-      cut: '98.01'
-      saving_extra: '98.00'      # with the cuts, 98 reaches 400,000; 97 does not
+      cuts: {hh_restaurant: '16.67', hh_streaming: '8.34'}    # half 25.00 × 600/900, × 300/900
+      cut: '25.01'
+      saving_extra: '25.00'      # with the cuts, 25 reaches 400,034.47; 24 leaves 399,870.16
       moved_to_saving: '0.00'
       closes: true
 
 - id: closed_by_saving
   description: >-
-    „Kaum erreichbar“: 900,000 by Jun 2036 needs 3,448 a month more, more than all the spending
-    (3,000), so no spending scenario closes it; route 2 still says how much; the balanced route
-    cuts the wants to half and moves the rest to saving
+    „Kaum erreichbar“: 900,000 in 2036 needs 3,093 a month more (900,028.31 at 31 Dec 2036,
+    3,092 leaves 899,864.00), more than all the spending (3,000), so no spending scenario closes
+    it; route 2 still says how much; the balanced route cuts the wants to half and moves the
+    rest to saving
   <<: *household
   levers:
-    goal: {kind: net_worth, target: '900000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '900000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
     word: hardly
-    projected: '369991.55'
+    projected: '391817.33'
     reached: '2045-09'
-    noetig: '5448.00'            # E = 3,448 ≤ the mean income 5,000
-    more_saving: {extra: '3448.00', noetig: '5448.00'}
+    noetig: '5093.00'            # E = 3,093 ≤ the mean income 5,000
+    more_saving: {extra: '3093.00', noetig: '5093.00'}
     more_return: {available: false, reason: series_missing}
     scenarios:
       wants_only: {closes: false, cut: '900.00'}  # every want to 0
-      all_equal: {closes: false, cut: '3000.00'}  # every code to 0, 448 left open
+      all_equal: {closes: false, cut: '3000.00'}  # every code to 0, 93 left open
     balanced:
       cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # half of each mean, the limit
       cut: '450.00'
-      saving_extra: '2998.00'
-      moved_to_saving: '1274.00'  # 2,998 − 1,724 (half of 3,448)
+      saving_extra: '2643.00'    # 450 + 2,643 = 3,093
+      moved_to_saving: '1096.50'  # 2,643 − 1,546.50 (half of 3,093)
       closes: true
 
 - id: balanced_wants_target
@@ -218,24 +236,24 @@ cases:
     income) leaves room for 150 of wants cut, the rest of the half moves to saving
   <<: *household
   levers:
-    goal: {kind: net_worth, target: '650000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '650000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
     budget_targets: {wants_max: '15'}
   expect:
     word: hardly
-    projected: '369991.55'
+    projected: '391817.33'
     reached: '2041-12'
-    noetig: '3822.00'            # E = 1,822
-    more_saving: {extra: '1822.00', noetig: '3822.00'}
+    noetig: '3572.00'            # E = 1,572: 650,112.72 at 31 Dec 2036, 1,571 leaves 649,948.41
+    more_saving: {extra: '1572.00', noetig: '3572.00'}
     more_return: {available: false, reason: series_missing}
     scenarios:
       wants_only: {closes: false, cut: '900.00'}
-      all_equal: {closes: true, cut: '1822.00'}   # 911.00 + 364.40 + 364.40 + 182.20
+      all_equal: {closes: true, cut: '1572.00'}   # 786.00 + 314.40 + 314.40 + 157.20
     balanced:
       cuts: {hh_restaurant: '100.00', hh_streaming: '50.00'}    # room 900 − 750 = 150 by the means
       cut: '150.00'
-      saving_extra: '1672.00'
-      moved_to_saving: '761.00'   # 1,672 − 911
+      saving_extra: '1422.00'
+      moved_to_saving: '636.00'   # 1,422 − 786
       closes: true
 
 - id: balanced_wants_net_of_a_refund
@@ -250,22 +268,22 @@ cases:
   <<: *household
   means: {hh_rent: '1500.00', hh_supermarket: '600.00', hh_restaurant: '600.00', hh_streaming: '300.00', hh_clothing: '300.00', hh_refund: '-300.00'}
   levers:
-    goal: {kind: net_worth, target: '650000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '650000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
     budget_targets: {wants_max: '15'}
   expect:
     word: hardly
-    projected: '369991.55'
+    projected: '391817.33'
     reached: '2041-12'
-    noetig: '3822.00'            # E = 1,822, the walk of balanced_wants_target
-    more_saving: {extra: '1822.00', noetig: '3822.00'}
+    noetig: '3572.00'            # E = 1,572, the walk of balanced_wants_target
+    more_saving: {extra: '1572.00', noetig: '3572.00'}
     more_return: {available: false, reason: series_missing}
     balanced:
       # room 900 − 750 = 150 by the positive means 600, 300, 300 of 1,200: 75, 37.50, 37.50
       cuts: {hh_clothing: '37.50', hh_restaurant: '75.00', hh_streaming: '37.50'}
       cut: '150.00'
-      saving_extra: '1672.00'    # 1,822 − 150, as in balanced_wants_target
-      moved_to_saving: '761.00'  # 1,672 − 911
+      saving_extra: '1422.00'    # 1,572 − 150, as in balanced_wants_target
+      moved_to_saving: '636.00'  # 1,422 − 786
       closes: true
 
 - id: generic_mode
@@ -273,48 +291,73 @@ cases:
   <<: *household
   mode: generic
   levers:
+    goal: {kind: net_worth, target: '400000.00', due_month: '2036-12', set_on: '2026-11-20'}
+    value_change: {depot: '0.06'}
+  expect:
+    word: feasible  # §7.11 (i) item 1: E = 50 within the room 450
+    projected: '391817.33'
+    reached: '2037-03'
+    noetig: '2050.00'
+    more_saving: {extra: '50.00', noetig: '2050.00'}
+    more_return: {available: false, reason: generic_mode}
+    scenarios:
+      wants_only: {closes: true, cut: '50.01'}
+      all_equal: {closes: true, cut: '50.00'}
+    balanced:
+      cuts: {hh_restaurant: '16.67', hh_streaming: '8.34'}
+      cut: '25.01'
+      saving_extra: '25.00'
+      moved_to_saving: '0.00'
+      closes: true
+
+- id: stored_month_keeps_its_year
+  description: >-
+    closed_by_spending stored before D316 with the month Jun 2036: it keeps its year and reads
+    exactly as 400,000 in 2036 (solved for 31 Dec 2036, E = 50)
+  <<: *household
+  levers:
     goal: {kind: net_worth, target: '400000.00', due_month: '2036-06', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
-    word: feasible  # §7.11 (i) item 1: E = 196 within the room 450
-    projected: '369991.55'
+    word: feasible
+    projected: '391817.33'
     reached: '2037-03'
-    noetig: '2196.00'
-    more_saving: {extra: '196.00', noetig: '2196.00'}
-    more_return: {available: false, reason: generic_mode}
+    noetig: '2050.00'
+    more_saving: {extra: '50.00', noetig: '2050.00'}
+    more_return: {available: false, reason: series_missing}
     scenarios:
-      wants_only: {closes: true, cut: '196.01'}
-      all_equal: {closes: true, cut: '196.00'}
+      wants_only: {closes: true, cut: '50.01'}
+      all_equal: {closes: true, cut: '50.00'}
     balanced:
-      cuts: {hh_restaurant: '65.34', hh_streaming: '32.67'}
-      cut: '98.01'
-      saving_extra: '98.00'
+      cuts: {hh_restaurant: '16.67', hh_streaming: '8.34'}
+      cut: '25.01'
+      saving_extra: '25.00'
       moved_to_saving: '0.00'
       closes: true
 
 - id: nothing_held
   description: >-
     nothing held and no split: nothing moves, the money stays on the accounts at 0 % (the
-    linear walk of goal.yaml); 50,000 + 2,000 × 116 = 282,000 at Jun 2036
+    linear walk of goal.yaml); 50,000 + 2,000 × 122 = 294,000 at Dec 2036
   <<: *household
   split: null
   levers:
-    goal: {kind: net_worth, target: '400000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '400000.00', due_month: '2036-12', set_on: '2026-11-20'}
   expect:
-    word: hardly
-    projected: '282000.00'
+    word: hardly                 # E = 877 above the room 450, no series
+    projected: '294000.00'
     reached: '2041-05'           # 50,000 + 2,000k ≥ 400,000 → k = 175
-    noetig: '3027.00'            # E = ⌈118,000 ÷ 115⌉ = ⌈1,026.09⌉
-    more_saving: {extra: '1027.00', noetig: '3027.00'}
+    noetig: '2877.00'            # E = ⌈106,000 ÷ 121⌉ = ⌈876.03⌉
+    more_saving: {extra: '877.00', noetig: '2877.00'}
     more_return: {available: false, reason: nothing_invested}
     scenarios:
-      wants_only: {closes: false, cut: '900.00'}
-      all_equal: {closes: true, cut: '1027.00'}   # 513.50 + 205.40 + 205.40 + 102.70
+      wants_only: {closes: true, cut: '877.01'}   # 584.67 + 292.34, within the wants' 900
+      all_equal: {closes: true, cut: '877.00'}    # 438.50 + 175.40 + 175.40 + 87.70
     balanced:
-      cuts: {hh_restaurant: '300.00', hh_streaming: '150.00'}   # half 513.50 above the limit
-      cut: '450.00'
-      saving_extra: '577.00'     # 450 + 577 = 1,027
-      moved_to_saving: '63.50'   # 577 − 513.50
+      cuts: {hh_restaurant: '292.34', hh_streaming: '146.17'}   # half 438.50 by the means, within half of each
+      cut: '438.51'
+      saving_extra: '438.00'     # 121 × (438 + 438.51) ≥ 106,000; 437 does not
+      moved_to_saving: '0.00'    # 438 − 438.50 < 0
       closes: true
 
 - id: no_rate_typed
@@ -325,7 +368,7 @@ cases:
   start: {month_end: '2026-10-31', bank: '50000.00', depot: '10000.00', crypto: '0.00', property: '0.00', loans: '0.00', other_liabilities: '0.00'}
   split: null
   levers:
-    goal: {kind: net_worth, target: '400000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '400000.00', due_month: '2036-12', set_on: '2026-11-20'}
   expect:
     word: null
     issue: no_projection
@@ -342,23 +385,23 @@ cases:
   start: {month_end: '2026-10-31', bank: '50000.00', depot: '0.00', crypto: '0.00', property: '290000.00', loans: '210000.00', other_liabilities: '0.00'}
   flats: {flat: *flat}
   levers:
-    goal: {kind: net_worth, target: '700000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '700000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
-    word: hardly
-    projected: '576747.40'       # funds 538,747.40 + bank 38,000
+    word: hardly                 # E = 581 above the room 450, no series
+    projected: '604595.19'       # funds 566,595.19 + bank 38,000
     reached: '2038-08'
-    noetig: '2802.00'            # E = 802
-    more_saving: {extra: '802.00', noetig: '2802.00'}
+    noetig: '2581.00'            # E = 581: 700,059.33 at 31 Dec 2036, 580 leaves 699,895.02
+    more_saving: {extra: '581.00', noetig: '2581.00'}
     more_return: {available: false, reason: series_missing}
     scenarios:
-      wants_only: {closes: true, cut: '802.01'}   # 534.67 + 267.34
-      all_equal: {closes: true, cut: '802.00'}
+      wants_only: {closes: true, cut: '581.01'}   # 387.34 + 193.67
+      all_equal: {closes: true, cut: '581.00'}
     balanced:
-      cuts: {hh_restaurant: '267.34', hh_streaming: '133.67'}
-      cut: '401.01'
-      saving_extra: '401.00'
-      moved_to_saving: '0.00'
+      cuts: {hh_restaurant: '193.67', hh_streaming: '96.84'}    # half 290.50
+      cut: '290.51'
+      saving_extra: '291.00'     # 700,143.13; 290 leaves 699,978.82
+      moved_to_saving: '0.50'    # 291 − 290.50
       closes: true
     net_worth_at: {'2030-11': '321901.14', '2030-12': '316166.04', '2031-12': '357516.00'}
 
@@ -374,22 +417,22 @@ cases:
       kept_value: '290000.00'
       kept_loans: {2027: '198000.00', 2028: '186000.00', 2029: '174000.00', 2030: '162000.00', 2031: '150000.00', 2032: '138000.00', 2033: '126000.00', 2034: '114000.00', 2035: '102000.00', 2036: '90000.00', 2037: '78000.00', 2038: '66000.00', 2039: '54000.00', 2040: '42000.00', 2041: '30000.00', 2042: '18000.00', 2043: '6000.00', 2044: '0.00', 2045: '0.00', 2046: '0.00', 2047: '0.00', 2048: '0.00', 2049: '0.00', 2050: '0.00', 2051: '0.00', 2052: '0.00', 2053: '0.00', 2054: '0.00', 2055: '0.00', 2056: '0.00', 2057: '0.00', 2058: '0.00', 2059: '0.00', 2060: '0.00', 2061: '0.00', 2062: '0.00', 2063: '0.00', 2064: '0.00', 2065: '0.00', 2066: '0.00'}
   levers:
-    goal: {kind: net_worth, target: '600000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '600000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
-    word: feasible  # §7.11 (i) item 1: E = 235 within the room 450
-    projected: '563991.55'       # 369,991.55 + 290,000 − 96,000 (half-way 102,000 → 90,000)
+    word: feasible  # §7.11 (i) item 1: E = 50 within the room 450
+    projected: '591817.33'       # 391,817.33 + 290,000 − 90,000 (the loan at 31 Dec 2036)
     reached: '2037-02'
-    noetig: '2235.00'            # E = 235
-    more_saving: {extra: '235.00', noetig: '2235.00'}
+    noetig: '2050.00'            # E = 50: 600,032.83; 49 leaves 599,868.52
+    more_saving: {extra: '50.00', noetig: '2050.00'}
     more_return: {available: false, reason: series_missing}
     scenarios:
-      wants_only: {closes: true, cut: '235.01'}   # 156.67 + 78.34
-      all_equal: {closes: true, cut: '235.00'}
+      wants_only: {closes: true, cut: '50.01'}    # 33.34 + 16.67
+      all_equal: {closes: true, cut: '50.00'}
     balanced:
-      cuts: {hh_restaurant: '78.34', hh_streaming: '39.17'}     # half 117.50
-      cut: '117.51'
-      saving_extra: '117.00'
+      cuts: {hh_restaurant: '16.67', hh_streaming: '8.34'}      # half 25.00
+      cut: '25.01'
+      saving_extra: '25.00'
       moved_to_saving: '0.00'
       closes: true
     assumption: >-

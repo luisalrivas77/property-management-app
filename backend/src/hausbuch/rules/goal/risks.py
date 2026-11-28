@@ -19,6 +19,10 @@ As pinned by tests/fixtures/phase10/plan_page.yaml (its header's readings):
    (`walk(draw_invested=True)`).
 5. Repair: per property with a living area, area × the year's maintenance rate × 10 years, paid
    once in the walk's first month; never drawn from the invested money.
+6. „Noch nie erreicht“ (§7.13 (d) 5, D316): a property's typed yearly value change on the
+   assumptions card beside the house price index's windows of the goal's years left (route 3's
+   window): how many reached it, of how many, `never` when none did. A mark, never a block; none
+   without a typed change, in `generic` mode or without a window of that length.
 """
 
 from collections.abc import Hashable, Mapping, Sequence
@@ -124,6 +128,9 @@ class PlanInputs:
     # „Anlegbar jetzt“ (§7.11 (d)): the plan's own `above_target`, as GET /household-plan
     # serves it; shown on the on-track plan card („Jetzt anlegen“). None when not read.
     above_target: Decimal | None = None
+    # §7.13 (d) 5: the German house price index (rules/goal/series.house_price_series); None:
+    # not read, so no property carries the comparison
+    house_prices: H.Series | None = None
 
 
 # --- The route --------------------------------------------------------------------------------
@@ -165,7 +172,7 @@ def route_of(i: GoalInputs, answer: HouseholdGoal) -> Route | None:
     if goal.kind is not GoalKind.NET_WORTH:
         p = replace(p, split=None)  # as household_goal: nothing moves out of the reserve
     if answer.word is GoalWord.ON_TRACK:
-        if answer.reached is not None and answer.reached <= goal.due_month:
+        if answer.reached is not None and answer.reached <= goal.year_end:
             return Route(projection=p)
         return Route(projection=p, spending_changes=tuple(i.household_changes))
     b = answer.balanced
@@ -466,6 +473,9 @@ class HeuteCard:
     saved_mean: Decimal
     reserve_accounts: list[str]
     above_target: Decimal | None = None  # the plan's „Anlegbar jetzt“, read, never computed here
+    # §7.13 (d) 2: „X € von Y €“ with „erreicht“ or „noch Z € bis zum Ziel“; None without a target
+    reserve_target: Decimal | None = None
+    reserve_gap: Decimal | None = None  # max(0, target − reserve)
 
 
 @dataclass(frozen=True)
@@ -488,11 +498,43 @@ class PlanCard:
 
 
 @dataclass(frozen=True)
+class HousePrices:
+    """A typed value change against the house price index (6): the windows of `window_years`
+    whose growth reached it, of all; `never` when none did; `thin` under H.THIN_BELOW."""
+
+    window_years: int
+    windows: int
+    reached: int
+    never: bool
+    thin: bool
+
+
+def house_prices(
+    value_change: Decimal | None, series: H.Series | None, months_left: int, mode: AdviceMode
+) -> HousePrices | None:
+    if value_change is None or series is None or mode is not AdviceMode.OWN_USE:
+        return None
+    years = H.window_years(months_left)
+    products = H.window_products(series.returns, years)
+    if not products:
+        return None
+    n = H.reached(value_change, products, years)
+    return HousePrices(
+        window_years=years,
+        windows=len(products),
+        reached=n,
+        never=n == 0,
+        thin=len(products) < H.THIN_BELOW,
+    )
+
+
+@dataclass(frozen=True)
 class PropertyAssumption:
     key: Hashable
     kept: bool
     sale_year: int | None
     value_change: Decimal | None
+    house_prices: HousePrices | None = None
 
 
 @dataclass(frozen=True)
@@ -600,6 +642,10 @@ def plan_cards(i: PlanInputs, answer: HouseholdGoal | None = None) -> PlanCards:
             else (i.reserve_today / gi.need).quantize(MONTHS_PLACES, ROUND_HALF_UP)
         ),
         reserve_full=None if reserve_target is None else i.reserve_today >= reserve_target,
+        reserve_target=reserve_target,
+        reserve_gap=(
+            None if reserve_target is None else max(ZERO, reserve_target - i.reserve_today)
+        ),
         saved_mean=gi.heute,
         reserve_accounts=list(i.reserve_accounts),
         above_target=i.above_target,
@@ -629,6 +675,8 @@ def plan_cards(i: PlanInputs, answer: HouseholdGoal | None = None) -> PlanCards:
         ),
     )
     vc = p.levers.value_change
+    months_left = answer.months_left or 0
+    typed = {x.key: x.value_change for x in i.properties}
     assumptions = AssumptionsCard(
         rates={"depot": vc.depot, "crypto": vc.crypto, "reserve": vc.reserve},
         properties=[
@@ -636,12 +684,12 @@ def plan_cards(i: PlanInputs, answer: HouseholdGoal | None = None) -> PlanCards:
                 key=key,
                 kept=f.kept,
                 sale_year=f.sale_year,
-                value_change=next((x.value_change for x in i.properties if x.key == key), None),
+                value_change=typed.get(key),
+                house_prices=house_prices(typed.get(key), i.house_prices, months_left, gi.mode),
             )
             for key, f in p.flats.items()
         ],
     )
-    months_left = answer.months_left or 0
     rep, todos = repair(i, route, target, base_reached, rules)
     risks = RisksCard(
         base_reached=base_reached,

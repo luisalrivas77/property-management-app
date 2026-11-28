@@ -938,6 +938,16 @@ class AllocationFact(PaymentFacts):
     account_purpose: AccountPurpose = AccountPurpose.RENTAL
 
 
+class SourcePayment(AllocationFact):
+    """One payment of the sources drawer (GET …/anlage-v/sources): the AllocationFact the draft
+    reads, plus receipt_missing (phase 10 §7.13 (c) 4, D315): a counted rental payment of a
+    category whose bill the checklist asks for (cost_receipt, D64) with no Beleg linked, so the
+    drawer says „Rechnung fehlt“ with „Rechnung hochladen“ instead of nothing (principle 7).
+    Read by no tax rule."""
+
+    receipt_missing: bool = False
+
+
 # --- §5.2 AfA and §5.3 the 15 % tracker ------------------------------------------------
 
 

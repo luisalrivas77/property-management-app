@@ -176,10 +176,11 @@ def test_a_reserve_goal_reads_the_reserve(world):
 
 
 def test_a_goal_not_due_after_the_current_month_is_refused_unless_carried(world):
-    """The due month must lie after the current month (April 2027) for a goal new or altered
-    on save and in the preview; a goal carried unaltered is never refused, and once its month
-    has passed it reads with `issue` due_passed and no word."""
-    for due in ("2027-04", "2027-03"):
+    """The goal is judged by its year (§7.13 (d) 8, D316): its year must end after the current
+    month (April 2027) for a goal new or altered on save and in the preview, so a month of 2027
+    already over is accepted and a goal for 2026 refused; a goal carried unaltered is never
+    refused, and once its year has passed it reads with `issue` due_passed and no word."""
+    for due in ("2026-12", "2026-05"):
         with pytest.raises(RuleViolationError) as refused:
             _save(world, _goal("1000.00", due=due))
         assert refused.value.codes == (HOUSEHOLD_SCENARIO_GOAL_INVALID,)
@@ -187,11 +188,20 @@ def test_a_goal_not_due_after_the_current_month_is_refused_unless_carried(world)
             world.query(plan.preview_plan, TODAY, HouseholdLevers(goal=_goal("1.00", due=due)))
     with workspace_transaction(world.engine, world.ws) as conn:
         assert conn.execute(select(func.count()).select_from(scenario_table)).scalar_one() == 0
-    row = _save(world, _goal("1000.00", due="2027-05"))
-    later = date(2027, 6, 2)
+    first = _save(world, _goal("1000.00", due="2027-03"))  # a month over, its year not
+    row = _save(world, _goal("1000.00", due="2027-05"), supersedes=first.id)
     with workspace_transaction(world.engine, world.ws) as conn:
         assert (
             household_scenarios.check_levers(  # carried unaltered after its month
+                conn, row.levers, date(2027, 6, 2), previous_goal=row.levers.goal
+            )
+            == {}
+        )
+    assert world.query(goal_service.goal, date(2027, 6, 2)).issue is not GoalIssue.DUE_PASSED
+    later = date(2028, 1, 3)
+    with workspace_transaction(world.engine, world.ws) as conn:
+        assert (
+            household_scenarios.check_levers(  # carried unaltered after its year
                 conn, row.levers, later, previous_goal=row.levers.goal
             )
             == {}
@@ -255,8 +265,8 @@ def test_anlagen_durchspielen_and_the_goal_read_one_walk(world):
     Durchspielen (the preview with the saved levers) and the goal. The newest closed month is
     March, so the walk starts in April, never on a 1 January; the depot earns 3 % and the money
     above the reserve target moves into it; the flat is sold in 2028, so the points run past the
-    sale. At each 31 December the three agree to the cent, and a goal due in June 2028 reads the
-    walk's own June, not a December."""
+    sale. At each 31 December the three agree to the cent, and a goal stored with June 2028 reads
+    its year (§7.13 (d) 8, D316): the walk's 31 December 2028, not its June."""
     _projected_world(world, groceries=True, salary="1000.00")
     flat = world.query(default_scenario_on, world.property_id, TODAY)
     _sold_in_2028(world, flat.id)
@@ -281,5 +291,5 @@ def test_anlagen_durchspielen_and_the_goal_read_one_walk(world):
 
     row = _save(world, _goal("10000000.00", due="2028-06"), supersedes=row.id, horizon_months=45)
     june = walked.at("2028-06")
-    assert june is not None and _read(world).projected == june.net_worth
-    assert june.net_worth not in {p.total for p in points}
+    assert june is not None and june.net_worth != sold.total
+    assert _read(world).projected == sold.total

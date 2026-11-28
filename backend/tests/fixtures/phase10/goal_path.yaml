@@ -53,6 +53,17 @@
 # 5. Why (no path): the due-month value with the whole room used at the typed rates and the
 #    month the goal is then reached (null within 40 years).
 # 6. word: on_track → on_track, doable_* → feasible, ambitious → ambitious, hardly → hardly.
+#
+# Amended 28 Nov 2026 by §7.13 (d) 8, D316 (Luis: the goal is judged by its year): the path
+# solves for 31 Dec of the goal's year, and a goal reached at any month-end of its year is on
+# track. The cases due Jun 2036 now read 2036 (stored as Dec 2036): from Nov 2026, 121 months
+# left, the household's walk 396,136.26 at 31 Dec 2036, route 3's windows L = 10 years, so
+# 2015–2025 holds two (2015–2024 4.4523, 2016–2025 4.8571), short_history. Recomputed with a
+# scratch walk written apart from the rule that first reproduced every Jun 2036 figure below as
+# it stood. Changed: the 410,000 cases at room 0 need 6.7 % (was 7.9 %), two of two windows;
+# doable_rates_suggested_wants and wants_target_below_today extra 234 → 85; planned_one_off 337
+# → 184; buffer_kept's goal 360,000 → 375,000 (360,000 is reached by the walk alone in Dec 2036,
+# 362,914.29, and the case pins the buffer's gross-up), extra 74. Every other figure holds.
 bases:
   household: &household
     today: '2026-11-24'
@@ -74,10 +85,10 @@ bases:
 
 cases:
 - id: on_track
-  description: 370,000 by Jun 2036; the walk alone gives 374,035.42, so no extra and no cut
+  description: 370,000 in 2036; the walk alone gives 396,136.26 at 31 Dec, so no extra and no cut
   <<: *household
   levers:
-    goal: {kind: net_worth, target: '370000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '370000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
     word: on_track
@@ -100,13 +111,13 @@ cases:
     uncategorised (no class): other spending 2,950 − 2,100 − 800 = 50; the suggestion 450
     (half of each positive want) is within the wants net; free = 5,000 − 2,950 + (800 − 450) =
     2,400, the ceiling 2,400 (the rows: 5,000 − 2,100 − 450 − 50 = 2,400); Anlegbar 2,050, the
-    room 350. 370,000 by Jun 2036 is on track (the household's walk reaches 374,035.42 at
+    room 350. 370,000 in 2036 is on track (the household's walk reaches 396,136.26 at
     2,000 a month); no cut, the budget total the wants net
   <<: *household
   month: {mean_income: '5000.00', mean_regular_spending: '2950.00', mean_rental_cash: '0.00', buffer_percent: '0'}
   means: {hh_rent: '1500.00', hh_supermarket: '600.00', hh_restaurant: '600.00', hh_streaming: '300.00', hh_refund: '-100.00', uncategorized: '50.00'}
   levers:
-    goal: {kind: net_worth, target: '370000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '370000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
     word: on_track
@@ -128,12 +139,12 @@ cases:
     streaming 400 − 100), the positive wants being 1,000; a saved wants target of 19 % (950)
     lies between them, so the wants are within it: kept = min(wants net 900, 950) = 900, nothing
     is cut, the ceiling equals Anlegbar 2,000 and the room is 0 (counting the positive wants
-    only would have cut a phantom 50); other spending 3,000 − 2,100 − 900 = 0. 410,000 by Jun
-    2036 then needs 7.9 % as in room_zero_short_history
+    only would have cut a phantom 50); other spending 3,000 − 2,100 − 900 = 0. 410,000 in
+    2036 then needs 6.7 % as in room_zero_short_history
   <<: *household
   means: {hh_rent: '1500.00', hh_supermarket: '600.00', hh_restaurant: '600.00', hh_streaming: '400.00', hh_refund: '-100.00'}
   levers:
-    goal: {kind: net_worth, target: '410000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '410000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
     budget_targets: {wants_max: '19'}
   expect:
@@ -145,11 +156,11 @@ cases:
       room: '0.00'
       extra: '0.00'
       monthly: '2000.00'
-      rate: '0.079'
-      return_needed: '0.079'
-      window_years: 9
-      windows: 3
-      reached_windows: 3
+      rate: '0.067'
+      return_needed: '0.067'
+      window_years: 10
+      windows: 2
+      reached_windows: 2
       short_history: true
       years: [2015, 2025]
       mix_today_share: '0.0'   # nothing held today: all of it still to come
@@ -165,11 +176,11 @@ cases:
     nothing can be cut, the ceiling equals Anlegbar 2,000 and the room is 0; the wants budget
     total is 0, never below; regular spending 3,000 holds 1,000 uncategorised, so other
     spending 5,000 − 2,100 − 0 − 2,000 = 900 (the uncategorised 1,000 less the 100 the refunds
-    exceed the wants by). 410,000 by Jun 2036 then needs 7.9 % as in room_zero_short_history
+    exceed the wants by). 410,000 in 2036 then needs 6.7 % as in room_zero_short_history
   <<: *household
   means: {hh_rent: '1500.00', hh_supermarket: '600.00', hh_restaurant: '300.00', hh_refund: '-400.00', uncategorized: '1000.00'}
   levers:
-    goal: {kind: net_worth, target: '410000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '410000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
     word: feasible
@@ -180,11 +191,11 @@ cases:
       room: '0.00'
       extra: '0.00'
       monthly: '2000.00'
-      rate: '0.079'
-      return_needed: '0.079'
-      window_years: 9
-      windows: 3
-      reached_windows: 3
+      rate: '0.067'
+      return_needed: '0.067'
+      window_years: 10
+      windows: 2
+      reached_windows: 2
       short_history: true
       years: [2015, 2025]
       mix_today_share: '0.0'   # nothing held today: all of it still to come
@@ -195,12 +206,12 @@ cases:
 
 - id: doable_rates_suggested_wants
   description: >-
-    „Machbar“ at the typed 6 %: 410,000 by Jun 2036 needs 234 a month more (410,013.79; 233
-    leaves 409,860.04), within the room of 450 the suggested wants budget (half of each want)
-    opens; the 234 are cut from the wants by their means
+    „Machbar“ at the typed 6 %: 410,000 in 2036 needs 85 a month more (410,102.61 at 31 Dec
+    2036; 84 leaves 409,938.30), within the room of 450 the suggested wants budget (half of
+    each want) opens; the 85 are cut from the wants by their means
   <<: *household
   levers:
-    goal: {kind: net_worth, target: '410000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '410000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
     word: feasible
@@ -209,20 +220,20 @@ cases:
       ceiling: *suggested
       anlegbar: '2000.00'
       room: '450.00'
-      extra: '234.00'
-      monthly: '2234.00'
+      extra: '85.00'
+      monthly: '2085.00'
       rate: '0.06'
-      wants_budget: {hh_restaurant: '444.00', hh_streaming: '222.00'}   # 234 × 600/900 = 156, × 300/900 = 78
-      wants_budget_total: '666.00'
+      wants_budget: {hh_restaurant: '543.33', hh_streaming: '271.66'}   # 85 × 600/900 = 56.666… → 56.67, × 300/900 = 28.333… → 28.34
+      wants_budget_total: '814.99'      # 900 − 85.01
       adoptable: true
 
 - id: wants_target_below_today
   description: >-
     a saved wants target of 12 % (600 of 5,000) below today's 900: the wants kept are 600,
-    the ceiling 2,300, the room 300; the same goal's 234 fits it
+    the ceiling 2,300, the room 300; the same goal's 85 fits it
   <<: *household
   levers:
-    goal: {kind: net_worth, target: '410000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '410000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
     budget_targets: {wants_max: '12'}
   expect:
@@ -232,23 +243,23 @@ cases:
       ceiling: {income: '5000.00', need: '2100.00', wants_kept: '600.00', suggested: false, buffer: '0.00', ceiling: '2300.00'}
       anlegbar: '2000.00'
       room: '300.00'
-      extra: '234.00'
-      monthly: '2234.00'
+      extra: '85.00'
+      monthly: '2085.00'
       rate: '0.06'
-      wants_budget: {hh_restaurant: '444.00', hh_streaming: '222.00'}
-      wants_budget_total: '666.00'
+      wants_budget: {hh_restaurant: '543.33', hh_streaming: '271.66'}
+      wants_budget_total: '814.99'
       adoptable: true
 
 - id: buffer_kept
   description: >-
     a buffer of 10 %: Anlegbar 2,000 − 200 = 1,800; the ceiling's free 2,450 less its buffer
-    245 = 2,205; room 405. 360,000 by Jun 2036 (the walk alone 342,934.90) needs 111 (360,001.56;
-    110 leaves 359,847.81); the cut grossed up: 111 ÷ 0.9 = 123.333… → 123.34 + 0.01 = 123.35,
-    by the means 82.2333… → 82.24 and 41.1166… → 41.12
+    245 = 2,205; room 405. 375,000 in 2036 (the walk alone 362,914.29 at 31 Dec 2036) needs 74
+    (375,073.23; 73 leaves 374,908.92); the cut grossed up: 74 ÷ 0.9 = 82.222… → 82.23 + 0.01 =
+    82.24, by the means 54.8266… → 54.83 and 27.4133… → 27.42
   <<: *household
   month: {mean_income: '5000.00', mean_regular_spending: '3000.00', mean_rental_cash: '0.00', buffer_percent: '10'}
   levers:
-    goal: {kind: net_worth, target: '360000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '375000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
     word: feasible
@@ -257,21 +268,21 @@ cases:
       ceiling: {income: '5000.00', need: '2100.00', wants_kept: '450.00', suggested: true, buffer: '245.00', ceiling: '2205.00'}
       anlegbar: '1800.00'
       room: '405.00'
-      extra: '111.00'
-      monthly: '1911.00'
+      extra: '74.00'
+      monthly: '1874.00'
       rate: '0.06'
-      wants_budget: {hh_restaurant: '517.76', hh_streaming: '258.88'}
-      wants_budget_total: '776.64'
+      wants_budget: {hh_restaurant: '545.17', hh_streaming: '272.58'}
+      wants_budget_total: '817.75'      # 900 − 82.25
       adoptable: true
 
 - id: planned_one_off
   description: >-
     a planned one-off of −10,000 in Jun 2028 (typed in the one-off lever) is walked in its
-    month; the ceiling itself is a monthly figure and leaves it out. 410,000 by Jun 2036 then
-    needs 337 (410,027.19; 336 leaves 409,873.51; without extra 358,238.28)
+    month; the ceiling itself is a monthly figure and leaves it out. 410,000 in 2036 then
+    needs 184 (410,097.39 at 31 Dec 2036; 183 leaves 409,933.16; without extra 379,879.01)
   <<: *household
   levers:
-    goal: {kind: net_worth, target: '410000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '410000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
     one_offs: [{month: '2028-06', amount: '-10000.00'}]
   expect:
@@ -281,22 +292,22 @@ cases:
       ceiling: *suggested
       anlegbar: '2000.00'
       room: '450.00'
-      extra: '337.00'
-      monthly: '2337.00'
+      extra: '184.00'
+      monthly: '2184.00'
       rate: '0.06'
-      wants_budget: {hh_restaurant: '375.33', hh_streaming: '187.66'}   # 224.666… → 224.67, 112.333… → 112.34
-      wants_budget_total: '562.99'
+      wants_budget: {hh_restaurant: '477.33', hh_streaming: '238.66'}   # 122.666… → 122.67, 61.333… → 61.34
+      wants_budget_total: '715.99'
       adoptable: true
 
 - id: room_zero_short_history
   description: >-
     a saved wants target of 20 % (1,000) above today's wants: nothing is cut, the ceiling
-    equals Anlegbar, the room is 0; 410,000 by Jun 2036 then needs 7.9 % a year (410,635.19;
-    7.8 % leaves 408,605.52); windows of 9 years in 2015–2025: three, each reached (products
-    4.0476, 4.0476, 3.7362 ≥ 1.079⁹ = 1.9821): fewer than five, judged anyway
+    equals Anlegbar, the room is 0; 410,000 in 2036 then needs 6.7 % a year (410,711.39 at 31
+    Dec 2036; 6.6 % leaves 408,590.50); windows of 10 years in 2015–2025: two, each reached
+    (products 4.4523, 4.8571 ≥ 1.067¹⁰ = 1.9127): fewer than five, judged anyway
   <<: *household
   levers:
-    goal: {kind: net_worth, target: '410000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '410000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
     budget_targets: {wants_max: '20'}
   expect:
@@ -308,11 +319,11 @@ cases:
       room: '0.00'
       extra: '0.00'
       monthly: '2000.00'
-      rate: '0.079'
-      return_needed: '0.079'
-      window_years: 9
-      windows: 3
-      reached_windows: 3
+      rate: '0.067'
+      return_needed: '0.067'
+      window_years: 10
+      windows: 2
+      reached_windows: 2
       short_history: true
       years: [2015, 2025]
       mix_today_share: '0.0'   # nothing held today: all of it still to come

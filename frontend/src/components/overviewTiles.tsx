@@ -24,7 +24,7 @@ import { CashflowCard, lastFullMonth, loadCashflow, type HouseholdCashflow } fro
 import { DetailPanel, type Detail } from "@/components/DetailPanel";
 import { HealthTodoList } from "@/components/healthFigures";
 import { type GoalTracking, PathTileRows } from "@/components/goalPathCards";
-import { GOAL_FORM_HREF, GOAL_PAGE, GoalOverviewPanel, GoalTileBody, type HouseholdGoal } from "@/components/householdGoal";
+import { GOAL_FORM_HREF, GOAL_PAGE, GoalTileBody, type HouseholdGoal } from "@/components/householdGoal";
 import type { Health, HouseholdPlan } from "@/components/healthShared";
 import { NetWorthSection } from "@/components/netWorth";
 import { payInputsHref } from "@/components/taxYear";
@@ -50,7 +50,7 @@ type PropertiesPayback = components["schemas"]["PropertiesPayback"];
 type PropertyPayback = components["schemas"]["PropertyPayback"];
 type T = (typeof catalogue)["de"];
 
-export type TileId = "nettovermoegen" | "gesundheit" | "ziel" | "anlegbar" | "cashflow" | "immobilie" | "depot" | "krypto" | "bank" | "pruefen";
+export type TileId = "nettovermoegen" | "gesundheit" | "anlegbar" | "cashflow" | "immobilie" | "depot" | "krypto" | "bank" | "pruefen";
 
 export interface MonthCashflow {
   month: string;
@@ -274,18 +274,15 @@ export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail
             <span className="tile-sub">{tg.noGoal}</span>
           </Link>
         ) : (
-          // Mockup 19f panel 1: the card opens its summary; „Zum Ziel ›“ goes to Haushalt › Ziel and
-          // „Euer Plan ›“ to the plan under it (§7.11 (h), mockup 19i).
+          // The card goes straight to Haushalt › Ziel, no side panel (phase 10 §7.13 (d) 6, D316);
+          // „Euer Plan ›“ and the path's rows are their own links beside it, never inside it.
           <div className="tile tile-wide tile-goal">
-            <a {...detail.linkProps("ziel")} className="tile-goal-open">
+            <Link href={GOAL_PAGE} className="tile-goal-open">
               <span className="tile-name">{tg.title}</span>
               <Wait state={goal}>{(value) => <GoalTileBody goal={value} />}</Wait>
-            </a>
+            </Link>
             {goal.data && tracking?.data ? <PathTileRows goal={goal.data} tracking={tracking.data} /> : null}
             <span className="tile-goal-links">
-              <Link href={GOAL_PAGE} className="tile-goal-go">
-                {tg.toGoal} ›
-              </Link>
               <Link href={HOUSEHOLD_PLAN_PAGE} className="tile-goal-go">
                 {tg.toPlan} ›
               </Link>
@@ -612,7 +609,6 @@ function Go({ href, children }: { href: string; children: ReactNode }) {
 const TITLES: Record<TileId, (t: T) => string> = {
   nettovermoegen: (t) => t.netWorth,
   gesundheit: (t) => t.health,
-  ziel: (t) => t.goal,
   anlegbar: () => "",
   cashflow: (t) => t.cashflow(""),
   immobilie: (t) => t.property,
@@ -639,7 +635,7 @@ export function TilePanel({
 }) {
   const t = useT(catalogue);
   const f = useFormat();
-  const { netWorth, health, goal, cashflow, inbox, paidIn, payback } = data;
+  const { netWorth, health, cashflow, inbox, paidIn, payback } = data;
   const tv = useT(verdictText);
   const tg = useT(goalText);
   const title =
@@ -677,22 +673,6 @@ export function TilePanel({
               <p className="muted">–</p>
             )
           }
-        </Loading>
-      );
-      break;
-    case "ziel":
-      body = (
-        <Loading state={goal}>
-          {(value) => (
-            <>
-              {value.goal ? (
-                <GoalOverviewPanel goal={value} formHref={GOAL_FORM_HREF} onChanged={goal.reload} />
-              ) : (
-                <p className="muted">{tg.noGoalText}</p>
-              )}
-              <Go href={GOAL_PAGE}>{tg.toGoal}</Go>
-            </>
-          )}
         </Loading>
       );
       break;

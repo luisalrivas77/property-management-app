@@ -25,7 +25,7 @@
 //
 // No euro figure is computed here: the last screen shows the estimate as the API returns it.
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
 import { ApiError, ruleCodes } from "@/api/errors";
@@ -53,6 +53,7 @@ import {
 import type { QuestionTarget } from "./taxYear";
 import { FieldHelpNote, RareFields, useFormHelp } from "./fieldHelp";
 import { type FormField, type HelpForm } from "./returnInputFields";
+import { ErrorNotice } from "@/lib/ErrorNotice";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -143,6 +144,31 @@ function steps(data: FlowData): Step[] {
 
 function isOpen(view: View, slot: Slot): boolean {
   return (view.progress.open ?? []).some((o) => sameSlot(o, slot));
+}
+
+// --- an answer shown at once, saved in the background (phase 10 §7.13 (c) 3, D315) ------------
+
+/** A plain answer (no rows to write) the screen shows before its POST has landed. */
+interface Pending {
+  slot: Pick<Slot, "key" | "owner_id" | "property_id">;
+  body: AnswerBody;
+  shown: Schemas["QuestionnaireAnswer"];
+}
+
+const PENDING_ID = "pending:";
+
+/** The view as it will read once the pending answers are saved: each slot answered, none open. */
+function withPending(view: View, pending: readonly Pending[]): View {
+  if (pending.length === 0) return view;
+  const mine = (slot: Pick<Slot, "key" | "owner_id" | "property_id">) => pending.find((p) => sameSlot(p.slot, slot));
+  return {
+    ...view,
+    slots: view.slots.map((slot) => {
+      const p = mine(slot);
+      return p ? { ...slot, current_answer: p.shown } : slot;
+    }),
+    progress: { ...view.progress, open: (view.progress.open ?? []).filter((o) => !mine(o)) },
+  };
 }
 
 // --- the input forms per target kind ----------------------------------------------------------
@@ -623,6 +649,7 @@ export function QuestionnaireFlow({
   propertyId,
   embedded = false,
   extra,
+  end,
   onAnswered: answered,
 }: {
   year: number;
@@ -631,12 +658,71 @@ export function QuestionnaireFlow({
   propertyId?: string;
   embedded?: boolean;
   extra?: (props: SlotExtra) => ReactNode;
-  onAnswered?: () => void;
+  /** Called once an answer is saved; `rows` when it wrote return or tax inputs, which other parts
+   * of the screen show (a plain answer changes only the questions). */
+  onAnswered?: (rows: boolean) => void;
+  /** The embedded summary's way on (Eure Angaben's „Weiter: <next topic>“, phase 10 §7.13 (c) 1,
+   * D315): shown at the end of the topic's questions and followed only on a click. */
+  end?: ReactNode;
 }) {
   const t = useT(questionnaireText);
   const load = useCallback(() => loadFlow(year), [year]);
   const state = useLoad(load);
   const [index, setIndex] = useState<number | null>(null);
+  // A plain answer is shown at once and posted in the background, one POST after the other; once
+  // it landed only the questions are read again (GET /tax/questionnaire), never the whole page.
+  const [pending, setPending] = useState<Pending[]>([]);
+  const [fresh, setFresh] = useState<{ of: FlowData; view: View } | null>(null);
+  const [saveError, setSaveError] = useState<unknown>(null);
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const latest = useRef<{ data: FlowData | undefined; view: View | undefined }>({ data: undefined, view: undefined });
+  const loadedView = fresh && fresh.of === state.data ? fresh.view : state.data?.view;
+  useEffect(() => {
+    latest.current = { data: state.data, view: loadedView };
+  }, [state.data, loadedView]);
+
+  const saveInBackground = useCallback(
+    (body: AnswerBody, back: number) => {
+      const slot = { key: body.answer.question_key, owner_id: body.answer.owner_id ?? null, property_id: body.answer.property_id ?? null };
+      const entry: Pending = {
+        slot,
+        body,
+        shown: { ...body.answer, id: `${PENDING_ID}${slot.key}`, workspace_id: "", recorded_at: new Date().toISOString(), recorded_by: null },
+      };
+      setSaveError(null);
+      setPending((list) => [...list.filter((p) => !sameSlot(p.slot, slot)), entry]);
+      queue.current = queue.current.then(async () => {
+        // An answer changed again before the first one landed supersedes the one now stored.
+        let answer = body.answer;
+        if (answer.supersedes_id?.startsWith(PENDING_ID)) {
+          const stored = latest.current.view?.slots.find((s) => sameSlot(s, slot))?.current_answer?.id ?? null;
+          answer = { ...answer, supersedes_id: stored };
+        }
+        let failed: unknown = null;
+        try {
+          await ok(api.POST("/api/tax/questionnaire/answers", { body: { ...body, answer } }));
+        } catch (error) {
+          failed = error;
+        }
+        const of = latest.current.data;
+        let view: View | null = null;
+        try {
+          view = await ok(api.GET("/api/tax/questionnaire", { params: { query: { tax_year: year } } }));
+        } catch {
+          view = null;
+        }
+        if (of && view) setFresh({ of, view });
+        setPending((list) => list.filter((p) => p !== entry));
+        if (failed !== null) {
+          setSaveError(failed);
+          setIndex(back);
+        } else {
+          answered?.(false);
+        }
+      });
+    },
+    [year, answered],
+  );
 
   return (
     <section className={embedded ? "fragen fragen-embedded" : "fragen"}>
@@ -649,7 +735,8 @@ export function QuestionnaireFlow({
         </>
       )}
       <Loading state={state}>
-        {(data) => {
+        {(loaded) => {
+          const data: FlowData = { ...loaded, view: withPending(loadedView ?? loaded.view, pending) };
           const list = steps(data).filter(
             (s) =>
               (topic === undefined || (!s.slot.property_id && s.question.topic === topic)) &&
@@ -666,12 +753,13 @@ export function QuestionnaireFlow({
           const reload = () => state.reload();
           return (
             <>
+              {saveError != null ? <ErrorNotice error={saveError} /> : null}
               {data.view.reused_from != null ? (
                 <p className="notice notice-info">{t.reusedFrom(year, data.view.reused_from)}</p>
               ) : null}
               {current >= list.length ? (
                 embedded ? (
-                  <TopicSummary data={data} steps={list} onJump={setIndex} />
+                  <TopicSummary data={data} steps={list} onJump={setIndex} end={end} />
                 ) : (
                   <Summary year={year} data={data} steps={list} onJump={setIndex} />
                 )
@@ -683,11 +771,12 @@ export function QuestionnaireFlow({
                   step={list[current]!}
                   position={current}
                   total={list.length}
+                  answered={list.filter((s) => !isOpen(data.view, s.slot)).length}
                   onBack={() => setIndex(Math.max(0, current - 1))}
                   onNext={() => setIndex(current + 1)}
                   skipLabel={embedded ? t.skip : undefined}
                   extra={extra}
-                  onAnswered={(changed) => {
+                  onAnswered={(changed, body) => {
                     // A first answer moves on to the next open slot after this one, else to the
                     // last screen (which lists any slot left open before it); a changed answer
                     // moves on by one.
@@ -695,8 +784,12 @@ export function QuestionnaireFlow({
                       ? current + 1
                       : list.findIndex((s, at) => at > current && isOpen(data.view, s.slot));
                     setIndex(next === -1 ? list.length : next);
-                    reload();
-                    answered?.();
+                    if (body) {
+                      saveInBackground(body, current);
+                    } else {
+                      reload();
+                      answered?.(true);
+                    }
                   }}
                 />
               )}
@@ -727,6 +820,7 @@ function StepScreen({
   step,
   position,
   total,
+  answered,
   onBack,
   onNext,
   onAnswered,
@@ -738,9 +832,14 @@ function StepScreen({
   step: Step;
   position: number;
   total: number;
+  /** Answered of the shown questions (phase 10 §7.13 (c) 2, D315): within the topic, never the
+   * year's count against the topic's total (it read „3 von 2“). */
+  answered: number;
   onBack: () => void;
   onNext: () => void;
-  onAnswered: (changed: boolean) => void;
+  /** `body` when the answer writes no rows: the flow shows it at once and posts it in the
+   * background; without it the answer was posted and awaited (its rows can be refused per field). */
+  onAnswered: (changed: boolean, body?: AnswerBody) => void;
   skipLabel?: string;
   extra?: (props: SlotExtra) => ReactNode;
 }) {
@@ -889,6 +988,11 @@ function StepScreen({
       return_inputs: returnInputs,
       tax_inputs: taxInputs,
     };
+    if (returnInputs.length === 0 && taxInputs.length === 0) {
+      form.clear();
+      onAnswered(changing, body);
+      return;
+    }
     setBusy(true);
     form.clear();
     try {
@@ -952,7 +1056,7 @@ function StepScreen({
 
   return (
     <div className="fragen-card">
-      <ProgressBar position={position + 1} total={total} answered={data.view.progress.answered} />
+      <ProgressBar position={position + 1} total={total} answered={answered} />
       <p className="fragen-group">
         {step.group} · <span className="muted">{QUESTION_SECTION[question.section]}</span>
       </p>
@@ -1139,7 +1243,17 @@ function StepScreen({
 }
 
 /** The end of a topic's questions in Eure Angaben: what is still open among them, with a jump. */
-function TopicSummary({ data, steps: list, onJump }: { data: FlowData; steps: Step[]; onJump: (index: number) => void }) {
+function TopicSummary({
+  data,
+  steps: list,
+  onJump,
+  end,
+}: {
+  data: FlowData;
+  steps: Step[];
+  onJump: (index: number) => void;
+  end?: ReactNode;
+}) {
   const t = useT(questionnaireText);
   const open = list.map((s, at) => [s, at] as const).filter(([s]) => isOpen(data.view, s.slot));
   // What the year's „Ja“ answers leave to type by hand in ELSTER, for this topic's questions only.
@@ -1174,6 +1288,7 @@ function TopicSummary({ data, steps: list, onJump }: { data: FlowData; steps: St
         </>
       ) : null}
       <div className="fragen-answers">
+        {end}
         <button type="button" className="secondary" onClick={() => onJump(0)}>
           {t.toFirst}
         </button>

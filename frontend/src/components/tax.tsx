@@ -12,7 +12,6 @@ import { createContext, useCallback, useContext, useEffect, useId, useState, typ
 import { api, ok } from "@/api/client";
 import { RULE_CODE_TEXT } from "@/api/errors";
 import type {
-  AllocationFact,
   AnlageVDraft,
   DraftLine,
   DraftWarning,
@@ -22,6 +21,7 @@ import type {
   TaxExport,
   TaxExportKind,
   TaxExportState,
+  SourcePayment,
   TaxSourceRef,
 } from "@/api/schemas";
 import { formatter, localized, translate, useFormat, useT } from "@/i18n";
@@ -30,6 +30,7 @@ import { taxDraft } from "@/i18n/taxDraft";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { formatShare, todayIso } from "./format";
+import { ReadUpload } from "./documents";
 import { TaxEffectLine } from "./income";
 import { ALLOCATION_CATEGORY, TAX_SOURCE_KIND, WARNING_TEXT, taxNote } from "./labels";
 import { ActionDialog, Loading } from "./ui";
@@ -588,10 +589,10 @@ function sourcesLabel(refs: TaxSourceRef[]): string {
 }
 
 /** The payments the draft's lines cite (GET …/anlage-v/sources), by allocation id. */
-const PaymentsContext = createContext<Loaded<Map<string, AllocationFact>> | null>(null);
+const PaymentsContext = createContext<Loaded<Map<string, SourcePayment>> | null>(null);
 
 /** "01.01.2027 – 31.01.2027" for a service period. */
-function periodLabel(fact: AllocationFact): string | null {
+function periodLabel(fact: SourcePayment): string | null {
   const f = formatter();
   const period = fact.service_period;
   return period ? translate(taxDraft).period(f.date(period.start), f.date(period.end)) : null;
@@ -599,8 +600,10 @@ function periodLabel(fact: AllocationFact): string | null {
 
 /** One cited payment: date, amount, category, masked counterparty and period, with links to
  * its bank line (the allocation panel, as Konten › Umsätze links it) and its Beleg. No name
- * or purpose text: the API sends none (D5). */
-function PaymentSource({ source, fact }: { source: TaxSourceRef; fact: AllocationFact | undefined }) {
+ * or purpose text: the API sends none (D5). A counted cost whose bill the checklist asks for
+ * and that has none linked says „Rechnung fehlt“ with „Rechnung hochladen“ (phase 10 §7.13
+ * (c) 4, D315; the server's receipt_missing). */
+function PaymentSource({ source, fact }: { source: TaxSourceRef; fact: SourcePayment | undefined }) {
   const t = useT(taxDraft);
   const f = useFormat();
   if (!fact) {
@@ -624,6 +627,12 @@ function PaymentSource({ source, fact }: { source: TaxSourceRef; fact: Allocatio
         {fact.transaction_id ? <Link href={`/inbox?umsatz=${fact.transaction_id}`}>{t.openBankLine}</Link> : null}
         {fact.document_id ? <Link href={`/documents/${fact.document_id}`}>{t.openReceipt}</Link> : null}
       </p>
+      {fact.receipt_missing ? (
+        <div className="tax-payment-missing">
+          <p className="tax-line-sub">{t.receiptMissing}</p>
+          <ReadUpload label={t.uploadReceipt} />
+        </div>
+      ) : null}
     </div>
   );
 }
