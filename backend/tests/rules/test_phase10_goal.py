@@ -199,7 +199,11 @@ def test_rule_version_is_unchanged() -> None:
 
 # --- goal_routes.yaml and reserve_above.yaml (§7.11 (a)–(d), D301–D303) -------------------
 
-ROUTES = phase10.load("goal_routes").cases + phase10.load("reserve_above").cases
+ROUTES = (
+    phase10.load("goal_routes").cases
+    + phase10.load("reserve_above").cases
+    + phase10.load("goal_property_sale").cases  # §7.13 (d) 4, D316
+)
 
 
 def _route_flat(f) -> N.FlatScenario:

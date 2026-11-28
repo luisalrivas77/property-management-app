@@ -1218,6 +1218,7 @@ MODELS: dict[str, type[Schema]] = {
     "goal_routes": RouteFixture,
     "goal_path": PathFixture,
     "reserve_above": RouteFixture,
+    "goal_property_sale": RouteFixture,
     "plan_page": PlanFixture,
     "investment_split": InvestmentSplitFixture,
     "booked_inputs": BookedInputsFixture,
