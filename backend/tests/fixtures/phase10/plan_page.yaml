@@ -88,13 +88,13 @@ bases:
     flats:
       flat: {kept_value: '200000.00', living_area: '55'}
     levers:
-      goal: {kind: net_worth, target: '600000.00', due_month: '2036-06', set_on: '2026-11-20'}
+      goal: {kind: net_worth, target: '600000.00', due_month: '2036-12', set_on: '2026-11-20'}
       value_change: {depot: '0.06'}
     invested_this_month: '120.00'
-    # INVENTED funds returns 2014–2025 (12 years): a 9-year window gives 4 windows, so route 3 is
-    # thin (shown, never deciding) and the balanced route keeps the typed 6 %. The windows'
-    # products by first year 2014–2017; the worst, 2017–2025, 1.17589…, annualised 1.8 %
-    # (1.018⁹ = 1.17426 ≤ it < 1.019⁹ = 1.18469).
+    # INVENTED funds returns 2014–2025 (12 years): a 10-year window gives 3 windows (a 9-year one
+    # gave 4 until §7.13 (d) 8), so route 3 is thin (shown, never deciding) and the balanced route
+    # keeps the typed 6 %. The three windows 2014–2023, 2015–2024 and 2016–2025 each multiply to
+    # 1.4749058…, annualised 3.9 % (1.039¹⁰ = 1.46555 ≤ it < 1.040¹⁰ = 1.48024).
     history:
       funds: {2014: '0.10', 2015: '0.05', 2016: '-0.20', 2017: '0.15', 2018: '0.08', 2019: '-0.10', 2020: '0.20', 2021: '0.12', 2022: '-0.15', 2023: '0.25', 2024: '0.10', 2025: '0.05'}
   # INVENTED funds returns 2010–2025: their worst 5-year window, 2011–2015, 0.70 × 1.05 × 0.90 ×
@@ -158,55 +158,63 @@ rounding:
 # item 1, the ceiling counts all regular spending): the room is 450, and 600,000 by Jun 2036
 # needs E = 196 a month (goal_routes' closed_by_spending with the kept 200,000 added), within
 # it: hardly → feasible.
+# Amended 28 Nov 2026 by §7.13 (d) 8, D316 (Luis: the goal is judged by its year): the goal
+# solves for 31 Dec of its year, so the cards household's goal reads 600,000 in 2036 (stored Dec
+# 2036): 121 months left, L = 10 years; E = 50 a month (goal_routes' closed_by_spending at Dec
+# 2036 with the kept 200,000 added), the balanced route cuts 25.01 (restaurant 16.67, streaming
+# 8.34) and saves 25.00 more, reaching 600,034.47 at 31 Dec 2036; the funds' worst 10-year
+# window 3.9 %. on_track reads 360,000 in 2036, its figures unchanged but „ohne den Weg“
+# (391,817.33). Recomputed with the scratch walk of goal_routes.yaml's amendment; the cases due
+# Dec of a year are unchanged.
 cases:
 - id: cards_one_walk
   description: >-
-    the seven cards from one walk: „Machbar“, the balanced route reaches 600,000 in Jun 2036;
-    weak markets at the funds' worst 9-year window 1.8 % move it 28 months, six months without
-    income 14, a 7,920 € repair 4
+    the seven cards from one walk: „Machbar“, the balanced route reaches 600,000 in Dec 2036;
+    weak markets at the funds' worst 10-year window 3.9 % move it 13 months, six months without
+    income 15, a 7,920 € repair 4
   <<: *cards
   expect:
     cards:
-      goal: {kind: net_worth, target: '600000.00', due_month: '2036-06', word: feasible, value_today: '251000.00', percent: '41.8'}
+      goal: {kind: net_worth, target: '600000.00', due_month: '2036-12', word: feasible, value_today: '251000.00', percent: '41.8'}
       # §7.13 (d) 2: the reserve as „31.000 € von 18.000 €“ (the target 6 × 3,000), reached
       heute: {net_worth: '251000.00', reserve: '31000.00', reserve_months: '10.3', reserve_full: true, reserve_target: '18000.00', reserve_gap: '0.00', saved_mean: '2000.00', reserve_accounts: ['Tagesgeld (Bank A)']}
       plan:
         on_track: false
-        reached: '2036-06'         # 600,128.82 at 30 Jun 2036 (goal_routes: 98 reaches, 97 not)
-        without_route: '569991.55'
-        gap: '30008.45'
-        saving_extra: '98.00'
-        by_class: {depot: '98.00'}
-        cut: '98.01'
+        reached: '2036-12'         # 600,034.47 at 31 Dec 2036 (goal_routes: 25 reaches, 24 not)
+        without_route: '591817.33'
+        gap: '8182.67'
+        saving_extra: '25.00'
+        by_class: {depot: '25.00'}
+        cut: '25.01'
         wants:
-        - {code: hh_restaurant, from: '600.00', to: '534.66'}
-        - {code: hh_streaming, from: '300.00', to: '267.33'}
+        - {code: hh_restaurant, from: '600.00', to: '583.33'}
+        - {code: hh_streaming, from: '300.00', to: '291.66'}
       assumptions:
         rates: {depot: '0.06', crypto: null, reserve: null}
         properties:
         - {key: flat, kept: true, sale_year: null, value_change: null}
       risks:
-        base_reached: '2036-06'
+        base_reached: '2036-12'
         weak_markets:
           available: true
           reason: null
-          window_years: 9          # 115 months from Nov 2026 to Jun 2036
-          rates: {depot: '0.018'}
-          worst: {depot: '0.018'}
+          window_years: 10         # 121 months from Nov 2026 to Dec 2036
+          rates: {depot: '0.039'}
+          worst: {depot: '0.039'}
           capped: []
           left_out: []
-          reached: '2038-10'
-          delay_months: 28
+          reached: '2038-01'
+          delay_months: 13
           not_until: null
         income_gap:
-          # Nov 2026 – Apr 2027 without the 5,000 (and without the 98 extra from Dec): in Nov the
-          # reserve 30,000 − 3,000 = 27,000, 9,000 moves; from Dec it falls by 3,000 − 98.01 (the
-          # cut goes on) = 2,901.99 a month to 3,490.05 at 30 Apr 2027; from May it refills by
-          # 2,196.01 a month (16,666.11 at 31 Oct 2027); nothing drawn
+          # Nov 2026 – Apr 2027 without the 5,000 (and without the 25 extra from Dec): in Nov the
+          # reserve 30,000 − 3,000 = 27,000, 9,000 moves; from Dec it falls by 3,000 − 25.01 (the
+          # cut goes on) = 2,974.99 a month to 3,125.05 at 30 Apr 2027; from May it refills by
+          # 2,050.01 a month (15,425.11 at 31 Oct 2027); nothing drawn
           available: true
           months: 6
-          reached: '2037-08'
-          delay_months: 14
+          reached: '2038-03'
+          delay_months: 15
           not_until: null
           drawn: '0.00'
         repair:
@@ -216,30 +224,30 @@ cases:
           years: 10
           by_property: {flat: '7920.00'}   # 55 × 14.40 × 10
           amount: '7920.00'
-          reached: '2036-10'
+          reached: '2037-04'
           delay_months: 4
           not_until: null
         todos: []
-      other_routes: {more_saving: '196.00', needed_return: '0.077', less_spending: '196.01'}
+      other_routes: {more_saving: '50.00', needed_return: '0.065', less_spending: '50.01'}
       this_month:
         steps:
-        - {kind: invest, amount: '98.00', done: true}          # 120.00 booked this month
-        - {kind: wants_budget, amount: '801.99', done: false}  # 900.00 − 98.01, not adopted
+        - {kind: invest, amount: '25.00', done: true}          # 120.00 booked this month
+        - {kind: wants_budget, amount: '874.99', done: false}  # 900.00 − 25.01, not adopted
         done: 1
         of: 2
     share:
       goal: {target: '600000.00', value_today: '250000.00', percent: '41.8', word: feasible}
       heute: {net_worth: '250000.00', reserve: '31000.00', reserve_months: '10.3', saved_mean: '2000.00'}
-      plan: {reached: '2036-06', without_route: '570000.00', gap: '30000.00', saving_extra: '100.00', by_class: {depot: '100.00'}, cut: '100.00'}
+      plan: {reached: '2036-12', without_route: '590000.00', gap: '10000.00', saving_extra: '50.00', by_class: {depot: '50.00'}, cut: '50.00'}
       risks:
-        weak_markets: {rates: {depot: '0.018'}, delay_months: 28}
-        income_gap: {delay_months: 14, drawn: '0.00'}
+        weak_markets: {rates: {depot: '0.039'}, delay_months: 13}
+        income_gap: {delay_months: 15, drawn: '0.00'}
         repair: {amount: '8000.00', by_property: {flat: '8000.00'}, delay_months: 4}
-      other_routes: {more_saving: '200.00', needed_return: '0.077', less_spending: '200.00'}
+      other_routes: {more_saving: '50.00', needed_return: '0.065', less_spending: '50.00'}
       this_month:
         steps:
-        - {kind: invest, amount: '100.00', done: true}
-        - {kind: wants_budget, amount: '800.00', done: false}
+        - {kind: invest, amount: '50.00', done: true}
+        - {kind: wants_budget, amount: '850.00', done: false}
     share_absent: [heute.reserve_accounts, plan.wants]
 
 - id: share_switches
@@ -252,25 +260,25 @@ cases:
     share:
       heute: {net_worth: '251000.00', reserve: '31000.00', reserve_accounts: ['Tagesgeld (Bank A)']}
       plan:
-        saving_extra: '98.00'
+        saving_extra: '25.00'
         wants:
-        - {code: hh_restaurant, from: '600.00', to: '534.66'}
-        - {code: hh_streaming, from: '300.00', to: '267.33'}
+        - {code: hh_restaurant, from: '600.00', to: '583.33'}
+        - {code: hh_streaming, from: '300.00', to: '291.66'}
     share_absent: [risks, assumptions]
 
 - id: on_track
   description: >-
-    goal_routes' on_track: 360,000 by Jun 2036 reached in Apr 2036 without change: „Ihr seid auf
+    goal_routes' on_track: 360,000 in 2036 reached in Apr 2036 without change: „Ihr seid auf
     Kurs“, no moves, no steps; no property, so no repair; no funds series, so no weak markets
   <<: *household
   flats: {}
   levers:
-    goal: {kind: net_worth, target: '360000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '360000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
     cards:
       goal: {word: on_track, percent: '14.2'}
-      plan: {on_track: true, reached: '2036-04', without_route: '369991.55', gap: null, saving_extra: null, by_class: {}, cut: null, wants: []}
+      plan: {on_track: true, reached: '2036-04', without_route: '391817.33', gap: null, saving_extra: null, by_class: {}, cut: null, wants: []}
       risks:
         base_reached: '2036-04'
         weak_markets: {available: false, reason: series_missing}
@@ -393,10 +401,10 @@ cases:
   expect:
     cards:
       risks:
-        base_reached: '2036-06'
+        base_reached: '2036-12'
         weak_markets: {available: false, reason: series_missing}
-        income_gap: {available: true, reached: '2037-08', delay_months: 14}
-        repair: {available: true, amount: '7920.00', reached: '2036-10', delay_months: 4}
+        income_gap: {available: true, reached: '2038-03', delay_months: 15}
+        repair: {available: true, amount: '7920.00', reached: '2037-04', delay_months: 4}
 
 - id: weak_markets_generic
   description: the cards household in `generic` mode; the weak-markets row says why it is left out
@@ -407,7 +415,7 @@ cases:
       other_routes: {needed_return: null}
       risks:
         weak_markets: {available: false, reason: generic_mode}
-        income_gap: {available: true, delay_months: 14}
+        income_gap: {available: true, delay_months: 15}
         repair: {available: true, delay_months: 4}
 
 - id: repair_without_area
