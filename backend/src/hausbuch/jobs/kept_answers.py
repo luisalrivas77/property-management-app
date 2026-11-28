@@ -6,9 +6,11 @@ the month-end and the key figures (scrub 03:15 and reminders 06:00 before), so t
 load of Übersicht and Zu prüfen finds its answers kept.
 Once per enrolled member (a user with a passkey) of every provisioned workspace, the page's
 kept routes are asked through the whole app (KeptAnswers.internal_get) in the language the
-member last asked in. Nothing is warmed after a person's own change: the first load after it
-computes. A write after 09:00 (a late bank sync, the plan's explanation the 08:30 step queued,
-a document read) moves the version and the warmed answers are simply not served.
+member last asked in, kept across a start in `member_locale` (§7.13 (e) 3, migration 0058;
+read before the members are warmed). This step warms every route; after a change, the
+refresh (api/kept_refresh.py) asks again only the paths members' own requests recorded, 4 s
+after a person's own write and 30 s after the worker's (§7.13 (e) 4), and it runs this warm
+again just after each midnight (`trigger` = `midnight`), when both days in the key turn.
 
 Check, daily at 15:00 UTC: one kept answer still current (its version and day unchanged) is
 computed again with the store bypassed and compared byte for byte, the route rotating by day.
@@ -51,6 +53,7 @@ class WarmRun:
     members: int = 0
     requests: int = 0
     failed: int = 0
+    expected: int = 0  # refusals a page expects (kept_answers.EXPECTED_REFUSALS)
 
 
 def enrolled_members(deps: JobDeps) -> list[AuthContext]:
@@ -87,6 +90,14 @@ async def run_warm(
         return run
     if members is None:
         members = await run_in_threadpool(enrolled_members, deps)
+    # §7.13 (e) 3: each member's last language, kept across a start (member_locale). A
+    # failure to read them never stops the warm: it asks in the remembered language, or in
+    # German for a member this process has not seen.
+    try:
+        await run_in_threadpool(kept.load_locales, sorted({m.workspace_id for m in members}))
+    except Exception as exc:  # noqa: BLE001 - the warm goes on; class name only
+        fields = {"event": "member_locales_not_read", "exc_type": type(exc).__name__}
+        logger.warning("the members' languages were not read", extra={"fields": fields})
     from hausbuch.services.documents import LOCAL_TIME_ZONE
 
     today = deps.clock().astimezone(LOCAL_TIME_ZONE).date()
@@ -95,12 +106,14 @@ async def run_warm(
         run.members += 1
         run.requests += result.requests
         run.failed += result.failed
+        run.expected += result.expected
     fields = {
         "event": "kept_answers_warmed",
         "trigger": trigger,
         "members": run.members,
         "requests": run.requests,
         "failed": run.failed,
+        "expected": run.expected,
         "kept": len(kept),
         "bytes": kept.size_bytes,
     }
