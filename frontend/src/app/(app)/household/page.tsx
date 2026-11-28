@@ -73,7 +73,6 @@ import {
   averageMoney,
   fromCents,
   type HouseholdCashflow,
-  lastFullMonth,
   loadCashflow,
   monthsUpTo,
   spent,
@@ -111,8 +110,9 @@ type HealthTodo = components["schemas"]["HealthTodo"];
 type HouseholdMonthFigures = components["schemas"]["HouseholdMonth"];
 type SpendingComparison = components["schemas"]["SpendingComparison"];
 type SpendingComparisonRow = components["schemas"]["SpendingComparisonRow"];
-type MonthDifferences = components["schemas"]["MonthDifferences"];
-type GroupDifference = components["schemas"]["GroupDifference"];
+type CategoryDifferences = components["schemas"]["CategoryDifferences"];
+type CategoryDifference = components["schemas"]["CategoryDifference"];
+type CategoryLines = components["schemas"]["CategoryLines"];
 type BudgetView = components["schemas"]["BudgetView"];
 type BudgetLine = components["schemas"]["BudgetLine"];
 
@@ -156,10 +156,19 @@ async function loadYear(month: string): Promise<Year> {
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
-/** ?monat=YYYY-MM when it is one of the months offered, else the last full month. */
+/** ?monat=YYYY-MM when it is one of the months offered, else the month running today (phase 10
+ * §7.13 (b) 1, D314), marked „bisher“ while it runs. */
 function chosenMonth(raw: string | null, current: string): string {
   if (raw && MONTH.test(raw) && monthsUpTo(current, MONTHS_OFFERED).includes(raw)) return raw;
-  return lastFullMonth();
+  return current;
+}
+
+function loadDifferences(month: string): Promise<CategoryDifferences> {
+  return ok(api.GET("/api/household/differences", { params: { query: { month } } }));
+}
+
+function loadLines(month: string, category: AllocationCategory): Promise<CategoryLines> {
+  return ok(api.GET("/api/household/lines", { params: { query: { month, category } } }));
 }
 
 /** Each to-do once, by its code, link and text, in the order first given. */
@@ -356,7 +365,15 @@ function HouseholdMonth({
   const figureDetail = useDetail(FIGURE_DETAIL);
   const { months, transfers, health, overall, windowMonths, comparison } = year;
   const month = months[months.length - 1];
+  const chosen = month?.month ?? "";
+  // „Was diesen Monat anders ist“ for the chosen month, its own read (§7.13 (b) 2): a slow or
+  // failed one never holds the month back.
+  const loadChosen = useCallback(() => loadDifferences(chosen), [chosen]);
+  const differences = useLoad(loadChosen);
   if (!month) return null;
+  // The month running today reads „bisher“ (§7.13 (b) 1).
+  const running = month.month === todayIso().slice(0, 7);
+  const soFar = running ? t.soFar : "";
   const view = health.find((h) => h.month === month.month);
   const householdNow = view?.household;
   const spentNow = spent(month);
@@ -379,8 +396,7 @@ function HouseholdMonth({
     ...(overall.todos ?? []).filter((todo) => todo.code !== "too_few_months" && todo.code !== "bands_unconfirmed"),
   ]);
 
-  const differences = overall.differences ?? null;
-  const shownDifference = (differences?.groups ?? []).find((d) => d.group === differenceDetail.id);
+  const shownDifference = (differences.data?.categories ?? []).find((d) => d.category === differenceDetail.id);
 
   let panel = null;
   if (figureDetail.id && figures.data) {
@@ -395,10 +411,10 @@ function HouseholdMonth({
         onChanged={figures.reload}
       />
     );
-  } else if (differences && shownDifference) {
+  } else if (differences.data && shownDifference) {
     panel = (
-      <DetailPanel title={groupLabel(shownDifference.group)} backLabel={t.title} onClose={differenceDetail.close}>
-        <DifferencePanel differences={differences} difference={shownDifference} />
+      <DetailPanel title={categoryLabel(shownDifference.category)} backLabel={t.title} onClose={differenceDetail.close}>
+        <DifferencePanel key={`${chosen}-${shownDifference.category}`} differences={differences.data} difference={shownDifference} />
       </DetailPanel>
     );
   } else if (view?.stored && closingDetail.id === month.month) {
@@ -416,7 +432,7 @@ function HouseholdMonth({
   } else if (groupDetail.id) {
     panel = (
       <DetailPanel title={groupLabel(groupDetail.id)} backLabel={t.title} onClose={groupDetail.close}>
-        <GroupPanel group={groupDetail.id} month={month} windowMonths={means} comparison={comparison} />
+        <GroupPanel key={`${chosen}-${groupDetail.id}`} group={groupDetail.id} month={month} windowMonths={means} comparison={comparison} />
       </DetailPanel>
     );
   }
@@ -433,14 +449,20 @@ function HouseholdMonth({
         ) : null}
         <div className="planning-kpis household-month-tiles">
           <div className="planning-kpi" role="group" aria-label={t.income}>
-            <p className="planning-kpi-label">{t.income}</p>
+            <p className="planning-kpi-label">
+              {t.income}
+              {soFar}
+            </p>
             <p className="planning-kpi-value">{f.money(month.income)}</p>
             <p className="planning-kpi-sub">
               {t.mean(closed.length)} {mean(windowMonths.map((m) => m.income))}
             </p>
           </div>
           <div className="planning-kpi" role="group" aria-label={t.spending}>
-            <p className="planning-kpi-label">{t.spending}</p>
+            <p className="planning-kpi-label">
+              {t.spending}
+              {soFar}
+            </p>
             <p className="planning-kpi-value">{f.money(spentNow)}</p>
             <p className="planning-kpi-sub">
               {t.mean(closed.length)} {mean(windowMonths.map(spent))}
@@ -471,8 +493,9 @@ function HouseholdMonth({
           comparison={comparison}
           groupLink={groupDetail.linkProps}
           openGroup={groupDetail.id}
+          running={running}
         />
-        {differences ? <Differences differences={differences} link={differenceDetail.linkProps} /> : null}
+        {differences.data ? <Differences differences={differences.data} link={differenceDetail.linkProps} /> : null}
       </div>
     </DetailLayout>
   );
@@ -540,11 +563,12 @@ function SurplusBars({
 type LinkProps = ReturnType<ReturnType<typeof useDetail>["linkProps"]>;
 
 /** „Restaurant: 180,00 € mehr als üblich“ / „… weniger als üblich“, from the server's words. */
-function DifferenceText({ difference: d }: { difference: GroupDifference }) {
+function DifferenceText({ difference: d }: { difference: CategoryDifference }) {
   const t = useT(household);
   const f = useFormat();
   const amount = f.money(d.difference.replace(/^-/, ""));
-  return <>{d.words === "more" ? t.differenceMore(groupLabel(d.group), amount) : t.differenceLess(groupLabel(d.group), amount)}</>;
+  const name = categoryLabel(d.category);
+  return <>{d.words === "more" ? t.differenceMore(name, amount) : t.differenceLess(name, amount)}</>;
 }
 
 /** The Budget tile (mockup 19g): how many of the classes with a saved target meet it, „2 von 3“,
@@ -609,38 +633,53 @@ function BudgetTile({ budget: state }: { budget: Loaded<BudgetView> }) {
   );
 }
 
-/** „Was diesen Monat anders ist“ (§7.6 Haushalt (3)): up to three lines, each opening its group's
- * payments in the panel; no card when the server names no group. */
-function Differences({ differences, link }: { differences: MonthDifferences; link: (group: string) => LinkProps }) {
+/** The rows „Was diesen Monat anders ist“ shows before „Alle <N> anzeigen“. */
+const DIFFERENCES_SHOWN = 3;
+
+/** „Was diesen Monat anders ist“ (§7.13 (b) 2, D314): the chosen month's categories that differ
+ * from their mean, each a row of its name and the server's difference („Supermarkt +84,00 €“),
+ * opening its payments in the panel; the largest three, the rest behind „Alle <N> anzeigen“. No
+ * card when the server names none or compares nothing. */
+function Differences({ differences, link }: { differences: CategoryDifferences; link: (category: string) => LinkProps }) {
   const t = useT(household);
   const f = useFormat();
-  const groups = differences.groups ?? [];
-  if (groups.length === 0) return null;
+  const [all, setAll] = useState(false);
+  const categories = differences.categories ?? [];
+  if (categories.length === 0) return null;
+  const shown = all ? categories : categories.slice(0, DIFFERENCES_SHOWN);
   return (
     <section className="card stack" aria-labelledby="differences-title">
       <div>
         <h2 id="differences-title">{t.differencesTitle}</h2>
-        <p className="muted">{t.differencesBasis(f.month(differences.month), differences.baseline.length)}</p>
+        <p className="muted">
+          {t.differencesBasis(`${f.month(differences.month)}${differences.final ? "" : t.soFar}`, differences.baseline.length)}
+        </p>
       </div>
       <ul className="household-rows">
-        {groups.map((d) => (
-          <li key={d.group}>
-            <a {...link(d.group)}>
-              <DifferenceText difference={d} /> <span aria-hidden="true">›</span>
+        {shown.map((d) => (
+          <li key={d.category}>
+            <a {...link(d.category)} className="household-difference-row">
+              <span className="household-difference-name">{categoryLabel(d.category)}</span>
+              <strong className="money">{signed(f, d.difference)}</strong>
+              <span aria-hidden="true">›</span>
             </a>
           </li>
         ))}
       </ul>
+      {categories.length > DIFFERENCES_SHOWN ? (
+        <button type="button" className="secondary" aria-expanded={all} onClick={() => setAll((on) => !on)}>
+          {all ? t.showLess : t.showAllGroups(categories.length)}
+        </button>
+      ) : null}
     </section>
   );
 }
 
-/** A named group's month and mean, and the payments behind the month (the server's list, its
- * amounts signed as spending, so they add up to the month). */
-function DifferencePanel({ differences, difference }: { differences: MonthDifferences; difference: GroupDifference }) {
+/** A named category in the panel: its month and mean (the regular spending the comparison
+ * reads), the sentence, and the payments behind the month from GET /household/lines. */
+function DifferencePanel({ differences, difference }: { differences: CategoryDifferences; difference: CategoryDifference }) {
   const t = useT(household);
   const f = useFormat();
-  const payments = difference.payments ?? [];
   return (
     <div className="stack">
       <p>
@@ -648,34 +687,70 @@ function DifferencePanel({ differences, difference }: { differences: MonthDiffer
       </p>
       <ul className="household-rows">
         <li>
-          <span>{f.month(differences.month)}</span>
-          <span>{f.money(difference.amount)}</span>
+          <span>
+            {f.month(differences.month)}
+            {differences.final ? "" : t.soFar}
+          </span>
+          <span className="money">{f.money(difference.amount)}</span>
         </li>
         <li>
           <span>{t.differenceMean(differences.baseline.length)}</span>
-          <span>{f.money(difference.mean)}</span>
+          <span className="money">{f.money(difference.mean)}</span>
         </li>
       </ul>
       <h3>{t.differencePayments}</h3>
-      {payments.length === 0 ? (
-        <p className="muted">{t.differenceNoPayments}</p>
-      ) : (
-        <ul className="household-rows">
-          {payments.map((p) => (
-            <li key={p.allocation_id}>
-              <span>
-                {f.date(p.booked_on)} · {p.payee || p.purpose || categoryLabel(p.category)}
-                <br />
-                <span className="muted">
-                  {categoryLabel(p.category)} · {p.account_label}
-                </span>
-              </span>
-              <span>{f.money(p.amount)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <CategoryPayments month={differences.month} category={difference.category} />
     </div>
+  );
+}
+
+/** The payments counted under one category in the month (GET /household/lines), oldest first,
+ * each with its payee, day and account, a payment marked one-off with its badge; the server's
+ * sum under them, and the sum without the one-offs when they differ. */
+function CategoryPayments({ month, category }: { month: string; category: AllocationCategory }) {
+  const t = useT(household);
+  const f = useFormat();
+  const load = useCallback(() => loadLines(month, category), [month, category]);
+  const state = useLoad(load);
+  return (
+    <Loading state={state}>
+      {(lines) => {
+        const payments = lines.payments ?? [];
+        if (payments.length === 0) return <p className="muted">{t.differenceNoPayments}</p>;
+        return (
+          <ul className="household-rows household-lines">
+            {payments.map((p) => (
+              <li key={p.allocation_id}>
+                <span>
+                  {p.payee || p.purpose || categoryLabel(p.category)}
+                  {p.one_off ? (
+                    <>
+                      {" "}
+                      <span className="badge badge-muted">{t.oneOffBadge}</span>
+                    </>
+                  ) : null}
+                  <br />
+                  <span className="muted">
+                    {f.date(p.booked_on)} · {p.account_label}
+                  </span>
+                </span>
+                <span className="money">{f.money(p.amount)}</span>
+              </li>
+            ))}
+            <li className="household-lines-sum">
+              <strong>{t.sum}</strong>
+              <strong className="money">{f.money(lines.total)}</strong>
+            </li>
+            {lines.regular !== lines.total ? (
+              <li>
+                <span className="muted">{t.withoutOneOffs}</span>
+                <span className="money muted">{f.money(lines.regular)}</span>
+              </li>
+            ) : null}
+          </ul>
+        );
+      }}
+    </Loading>
   );
 }
 
@@ -705,12 +780,15 @@ function SpendingTable({
   comparison,
   groupLink,
   openGroup,
+  running,
 }: {
   months: HouseholdCashflow[];
   windowMonths: HouseholdCashflow[];
   comparison: SpendingComparison;
   groupLink: (group: string) => LinkProps;
   openGroup: string | null;
+  /** The month runs today: its name reads „bisher“ (§7.13 (b) 1). */
+  running: boolean;
 }) {
   const t = useT(household);
   const f = useFormat();
@@ -723,6 +801,7 @@ function SpendingTable({
   const both = [...months, ...windowMonths];
   const groups = [...new Set([...both.flatMap((m) => Object.keys(m.spending_by_group)), ...planned.map((row) => row.group)])];
   const withPlan = planned.length > 0;
+  const soFar = running || (withPlan && !comparison.final);
   const planCells = (row: SpendingComparisonRow | undefined) =>
     withPlan ? (
       <>
@@ -767,7 +846,7 @@ function SpendingTable({
             amountOf={now}
             bar={bar}
             plansOf={(group) => planned.filter((row) => row.group === group).length}
-            heading={`${f.month(month.month)}${withPlan && !comparison.final ? t.soFar : ""}`}
+            heading={`${f.month(month.month)}${soFar ? t.soFar : ""}`}
             groupLink={groupLink}
           />
           <div className="table-wrap household-table-wrap">
@@ -780,7 +859,7 @@ function SpendingTable({
                   </th>
                   <th scope="col" className="num">
                     {f.month(month.month)}
-                    {withPlan && !comparison.final ? t.soFar : ""}
+                    {soFar ? t.soFar : ""}
                   </th>
                   {withPlan ? (
                     <>
@@ -847,7 +926,7 @@ function SpendingTable({
               </tbody>
               <tfoot>
                 <tr>
-                  <th scope="row">{withPlan && !comparison.final ? t.sumSoFar : t.sum}</th>
+                  <th scope="row">{soFar ? t.sumSoFar : t.sum}</th>
                   <td className="household-wide" />
                   <td className="num">
                     <strong>{f.money(spent(month))}</strong>
@@ -928,9 +1007,9 @@ function PhoneGroups({
           );
         })}
       </ul>
-      {groups.length > PHONE_GROUPS && !all ? (
-        <button type="button" className="secondary" onClick={() => setAll(true)}>
-          {t.showAllGroups(groups.length)}
+      {groups.length > PHONE_GROUPS ? (
+        <button type="button" className="secondary" aria-expanded={all} onClick={() => setAll((on) => !on)}>
+          {all ? t.showLess : t.showAllGroups(groups.length)}
         </button>
       ) : null}
     </div>
@@ -961,6 +1040,8 @@ function GroupPanel({
   const meanOf = (value: (m: HouseholdCashflow) => string) => f.money(averageMoney(windowMonths.map(value)));
   const groupPlan = plannedFor(planned, group, null);
   const anyPlan = planned.some((row) => row.group === group);
+  // The subcategory whose payments are open under it (§7.13 (b) 3), one at a time.
+  const [openCode, setOpenCode] = useState<string | null>(null);
   return (
     <div className="stack">
       <p className="muted">{t.monthByCategory(f.month(month.month))}</p>
@@ -996,16 +1077,25 @@ function GroupPanel({
               const plan = plannedFor(planned, group, code);
               const sub = [f.percent(shareOf(codeNow(code), total))];
               if (windowMonths.length > 0) sub.push(`Ø ${meanOf((m) => m.spending_by_category?.[group]?.[code] ?? "0.00")}`);
+              const expanded = openCode === code;
               return (
                 <li key={code}>
-                  <div className="detail-row">
+                  <button
+                    type="button"
+                    className="detail-row household-code-row"
+                    aria-expanded={expanded}
+                    aria-label={t.codePayments(categoryLabel(code))}
+                    onClick={() => setOpenCode(expanded ? null : code)}
+                  >
                     <span className="detail-row-text">
                       <span className="detail-row-title">{categoryLabel(code)}</span>
                       <span className="detail-row-sub">{sub.join(" · ")}</span>
                       {plan ? <span className="detail-row-sub">{t.plannedLine(f.money(plan.planned), plan.text)}</span> : null}
                     </span>
-                    <strong>{f.money(codeNow(code))}</strong>
-                  </div>
+                    <strong className="money">{f.money(codeNow(code))}</strong>
+                    <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+                  </button>
+                  {expanded ? <CategoryPayments month={month.month} category={code as AllocationCategory} /> : null}
                 </li>
               );
             })}

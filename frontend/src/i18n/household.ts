@@ -81,6 +81,10 @@ const de = {
   plannedCount: (n: number) => `${n} geplant`,
   openGroup: (group: string) => `${group} aufklappen`,
   showAllGroups: (n: number) => `Alle ${n} anzeigen`,
+  showLess: "Weniger anzeigen",
+  oneOffBadge: "Einmalig",
+  withoutOneOffs: "Ohne Einmaliges",
+  codePayments: (name: string) => `${name}: Zahlungen anzeigen`,
   notFinal:
     "Der Monat ist noch nicht abgeschlossen: „bisher“ zählt die bestätigten Umsätze bis heute. Der Vergleich mit „Geplant“ ist erst nach dem Monatsabschluss endgültig.",
   waiting: (lines: string, n: number) => `${lines} ${n === 1 ? "wartet" : "warten"} in Zu prüfen`,
@@ -177,6 +181,10 @@ const en: Messages = {
   plannedCount: (n) => `${n} planned`,
   openGroup: (group) => `Expand ${group}`,
   showAllGroups: (n) => `Show all ${n}`,
+  showLess: "Show less",
+  oneOffBadge: "One-off",
+  withoutOneOffs: "Without one-offs",
+  codePayments: (name) => `${name}: show payments`,
   notFinal:
     "The month is not closed yet: „so far“ counts the transactions confirmed up to today. The comparison with „Planned“ is final only after the month's closing.",
   waiting: (lines, n) => `${lines} ${n === 1 ? "is" : "are"} waiting in To review`,

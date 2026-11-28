@@ -120,7 +120,13 @@ export function FixedPayments({ line, onChanged }: { line: BudgetLine; onChanged
   return (
     <div className="stack recurring-panel">
       <section className="stack" aria-label={m.fixedTitle}>
-        <h3>{m.fixedTitle}</h3>
+        {/* The fixed payments' sum beside their title, as „Schwankend“ shows its own (§7.13 (b) 4). */}
+        <div className="recurring-total">
+          <h3>{m.fixedTitle}</h3>
+          <strong className="money" data-testid="fixed-total">
+            {f.money(line.fixed_monthly ?? "0.00")}
+          </strong>
+        </div>
         {error != null ? <ErrorNotice error={error} /> : null}
         {rows.length === 0 ? (
           <p className="muted">{m.fixedNone}</p>
