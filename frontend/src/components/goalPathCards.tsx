@@ -10,7 +10,9 @@
 //
 // The one write: „Diesen Plan übernehmen“ posts POST /household-goal/path/adopt (no body); the
 // server writes the default scenario's `goal_path` lever and follows it, refusing a path that is
-// no longer adoptable (422 `household_scenario.path_invalid`). The page then reads again.
+// no longer adoptable (422 `household_scenario.path_invalid`). Its answer carries the goal as
+// the next GET answers it (§7.13 (d) 7): the page shows that goal and reads again only what the
+// write touched, the plan and the tracking.
 import Link from "next/link";
 import { type ReactNode, useState } from "react";
 
@@ -44,8 +46,10 @@ const KIND = "plan";
 export const loadPathTracking = (): Promise<GoalTracking | null> =>
   ok(api.GET("/api/household-goal/tracking")).catch(() => null);
 
-export async function adoptPath(): Promise<void> {
-  await ok(api.POST("/api/household-goal/path/adopt"));
+/** POST /household-goal/path/adopt; its answer carries the goal as the next GET answers it
+ * (§7.13 (d) 7), so the page shows the adopted path without a second read of the goal. */
+export async function adoptPath(): Promise<HouseholdGoal> {
+  return (await ok(api.POST("/api/household-goal/path/adopt"))).goal;
 }
 
 function signedPercent(p: PlanFormat, value: string | null | undefined): string {
@@ -73,7 +77,7 @@ function OnPath({ t, behind, text }: { t: T; behind: boolean; text?: string }) {
 // --- „Euer Plan“ -------------------------------------------------------------------------------
 
 /** The cards of the path in place of the plan's route and month cards („Für euch“ only). */
-export function PathCards({ goal, tracking, onAdopted }: { goal: HouseholdGoal; tracking: GoalTracking | null; onAdopted: () => void }) {
+export function PathCards({ goal, tracking, onAdopted }: { goal: HouseholdGoal; tracking: GoalTracking | null; onAdopted: (goal: HouseholdGoal) => void }) {
   const word = usePathWord(goal);
   if (!word) return null;
   const view = word.view;
@@ -136,7 +140,7 @@ function AdoptedLine({ view }: { view: PathView }) {
 }
 
 /** „Diesen Plan übernehmen“: only while the path is adoptable and not already the one followed. */
-function AdoptButton({ view, onAdopted }: { view: PathView; onAdopted: () => void }) {
+function AdoptButton({ view, onAdopted }: { view: PathView; onAdopted: (goal: HouseholdGoal) => void }) {
   const t = useT(goalPathText);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -145,8 +149,8 @@ function AdoptButton({ view, onAdopted }: { view: PathView; onAdopted: () => voi
     setBusy(true);
     setError(null);
     try {
-      await adoptPath();
-      onAdopted();
+      // Busy until the adopted goal is shown: the answer carries it (§7.13 (d) 7).
+      onAdopted(await adoptPath());
     } catch (caught) {
       setError(caught);
     } finally {
@@ -182,7 +186,7 @@ function InvestNowRow({ view }: { view: PathView }) {
 }
 
 /** „Der Plan“ at step 1 (the typed rates) or step 2 (the return needed, within the room). */
-function PlanCard({ view, onAdopted }: { view: PathView; onAdopted: () => void }) {
+function PlanCard({ view, onAdopted }: { view: PathView; onAdopted: (goal: HouseholdGoal) => void }) {
   const t = useT(goalPathText);
   const p = usePlanFormat();
   const atReturn = view.state === "doable_return";

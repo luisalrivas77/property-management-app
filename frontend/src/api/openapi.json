@@ -7751,7 +7751,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HouseholdScenario"
+                  "$ref": "#/components/schemas/HouseholdScenarioAdopted"
                 }
               }
             }
@@ -27673,6 +27673,82 @@
         ],
         "title": "HouseholdScenario",
         "description": "household_scenario row (append-only; §11 names its columns created_*)."
+      },
+      "HouseholdScenarioAdopted": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "default": false
+          },
+          "levers": {
+            "$ref": "#/components/schemas/HouseholdLevers"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "withdrawn": {
+            "type": "boolean",
+            "title": "Withdrawn",
+            "default": false
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "goal": {
+            "$ref": "#/components/schemas/HouseholdGoal"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "id",
+          "workspace_id",
+          "created_at",
+          "goal"
+        ],
+        "title": "HouseholdScenarioAdopted",
+        "description": "POST /household-goal/path/adopt, 201 (phase 10 §7.13 (d) 7, D316): the default scenario\nthe path was written into (or the row in force, when nothing moved), with the goal as the\nnext GET /household-goal answers it, read after the write committed. „Diesem Weg folgen“\nstays busy until this answer is in and shows its goal without a second request."
       },
       "HouseholdScenarioCreate": {
         "properties": {

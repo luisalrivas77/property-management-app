@@ -61,7 +61,8 @@ replaces (supersedes_id); services/household_scenarios.py holds the checks.
   (step 1 or step 2) into one row superseding the default (services.goal.adopt_path). No
   body: the browser sends no figure. 422 household_scenario.path_invalid without a goal or a
   path that can be adopted; the same path adopted again with its inputs unmoved returns the
-  row in force and writes nothing.
+  row in force and writes nothing. The answer carries `goal`, GET /household-goal's answer
+  read after the write committed (§7.13 (d) 7), so the button shows the new goal at once.
 - POST /household-goal/reference-returns/refresh (phase 10 §7.11 (c) 3, point 8): 202; queues
   one refresh_reference_returns job, which downloads route 3's funds series again, due or
   not; `queued` false and the open job's id while one waits or runs. Writes nothing else:
@@ -87,6 +88,7 @@ from hausbuch.schemas.goal import (
     GoalProperties,
     GoalTracking,
     HouseholdGoal,
+    HouseholdScenarioAdopted,
     ReferenceRefreshQueued,
 )
 from hausbuch.schemas.plan import (
@@ -204,8 +206,12 @@ def household_goal_preview(body: HouseholdPlanPreview, cmd: Cmd) -> HouseholdGoa
 
 
 @router.post("/household-goal/path/adopt", status_code=201)
-def household_goal_path_adopt(cmd: Cmd) -> HouseholdScenario:
-    return cmd.run(goal_service.adopt_path)
+def household_goal_path_adopt(cmd: Cmd) -> HouseholdScenarioAdopted:
+    row = cmd.run(goal_service.adopt_path)
+    # The goal built exactly as GET /household-goal builds it, in its own read after the write
+    # committed, so the answer equals the next GET (phase 10 §7.13 (d) 7).
+    goal = english(cmd.read(goal_service.goal, _today()))
+    return HouseholdScenarioAdopted(**dict(row), goal=goal)
 
 
 @router.post("/household-goal/reference-returns/refresh", status_code=202)

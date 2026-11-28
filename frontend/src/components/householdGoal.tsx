@@ -368,7 +368,11 @@ export function useGoalView({
   info: GoalPlanInfo;
 }): GoalView {
   const t = useT(goalText);
-  const state = useLoad(enabled ? loadGoalData : loadNoGoal);
+  const loaded = useLoad(enabled ? loadGoalData : loadNoGoal);
+  // The goal read right after a write, shown until the goal is read again: a write's button
+  // stays busy until the new goal is on screen (§7.13 (d) 7, „Diesem Weg folgen“ felt slow).
+  const [written, setWritten] = useState<{ data: GoalData; of: GoalData | null | undefined } | null>(null);
+  const state: Loaded<GoalData | null> = written && written.of === loaded.data ? { ...loaded, data: written.data } : loaded;
   const detail = useDetail(GOAL_DETAIL);
   const data = state.data ?? null;
 
@@ -376,7 +380,7 @@ export function useGoalView({
     // From the default in force now, so a write never supersedes an old row (not_current).
     const current = currentDefault(await loadScenarioHistory());
     await saveDefaultScenario(patch(fillLevers(current?.levers)), current);
-    state.reload();
+    setWritten({ data: await loadGoalData(), of: loaded.data });
     onWritten();
   };
 

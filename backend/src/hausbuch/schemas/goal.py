@@ -23,6 +23,7 @@ from .plan import (
     GoalChoice,
     GoalPathState,
     GoalSpending,
+    HouseholdScenario,
     SavingsPlan,
     SpendingChange,
 )
@@ -411,6 +412,15 @@ class HouseholdGoal(Schema):
     goal_path: GoalPath | None = None  # §7.11 (i), D311
     assumptions: list[GoalAssumption] = Field(default_factory=list)
     todos: list[HealthTodo] = Field(default_factory=list)
+
+
+class HouseholdScenarioAdopted(HouseholdScenario):
+    """POST /household-goal/path/adopt, 201 (phase 10 §7.13 (d) 7, D316): the default scenario
+    the path was written into (or the row in force, when nothing moved), with the goal as the
+    next GET /household-goal answers it, read after the write committed. „Diesem Weg folgen“
+    stays busy until this answer is in and shows its goal without a second request."""
+
+    goal: HouseholdGoal
 
 
 class ReferenceRefreshQueued(Schema):

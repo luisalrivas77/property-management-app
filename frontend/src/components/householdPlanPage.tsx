@@ -61,13 +61,10 @@ interface PathData {
   tracking: GoalTracking | null;
 }
 
-async function loadPathData(): Promise<PathData> {
-  const [goal, tracking] = await Promise.all([loadGoal().catch(() => null), loadPathTracking()]);
-  return { goal, tracking };
-}
+const loadPathGoal = (): Promise<HouseholdGoal | null> => loadGoal().catch(() => null);
 
-async function loadNoPath(): Promise<PathData> {
-  return { goal: null, tracking: null };
+async function loadNothing(): Promise<null> {
+  return null;
 }
 
 /** The side panels' detail kind and the cards' ids. */
@@ -131,7 +128,11 @@ export function PlanPageView() {
   const code = useDeviceSetting(PLAN_SHARE_SETTING);
   const load = useCallback(() => loadPlan(share, code), [share, code]);
   const state = useLoad(load);
-  const pathState = useLoad(share ? loadNoPath : loadPathData);
+  // The goal and the tracking apart, so an adopt reads again only the tracking (§7.13 (d) 7).
+  const goalState = useLoad(share ? loadNothing : loadPathGoal);
+  const trackingState = useLoad(share ? loadNothing : loadPathTracking);
+  // The goal an adopt answered with, shown until the goal is read again.
+  const [adopted, setAdopted] = useState<{ goal: HouseholdGoal; of: HouseholdGoal | null | undefined } | null>(null);
   const detail = useDetail(KIND);
 
   const setView = (next: boolean) => {
@@ -145,10 +146,18 @@ export function PlanPageView() {
   // Only an answer of the view asked for is shown: never „Für euch“'s figures under „Zum Teilen“.
   const data = state.data?.view === (share ? "share" : "own") ? state.data : undefined;
   // The path only under „Für euch“, gated on the view asked for, never on the answer loaded.
-  const path = !share && data?.view === "own" ? (pathState.data ?? null) : null;
+  const goal = adopted && adopted.of === goalState.data ? adopted.goal : (goalState.data ?? null);
+  const path: PathData | null = !share && data?.view === "own" ? { goal, tracking: trackingState.data ?? null } : null;
   const reloadAll = () => {
     state.reload();
-    pathState.reload();
+    goalState.reload();
+    trackingState.reload();
+  };
+  // After an adopt: the goal from its answer, then the plan and the tracking read again.
+  const onAdopted = (next: HouseholdGoal) => {
+    setAdopted({ goal: next, of: goalState.data });
+    state.reload();
+    trackingState.reload();
   };
   const panel =
     data && detail.id ? (
@@ -178,7 +187,7 @@ export function PlanPageView() {
         </a>
       ) : null}
       <DetailLayout panel={panel}>
-        <Loading state={{ ...state, data }}>{(plan) => <Cards plan={plan} path={path} onAdopted={reloadAll} />}</Loading>
+        <Loading state={{ ...state, data }}>{(plan) => <Cards plan={plan} path={path} onAdopted={onAdopted} />}</Loading>
       </DetailLayout>
     </section>
   );
@@ -210,7 +219,7 @@ function StatAmount({ plan, value }: { plan: PlanPage; value: string | null | un
   );
 }
 
-function Cards({ plan, path, onAdopted }: { plan: PlanPage; path: PathData | null; onAdopted: () => void }) {
+function Cards({ plan, path, onAdopted }: { plan: PlanPage; path: PathData | null; onAdopted: (goal: HouseholdGoal) => void }) {
   const t = useT(planPageText);
   const goal = path?.goal ?? null;
   const withPath = plan.view === "own" && pathView(goal) != null;

@@ -681,10 +681,11 @@ test("the path at step 1: the plan card, „Woher“ and „Diesen Plan überneh
   void signedIn;
   await planApi(page);
   const state = { goal: withPath(stepOne()), tracking: tracking([]) };
+  // The adopt answers with the goal it wrote (§7.13 (d) 7): the page shows that goal without
+  // reading GET /household-goal again, which here still serves the goal from before.
   const posts = await pathApi(page, state, () => {
-    state.goal = withPath({ ...stepOne(), adopted: ADOPTED }, FOLLOWED);
     state.tracking = tracking([ROW]);
-    return { status: 201, json: state.goal };
+    return { status: 201, json: { goal: withPath({ ...stepOne(), adopted: ADOPTED }, FOLLOWED) } };
   });
   await page.goto("/household/plan");
   const main = page.locator(".planp-cards");

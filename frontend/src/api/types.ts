@@ -10570,6 +10570,48 @@ export interface components {
             /** Created By */
             created_by?: string | null;
         };
+        /**
+         * HouseholdScenarioAdopted
+         * @description POST /household-goal/path/adopt, 201 (phase 10 §7.13 (d) 7, D316): the default scenario
+         *     the path was written into (or the row in force, when nothing moved), with the goal as the
+         *     next GET /household-goal answers it, read after the write committed. „Diesem Weg folgen“
+         *     stays busy until this answer is in and shows its goal without a second request.
+         */
+        HouseholdScenarioAdopted: {
+            /** Name */
+            name: string;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+            levers?: components["schemas"]["HouseholdLevers"];
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /**
+             * Withdrawn
+             * @default false
+             */
+            withdrawn: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by?: string | null;
+            goal: components["schemas"]["HouseholdGoal"];
+        };
         /** HouseholdScenarioCreate */
         HouseholdScenarioCreate: {
             /** Name */
@@ -24567,7 +24609,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HouseholdScenario"];
+                    "application/json": components["schemas"]["HouseholdScenarioAdopted"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
