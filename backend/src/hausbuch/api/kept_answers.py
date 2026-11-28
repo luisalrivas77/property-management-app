@@ -1061,6 +1061,7 @@ NOT_WARMED: dict[str, str] = {
     ),
     "/api/imports/{import_id}": _NO_SCREEN,
     "/api/transactions/{transaction_id}/allocations": _PER_LINE,
+    "/api/household/lines": "one per category of Haushalt › Monat, opened by a click (§7.13 (b) 2)",
     "/api/transfers/open": _NO_SCREEN,
     "/api/net-worth": _NO_SCREEN,
     "/api/net-worth/snapshots": _NO_SCREEN + " (the screens POST it)",
@@ -1132,8 +1133,8 @@ async def warm_member(
     `before`, when given, is awaited right before each route, with nothing awaited between it
     and the request."""
     result = WarmResult(members=1)
-    month = last_full_month(today)  # every page opens on the last full month
-    running = f"{today.year:04d}-{today.month:02d}"  # Konten › Umsätze's month card
+    month = last_full_month(today)  # Übersicht's Cashflow tile and Haushalt's „Ø“ window
+    running = f"{today.year:04d}-{today.month:02d}"  # Haushalt › Monat, Konten › Umsätze's card
     year = today.year
     asked: dict[tuple[str, tuple[tuple[str, str], ...]], Any] = {}
 
@@ -1211,13 +1212,15 @@ async def warm_member(
     await get("/api/possible-duplicates")
     await get("/api/documents")
     await get("/api/tenants")
-    # Haushalt › Monat (household/page.tsx loadYear, healthFigures.tsx, householdRecurring.tsx)
-    shown = months_up_to(month, HOUSEHOLD_MONTHS_SHOWN)
+    # Haushalt › Monat (household/page.tsx loadYear, loadDifferences, healthFigures.tsx,
+    # householdRecurring.tsx): it opens on the month running today (§7.13 (b) 1, D314).
+    shown = months_up_to(running, HOUSEHOLD_MONTHS_SHOWN)
     for each in shown:
         await get("/api/household/cashflow", {"month": each})
-    await get("/api/transfers", {"month": month})
-    await get("/api/health/months", {"from": shown[0], "to": month})
-    await get("/api/household-plan/comparison", {"month": month})
+    await get("/api/transfers", {"month": running})
+    await get("/api/health/months", {"from": shown[0], "to": running})
+    await get("/api/household-plan/comparison", {"month": running})
+    await get("/api/household/differences", {"month": running})
     window = [m for m in (health.get("window") or {}).get("months") or [] if isinstance(m, str)]
     for each in window:  # the „Ø“ columns' months, when outside the twelve shown
         await get("/api/household/cashflow", {"month": each})
@@ -1230,13 +1233,12 @@ async def warm_member(
         await get("/api/health/months", {"from": window[0], "to": window[-1]})
     await get("/api/household-plan/explanation")
     await get("/api/household-goal/plan", {"view": "own"})
-    # Anlagen (assets/page.tsx, Overview, Performance, Crypto, PropertyGrowth)
+    # Anlagen (assets/page.tsx, Overview, Performance, Crypto)
     await get("/api/assets/overview")
     await get("/api/assets")
     await get("/api/assets/etf")
     await get("/api/assets/performance")
     await get("/api/holdings/crypto")
-    await get("/api/household-goal/properties")
     # Konten (accounts/page.tsx): each account's row, the loans; then each account's page
     for prop in properties:
         base = f"/api/properties/{prop['id']}"

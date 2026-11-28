@@ -704,10 +704,16 @@ def test_the_warm_asks_every_warmed_route_as_the_pages_ask_it(client_a, kept, au
     assert result.expected == 1  # Owner B: anlage_n.no_pay
     assert result.templates == set(WARMED), set(WARMED) ^ result.templates
     assert result.requests == len(kept) + result.expected  # every other answer is kept
-    # Haushalt › Monat's twelve months up to the last full one, as the page asks them.
+    # Haushalt › Monat's twelve months up to the running one, as the page asks them (§7.13 (b) 1),
+    # and Übersicht's Cashflow tile the last full one.
     months = {key.query for key, _ in kept.items() if key.path == "/api/household/cashflow"}
-    assert (("month", "2025-11"),) in months
+    assert (("month", "2025-12"),) in months
     assert (("month", "2026-10"),) in months
+    assert (("month", "2026-11"),) in months
+    assert any(
+        key.path == "/api/household/differences" and key.query == (("month", "2026-11"),)
+        for key, _ in kept.items()
+    )
     # Konten › Umsätze's month card: the running month.
     assert any(
         key.path.endswith("/month") and key.query == (("month", "2026-11"),)
