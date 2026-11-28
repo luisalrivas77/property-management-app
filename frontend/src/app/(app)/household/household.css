@@ -160,8 +160,9 @@ a.household-group-row .household-share {
   border-color: var(--accent-strong);
 }
 
-/* The gap („+260 €“) is one figure: it never breaks before its „€“ (§7.13 (g)). */
-.household-budget-gap {
+/* An amount inside a line of text („+260 €“, „Ø 3 Monate 1.234,00 €“) is one figure: it never
+ * breaks before its „€“, the line breaking before it instead (§7.13 (g)). */
+.household-figure {
   white-space: nowrap;
 }
 

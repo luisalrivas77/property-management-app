@@ -455,7 +455,7 @@ function HouseholdMonth({
             </p>
             <p className="planning-kpi-value">{f.money(month.income)}</p>
             <p className="planning-kpi-sub">
-              {t.mean(closed.length)} {mean(windowMonths.map((m) => m.income))}
+              {t.mean(closed.length)} <span className="household-figure">{mean(windowMonths.map((m) => m.income))}</span>
             </p>
           </div>
           <div className="planning-kpi" role="group" aria-label={t.spending}>
@@ -465,7 +465,7 @@ function HouseholdMonth({
             </p>
             <p className="planning-kpi-value">{f.money(spentNow)}</p>
             <p className="planning-kpi-sub">
-              {t.mean(closed.length)} {mean(windowMonths.map(spent))}
+              {t.mean(closed.length)} <span className="household-figure">{mean(windowMonths.map(spent))}</span>
             </p>
             {oneOffNow !== null ? <p className="planning-kpi-sub">{t.ofWhichOneOff(f.money(oneOffNow))}</p> : null}
           </div>
@@ -526,7 +526,12 @@ function SurplusBars({
         <span className="spacer" />
         <span className="muted">
           {t.surplusHow}
-          {windowMonths.length > 0 ? ` · ${t.mean(windowMonths.length)} ${f.money(averageMoney(windowMonths.map((m) => m.surplus)))}` : ""}
+          {windowMonths.length > 0 ? (
+            <>
+              {` · ${t.mean(windowMonths.length)} `}
+              <span className="household-figure">{f.money(averageMoney(windowMonths.map((m) => m.surplus)))}</span>
+            </>
+          ) : null}
         </span>
       </div>
       <ul className="planning-bars">
@@ -624,7 +629,7 @@ function BudgetTile({ budget: state }: { budget: Loaded<BudgetView> }) {
                 {gap !== null ? (
                   <>
                     {" "}
-                    <span className="household-budget-gap">{`${under ? "−" : "+"}${p.euro(gap.replace(/^[-+]/, ""))}`}</span>
+                    <span className="household-figure">{`${under ? "−" : "+"}${p.euro(gap.replace(/^[-+]/, ""))}`}</span>
                   </>
                 ) : null}
               </li>
