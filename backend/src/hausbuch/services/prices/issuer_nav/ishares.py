@@ -18,6 +18,9 @@ every cell a String, German formats), 1 to 4 MB:
     sheet „Key Facts“        rows label | value, among them „ISIN“ and „Basiswährung“
                              (the fund's, not always the NAV's: a hedged class's NAV is EUR)
 The NAV's currency is the Fund Header's prefix, else Key Facts' „Währung der Reihe“.
+Since 28 Nov 2026 (read live) the file names its sheets in German: „Fonds“ for the Fund
+Header, „Historische NAVs“ and „Eckdaten“ for Key Facts, the rows unchanged; either name is
+read.
 
 Catalogue (read live 16 Nov 2026: the data the „Produktliste“ page
 https://www.ishares.com/de/privatanleger/de/produkte/produktliste loads, named in the page's
@@ -114,6 +117,21 @@ def _number(value: str) -> Decimal | None:
         return None
 
 
+# Each sheet the reader uses under its English and its German name (28 Nov 2026).
+_SHEET_NAMES = {
+    "Fund Header": ("Fund Header", "Fonds"),
+    "Historical NAVs": ("Historical NAVs", "Historische NAVs"),
+    "Key Facts": ("Key Facts", "Eckdaten"),
+}
+
+
+def _sheet(sheets: dict[str, list[list[str]]], name: str) -> list[list[str]]:
+    for candidate in _SHEET_NAMES[name]:
+        if candidate in sheets:
+            return sheets[candidate]
+    return []
+
+
 def _sheets(root: etree._Element) -> dict[str, list[list[str]]]:
     sheets: dict[str, list[list[str]]] = {}
     for ws in root.findall("ss:Worksheet", _NS):
@@ -163,10 +181,11 @@ class ISharesAdapter(IssuerAdapter):
         except etree.XMLSyntaxError:
             raise SourceError("parse") from None
         sheets = _sheets(root)
-        facts = {r[0]: r[1] for r in sheets.get("Key Facts", []) if len(r) >= 2 and r[0]}
+        del root  # the parsed tree is the bulk of the memory; only three sheets are read
+        facts = {r[0]: r[1] for r in _sheet(sheets, "Key Facts") if len(r) >= 2 and r[0]}
         isin = facts.get("ISIN", "")
         currency = None
-        for row in sheets.get("Fund Header", [])[:8]:
+        for row in _sheet(sheets, "Fund Header")[:8]:
             match = _PREFIX.match(row[0]) if row else None
             if match is not None:
                 currency = match.group(1)
@@ -177,7 +196,7 @@ class ISharesAdapter(IssuerAdapter):
         ):
             raise SourceError("parse")
         points: list[NavPoint] = []
-        for row in sheets.get("Historical NAVs", []):
+        for row in _sheet(sheets, "Historical NAVs"):
             if len(row) < 2:
                 continue
             on, value = _day(row[0]), _number(row[1])

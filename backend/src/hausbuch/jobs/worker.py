@@ -18,8 +18,11 @@ event loop serving requests is never blocked by a model call.
   loop starts, and then every STALLED_SWEEP_INTERVAL_S while it runs: every `doing` job whose
   worker row is gone, or whose worker missed its heartbeat for STALLED_AFTER_S (it beats
   every 10 s, so a live worker's jobs are never selected), is retried now (Procrastinate's
-  get_stalled_jobs + retry_job; the retry counts as an attempt). A failed sweep is logged and
-  the next one tries again; it never stops the worker.
+  get_stalled_jobs + retry_job; the retry counts as an attempt). A job already attempted
+  MAX_STALLED_ATTEMPTS times is marked failed instead of retried: on 28 Nov 2026 a price run
+  that ran the container out of memory was retried at every start, so the container crashed
+  again at every start until the job was failed by hand. A failed sweep is logged and the
+  next one tries again; it never stops the worker.
 - running: whether the worker loop is up; /healthz reports it as `worker: ok | stopped`.
 """
 
@@ -29,6 +32,7 @@ from collections.abc import Callable
 from typing import Any
 
 import procrastinate
+from procrastinate.jobs import Status
 from sqlalchemy import Engine
 from sqlalchemy.engine import make_url
 
@@ -46,6 +50,9 @@ RESTART_MAX_DELAY_S = 60.0
 STALLED_SWEEP_INTERVAL_S = 60.0
 # Procrastinate's own stalled_worker_timeout default; heartbeats come every 10 s.
 STALLED_AFTER_S = 30
+# A stalled job attempted this often is failed, not retried (a job that kills its process
+# would otherwise restart at every start). Attempts also count a task's own retries.
+MAX_STALLED_ATTEMPTS = 3
 
 logger = logging.getLogger("hausbuch.jobs.worker")
 
@@ -146,9 +153,14 @@ class JobWorker:
         try:
             stalled = await manager.get_stalled_jobs(seconds_since_heartbeat=STALLED_AFTER_S)
             for job in stalled:
+                fields = {"event": "stalled_job_retried", "job_id": job.id, "task": job.task_name}
+                if job.attempts >= MAX_STALLED_ATTEMPTS:
+                    await manager.finish_job(job, status=Status.FAILED, delete_job=False)
+                    fields |= {"event": "stalled_job_failed", "attempts": job.attempts}
+                    logger.error("stalled job failed", extra={"fields": fields})
+                    continue
                 await manager.retry_job(job)
                 retried += 1
-                fields = {"event": "stalled_job_retried", "job_id": job.id, "task": job.task_name}
                 logger.warning("stalled job retried", extra={"fields": fields})
         except Exception as exc:
             fields = {"event": "stalled_sweep_failed", "exc_type": type(exc).__name__}
