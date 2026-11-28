@@ -68,6 +68,8 @@ export const taxDraft = defineMessages({
     period: (start: string, end: string) => `Zeitraum ${start} – ${end}`,
     openBankLine: "Bankzeile öffnen",
     openReceipt: "Beleg öffnen",
+    receiptMissing: "Rechnung fehlt",
+    uploadReceipt: "Rechnung hochladen",
     sourcesTitle: (title: string) => `Quellen: ${title}`,
     // open points
     openPoints: "Offene Punkte",
@@ -161,6 +163,8 @@ export const taxDraft = defineMessages({
     period: (start: string, end: string) => `Period ${start} – ${end}`,
     openBankLine: "Open bank line",
     openReceipt: "Open receipt",
+    receiptMissing: "Invoice missing",
+    uploadReceipt: "Upload invoice",
     sourcesTitle: (title: string) => `Sources: ${title}`,
     openPoints: "Open points",
     openPointInGuide: "Settle it in its step",

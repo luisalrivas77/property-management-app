@@ -2886,23 +2886,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/household-goal/properties": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Household Goal Properties */
-        get: operations["household_goal_properties_api_household_goal_properties_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/household-goal/plan": {
         parameters: {
             query?: never;
@@ -5045,57 +5028,6 @@ export interface components {
             recurring: boolean;
             /** Document Id */
             document_id?: string | null;
-        };
-        /**
-         * AllocationFact
-         * @description A confirmed allocation as the draft sees it. Amount signed (income +, costs −); a 0.00
-         *     row may be present and is ignored by every rule (D70). invoice_net is this allocation's
-         *     share of the linked invoice extraction's amount_net (a magnitude), for the 15 % tracker
-         *     (D56): the whole net for a payment of the whole bill, net × part ÷ gross for one part of a
-         *     bill split by its lines (phase 2 D135).
-         */
-        AllocationFact: {
-            /**
-             * Allocation Id
-             * Format: uuid
-             */
-            allocation_id: string;
-            /**
-             * Booking Date
-             * Format: date
-             */
-            booking_date: string;
-            /** Value Date */
-            value_date?: string | null;
-            /** Amount */
-            amount: string;
-            category: components["schemas"]["AllocationCategory"];
-            /**
-             * Recurring
-             * @default false
-             */
-            recurring: boolean;
-            service_period?: components["schemas"]["ServicePeriod"] | null;
-            /** Due On */
-            due_on?: string | null;
-            /** Transaction Id */
-            transaction_id?: string | null;
-            /** Property Id */
-            property_id?: string | null;
-            /** Unit Id */
-            unit_id?: string | null;
-            /** Tenancy Id */
-            tenancy_id?: string | null;
-            /** Loan Id */
-            loan_id?: string | null;
-            /** Document Id */
-            document_id?: string | null;
-            /** Invoice Net */
-            invoice_net?: string | null;
-            /** Counterparty Iban Masked */
-            counterparty_iban_masked?: string | null;
-            /** @default rental */
-            account_purpose: components["schemas"]["AccountPurpose"];
         };
         /**
          * AllocationMethod
@@ -9479,7 +9411,8 @@ export interface components {
         };
         /**
          * GoalPathPoint
-         * @description The chart on Anlagen: the change needed and the change made, cumulative, per row.
+         * @description The chart on Anlagen: the change needed and the change made, cumulative, per row; the
+         *     first point is the day adopted (`month_end` that day, both 0), §7.13 (d) 3.
          */
         GoalPathPoint: {
             /**
@@ -9587,72 +9520,6 @@ export interface components {
             as_is: string;
             /** Balanced */
             balanced?: string | null;
-        };
-        /**
-         * GoalProperties
-         * @description `GET /household-goal/properties`: one card per property the goal's walk values at the
-         *     due month with its default scenario (none for a property kept without one, none for one
-         *     sold before the due month). Computed on read, never stored; own use only.
-         */
-        GoalProperties: {
-            /** Shown */
-            shown: boolean;
-            reason?: components["schemas"]["GoalPropertiesReason"] | null;
-            /** Properties */
-            properties?: components["schemas"]["GoalPropertyGrowth"][];
-        };
-        /**
-         * GoalPropertiesReason
-         * @description Why no property card is shown.
-         * @enum {string}
-         */
-        GoalPropertiesReason: "generic_mode" | "no_goal" | "not_net_worth" | "goal_issue";
-        /**
-         * GoalPropertyGrowth
-         * @description One property's card on Anlagen › Immobilie: the yearly value growth this property alone
-         *     would need for the goal to be reached at the due month at today's saving (the typed fund
-         *     and crypto rates kept; smallest to 0.1 % between −50 % and +100 %), beside the German house
-         *     price index over every window of `window_years` (Q4 to Q4 from 2005; prices only, no rent
-         *     and no costs): `reached_windows` of `windows` reached it, their `median` and `best`
-         *     annualised (each floored to 0.1 %), and the `verdict` as route 3 gives it. Under 5 windows
-         *     `thin`. `available` false with `reason` out_of_range (no growth in range reaches it, the
-         *     windows still shown) or history_short (no window: the growth still shown).
-         */
-        GoalPropertyGrowth: {
-            /**
-             * Property Id
-             * Format: uuid
-             */
-            property_id: string;
-            /**
-             * Available
-             * @default false
-             */
-            available: boolean;
-            reason?: components["schemas"]["GoalRouteReason"] | null;
-            /** Typed Growth */
-            typed_growth: string;
-            /** Needed Growth */
-            needed_growth?: string | null;
-            /** Sale Year */
-            sale_year: number;
-            /** Window Years */
-            window_years: number;
-            /** Windows */
-            windows: number;
-            /** Reached Windows */
-            reached_windows?: number | null;
-            /** Median */
-            median?: string | null;
-            /** Best */
-            best?: string | null;
-            verdict?: components["schemas"]["GoalVerdict"] | null;
-            /**
-             * Thin
-             * @default false
-             */
-            thin: boolean;
-            source?: components["schemas"]["GoalReferenceSource"] | null;
         };
         /**
          * GoalReferenceSource
@@ -10780,6 +10647,48 @@ export interface components {
             created_at: string;
             /** Created By */
             created_by?: string | null;
+        };
+        /**
+         * HouseholdScenarioAdopted
+         * @description POST /household-goal/path/adopt, 201 (phase 10 §7.13 (d) 7, D316): the default scenario
+         *     the path was written into (or the row in force, when nothing moved), with the goal as the
+         *     next GET /household-goal answers it, read after the write committed. „Diesem Weg folgen“
+         *     stays busy until this answer is in and shows its goal without a second request.
+         */
+        HouseholdScenarioAdopted: {
+            /** Name */
+            name: string;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+            levers?: components["schemas"]["HouseholdLevers"];
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /**
+             * Withdrawn
+             * @default false
+             */
+            withdrawn: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by?: string | null;
+            goal: components["schemas"]["HouseholdGoal"];
         };
         /** HouseholdScenarioCreate */
         HouseholdScenarioCreate: {
@@ -13274,12 +13183,14 @@ export interface components {
         };
         /**
          * PlanAssumptions
-         * @description Card 4 „Eure Annahmen“: nothing the app chose.
+         * @description Card 4 „Eure Annahmen“: nothing the app chose. `house_price_source` names the index
+         *     the properties' `house_prices` count over, present when one of them has it.
          */
         PlanAssumptions: {
             rates: components["schemas"]["PlanRates"];
             /** Properties */
             properties?: components["schemas"]["PlanPropertyAssumption"][];
+            house_price_source?: components["schemas"]["PlanSource"] | null;
         };
         /**
          * PlanClass
@@ -13368,12 +13279,35 @@ export interface components {
             saved_mean: string;
             /** Above Target */
             above_target?: string | null;
+            /** Reserve Target */
+            reserve_target?: string | null;
+            /** Reserve Gap */
+            reserve_gap?: string | null;
             /** Window From */
             window_from?: string | null;
             /** Window To */
             window_to?: string | null;
             /** Reserve Accounts */
             reserve_accounts?: string[];
+        };
+        /**
+         * PlanHousePrices
+         * @description „Noch nie erreicht“ (§7.13 (d) 5, D316): the property's typed yearly value change against
+         *     the German house price index, every run of `window_years` (the goal's years left, at least
+         *     1) Q4 to Q4: `reached` of `windows` grew at least as fast; `never` when none did, the mark;
+         *     `thin` under five windows. A mark beside the lever, never a block.
+         */
+        PlanHousePrices: {
+            /** Window Years */
+            window_years: number;
+            /** Windows */
+            windows: number;
+            /** Reached */
+            reached: number;
+            /** Never */
+            never: boolean;
+            /** Thin */
+            thin: boolean;
         };
         /**
          * PlanIncomeGap
@@ -13490,6 +13424,7 @@ export interface components {
             sale_year: number | null;
             /** Value Change */
             value_change: string | null;
+            house_prices?: components["schemas"]["PlanHousePrices"] | null;
             /** Label */
             label?: string | null;
         };
@@ -13581,7 +13516,7 @@ export interface components {
         };
         /**
          * PlanSource
-         * @description A source of a size in risks.yaml (the maintenance rate).
+         * @description A source of a size in risks.yaml (the maintenance rate), or of the house price index.
          */
         PlanSource: {
             /** Name */
@@ -16120,6 +16055,62 @@ export interface components {
             unvalued_positions: number;
         };
         /**
+         * SourcePayment
+         * @description One payment of the sources drawer (GET …/anlage-v/sources): the AllocationFact the draft
+         *     reads, plus receipt_missing (phase 10 §7.13 (c) 4, D315): a counted rental payment of a
+         *     category whose bill the checklist asks for (cost_receipt, D64) with no Beleg linked, so the
+         *     drawer says „Rechnung fehlt“ with „Rechnung hochladen“ instead of nothing (principle 7).
+         *     Read by no tax rule.
+         */
+        SourcePayment: {
+            /**
+             * Allocation Id
+             * Format: uuid
+             */
+            allocation_id: string;
+            /**
+             * Booking Date
+             * Format: date
+             */
+            booking_date: string;
+            /** Value Date */
+            value_date?: string | null;
+            /** Amount */
+            amount: string;
+            category: components["schemas"]["AllocationCategory"];
+            /**
+             * Recurring
+             * @default false
+             */
+            recurring: boolean;
+            service_period?: components["schemas"]["ServicePeriod"] | null;
+            /** Due On */
+            due_on?: string | null;
+            /** Transaction Id */
+            transaction_id?: string | null;
+            /** Property Id */
+            property_id?: string | null;
+            /** Unit Id */
+            unit_id?: string | null;
+            /** Tenancy Id */
+            tenancy_id?: string | null;
+            /** Loan Id */
+            loan_id?: string | null;
+            /** Document Id */
+            document_id?: string | null;
+            /** Invoice Net */
+            invoice_net?: string | null;
+            /** Counterparty Iban Masked */
+            counterparty_iban_masked?: string | null;
+            /** @default rental */
+            account_purpose: components["schemas"]["AccountPurpose"];
+            /**
+             * Receipt Missing
+             * @default false
+             */
+            receipt_missing: boolean;
+        };
+        /**
          * SpamVerdict
          * @description POST /assets/{id}/promote and /demote: the token's verdict now and the number of
          *     groups the flip changed (D187 (3)).
@@ -17957,6 +17948,8 @@ export interface components {
             months?: string | null;
             /** Target */
             target?: string | null;
+            /** Gap */
+            gap?: string | null;
             /** Target Months */
             target_months?: string | null;
             /** Good */
@@ -24675,35 +24668,6 @@ export interface operations {
             };
         };
     };
-    household_goal_properties_api_household_goal_properties_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GoalProperties"];
-                };
-            };
-            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
     household_goal_plan_api_household_goal_plan_get: {
         parameters: {
             query?: {
@@ -24788,7 +24752,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HouseholdScenario"];
+                    "application/json": components["schemas"]["HouseholdScenarioAdopted"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
@@ -26018,7 +25982,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AllocationFact"][];
+                    "application/json": components["schemas"]["SourcePayment"][];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

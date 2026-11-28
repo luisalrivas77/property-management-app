@@ -90,6 +90,10 @@ class PlanHeute(_Absent):
     # `above_target`; read by the on-track plan card („Jetzt anlegen“). Rounded like the reserve
     # in „Zum Teilen“.
     above_target: NonNegativeMoney | None = None
+    # §7.13 (d) 2: the reserve „X € von Y €“, the target and what is still missing to it (0 once
+    # reached); None without a target. The gap is the server's, the browser only formats it.
+    reserve_target: Money | None = None
+    reserve_gap: NonNegativeMoney | None = None
     window_from: YearMonth | None = None  # the closed months the mean is taken over
     window_to: YearMonth | None = None
     reserve_accounts: list[str] = Field(default_factory=list)
@@ -128,6 +132,27 @@ class PlanRates(Schema):
     reserve: ValueChangeRate | None = None
 
 
+class PlanSource(Schema):
+    """A source of a size in risks.yaml (the maintenance rate), or of the house price index."""
+
+    name: str
+    url: str
+    read_on: str
+
+
+class PlanHousePrices(Schema):
+    """„Noch nie erreicht“ (§7.13 (d) 5, D316): the property's typed yearly value change against
+    the German house price index, every run of `window_years` (the goal's years left, at least
+    1) Q4 to Q4: `reached` of `windows` grew at least as fast; `never` when none did, the mark;
+    `thin` under five windows. A mark beside the lever, never a block."""
+
+    window_years: int
+    windows: int
+    reached: int
+    never: bool
+    thin: bool
+
+
 class PlanPropertyAssumption(_Absent):
     """A property in the walk: kept (D301 (a) 5) or sold in its scenario's year, and its
     scenario's yearly value change. `kind` names it generically („Wohnung“); `label` only „Für
@@ -140,14 +165,18 @@ class PlanPropertyAssumption(_Absent):
     kept: bool
     sale_year: int | None
     value_change: AssumptionValue | None
+    # None without a typed change, in `generic` mode or without a window of that length
+    house_prices: PlanHousePrices | None = None
     label: str | None = None
 
 
 class PlanAssumptions(Schema):
-    """Card 4 „Eure Annahmen“: nothing the app chose."""
+    """Card 4 „Eure Annahmen“: nothing the app chose. `house_price_source` names the index
+    the properties' `house_prices` count over, present when one of them has it."""
 
     rates: PlanRates
     properties: list[PlanPropertyAssumption] = Field(default_factory=list)
+    house_price_source: PlanSource | None = None
 
 
 class PlanWeakMarkets(Schema):
@@ -198,14 +227,6 @@ class PlanRepair(Schema):
     delay_months: int | None = None
     not_until: YearMonth | None = None
     used_up: YearMonth | None = None
-
-
-class PlanSource(Schema):
-    """A source of a size in risks.yaml (the maintenance rate)."""
-
-    name: str
-    url: str
-    read_on: str
 
 
 class PlanRisks(_Absent):

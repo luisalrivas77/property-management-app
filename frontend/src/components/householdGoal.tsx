@@ -131,8 +131,14 @@ export function goalWordText(t: GT, goal: HouseholdGoal): string {
   }
 }
 
+/** The goal's year (§7.13 (d) 8, D316): a goal is judged by its year, so a goal stored with a
+ * month before it reads its year too. */
+export function dueYear(goal: { due_month: string }): string {
+  return goal.due_month.slice(0, 4);
+}
+
 export function goalTargetText(t: GT, p: PlanFormat, goal: Goal): string {
-  const month = p.month(goal.due_month);
+  const month = dueYear(goal);
   switch (goal.kind) {
     case "net_worth":
       return t.targetNetWorth(p.euro(goal.target), month);
@@ -181,7 +187,10 @@ export function GoalTileBody({ goal }: { goal: HouseholdGoal }) {
     <>
       <GoalHeadline goal={goal} goalSet={goal.goal} />
       {path ? (
-        <WordPill word={path.word} text={path.text} />
+        <>
+          <WordPill word={path.word} text={path.text} />
+          {path.figure ? <span className="tile-sub">{path.figure}</span> : null}
+        </>
       ) : goal.word && goal.word !== "none" ? (
         <WordPill word={goal.word} text={goalWordText(t, goal)} />
       ) : (
@@ -227,29 +236,6 @@ function FormLink({ href, children, className, ariaLabel }: { href: string; chil
     <Link href={href} className={className} aria-label={ariaLabel}>
       {children}
     </Link>
-  );
-}
-
-/** Übersicht's panel for „Euer Ziel“: the same card, and while the goal has no word, why and
- * what to do (principle 7: every gap with its button). The rest is on Haushalt › Ziel. */
-export function GoalOverviewPanel({ goal, formHref, onChanged }: { goal: HouseholdGoal; formHref: string; onChanged: () => void }) {
-  const t = useT(goalText);
-  const p = usePlanFormat();
-  if (!goal.goal) return null;
-  return (
-    <div className="stack">
-      <div className="goal-c">
-        <div className="goal-ch">
-          <h3>{t.title}</h3>
-          <FormLink href={formHref} className="goal-lnk" ariaLabel={t.changeGoal}>
-            {t.change}
-          </FormLink>
-        </div>
-        <GoalTileBody goal={goal} />
-        {goal.percent != null ? <p className="goal-one">{t.percentReached(p.percentValue(goal.percent))}</p> : null}
-      </div>
-      <GoalIssue goal={goal} formHref={formHref} onChanged={onChanged} />
-    </div>
   );
 }
 
@@ -388,7 +374,11 @@ export function useGoalView({
   info: GoalPlanInfo;
 }): GoalView {
   const t = useT(goalText);
-  const state = useLoad(enabled ? loadGoalData : loadNoGoal);
+  const loaded = useLoad(enabled ? loadGoalData : loadNoGoal);
+  // The goal read right after a write, shown until the goal is read again: a write's button
+  // stays busy until the new goal is on screen (§7.13 (d) 7, „Diesem Weg folgen“ felt slow).
+  const [written, setWritten] = useState<{ data: GoalData; of: GoalData | null | undefined } | null>(null);
+  const state: Loaded<GoalData | null> = written && written.of === loaded.data ? { ...loaded, data: written.data } : loaded;
   const detail = useDetail(GOAL_DETAIL);
   const data = state.data ?? null;
 
@@ -396,7 +386,7 @@ export function useGoalView({
     // From the default in force now, so a write never supersedes an old row (not_current).
     const current = currentDefault(await loadScenarioHistory());
     await saveDefaultScenario(patch(fillLevers(current?.levers)), current);
-    state.reload();
+    setWritten({ data: await loadGoalData(), of: loaded.data });
     onWritten();
   };
 
@@ -549,6 +539,7 @@ function GoalCards({ goal, goalSet, onChanged }: { goal: HouseholdGoal; goalSet:
         ) : (
           <WordPill word="none" text={goalWordText(t, goal)} />
         )}
+        {path?.figure ? <p className="goal-one">{path.figure}</p> : null}
         {keepsOnTrack(goal) ? (
           <p className="goal-one">{t.keepOnTrack(p.euro(goal.heute))}</p>
         ) : chosen && goal.issue == null ? (
@@ -629,14 +620,14 @@ function PathSummaryCard({ view }: { view: PathView }) {
   );
 }
 
-/** „500.000 € · Dez. 2031“: the target in euros (a reserve goal in months) and the due month. */
+/** „500.000 € · 2031“: the target in euros (a reserve goal in months) and the goal's year. */
 function GoalHeadline({ goal, goalSet }: { goal: HouseholdGoal; goalSet: Goal }) {
   const t = useT(goalText);
   const p = usePlanFormat();
   const target = goalSet.kind === "reserve_months" ? t.headMonths(p.short(goalSet.target)) : p.euro(goal.target ?? goalSet.target);
   return (
     <span className="goal-n">
-      {target} · {p.month(goalSet.due_month)}
+      {target} · {dueYear(goalSet)}
     </span>
   );
 }
@@ -735,18 +726,18 @@ function BasisCard({ goal }: { goal: HouseholdGoal }) {
   );
 }
 
-/** „So wie jetzt“: the value at the due month without change, what is missing, and the chart of
+/** „So wie jetzt“: the value at the end of the goal's year without change, what is missing, and the chart of
  * the server's points (`path`), only scaled to the drawing here. */
 function AsIsCard({ goal, goalSet }: { goal: HouseholdGoal; goalSet: Goal }) {
   const t = useT(goalText);
   const p = usePlanFormat();
-  const due = p.month(goalSet.due_month);
+  const due = dueYear(goalSet);
   const short = goal.short_at_due;
   return (
     <div className="goal-c">
       <CardHead title={t.asIsTitle} />
       <Stats count={short != null ? 2 : 1}>
-        <Stat value={p.euro(goal.projected)} label={t.atMonth(due)} />
+        <Stat value={p.euro(goal.projected)} label={t.atYearEnd(due)} />
         {short != null ? <Stat value={`−${p.euro(short)}`} label={t.missing} warn /> : null}
       </Stats>
       <GoalChart goal={goal} label={t.chartLabel(due)} />
@@ -875,6 +866,7 @@ function lessSpending(goal: HouseholdGoal): GoalScenario | null {
 /** „Andere Wege“: routes 2, 3 and 4, each a row that opens its panel (D302, D303). */
 function OtherRoutesCard({ goal }: { goal: HouseholdGoal }) {
   const t = useT(goalText);
+  const tp = useT(goalPathText);
   const p = usePlanFormat();
   const detail = useDetail(GOAL_DETAIL);
   const ret = goal.more_return ?? null;
@@ -897,7 +889,7 @@ function OtherRoutesCard({ goal }: { goal: HouseholdGoal }) {
               {t.onlyMoreReturn}
               {returnTag ? <span className={`goal-tag ${returnClass}`}>{returnTag}</span> : null}
             </span>
-            <b>{ret.needed_return != null ? p.ratio(ret.needed_return) : "–"}</b>
+            <b>{ret.needed_return != null ? tp.perYear(p.ratio(ret.needed_return)) : "–"}</b>
           </a>
         ) : null}
         {less ? (
@@ -989,7 +981,7 @@ function BalancedPanel({ goal, follow }: { goal: HouseholdGoal; follow: Follow }
   if (!balanced || !goal.goal) return null;
   return (
     <div className="stack goal-panel">
-      {goal.short_at_due != null ? <p>{t.gapLine(p.month(goal.goal.due_month), p.euro(goal.short_at_due))}</p> : null}
+      {goal.short_at_due != null ? <p>{t.gapLine(dueYear(goal.goal), p.euro(goal.short_at_due))}</p> : null}
       <p>{balanced.return_rate != null ? t.balancedRate(p.ratio(balanced.return_rate)) : t.balancedTyped}</p>
       <p>{balanced.saving_extra != null ? t.balancedHalf : t.balancedTooMuch}</p>
       {!isZero(balanced.moved_to_saving) ? <p>{t.balancedMoved(p.euro(balanced.moved_to_saving))}</p> : null}
@@ -1127,7 +1119,11 @@ function WordsPanel({ goal }: { goal: HouseholdGoal }) {
   const generic = mode === "generic";
   const less = lessSpending(goal);
   const ret = goal.more_return ?? null;
-  const due = goal.goal ? p.month(goal.goal.due_month) : "";
+  const due = goal.goal ? dueYear(goal.goal) : "";
+  // With the goal's path at a higher return, the sentence the card leaves out (§7.13 (d) 1).
+  const tp = useT(goalPathText);
+  const path = usePathWord(goal);
+  const view = path?.view ?? null;
   const today = (word: GoalWord): string | null => {
     switch (word) {
       case "on_track":
@@ -1152,6 +1148,10 @@ function WordsPanel({ goal }: { goal: HouseholdGoal }) {
   ];
   return (
     <div className="stack goal-panel">
+      {path?.sentence ? <p>{path.sentence}</p> : null}
+      {path?.sentence && view?.windows != null && view.reached_windows != null && view.path.window_years != null ? (
+        <p>{tp.windowsLine(view.path.window_years, view.reached_windows, view.windows)}</p>
+      ) : null}
       <div className="goal-words">
         {words.map((row) => {
           const current = row.word === goal.word;
@@ -1345,7 +1345,7 @@ function ScenarioPanel({
 }) {
   const t = useT(goalText);
   const p = usePlanFormat();
-  const due = goal.goal ? p.month(goal.goal.due_month) : "";
+  const due = goal.goal ? dueYear(goal.goal) : "";
   const name = scenarioName(t, scenario.kind);
   const budgets = scenario.budgets ?? [];
   const rest = scenario.rest;
@@ -1413,11 +1413,11 @@ function currentMonth(): string {
   return todayIso().slice(0, 7);
 }
 
-function nextMonth(): string {
+/** The first year a goal may be set for: this one, unless its December is the current month
+ * (the server refuses a goal whose year ends with the current month or before). */
+function firstYear(): number {
   const [year = "0", month = "1"] = currentMonth().split("-");
-  const y = Number(year);
-  const m = Number(month);
-  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+  return Number(month) === 12 ? Number(year) + 1 : Number(year);
 }
 
 /** "500000.00" and "500000" are the same amount; "6.50" and "6.5" the same months. */
@@ -1431,7 +1431,8 @@ function GoalForm({ goal, write, onDone }: { goal: Goal | null; write: Write; on
   const ids = useId();
   const [kind, setKind] = useState<GoalKind>(goal?.kind ?? "net_worth");
   const [amount, setAmount] = useState(goal ? decimalInput(goal.target) : "");
-  const [due, setDue] = useState(goal?.due_month ?? "");
+  // §7.13 (d) 8 (D316): the form asks for a year; a goal stored with a month keeps its year.
+  const [due, setDue] = useState(goal ? dueYear(goal) : "");
   const [errors, setErrors] = useState<{ amount?: string; due?: string }>({});
   const [unchanged, setUnchanged] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1464,14 +1465,15 @@ function GoalForm({ goal, write, onDone }: { goal: Goal | null; write: Write; on
     const target = parseTarget();
     const next: { amount?: string; due?: string } = {};
     if (!target.ok) next.amount = target.message;
-    if (!/^\d{4}-\d{2}$/.test(due) || due <= currentMonth()) next.due = t.dueInvalid;
+    const year = due.trim();
+    if (!/^\d{4}$/.test(year) || Number(year) < firstYear()) next.due = t.dueInvalid;
     setErrors(next);
     if (!target.ok || next.due) return;
-    if (goal && goal.kind === kind && goal.due_month === due && sameNumber(goal.target, target.value)) {
+    if (goal && goal.kind === kind && dueYear(goal) === year && sameNumber(goal.target, target.value)) {
       setUnchanged(true);
       return;
     }
-    const saved: Goal = { kind, target: target.value, due_month: due, set_on: todayIso() };
+    const saved: Goal = { kind, target: target.value, due_month: `${year}-12`, set_on: todayIso() };
     if (await run(() => write((levers) => ({ ...levers, goal: saved })))) onDone();
   };
 
@@ -1494,7 +1496,7 @@ function GoalForm({ goal, write, onDone }: { goal: Goal | null; write: Write; on
         <input inputMode="decimal" autoComplete="off" value={amount} onChange={(event) => setAmount(event.target.value)} />
       </Field>
       <Field id={`${ids}-due`} label={t.due} hint={t.dueHint} errors={errors.due ? [errors.due] : []}>
-        <input type="month" min={nextMonth()} value={due} onChange={(event) => setDue(event.target.value)} />
+        <input inputMode="numeric" autoComplete="off" maxLength={4} placeholder={String(firstYear())} value={due} onChange={(event) => setDue(event.target.value)} />
       </Field>
       <div className="row">
         <button type="submit" disabled={busy}>

@@ -234,6 +234,7 @@ def _reserve(health: Health, household: BandLimits | None) -> VerdictPart:
         amount=reserve.amount,
         months=reserve.months,
         target=reserve.target,
+        gap=reserve.gap,
         target_months=reserve.target_months,
         strained_amount=_cent(strained.value * reserve.target),
         **common,

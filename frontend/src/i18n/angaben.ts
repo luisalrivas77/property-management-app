@@ -8,6 +8,8 @@ export const angaben = defineMessages({
   de: {
     title: "Eure Angaben",
     back: "‹ Eure Angaben",
+    nextTopic: (name: string) => `Weiter: ${name}`,
+    allTopics: "Zurück zu den Themen",
     topicsLabel: "Themen",
     proposalsTitle: (n: number) => (n === 1 ? "Aus euren Konten: 1 Vorschlag" : `Aus euren Konten: ${n} Vorschläge`),
     proposalsLine: "Zahlungen, die eure Steuer senken können. Ihr bestätigt jede einzeln.",
@@ -105,6 +107,8 @@ export const angaben = defineMessages({
   en: {
     title: "Your details",
     back: "‹ Your details",
+    nextTopic: (name: string) => `Next: ${name}`,
+    allTopics: "Back to the topics",
     topicsLabel: "Topics",
     proposalsTitle: (n: number) => (n === 1 ? "From your accounts: 1 suggestion" : `From your accounts: ${n} suggestions`),
     proposalsLine: "Payments that can lower your tax. You confirm each one.",

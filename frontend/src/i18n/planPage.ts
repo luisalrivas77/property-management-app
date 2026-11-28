@@ -60,7 +60,7 @@ export const planPageText = defineMessages({
     onTrackCard: "Ihr seid auf Kurs",
     moreInvest: "+ mehr anlegen",
     lessWants: "− weniger ausgeben",
-    atGoal: "Am Ziel",
+    atGoal: "Voraussichtlich am Ziel",
     notReached: "nicht erreicht",
     planPanelText: (without: string, gap: string) =>
       `So wie heute erreicht ihr ${without}. Die Lücke von ${gap} schließt ihr durch mehr Anlegen und weniger Wünsche.`,
@@ -86,6 +86,12 @@ export const planPageText = defineMessages({
     assumptionsText: "Die Raten habt ihr selbst eingetragen; Hausbuch wählt keine.",
     keptProperty: "behalten",
     soldIn: (year: number) => `Verkauf ${year}`,
+    neverReached: "Noch nie erreicht",
+    housePrices: "Hauspreise in Deutschland",
+    housePricesReached: (reached: number, windows: number, years: number) =>
+      `${reached} von ${windows} Zeiträumen à ${years} ${years === 1 ? "Jahr" : "Jahren"}`,
+    housePricesText:
+      "So oft sind die Hauspreise in Deutschland über so viele Jahre wie bis zu eurem Ziel mindestens so stark gestiegen wie euer Wertzuwachs. „Noch nie erreicht“ ist ein Hinweis, keine Sperre.",
     valueChange: "Wert im Jahr",
     toRates: "Raten ändern",
     // 5 Wenn es schlechter läuft
@@ -208,7 +214,7 @@ export const planPageText = defineMessages({
     onTrackCard: "You are on track",
     moreInvest: "+ invest more",
     lessWants: "− spend less",
-    atGoal: "At the goal",
+    atGoal: "Expected at the goal",
     notReached: "not reached",
     planPanelText: (without, gap) => `As things are you reach ${without}. You close the gap of ${gap} by investing more and spending less on wants.`,
     keepSaving: "Keep saving",
@@ -231,6 +237,11 @@ export const planPageText = defineMessages({
     assumptionsText: "You entered these rates yourselves; Hausbuch chooses none.",
     keptProperty: "kept",
     soldIn: (year) => `Sale ${year}`,
+    neverReached: "Never reached",
+    housePrices: "House prices in Germany",
+    housePricesReached: (reached, windows, years) => `${reached} of ${windows} periods of ${years} ${years === 1 ? "year" : "years"}`,
+    housePricesText:
+      "How often house prices in Germany rose at least as fast as your value change, over as many years as are left until your goal. „Never reached“ is a note, not a block.",
     valueChange: "Value per year",
     toRates: "Change rates",
     risksCard: "If things go worse",

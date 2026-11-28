@@ -188,7 +188,7 @@ def household_goal(i: GoalInputs) -> HouseholdGoal:
         "percent": percent(i.value_today, target),
         "heute": i.heute,
     }
-    left = months_after(current_month(i.today), goal.due_month)
+    left = months_after(current_month(i.today), goal.year_end)
     if left <= 0:
         return HouseholdGoal(word=None, issue=GoalIssue.DUE_PASSED, **known)
     known["months_left"] = left
@@ -197,21 +197,30 @@ def household_goal(i: GoalInputs) -> HouseholdGoal:
         return HouseholdGoal(word=None, issue=GoalIssue.NO_PROJECTION, todos=list(i.todos), **known)
     if goal.kind is not GoalKind.NET_WORTH:
         p = replace(p, split=None)  # the reserve itself is counted: nothing moves out of it
-    if goal.due_month > last_month(p):  # forty years after the newest closed month
+    if goal.year_end > last_month(p):  # forty years after the newest closed month
         return HouseholdGoal(word=None, issue=GoalIssue.BEYOND_PROJECTION, **known)
     known["assumptions"] = _assumptions(p)
     as_is = walk(p)
-    due = as_is.at(goal.due_month)
+    due = as_is.at(goal.year_end)
     if due is None:  # the reserve runs out on the way
         return HouseholdGoal(word=None, issue=GoalIssue.USED_UP, used_up=as_is.used_up, **known)
     projected = value_of(goal, due)
+    # §7.13 (d) 8 (D316): reached at any month-end of the goal's year counts, up to 31 December;
+    # a goal reached in its year and below the target again by December is on track, so it
+    # needs no extra, no route and no cut
+    in_year = any(
+        value_of(goal, m) >= target
+        for m in as_is.months
+        if m.month[:4] == goal.year_end[:4] and m.month <= goal.year_end
+    )
+    short = projected < target and not in_year
     first = add_months(current_month(i.today), 1)
     reaches = _reaches(i, p, target, first)
-    extra = _smallest(lambda e: reaches(e, ()), EXTRA_CEILING, grow=True)
+    extra = _smallest(lambda e: reaches(e, ()), EXTRA_CEILING, grow=True) if short else ZERO
     noetig = None if extra is None or extra > i.mean_income else i.heute + extra
     known |= {
         "projected": projected,
-        "short_at_due": target - projected if projected < target else None,
+        "short_at_due": target - projected if short else None,
         "sales": _sales(p),
         "noetig": noetig,
         "reached": reached_in(goal, as_is, target),
@@ -222,15 +231,15 @@ def household_goal(i: GoalInputs) -> HouseholdGoal:
     known["more_return"] = more_return
     with_budget = None
     if i.choice is not None and i.choice.spending is not None and i.household_changes:
-        adopted = walk(p, i.household_changes, until=goal.due_month)
-        with_budget = reached_in(goal, adopted, target, until=goal.due_month)
+        adopted = walk(p, i.household_changes, until=goal.year_end)
+        with_budget = reached_in(goal, adopted, target, until=goal.year_end)
         if with_budget is None:  # the adopted budget is walked to the due month only
             with_budget = reached_in(goal, walk(p, i.household_changes), target)
     known["reached_with_budget"] = with_budget
-    on_track = projected >= target or (with_budget is not None and with_budget <= goal.due_month)
+    on_track = not short or (with_budget is not None and with_budget <= goal.year_end)
     scenarios: list[GoalScenario] = []
     balanced_walk: Walk | None = None
-    if projected < target:
+    if short:
         scenarios = _scenarios(i, p, target, extra, first)
         # D311: one growth assumption for every goal, the typed rates (route 3 is shown beside)
         bp, balanced = p, _balanced(i, reaches, extra, first)
@@ -238,12 +247,12 @@ def household_goal(i: GoalInputs) -> HouseholdGoal:
             balanced_walk = walk(
                 bp,
                 balanced.spending_changes,
-                until=goal.due_month,
+                until=goal.year_end,
                 extra=balanced.saving_extra,
                 extra_from=first,
             )
             balanced = balanced.model_copy(
-                update={"reached": reached_in(goal, balanced_walk, target, goal.due_month)}
+                update={"reached": reached_in(goal, balanced_walk, target, goal.year_end)}
             )
         known["balanced"] = balanced
     known["path"] = _path(goal, as_is, balanced_walk)
@@ -338,7 +347,7 @@ def _plan_path(
         state, step = _step_2(i, p, target, left, room, first)
         extra = room if state is GoalPathState.DOABLE_RETURN else None
     if extra is None:
-        due = i.goal.due_month
+        due = i.goal.year_end
         with_room = walk(p, extra=room, extra_from=first)
         month = with_room.at(due)
         why = GoalPathWhy(
@@ -374,7 +383,7 @@ def _plan_path(
         wants_budget=budgets,
         # never below 0: refunds above the wants of the window leave a budget of 0, not less
         wants_budget_total=max(net, ZERO) - sum(cuts.values(), ZERO),
-        spending_changes=_changes(i.code_means, cuts, first, i.goal.due_month),
+        spending_changes=_changes(i.code_means, cuts, first, i.goal.year_end),
         adoptable=True,
         **head,
         **step,
@@ -417,7 +426,7 @@ def _path_walk(i: GoalInputs, path: GoalPath) -> Walk | None:
     budget = i.choice is not None and i.choice.spending is not None
     changes = i.household_changes if path.state is GoalPathState.ON_TRACK and budget else ()
     first = add_months(current_month(i.today), 1)
-    return walk(p, changes, until=i.goal.due_month, extra=path.extra or ZERO, extra_from=first)
+    return walk(p, changes, until=i.goal.year_end, extra=path.extra or ZERO, extra_from=first)
 
 
 def _step_2(
@@ -428,7 +437,7 @@ def _step_2(
         return GoalPathState.HARDLY, {}
     years = H.window_years(left)
     # D312: the money still to come is what the walk at the whole room invests
-    coming = walk(p, until=i.goal.due_month, extra=room, extra_from=first).invested
+    coming = walk(p, until=i.goal.year_end, extra=room, extra_from=first).invested
     mix = H.mix_of(i.invested, p.split, i.history, years, future=coming)
     if isinstance(mix, H.NoCount):
         return GoalPathState.HARDLY, {}
@@ -470,7 +479,7 @@ def _needed_return(
     """The smallest rate in thousandths that reaches the target at the due month with nothing
     else changed (or with `extra` a month from `first`, the path's step 2); −50 % when even
     that reaches it, None when +100 % does not."""
-    due = i.goal.due_month
+    due = i.goal.year_end
 
     def ok(k: int) -> bool:
         w = walk(_at_rate(p, Decimal(k) / 1000), until=due, extra=extra, extra_from=first)
@@ -508,7 +517,7 @@ def _more_return(
         return GoalMoreReturn(reason=GoalRouteReason.NOTHING_INVESTED), None
     years = H.window_years(left)
     # D312: the money still to come is what the household's own walk invests
-    coming = walk(p, until=i.goal.due_month).invested
+    coming = walk(p, until=i.goal.year_end).invested
     mix = H.mix_of(i.invested, p.split, i.history, years, future=coming)
     if isinstance(mix, H.NoCount):
         return GoalMoreReturn(reason=mix.reason, left_out=list(mix.left_out)), None
@@ -566,7 +575,7 @@ def _sales(p: Projection) -> list[GoalSale]:
 def _path(goal: Goal, as_is: Walk, balanced: Walk | None) -> list[GoalPoint]:
     """The chart's points up to the due month: the first walked month, each December before
     the due month and the due month, from the walk without change and the balanced route's."""
-    due = goal.due_month
+    due = goal.year_end
     months = [
         m
         for k, m in enumerate(as_is.months)
@@ -605,7 +614,7 @@ Reaches = Callable[[Decimal, Sequence[SpendingChange]], bool]
 def _reaches(i: GoalInputs, p: Projection, target: Decimal, first: str) -> Reaches:
     """Whether the walk with `extra` a month from next month and the spending `changes` reaches
     the target at the due month."""
-    due = i.goal.due_month
+    due = i.goal.year_end
 
     def reaches(extra: Decimal, changes: Sequence[SpendingChange]) -> bool:
         w = walk(p, changes, until=due, extra=extra, extra_from=first)
@@ -701,7 +710,7 @@ def _balanced(
             if (cut := min(limits[code], share)) > 0:
                 cuts[code] = cut
     cut = sum(cuts.values(), ZERO)
-    changes = _changes(i.code_means, cuts, first, i.goal.due_month)
+    changes = _changes(i.code_means, cuts, first, i.goal.year_end)
     saving_extra = _smallest(lambda e: reaches(e, changes), i.mean_income)
     return GoalBalanced(
         budgets=[
@@ -740,7 +749,7 @@ def _cut(
         GoalBudget(code=c, budget_class=i.classes[c], mean=means[c], budget=means[c] - cuts[c])
         for c in sorted(means, key=lambda c: c.value)
     ]
-    changes = _changes(i.code_means, cuts, first, i.goal.due_month)
+    changes = _changes(i.code_means, cuts, first, i.goal.year_end)
     return GoalScenario(
         kind=kind,
         closes=_closes(i, p, target, changes),
@@ -778,8 +787,8 @@ def _changes(
 def _closes(
     i: GoalInputs, p: Projection, target: Decimal, changes: Sequence[SpendingChange]
 ) -> bool:
-    w = walk(p, changes, until=i.goal.due_month)
-    month = w.at(i.goal.due_month)
+    w = walk(p, changes, until=i.goal.year_end)
+    month = w.at(i.goal.year_end)
     return month is not None and value_of(i.goal, month) >= target
 
 

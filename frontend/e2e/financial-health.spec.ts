@@ -39,6 +39,7 @@ const VERDICT: Verdict = {
       amount: "12000.00",
       months: "3.08",
       target: "23400.00",
+      gap: "11400.00",
       target_months: "6",
       strained: "0.5",
       strained_amount: "11700.00",
@@ -120,6 +121,10 @@ test("Übersicht shows one word with its dot, the panel explains it with three q
   await expect(rate).toHaveAttribute("data-state", "good");
   await expect(rate).toContainText("25,0 %");
   await expect(rate).toContainText("Standard-Grenze");
+  // The reserve as „X € von Y €“ with the gap the server serves (phase 10 §7.13 (d) 2).
+  const reserve = panel.getByRole("group", { name: "Liquiditätsreserve" });
+  await expect(reserve.locator(".verdict-value")).toHaveText(/12\.000\s€ von 23\.400\s€/);
+  await expect(reserve).toContainText(/noch 11\.400\s€ bis zum Ziel/);
   // No loan: no figure and no limits, the question answered by its headline.
   const loans = panel.getByRole("group", { name: "Schuldendienstquote" });
   await expect(loans).toContainText("Ihr habt keinen Kredit.");

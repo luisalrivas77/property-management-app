@@ -16,13 +16,10 @@
 // - Planung's old Immobilie links land on Anlagen › Immobilie with their levers.
 // - „Für euer Ziel“ (§7.9 (e) 3) sits after the gain card when the household follows a route
 //   (GET /household-goal/tracking mocked), with no sideways scroll on a phone, light and dark.
-// - „Wertzuwachs fürs Ziel“ (§7.9 (e) items 1, 2) on Anlagen › Immobilie for a property the goal's
-//   walk sells (GET /household-goal/properties mocked; the property is real), its windows and
-//   source in the side panel, no sideways scroll on a phone, light and dark.
 import type { Page, Route } from "@playwright/test";
 
 import type { components } from "../src/api/types";
-import { apiCall, expect, test } from "./support";
+import { expect, test } from "./support";
 
 type AssetsOverview = components["schemas"]["AssetsOverview"];
 type AssetsPerformance = components["schemas"]["AssetsPerformance"];
@@ -32,7 +29,6 @@ type EtfToday = components["schemas"]["EtfToday"];
 type CryptoHoldings = components["schemas"]["CryptoHoldings"];
 type NetWorthPoint = components["schemas"]["NetWorthPoint"];
 type GoalTracking = components["schemas"]["GoalTracking"];
-type GoalProperties = components["schemas"]["GoalProperties"];
 
 const DEPOT = "00000000-0000-4000-8000-000000000a01";
 const EXCHANGE = "00000000-0000-4000-8000-000000000a02";
@@ -380,70 +376,46 @@ test("following the adopted path, „Für euer Ziel“ draws the growth against 
   await page.screenshot({ path: test.info().outputPath("goal-track-path-panel.png") });
 });
 
-test("„Wertzuwachs fürs Ziel“ on Immobilie opens its windows, with no sideways scroll on a phone", async ({ page, signedIn }) => {
+test("the path on the day adopted: the card shows with its chart from the day; a failed read is a card", async ({ page, signedIn }) => {
   void signedIn;
-  const property = await apiCall<{ id: string }>(page, "POST", "/api/properties", {
-    label: "Wohnung Ziel",
-    kind: "etw",
-    address: { street: "Teststraße", house_number: "7", postal_code: "10115", city: "Berlin", country_code: "DE" },
-    build_year: 1994,
-    notarized_on: "2026-03-10",
-    purchase_date: "2026-07-01",
-    purchase_price: "300000.00",
-  });
-  const growth: GoalProperties = {
+  await holdings(page);
+  // §7.13 (d) 3: on the day adopted no month-end has closed, so there is no row yet; the server's
+  // first point is the day adopted at 0 % and the card draws from it. Invented figures.
+  const tracking: GoalTracking = {
     shown: true,
     reason: null,
-    properties: [
-      {
-        property_id: property.id,
-        available: true,
-        reason: null,
-        typed_growth: "0.020",
-        needed_growth: "0.030",
-        sale_year: 2036,
-        window_years: 5,
-        windows: 16,
-        reached_windows: 10,
-        median: "0.039",
-        best: "0.087",
-        verdict: "within_history",
-        thin: false,
-        source: {
-          key: "house_prices",
-          source: "Eurostat, Hauspreisindex (prc_hpi_q)",
-          url: "https://ec.europa.eu/eurostat/databrowser/view/prc_hpi_q/default/table",
-          licence: "CC BY 4.0",
-          attribution: "Eurostat (prc_hpi_q), Statistisches Bundesamt",
-          read_on: "2026-11-26",
-          own_calculation: "Eigene Berechnung",
-          first_year: 2005,
-          last_year: 2025,
-        },
-      },
-    ],
+    route: "path",
+    chosen_on: "2026-11-28",
+    rate: "0.068",
+    word: "on_path",
+    short: [],
+    reserve_depots: 0,
+    rows: [],
+    points: [{ month_end: "2026-11-28", needed: "0.00", actual: "0.00", behind: false }],
   };
-  await serve(page, "/api/household-goal/properties", () => growth);
-  await page.setViewportSize({ width: 390, height: 844 });
-  const backgrounds: string[] = [];
-  for (const scheme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: scheme });
-    await page.goto("/assets?tab=immobilie");
-    const card = page.getByTestId("property-growth");
-    await expect(card).toContainText("Wertzuwachs fürs Ziel");
-    await expect(card).toContainText("3,0 % im Jahr");
-    await expect(card).toContainText("Hauspreise: oft erreicht");
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-    backgrounds.push(await page.evaluate(() => getComputedStyle(document.body).backgroundColor));
-    await card.evaluate((node) => node.scrollIntoView({ block: "center" }));
-    await page.screenshot({ path: test.info().outputPath(`property-growth-${scheme}.png`) });
-    await card.click();
-    const panel = page.getByTestId("property-growth-panel");
-    await expect(panel).toContainText("10 von 16");
-    await expect(panel).toContainText("Zeiträume à 5 Jahre");
-    await expect(panel).toContainText("ohne Miete und Kosten");
-    await expect(panel).toContainText("Eurostat (prc_hpi_q), Statistisches Bundesamt");
-    await page.screenshot({ path: test.info().outputPath(`property-growth-panel-${scheme}.png`) });
-  }
-  expect(backgrounds[0]).not.toEqual(backgrounds[1]);
+  let fail = false;
+  await page.route(
+    (url) => url.pathname === "/api/household-goal/tracking",
+    (route: Route) =>
+      route.request().method() !== "GET"
+        ? route.fallback()
+        : fail
+          ? route.fulfill({ status: 500, json: { error: "internal" } })
+          : route.fulfill({ json: tracking }),
+  );
+  await page.goto("/assets");
+  const card = page.getByTestId("goal-tracking");
+  await expect(card).toContainText("Auf dem Pfad");
+  await expect(card.getByTestId("path-chart")).toBeVisible();
+  await expect(page.getByTestId("goal-tracking-failed")).toHaveCount(0);
+
+  fail = true;
+  await page.reload();
+  const failed = page.getByTestId("goal-tracking-failed");
+  await expect(failed).toContainText("Für euer Ziel");
+  await expect(failed).toContainText("Nicht geladen");
+  await expect(page.getByTestId("goal-tracking")).toHaveCount(0);
+  fail = false;
+  await failed.getByRole("button", { name: "Erneut laden" }).click();
+  await expect(page.getByTestId("goal-tracking")).toContainText("Auf dem Pfad");
 });

@@ -1036,6 +1036,11 @@ function flatShortfall(plan: HouseholdPlan): string | null {
 /** Three cards (19f panel 6): the reserve with its accounts, what can be invested now and each
  * month, and the monthly need it is measured in. Every figure is the server's (D269); each card's
  * head opens its explanation in the side panel (cards, not text, 25 Nov 2026). */
+/** The server's gap is 0: the reserve has reached its target. */
+function reserveReached(gap: string): boolean {
+  return gap.startsWith("-") || /^0*(\.0*)?$/.test(gap);
+}
+
 function ReserveCards({ data }: { data: PlanData }) {
   const t = useT(goalText);
   const p = useT(playText);
@@ -1055,7 +1060,12 @@ function ReserveCards({ data }: { data: PlanData }) {
       <div className="goal-c">
         <CardHead kind={RESERVE_CARD} id="reserve" title={t.reserveTitle} />
         <Stats count={3}>
-          <Stat value={f.euro(reserve?.amount)} label={t.reserveToday} />
+          {/* „X € von Y €“ with „erreicht“ or „noch Z € bis zum Ziel“, the gap the server's
+              (§7.13 (d) 2, D316) */}
+          <Stat
+            value={reserve ? t.reserveOf(f.euro(reserve.amount), f.euro(reserve.target)) : "–"}
+            label={reserve ? (reserveReached(reserve.gap) ? t.reserveReached : t.reserveStill(f.euro(reserve.gap))) : t.reserveToday}
+          />
           <Stat
             value={reserve?.months != null ? t.reserveMonths(f.short(reserve.months)) : "–"}
             label={t.reserveTarget(f.short(reserve?.target_months ?? plan.levers.reserve_target_months))}

@@ -20,7 +20,7 @@ exactly the month phase 9's key figures are computed from.
 from __future__ import annotations
 
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self
@@ -662,6 +662,9 @@ class PlanCase(RouteCase):
     invested_this_month: Money = Decimal("0.00")  # the running month's booked investments
     budget_adopted: bool = False  # the balanced route's wants budget is the default scenario's
     switches: PlanSwitchesIn = Field(default_factory=lambda: PlanSwitchesIn())
+    # §7.13 (d) 5: an INVENTED house price index, Q4 value by year (never Eurostat's data);
+    # None: no index, so no property carries the comparison
+    house_index: dict[int, Decimal] | None = None
     expect: PlanExpect  # type: ignore[assignment]
 
 
@@ -947,96 +950,6 @@ class TrackerFixture(Schema):
     cases: list[TrackerCase]
 
 
-# --- goal_property.yaml (§7.9 (e), „(e) as decided for the build“ 1, 2; D289, D298) ---------
-
-
-def _cents(value: Decimal) -> Decimal:
-    return value.quantize(Decimal("0.01"), ROUND_HALF_UP)
-
-
-class GrowthPropertyIn(Schema):
-    """A property's default scenario as phase 4 projects its value: `base` the value today,
-    `typed_growth` the scenario's yearly value growth; with `selling_rate` its net proceeds in
-    the sale year are V − V × rate (to the cent) − the loan, no tax in these cases."""
-
-    base: Money
-    typed_growth: Annotated[Decimal, _STRING_ONLY]
-    selling_rate: Annotated[Decimal, _STRING_ONLY] | None = None
-
-    def value(self, growth: Decimal, years: int) -> Decimal:
-        return _cents(self.base * (Decimal(1) + growth) ** years)
-
-    def proceeds(self, growth: Decimal, years: int, loan: Decimal) -> Decimal:
-        if self.selling_rate is None:
-            raise ValueError("no selling rate")
-        v = self.value(growth, years)
-        return v - _cents(v * self.selling_rate) - loan
-
-
-GrowthReason = Literal["out_of_range", "history_short"]
-
-
-class GrowthExpect(Schema):
-    """One property's card: rates as fractions to 0.001 (0.030 = 3.0 %)."""
-
-    available: bool
-    reason: GrowthReason | None = None
-    typed_growth: Annotated[Decimal, _STRING_ONLY]
-    needed_growth: Annotated[Decimal, _STRING_ONLY] | None
-    sale_year: int
-    window_years: int
-    windows: int
-    reached_windows: int | None = None
-    median: Annotated[Decimal, _STRING_ONLY] | None = None
-    best: Annotated[Decimal, _STRING_ONLY] | None = None
-    verdict: Literal["within_history", "good_times", "never"] | None = None
-    thin: bool
-
-    @model_validator(mode="after")
-    def _reason(self) -> Self:
-        if self.available == (self.reason is not None):
-            raise ValueError("a card has a reason exactly when its count is not available")
-        return self
-
-
-class GrowthGoalExpect(Schema):
-    shown: bool
-    reason: Literal["generic_mode", "not_net_worth", "goal_issue"] | None = None
-    properties: dict[str, GrowthExpect] = Field(default_factory=dict)  # by flat key
-
-
-class GrowthCase(RouteCase):
-    """The walk's household (RouteCase's inputs) with each flat's scenario as phase 4 values
-    it and an INVENTED house price index (Q4 of each year), never Eurostat's."""
-
-    properties: dict[str, GrowthPropertyIn] = Field(default_factory=dict)
-    index: dict[int, Annotated[Decimal, _STRING_ONLY]] = Field(default_factory=dict)
-    expect: GrowthGoalExpect  # type: ignore[assignment]
-
-    @model_validator(mode="after")
-    def _phase4(self) -> Self:
-        """Each projected year's value is phase 4's at the typed growth, and the net proceeds
-        the closed form at it, so the cases hold whatever the rule does."""
-        for key, prop in self.properties.items():
-            flat = self.flats.get(key)
-            if flat is None or flat.sale_year is None:
-                continue
-            for year, (value, _loan) in flat.years.items():
-                if value != prop.value(prop.typed_growth, year - self.today.year):
-                    raise ValueError(f"{self.id}: {key} {year} is not phase 4's value")
-            if prop.selling_rate is not None:
-                n = flat.sale_year - self.today.year
-                loan = flat.years[flat.sale_year][1]
-                if flat.net_proceeds != prop.proceeds(prop.typed_growth, n, loan):
-                    raise ValueError(f"{self.id}: {key}'s net proceeds are not the closed form")
-        return self
-
-
-class GrowthFixture(Schema):
-    bases: dict[str, Any] = Field(default_factory=dict)  # YAML anchors only
-    cases: list[GrowthCase]
-
-
 # --- reference_returns.yaml (§7.11 (c) 3, D310 amended) -------------------------------------
 
 
@@ -1218,12 +1131,12 @@ MODELS: dict[str, type[Schema]] = {
     "goal_routes": RouteFixture,
     "goal_path": PathFixture,
     "reserve_above": RouteFixture,
+    "goal_property_sale": RouteFixture,
     "plan_page": PlanFixture,
     "investment_split": InvestmentSplitFixture,
     "booked_inputs": BookedInputsFixture,
     "angaben_topics": AngabenTopicsFixture,
     "goal_invest": TrackerFixture,
-    "goal_property": GrowthFixture,
 }
 
 

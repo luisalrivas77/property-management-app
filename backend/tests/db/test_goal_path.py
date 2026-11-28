@@ -450,7 +450,9 @@ def test_tracking_rows_for_each_stored_month_end_since_the_day_adopted(world):
         date(2027, 2, 28),
         date(2027, 3, 31),
     ]
-    assert [p.month_end for p in got.points] == [r.month_end for r in got.rows]
+    # The chart starts on the day adopted at 0 %, then one point per row (§7.13 (d) 3).
+    assert [p.month_end for p in got.points] == [date(2027, 1, 2)] + [r.month_end for r in got.rows]
+    assert (got.points[0].needed, got.points[0].actual) == (Decimal("0.00"), Decimal("0.00"))
     assert [r.invested for r in got.rows] == [
         Decimal("75.00"),
         Decimal("85.00"),

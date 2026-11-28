@@ -7674,34 +7674,6 @@
         }
       }
     },
-    "/api/household-goal/properties": {
-      "get": {
-        "summary": "Household Goal Properties",
-        "operationId": "household_goal_properties_api_household_goal_properties_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GoalProperties"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/household-goal/plan": {
       "get": {
         "summary": "Household Goal Plan",
@@ -7839,7 +7811,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HouseholdScenario"
+                  "$ref": "#/components/schemas/HouseholdScenarioAdopted"
                 }
               }
             }
@@ -9610,7 +9582,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/AllocationFact"
+                    "$ref": "#/components/schemas/SourcePayment"
                   },
                   "title": "Response Property Anlage V Sources Api Properties  Property Id  Anlage V Sources Get"
                 }
@@ -13368,177 +13340,6 @@
         ],
         "title": "AllocationDraft",
         "description": "What a matcher, a rule, the model or the user proposes for part of a transaction.\namount is signed like the transaction (a debit's parts are negative)."
-      },
-      "AllocationFact": {
-        "properties": {
-          "allocation_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Allocation Id"
-          },
-          "booking_date": {
-            "type": "string",
-            "format": "date",
-            "title": "Booking Date"
-          },
-          "value_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Value Date"
-          },
-          "amount": {
-            "type": "string",
-            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
-            "title": "Amount"
-          },
-          "category": {
-            "$ref": "#/components/schemas/AllocationCategory"
-          },
-          "recurring": {
-            "type": "boolean",
-            "title": "Recurring",
-            "default": false
-          },
-          "service_period": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServicePeriod"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "due_on": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Due On"
-          },
-          "transaction_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Transaction Id"
-          },
-          "property_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Property Id"
-          },
-          "unit_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Id"
-          },
-          "tenancy_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tenancy Id"
-          },
-          "loan_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Loan Id"
-          },
-          "document_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Document Id"
-          },
-          "invoice_net": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Invoice Net"
-          },
-          "counterparty_iban_masked": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^[A-Z]{2}[0-9]{2} \\*{4} [A-Z0-9]{4}$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Counterparty Iban Masked"
-          },
-          "account_purpose": {
-            "$ref": "#/components/schemas/AccountPurpose",
-            "default": "rental"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "allocation_id",
-          "booking_date",
-          "amount",
-          "category"
-        ],
-        "title": "AllocationFact",
-        "description": "A confirmed allocation as the draft sees it. Amount signed (income +, costs −); a 0.00\nrow may be present and is ignored by every rule (D70). invoice_net is this allocation's\nshare of the linked invoice extraction's amount_net (a magnitude), for the 15 % tracker\n(D56): the whole net for a payment of the whole bill, net × part ÷ gross for one part of a\nbill split by its lines (phase 2 D135)."
       },
       "AllocationMethod": {
         "type": "string",
@@ -24564,7 +24365,7 @@
           "behind"
         ],
         "title": "GoalPathPoint",
-        "description": "The chart on Anlagen: the change needed and the change made, cumulative, per row."
+        "description": "The chart on Anlagen: the change needed and the change made, cumulative, per row; the\nfirst point is the day adopted (`month_end` that day, both 0), §7.13 (d) 3."
       },
       "GoalPathRow": {
         "properties": {
@@ -24837,173 +24638,6 @@
         ],
         "title": "GoalPoint",
         "description": "One point of the goal's chart (mockup 19f „So wie jetzt“): the goal's value at a month's\nend on the walk without change, and on the balanced route's walk while it closes. The\npoints are the first walked month, each December before the due month, and the due month."
-      },
-      "GoalProperties": {
-        "properties": {
-          "shown": {
-            "type": "boolean",
-            "title": "Shown"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/GoalPropertiesReason"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "properties": {
-            "items": {
-              "$ref": "#/components/schemas/GoalPropertyGrowth"
-            },
-            "type": "array",
-            "title": "Properties"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "shown"
-        ],
-        "title": "GoalProperties",
-        "description": "`GET /household-goal/properties`: one card per property the goal's walk values at the\ndue month with its default scenario (none for a property kept without one, none for one\nsold before the due month). Computed on read, never stored; own use only."
-      },
-      "GoalPropertiesReason": {
-        "type": "string",
-        "enum": [
-          "generic_mode",
-          "no_goal",
-          "not_net_worth",
-          "goal_issue"
-        ],
-        "title": "GoalPropertiesReason",
-        "description": "Why no property card is shown."
-      },
-      "GoalPropertyGrowth": {
-        "properties": {
-          "property_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Property Id"
-          },
-          "available": {
-            "type": "boolean",
-            "title": "Available",
-            "default": false
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/GoalRouteReason"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "typed_growth": {
-            "type": "string",
-            "pattern": "^-?[0-9]+(\\.[0-9]{1,6})?$",
-            "title": "Typed Growth"
-          },
-          "needed_growth": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Needed Growth"
-          },
-          "sale_year": {
-            "type": "integer",
-            "title": "Sale Year"
-          },
-          "window_years": {
-            "type": "integer",
-            "title": "Window Years"
-          },
-          "windows": {
-            "type": "integer",
-            "title": "Windows"
-          },
-          "reached_windows": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reached Windows"
-          },
-          "median": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Median"
-          },
-          "best": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^-?[0-9]+(\\.[0-9]{1,3})?$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Best"
-          },
-          "verdict": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/GoalVerdict"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "thin": {
-            "type": "boolean",
-            "title": "Thin",
-            "default": false
-          },
-          "source": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/GoalReferenceSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "property_id",
-          "typed_growth",
-          "sale_year",
-          "window_years",
-          "windows"
-        ],
-        "title": "GoalPropertyGrowth",
-        "description": "One property's card on Anlagen › Immobilie: the yearly value growth this property alone\nwould need for the goal to be reached at the due month at today's saving (the typed fund\nand crypto rates kept; smallest to 0.1 % between −50 % and +100 %), beside the German house\nprice index over every window of `window_years` (Q4 to Q4 from 2005; prices only, no rent\nand no costs): `reached_windows` of `windows` reached it, their `median` and `best`\nannualised (each floored to 0.1 %), and the `verdict` as route 3 gives it. Under 5 windows\n`thin`. `available` false with `reason` out_of_range (no growth in range reaches it, the\nwindows still shown) or history_short (no window: the growth still shown)."
       },
       "GoalReferenceSource": {
         "properties": {
@@ -28178,6 +27812,82 @@
         ],
         "title": "HouseholdScenario",
         "description": "household_scenario row (append-only; §11 names its columns created_*)."
+      },
+      "HouseholdScenarioAdopted": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "default": false
+          },
+          "levers": {
+            "$ref": "#/components/schemas/HouseholdLevers"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "withdrawn": {
+            "type": "boolean",
+            "title": "Withdrawn",
+            "default": false
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "goal": {
+            "$ref": "#/components/schemas/HouseholdGoal"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "id",
+          "workspace_id",
+          "created_at",
+          "goal"
+        ],
+        "title": "HouseholdScenarioAdopted",
+        "description": "POST /household-goal/path/adopt, 201 (phase 10 §7.13 (d) 7, D316): the default scenario\nthe path was written into (or the row in force, when nothing moved), with the goal as the\nnext GET /household-goal answers it, read after the write committed. „Diesem Weg folgen“\nstays busy until this answer is in and shows its goal without a second request."
       },
       "HouseholdScenarioCreate": {
         "properties": {
@@ -34048,6 +33758,16 @@
             },
             "type": "array",
             "title": "Properties"
+          },
+          "house_price_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -34056,7 +33776,7 @@
           "rates"
         ],
         "title": "PlanAssumptions",
-        "description": "Card 4 „Eure Annahmen“: nothing the app chose."
+        "description": "Card 4 „Eure Annahmen“: nothing the app chose. `house_price_source` names the index\nthe properties' `house_prices` count over, present when one of them has it."
       },
       "PlanClass": {
         "type": "string",
@@ -34311,6 +34031,30 @@
             ],
             "title": "Above Target"
           },
+          "reserve_target": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Target"
+          },
+          "reserve_gap": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Gap"
+          },
           "window_from": {
             "anyOf": [
               {
@@ -34354,6 +34098,41 @@
         ],
         "title": "PlanHeute",
         "description": "Card 2 „Heute“: the net worth, the reserve in months of its need (D305) and the mean saved\nper month of the window; the reserve's accounts (D304) with their provider, „Für euch“ or\nwith the switch `accounts` only."
+      },
+      "PlanHousePrices": {
+        "properties": {
+          "window_years": {
+            "type": "integer",
+            "title": "Window Years"
+          },
+          "windows": {
+            "type": "integer",
+            "title": "Windows"
+          },
+          "reached": {
+            "type": "integer",
+            "title": "Reached"
+          },
+          "never": {
+            "type": "boolean",
+            "title": "Never"
+          },
+          "thin": {
+            "type": "boolean",
+            "title": "Thin"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "window_years",
+          "windows",
+          "reached",
+          "never",
+          "thin"
+        ],
+        "title": "PlanHousePrices",
+        "description": "„Noch nie erreicht“ (§7.13 (d) 5, D316): the property's typed yearly value change against\nthe German house price index, every run of `window_years` (the goal's years left, at least\n1) Q4 to Q4: `reached` of `windows` grew at least as fast; `never` when none did, the mark;\n`thin` under five windows. A mark beside the lever, never a block."
       },
       "PlanIncomeGap": {
         "properties": {
@@ -34747,6 +34526,16 @@
             ],
             "title": "Value Change"
           },
+          "house_prices": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanHousePrices"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "anyOf": [
               {
@@ -35108,7 +34897,7 @@
           "read_on"
         ],
         "title": "PlanSource",
-        "description": "A source of a size in risks.yaml (the maintenance rate)."
+        "description": "A source of a size in risks.yaml (the maintenance rate), or of the house price index."
       },
       "PlanStep": {
         "properties": {
@@ -41632,6 +41421,182 @@
         "title": "SnapshotResult",
         "description": "POST /net-worth/snapshots: what „Monatsabschluss festhalten“ did."
       },
+      "SourcePayment": {
+        "properties": {
+          "allocation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Allocation Id"
+          },
+          "booking_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Booking Date"
+          },
+          "value_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Date"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "recurring": {
+            "type": "boolean",
+            "title": "Recurring",
+            "default": false
+          },
+          "service_period": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServicePeriod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "due_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due On"
+          },
+          "transaction_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transaction Id"
+          },
+          "property_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property Id"
+          },
+          "unit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Id"
+          },
+          "tenancy_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenancy Id"
+          },
+          "loan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loan Id"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "invoice_net": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invoice Net"
+          },
+          "counterparty_iban_masked": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z]{2}[0-9]{2} \\*{4} [A-Z0-9]{4}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counterparty Iban Masked"
+          },
+          "account_purpose": {
+            "$ref": "#/components/schemas/AccountPurpose",
+            "default": "rental"
+          },
+          "receipt_missing": {
+            "type": "boolean",
+            "title": "Receipt Missing",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "allocation_id",
+          "booking_date",
+          "amount",
+          "category"
+        ],
+        "title": "SourcePayment",
+        "description": "One payment of the sources drawer (GET …/anlage-v/sources): the AllocationFact the draft\nreads, plus receipt_missing (phase 10 §7.13 (c) 4, D315): a counted rental payment of a\ncategory whose bill the checklist asks for (cost_receipt, D64) with no Beleg linked, so the\ndrawer says „Rechnung fehlt“ with „Rechnung hochladen“ instead of nothing (principle 7).\nRead by no tax rule."
+      },
       "SpamVerdict": {
         "properties": {
           "asset_id": {
@@ -46238,6 +46203,18 @@
               }
             ],
             "title": "Target"
+          },
+          "gap": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gap"
           },
           "target_months": {
             "anyOf": [

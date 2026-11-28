@@ -23,6 +23,13 @@
 # ceiling = 5,000 − 3,000 + (900 − 450) = 2,450, the room 450 (the need of 3,000 no longer
 # enters it; its rows carry other spending −900). Every hardly case here needs more than 450 a
 # month and nothing is invested, so no word moves.
+# Amended 28 Nov 2026 by §7.13 (d) 8, D316 (Luis: the goal is judged by its year): the goal is
+# reached when the walk is at or above the target at any month-end of its year up to 31 Dec,
+# and „Nötig im Monat“ and the scenarios solve for 31 Dec of that year; a goal stored with a
+# month keeps its year. saved_sum_on_track now reads 40,000 in 2027 (Dec 2027, k = 14): still
+# on track, projected 58,000. reserve_months_behind read 14 months by Mar 2027, which 2027
+# reaches in Apr 2027; it now reads 22 months (66,000) in 2027 to stay behind (its figures
+# worked again below). New: reached_in_the_year_then_below.
 #
 # Input at rule level: what services.plan already has for phase 9's projection (the month
 # basis, the stored run at the newest closed month-end as `start`, the reserve and its monthly
@@ -43,10 +50,10 @@
 # Rules this file pins (rules/goal):
 # - k counts the months after the newest closed one (k = 1 is Nov 2026). Without any change the
 #   net worth after k months is 50,000 + 2,000·k and the reserve 30,000 + 2,000·k (phase 9's
-#   bank and as_is rows, §7.5 (4)). A due month Dec 2028 is k = 26, Jun 2027 k = 8, Mar 2027
-#   k = 5.
+#   bank and as_is rows, §7.5 (4)). A due month Dec 2028 is k = 26, Dec 2027 k = 14 (Jun 2027
+#   was k = 8, Mar 2027 k = 5).
 # - months left n = the months from the current month to the due month: Nov 2026 → Dec 2028 is
-#   25, → Jun 2027 7, → Mar 2027 4. A scenario's change runs from next month (Dec 2026) to the
+#   25, → Dec 2027 13. A scenario's change runs from next month (Dec 2026) to the
 #   due month, so it is in force in exactly those n months.
 # - projected = the value without any change at the due month; gap = target − projected.
 # - extra = the smallest whole-euro amount which, added to every month's „Anlegbar“ from next
@@ -242,18 +249,18 @@ cases:
       reaches_by_due: '102000.00' # what the household has at Dec 2028 without change
 
 - id: saved_sum_on_track
-  description: a sum saved, measured on the reserve accounts (D237)
+  description: a sum saved in 2027, measured on the reserve accounts (D237)
   <<: *household
   levers:
-    goal: {kind: saved_sum, target: '40000.00', due_month: '2027-06', set_on: '2026-11-20'}
+    goal: {kind: saved_sum, target: '40000.00', due_month: '2027-12', set_on: '2026-11-20'}
   expect:
     word: on_track
     target: '40000.00'
     value_today: '31000.00'       # the reserve accounts today
     percent: '77.5'               # 31,000 ÷ 40,000
-    months_left: 7                # Nov 2026 → Jun 2027
+    months_left: 13               # Nov 2026 → Dec 2027
     heute: '2000.00'
-    projected: '46000.00'         # 30,000 + 2,000 × 8
+    projected: '58000.00'         # 30,000 + 2,000 × 14
     noetig: '2000.00'             # on track: extra 0 (was 1,142.86 by D298's formula)
     reached: '2027-03'            # 30,000 + 2,000k ≥ 40,000 → k = 5
     reached_with_budget: null
@@ -261,45 +268,69 @@ cases:
     unreachable: null
 
 - id: reserve_months_behind
-  description: a reserve of 14 months by Mar 2027; target 14 × 3,000 = 42,000
+  description: a reserve of 22 months in 2027; target 22 × 3,000 = 66,000
   <<: *household
   levers:
-    goal: {kind: reserve_months, target: '14.0', due_month: '2027-03', set_on: '2026-11-20'}
+    goal: {kind: reserve_months, target: '22.0', due_month: '2027-12', set_on: '2026-11-20'}
   expect:
-    word: hardly
-    target: '42000.00'            # 14 × the monthly need 3,000
+    word: hardly                  # extra 616 above the room 450, nothing invested
+    target: '66000.00'            # 22 × the monthly need 3,000
     value_today: '31000.00'
-    percent: '73.8'               # 31,000 ÷ 42,000 = 0.738095…
-    months_left: 4                # Nov 2026 → Mar 2027
+    percent: '47.0'               # 31,000 ÷ 66,000 = 0.469696…
+    months_left: 13               # Nov 2026 → Dec 2027
     heute: '2000.00'
-    projected: '40000.00'         # 30,000 + 2,000 × 5
-    noetig: '2500.00'             # 2,000 + 2,000 ÷ 4
-    reached: '2027-04'            # 30,000 + 2,000k ≥ 42,000 → k = 6
+    projected: '58000.00'         # 30,000 + 2,000 × 14
+    noetig: '2616.00'             # 2,000 + ⌈8,000 ÷ 13 = 615.38…⌉ (615 × 13 = 7,995)
+    reached: '2028-04'            # 30,000 + 2,000k ≥ 66,000 → k = 18
     reached_with_budget: null
     scenarios:
       wants_only:
-        closes: true              # 30,000 + 2,000 (Nov) + 4 × 2,500.01 = 42,000.04
-        cut: '500.01'             # 333.34 + 166.67
+        closes: true              # 30,000 + 2,000 (Nov) + 13 × 2,616.01 = 66,008.13
+        cut: '616.01'             # 410.67 + 205.34
         rest: '0.00'
-        saving: '2500.01'
-        budgets: {hh_restaurant: '266.66', hh_streaming: '133.33'}   # 600 − ⌈600×500/900 = 333.33…⌉; 300 − ⌈166.66…⌉
+        saving: '2616.01'
+        budgets: {hh_restaurant: '189.33', hh_streaming: '94.66'}   # 600 − ⌈600×616/900 = 410.66…⌉; 300 − ⌈205.33…⌉
         changes:
-        - {code: hh_restaurant, monthly: '266.66', from_month: '2026-12', to_month: '2027-03'}
-        - {code: hh_streaming, monthly: '133.33', from_month: '2026-12', to_month: '2027-03'}
+        - {code: hh_restaurant, monthly: '189.33', from_month: '2026-12', to_month: '2027-12'}
+        - {code: hh_streaming, monthly: '94.66', from_month: '2026-12', to_month: '2027-12'}
       all_equal:
-        closes: true              # 32,000 + 4 × 2,500 = 42,000
-        cut: '500.00'             # 250 + 100 + 100 + 50
+        closes: true              # 32,000 + 13 × 2,616 = 66,008
+        cut: '616.00'             # 308 + 123.20 + 123.20 + 61.60
         rest: '0.00'
-        saving: '2500.00'
-        budgets: {hh_rent: '1250.00', hh_supermarket: '500.00', hh_restaurant: '500.00', hh_streaming: '250.00'}
+        saving: '2616.00'
+        budgets: {hh_rent: '1192.00', hh_supermarket: '476.80', hh_restaurant: '476.80', hh_streaming: '238.40'}
         changes:
-        - {code: hh_rent, monthly: '1250.00', from_month: '2026-12', to_month: '2027-03'}
-        - {code: hh_restaurant, monthly: '500.00', from_month: '2026-12', to_month: '2027-03'}
-        - {code: hh_streaming, monthly: '250.00', from_month: '2026-12', to_month: '2027-03'}
-        - {code: hh_supermarket, monthly: '500.00', from_month: '2026-12', to_month: '2027-03'}
+        - {code: hh_rent, monthly: '1192.00', from_month: '2026-12', to_month: '2027-12'}
+        - {code: hh_restaurant, monthly: '476.80', from_month: '2026-12', to_month: '2027-12'}
+        - {code: hh_streaming, monthly: '238.40', from_month: '2026-12', to_month: '2027-12'}
+        - {code: hh_supermarket, monthly: '476.80', from_month: '2026-12', to_month: '2027-12'}
     unreachable:
-      later: '2027-04'
-      reaches_by_due: '40000.00'
+      later: '2028-04'
+      reaches_by_due: '58000.00'
+
+- id: reached_in_the_year_then_below
+  description: >-
+    72,000 in 2027 with a planned one-off of −10,000 in Nov 2027: the walk reaches 72,000 at
+    30 Sep 2027 (k = 11), the one-off takes Nov to 50,000 + 26,000 − 10,000 = 66,000 and 31 Dec
+    2027 reads 68,000, below the target; reached within its year, the goal is on track (D316,
+    as decided 28 Nov 2026): no extra, no scenario, its month „voraussichtlich im Sep. 2027“
+  <<: *household
+  levers:
+    goal: {kind: net_worth, target: '72000.00', due_month: '2027-12', set_on: '2026-11-20'}
+    one_offs: [{month: '2027-11', amount: '-10000.00'}]
+  expect:
+    word: on_track
+    target: '72000.00'
+    value_today: '51000.00'
+    percent: '70.8'               # 51,000 ÷ 72,000 = 0.708333…
+    months_left: 13
+    heute: '2000.00'
+    projected: '68000.00'         # 31 Dec 2027: 50,000 + 2,000 × 14 − 10,000
+    noetig: '2000.00'             # on track: extra 0
+    reached: '2027-09'            # the first month-end at or above 72,000
+    reached_with_budget: null
+    scenarios: {}
+    unreachable: null
 
 - id: buffer_kept
   description: a 10 % buffer; a cut reaches the projection at 90 %, so the scenario cuts more than nötig − heute
