@@ -197,6 +197,17 @@ class Collected:
     settled: dict[UUID, bool] = field(default_factory=dict)
 
 
+def _bare(exc: SourceError) -> SourceError:
+    """The error without its traceback and chained exceptions, as it is kept for the run.
+    A traceback holds the failed reader's frames, so a parse that failed kept the whole
+    downloaded file and its parsed tree alive: nine iShares files of 1 to 4 MB, each about
+    40 MB parsed, ran the API past its 512 MB on 28 Nov 2026 and crashed it at every start."""
+    exc.__traceback__ = None
+    exc.__context__ = None
+    exc.__cause__ = None
+    return exc
+
+
 @dataclass
 class Sources:
     """Every source of one run, each answer kept for the run. `coingecko` is None without
@@ -233,6 +244,7 @@ class Sources:
             try:
                 self._ecb[backfill] = ecb_fx.fetch(self.fetch, backfill=backfill, currencies=None)
             except SourceError as exc:
+                exc = _bare(exc)
                 self._ecb[backfill] = self._failed(S.ECB_FX.value, exc)
         return self._ecb[backfill]
 
@@ -242,6 +254,7 @@ class Sources:
             try:
                 self._history = ecb_fx.history(self.fetch)
             except SourceError as exc:
+                exc = _bare(exc)
                 self._history = self._failed(f"{S.ECB_FX.value}:history", exc)
         return self._history
 
@@ -252,6 +265,7 @@ class Sources:
             try:
                 self._exchange_ids[isin] = lang_schwarz.instrument(self.fetch, isin)
             except SourceError as exc:
+                exc = _bare(exc)
                 key = f"{S.EXCHANGE_CLOSE.value}:search"
                 if exc.kind == "not_listed":
                     self.misses[(key, exc.kind, exc.status)] += 1
@@ -269,6 +283,7 @@ class Sources:
             try:
                 self._exchange[key] = lang_schwarz.history(self.fetch, instrument_id, isin, today)
             except SourceError as exc:
+                exc = _bare(exc)
                 self._exchange[key] = self._failed(S.EXCHANGE_CLOSE.value, exc)
         return self._exchange[key]
 
@@ -277,6 +292,7 @@ class Sources:
             try:
                 self._kraken[pair] = kraken.daily(self.fetch, pair)
             except SourceError as exc:
+                exc = _bare(exc)
                 self._kraken[pair] = self._failed(S.KRAKEN_DAILY.value, exc)
         return self._kraken[pair]
 
@@ -312,6 +328,7 @@ class Sources:
             try:
                 self._catalogues[issuer] = self._adapter(issuer).catalogue()
             except SourceError as exc:
+                exc = _bare(exc)
                 self._catalogues[issuer] = self._failed(
                     f"{S.ISSUER_NAV.value}:{issuer}:catalogue", exc
                 )
@@ -423,6 +440,7 @@ class Sources:
             try:
                 self._nav[key] = read_points(adapter, fund.fund_ref or "", fund.isin, since)
             except SourceError as exc:
+                exc = _bare(exc)
                 if count_missing or not _missing(exc):
                     exc = self._failed(f"{S.ISSUER_NAV.value}:{fund.issuer}", exc)
                 else:
