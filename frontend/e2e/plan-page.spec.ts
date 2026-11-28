@@ -426,7 +426,7 @@ test("on track, the plan card says what keeps you there: saving, investing now, 
   await expect(card).toContainText(/12\.340\s€/);
   await expect(card).toContainText("Bei euren Raten");
   await expect(card).toContainText(/Fonds 6,0\s%\s·\sKrypto 8,0\s%/);
-  await expect(card).toContainText("Am Ziel");
+  await expect(card).toContainText("Voraussichtlich am Ziel");
   await expect(card).not.toContainText("+ mehr anlegen");
 
   await card.getByRole("link", { name: /^Ihr seid auf Kurs$/ }).click();
