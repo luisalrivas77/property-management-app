@@ -88,18 +88,47 @@ bases:
     flats:
       flat: {kept_value: '200000.00', living_area: '55'}
     levers:
-      goal: {kind: net_worth, target: '600000.00', due_month: '2036-06', set_on: '2026-11-20'}
+      goal: {kind: net_worth, target: '600000.00', due_month: '2036-12', set_on: '2026-11-20'}
       value_change: {depot: '0.06'}
     invested_this_month: '120.00'
-    # INVENTED funds returns 2014–2025 (12 years): a 9-year window gives 4 windows, so route 3 is
-    # thin (shown, never deciding) and the balanced route keeps the typed 6 %. The windows'
-    # products by first year 2014–2017; the worst, 2017–2025, 1.17589…, annualised 1.8 %
-    # (1.018⁹ = 1.17426 ≤ it < 1.019⁹ = 1.18469).
+    # INVENTED funds returns 2014–2025 (12 years): a 10-year window gives 3 windows (a 9-year one
+    # gave 4 until §7.13 (d) 8), so route 3 is thin (shown, never deciding) and the balanced route
+    # keeps the typed 6 %. The three windows 2014–2023, 2015–2024 and 2016–2025 each multiply to
+    # 1.4749058…, annualised 3.9 % (1.039¹⁰ = 1.46555 ≤ it < 1.040¹⁰ = 1.48024).
     history:
       funds: {2014: '0.10', 2015: '0.05', 2016: '-0.20', 2017: '0.15', 2018: '0.08', 2019: '-0.10', 2020: '0.20', 2021: '0.12', 2022: '-0.15', 2023: '0.25', 2024: '0.10', 2025: '0.05'}
   # INVENTED funds returns 2010–2025: their worst 5-year window, 2011–2015, 0.70 × 1.05 × 0.90 ×
   # 1.15 × 0.75 = 0.57054375, annualised −10.7 % (0.893⁵ = 0.56788 ≤ it < 0.894⁵ = 0.57107)
   funds2: &funds2 {2010: '0.10', 2011: '-0.30', 2012: '0.05', 2013: '-0.10', 2014: '0.15', 2015: '-0.25', 2016: '0.08', 2017: '-0.05', 2018: '0.20', 2019: '0.12', 2020: '-0.15', 2021: '0.25', 2022: '0.10', 2023: '0.05', 2024: '-0.10', 2025: '0.06'}
+  # „Noch nie erreicht“ (§7.13 (d) 5, D316; readings at the end of this file). INVENTED Q4
+  # values of a house price index 2005–2025 (goal_property.yaml's `index`, moved here when that
+  # card was removed): 20 yearly returns 2006–2025, so 16 five-year windows.
+  house_index: &house_index {2005: '80.0', 2006: '80.8', 2007: '81.6', 2008: '80.0', 2009: '82.4', 2010: '82.4', 2011: '85.7', 2012: '90.0', 2013: '92.7', 2014: '98.3', 2015: '100.0', 2016: '107.0', 2017: '115.6', 2018: '126.0', 2019: '132.3', 2020: '145.5', 2021: '163.0', 2022: '158.1', 2023: '150.2', 2024: '151.7', 2025: '154.7'}
+  # goal_property.yaml's household: this file's with a flat worth 300,000 today, its loan
+  # 200,000 falling 5,000 a year, sold in 2038 at 5 % selling costs, 55 m²; its value at 31 Dec
+  # of year Y is 300,000 × (1 + g)^(Y − 2026) to the cent half-up. A goal of 300,000 by Dec
+  # 2031: today Nov 2026, so 61 months left and windows of L = 5 years.
+  sold: &sold
+    <<: *household
+    start: {month_end: '2026-10-31', bank: '50000.00', depot: '0.00', crypto: '0.00', property: '300000.00', loans: '200000.00', other_liabilities: '0.00'}
+    value_today: {net_worth: '151000.00', reserve: '31000.00'}
+    net_worth_today: '151000.00'
+    levers:
+      goal: {kind: net_worth, target: '300000.00', due_month: '2031-12', set_on: '2026-11-20'}
+      value_change: {depot: '0.06'}
+    house_index: *house_index
+  flat2: &flat2   # g = 2 %: 380,472.54 in 2038, less 19,023.63 selling costs and the 140,000 loan
+    sale_year: 2038
+    years: {2027: ['306000.00', '195000.00'], 2028: ['312120.00', '190000.00'], 2029: ['318362.40', '185000.00'], 2030: ['324729.65', '180000.00'], 2031: ['331224.24', '175000.00'], 2032: ['337848.73', '170000.00'], 2033: ['344605.70', '165000.00'], 2034: ['351497.81', '160000.00'], 2035: ['358527.77', '155000.00'], 2036: ['365698.33', '150000.00'], 2037: ['373012.29', '145000.00'], 2038: ['380472.54', '140000.00']}
+    net_proceeds: '221448.91'
+    living_area: '55'
+    value_change: '0.02'
+  flat9: &flat9   # g = 9 %: 843,799.43 in 2038, less 42,189.97 selling costs and the 140,000 loan
+    sale_year: 2038
+    years: {2027: ['327000.00', '195000.00'], 2028: ['356430.00', '190000.00'], 2029: ['388508.70', '185000.00'], 2030: ['423474.48', '180000.00'], 2031: ['461587.19', '175000.00'], 2032: ['503130.03', '170000.00'], 2033: ['548411.74', '165000.00'], 2034: ['597768.79', '160000.00'], 2035: ['651567.98', '155000.00'], 2036: ['710209.10', '150000.00'], 2037: ['774127.92', '145000.00'], 2038: ['843799.43', '140000.00']}
+    net_proceeds: '661609.46'
+    living_area: '55'
+    value_change: '0.09'
 
 rules:
   income_gap_months: 6
@@ -129,54 +158,63 @@ rounding:
 # item 1, the ceiling counts all regular spending): the room is 450, and 600,000 by Jun 2036
 # needs E = 196 a month (goal_routes' closed_by_spending with the kept 200,000 added), within
 # it: hardly → feasible.
+# Amended 28 Nov 2026 by §7.13 (d) 8, D316 (Luis: the goal is judged by its year): the goal
+# solves for 31 Dec of its year, so the cards household's goal reads 600,000 in 2036 (stored Dec
+# 2036): 121 months left, L = 10 years; E = 50 a month (goal_routes' closed_by_spending at Dec
+# 2036 with the kept 200,000 added), the balanced route cuts 25.01 (restaurant 16.67, streaming
+# 8.34) and saves 25.00 more, reaching 600,034.47 at 31 Dec 2036; the funds' worst 10-year
+# window 3.9 %. on_track reads 360,000 in 2036, its figures unchanged but „ohne den Weg“
+# (391,817.33). Recomputed with the scratch walk of goal_routes.yaml's amendment; the cases due
+# Dec of a year are unchanged.
 cases:
 - id: cards_one_walk
   description: >-
-    the seven cards from one walk: „Machbar“, the balanced route reaches 600,000 in Jun 2036;
-    weak markets at the funds' worst 9-year window 1.8 % move it 28 months, six months without
-    income 14, a 7,920 € repair 4
+    the seven cards from one walk: „Machbar“, the balanced route reaches 600,000 in Dec 2036;
+    weak markets at the funds' worst 10-year window 3.9 % move it 13 months, six months without
+    income 15, a 7,920 € repair 4
   <<: *cards
   expect:
     cards:
-      goal: {kind: net_worth, target: '600000.00', due_month: '2036-06', word: feasible, value_today: '251000.00', percent: '41.8'}
-      heute: {net_worth: '251000.00', reserve: '31000.00', reserve_months: '10.3', reserve_full: true, saved_mean: '2000.00', reserve_accounts: ['Tagesgeld (Bank A)']}
+      goal: {kind: net_worth, target: '600000.00', due_month: '2036-12', word: feasible, value_today: '251000.00', percent: '41.8'}
+      # §7.13 (d) 2: the reserve as „31.000 € von 18.000 €“ (the target 6 × 3,000), reached
+      heute: {net_worth: '251000.00', reserve: '31000.00', reserve_months: '10.3', reserve_full: true, reserve_target: '18000.00', reserve_gap: '0.00', saved_mean: '2000.00', reserve_accounts: ['Tagesgeld (Bank A)']}
       plan:
         on_track: false
-        reached: '2036-06'         # 600,128.82 at 30 Jun 2036 (goal_routes: 98 reaches, 97 not)
-        without_route: '569991.55'
-        gap: '30008.45'
-        saving_extra: '98.00'
-        by_class: {depot: '98.00'}
-        cut: '98.01'
+        reached: '2036-12'         # 600,034.47 at 31 Dec 2036 (goal_routes: 25 reaches, 24 not)
+        without_route: '591817.33'
+        gap: '8182.67'
+        saving_extra: '25.00'
+        by_class: {depot: '25.00'}
+        cut: '25.01'
         wants:
-        - {code: hh_restaurant, from: '600.00', to: '534.66'}
-        - {code: hh_streaming, from: '300.00', to: '267.33'}
+        - {code: hh_restaurant, from: '600.00', to: '583.33'}
+        - {code: hh_streaming, from: '300.00', to: '291.66'}
       assumptions:
         rates: {depot: '0.06', crypto: null, reserve: null}
         properties:
         - {key: flat, kept: true, sale_year: null, value_change: null}
       risks:
-        base_reached: '2036-06'
+        base_reached: '2036-12'
         weak_markets:
           available: true
           reason: null
-          window_years: 9          # 115 months from Nov 2026 to Jun 2036
-          rates: {depot: '0.018'}
-          worst: {depot: '0.018'}
+          window_years: 10         # 121 months from Nov 2026 to Dec 2036
+          rates: {depot: '0.039'}
+          worst: {depot: '0.039'}
           capped: []
           left_out: []
-          reached: '2038-10'
-          delay_months: 28
+          reached: '2038-01'
+          delay_months: 13
           not_until: null
         income_gap:
-          # Nov 2026 – Apr 2027 without the 5,000 (and without the 98 extra from Dec): in Nov the
-          # reserve 30,000 − 3,000 = 27,000, 9,000 moves; from Dec it falls by 3,000 − 98.01 (the
-          # cut goes on) = 2,901.99 a month to 3,490.05 at 30 Apr 2027; from May it refills by
-          # 2,196.01 a month (16,666.11 at 31 Oct 2027); nothing drawn
+          # Nov 2026 – Apr 2027 without the 5,000 (and without the 25 extra from Dec): in Nov the
+          # reserve 30,000 − 3,000 = 27,000, 9,000 moves; from Dec it falls by 3,000 − 25.01 (the
+          # cut goes on) = 2,974.99 a month to 3,125.05 at 30 Apr 2027; from May it refills by
+          # 2,050.01 a month (15,425.11 at 31 Oct 2027); nothing drawn
           available: true
           months: 6
-          reached: '2037-08'
-          delay_months: 14
+          reached: '2038-03'
+          delay_months: 15
           not_until: null
           drawn: '0.00'
         repair:
@@ -186,30 +224,30 @@ cases:
           years: 10
           by_property: {flat: '7920.00'}   # 55 × 14.40 × 10
           amount: '7920.00'
-          reached: '2036-10'
+          reached: '2037-04'
           delay_months: 4
           not_until: null
         todos: []
-      other_routes: {more_saving: '196.00', needed_return: '0.077', less_spending: '196.01'}
+      other_routes: {more_saving: '50.00', needed_return: '0.065', less_spending: '50.01'}
       this_month:
         steps:
-        - {kind: invest, amount: '98.00', done: true}          # 120.00 booked this month
-        - {kind: wants_budget, amount: '801.99', done: false}  # 900.00 − 98.01, not adopted
+        - {kind: invest, amount: '25.00', done: true}          # 120.00 booked this month
+        - {kind: wants_budget, amount: '874.99', done: false}  # 900.00 − 25.01, not adopted
         done: 1
         of: 2
     share:
       goal: {target: '600000.00', value_today: '250000.00', percent: '41.8', word: feasible}
       heute: {net_worth: '250000.00', reserve: '31000.00', reserve_months: '10.3', saved_mean: '2000.00'}
-      plan: {reached: '2036-06', without_route: '570000.00', gap: '30000.00', saving_extra: '100.00', by_class: {depot: '100.00'}, cut: '100.00'}
+      plan: {reached: '2036-12', without_route: '590000.00', gap: '10000.00', saving_extra: '50.00', by_class: {depot: '50.00'}, cut: '50.00'}
       risks:
-        weak_markets: {rates: {depot: '0.018'}, delay_months: 28}
-        income_gap: {delay_months: 14, drawn: '0.00'}
+        weak_markets: {rates: {depot: '0.039'}, delay_months: 13}
+        income_gap: {delay_months: 15, drawn: '0.00'}
         repair: {amount: '8000.00', by_property: {flat: '8000.00'}, delay_months: 4}
-      other_routes: {more_saving: '200.00', needed_return: '0.077', less_spending: '200.00'}
+      other_routes: {more_saving: '50.00', needed_return: '0.065', less_spending: '50.00'}
       this_month:
         steps:
-        - {kind: invest, amount: '100.00', done: true}
-        - {kind: wants_budget, amount: '800.00', done: false}
+        - {kind: invest, amount: '50.00', done: true}
+        - {kind: wants_budget, amount: '850.00', done: false}
     share_absent: [heute.reserve_accounts, plan.wants]
 
 - id: share_switches
@@ -222,25 +260,25 @@ cases:
     share:
       heute: {net_worth: '251000.00', reserve: '31000.00', reserve_accounts: ['Tagesgeld (Bank A)']}
       plan:
-        saving_extra: '98.00'
+        saving_extra: '25.00'
         wants:
-        - {code: hh_restaurant, from: '600.00', to: '534.66'}
-        - {code: hh_streaming, from: '300.00', to: '267.33'}
+        - {code: hh_restaurant, from: '600.00', to: '583.33'}
+        - {code: hh_streaming, from: '300.00', to: '291.66'}
     share_absent: [risks, assumptions]
 
 - id: on_track
   description: >-
-    goal_routes' on_track: 360,000 by Jun 2036 reached in Apr 2036 without change: „Ihr seid auf
+    goal_routes' on_track: 360,000 in 2036 reached in Apr 2036 without change: „Ihr seid auf
     Kurs“, no moves, no steps; no property, so no repair; no funds series, so no weak markets
   <<: *household
   flats: {}
   levers:
-    goal: {kind: net_worth, target: '360000.00', due_month: '2036-06', set_on: '2026-11-20'}
+    goal: {kind: net_worth, target: '360000.00', due_month: '2036-12', set_on: '2026-11-20'}
     value_change: {depot: '0.06'}
   expect:
     cards:
       goal: {word: on_track, percent: '14.2'}
-      plan: {on_track: true, reached: '2036-04', without_route: '369991.55', gap: null, saving_extra: null, by_class: {}, cut: null, wants: []}
+      plan: {on_track: true, reached: '2036-04', without_route: '391817.33', gap: null, saving_extra: null, by_class: {}, cut: null, wants: []}
       risks:
         base_reached: '2036-04'
         weak_markets: {available: false, reason: series_missing}
@@ -303,7 +341,8 @@ cases:
   expect:
     cards:
       goal: {word: on_track}
-      heute: {reserve_months: '1.7', reserve_full: false}
+      # §7.13 (d) 2: „5.000 € von 18.000 €“, noch 18,000 − 5,000 = 13,000 bis zum Ziel
+      heute: {reserve_months: '1.7', reserve_full: false, reserve_target: '18000.00', reserve_gap: '13000.00'}
       risks:
         base_reached: '2032-06'
         income_gap:
@@ -362,10 +401,10 @@ cases:
   expect:
     cards:
       risks:
-        base_reached: '2036-06'
+        base_reached: '2036-12'
         weak_markets: {available: false, reason: series_missing}
-        income_gap: {available: true, reached: '2037-08', delay_months: 14}
-        repair: {available: true, amount: '7920.00', reached: '2036-10', delay_months: 4}
+        income_gap: {available: true, reached: '2038-03', delay_months: 15}
+        repair: {available: true, amount: '7920.00', reached: '2037-04', delay_months: 4}
 
 - id: weak_markets_generic
   description: the cards household in `generic` mode; the weak-markets row says why it is left out
@@ -376,7 +415,7 @@ cases:
       other_routes: {needed_return: null}
       risks:
         weak_markets: {available: false, reason: generic_mode}
-        income_gap: {available: true, delay_months: 14}
+        income_gap: {available: true, delay_months: 15}
         repair: {available: true, delay_months: 4}
 
 - id: repair_without_area
@@ -392,3 +431,90 @@ cases:
         repair: {available: false, reason: no_living_area, amount: null, by_property: {}}
         todos:
         - {code: plan.living_area_missing, property: flat, action: Wohnfläche eintragen, href: /properties/flat}
+
+# --- „Noch nie erreicht“ (§7.13 (d) 5, D316), added 28 Nov 2026 --------------------------------
+# A property's typed yearly value change on card 4 „Eure Annahmen“ carries the German house
+# price index beside it (`house_prices`), a mark, never a block: nothing else on the page
+# changes with it. Readings this part pins:
+# 8. L = the goal's months left ÷ 12 whole years, at least 1 (route 3's and the weak markets'
+#    window). Every run of L consecutive yearly returns Q4 to Q4 (Q4 of Y ÷ Q4 of Y−1) is a
+#    window; `reached` counts those whose product is at least (1 + the typed change)^L, of
+#    `windows`; `never` is true when none reached it (the mark „Noch nie erreicht“); `thin` under
+#    5 windows, as route 3 counts. The key is present and null for a property without a typed
+#    change (kept without a scenario), in `generic` mode, and when the index has no window of L
+#    years. `house_index` is the case's invented index; the page itself reads the committed
+#    Eurostat series.
+# The counts were worked apart from the rule with exact fractions on a scratch sheet that
+# imports nothing from hausbuch; it first reproduced goal_property.yaml's 10, 5 and 0 of 16
+# five-year windows at 3.0 %, 6.0 % and 10.0 % and its 2 windows from Q4 2019.
+- id: house_prices_reached
+  description: >-
+    the flat's typed 2 % a year: the index rose at least 1.02^5 over 12 of its 16 five-year
+    windows, so no mark
+  <<: *sold
+  flats: {flat: *flat2}
+  expect:
+    cards:
+      assumptions:
+        properties:
+        - {key: flat, kept: false, sale_year: 2038, value_change: '0.02', house_prices: {window_years: 5, windows: 16, reached: 12, never: false, thin: false}}
+
+- id: house_prices_never_reached
+  description: >-
+    the flat's typed 9 % a year: no five-year window reached 1.09^5 = 1.5386 (the best, 2017–2021,
+    163.0 ÷ 107.0 = 1.5234, is 8.7 % a year), so „Noch nie erreicht“, 0 of 16
+  <<: *sold
+  flats: {flat: *flat9}
+  expect:
+    cards:
+      assumptions:
+        properties:
+        - {key: flat, kept: false, sale_year: 2038, value_change: '0.09', house_prices: {window_years: 5, windows: 16, reached: 0, never: true, thin: false}}
+
+- id: house_prices_thin
+  description: >-
+    the index only from Q4 2019: six returns 2020–2025 give 2 five-year windows; 2021–2025
+    (154.7 ÷ 145.5) does not reach 1.02^5 = 1.1041, 2020–2024 (151.7 ÷ 132.3 = 1.1466) does: 1 of
+    2, thin, no mark
+  <<: *sold
+  house_index: {2019: '132.3', 2020: '145.5', 2021: '163.0', 2022: '158.1', 2023: '150.2', 2024: '151.7', 2025: '154.7'}
+  flats: {flat: *flat2}
+  expect:
+    cards:
+      assumptions:
+        properties:
+        - {key: flat, kept: false, sale_year: 2038, value_change: '0.02', house_prices: {window_years: 5, windows: 2, reached: 1, never: false, thin: true}}
+
+- id: house_prices_no_window
+  description: the index only from Q4 2022 has three returns and no five-year window, so no mark
+  <<: *sold
+  house_index: {2022: '158.1', 2023: '150.2', 2024: '151.7', 2025: '154.7'}
+  flats: {flat: *flat2}
+  expect:
+    cards:
+      assumptions:
+        properties:
+        - {key: flat, kept: false, sale_year: 2038, value_change: '0.02', house_prices: null}
+
+- id: house_prices_generic
+  description: in `generic` mode the typed 9 % gets no comparison with house prices
+  <<: *sold
+  mode: generic
+  flats: {flat: *flat9}
+  expect:
+    cards:
+      assumptions:
+        properties:
+        - {key: flat, kept: false, sale_year: 2038, value_change: '0.09', house_prices: null}
+
+- id: house_prices_kept_property
+  description: >-
+    the cards household's property, kept without a scenario, has no typed value change, so no
+    comparison although the index is there
+  <<: *cards
+  house_index: *house_index
+  expect:
+    cards:
+      assumptions:
+        properties:
+        - {key: flat, kept: true, sale_year: null, value_change: null, house_prices: null}

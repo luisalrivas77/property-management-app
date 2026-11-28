@@ -120,11 +120,17 @@ def share(
             ("heute.net_worth", "net_worth"),
             ("heute.reserve", "reserve"),
             ("heute.above_target", "reserve"),  # the reserve above its target: the reserve's step
+            ("heute.reserve_target", "reserve"),
             *((p, "monthly") for p in MONTHLY),
             *((p, "once") for p in ONCE),
         ):
             step = steps[kind]
             _apply(out, path.split("."), lambda v, step=step: round_to(v, step))
+        # „X € von Y €, noch Z €“ adds up in the shared view too: the gap from the two rounded
+        # figures, never rounded on its own (§7.13 (d) 2)
+        heute = out.get("heute")
+        if isinstance(heute, dict) and heute.get("reserve_target") is not None:
+            heute["reserve_gap"] = max(Decimal("0.00"), heute["reserve_target"] - heute["reserve"])
     return out
 
 

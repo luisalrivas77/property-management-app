@@ -18,7 +18,7 @@
 // questions cannot be read) the page is the one-page form of before (taxAngaben.tsx).
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { DocumentDetail, Owner, StateCode } from "@/api/schemas";
@@ -136,6 +136,15 @@ function AngabenBody({
   const changed = useReturnInputsSync(guide.reload);
   const topic = isTopic(topicParam) ? topicParam : null;
   useOpenAnchor();
+  // A plain answer reads only its topic's questions again (phase 10 §7.13 (c) 3, D315), so the
+  // topic list's states are read once the topic is left, not after every answer.
+  const shownTopic = useRef(topic);
+  const reloadGuide = guide.reload;
+  useEffect(() => {
+    if (shownTopic.current === topic) return;
+    shownTopic.current = topic;
+    reloadGuide();
+  }, [topic, reloadGuide]);
 
   // An old anchor of the one-page Eure Angaben opens where its form is now.
   useEffect(() => {
@@ -426,6 +435,19 @@ function TopicScreen({
   );
   const kinds = OWNER_KINDS[topic];
   useHashTarget(topic);
+  // Phase 10 §7.13 (c) 1, D315: the end of a topic offers the next one and waits for the click
+  // (Luis: „Wait to click next“); the last topic leads back to the list.
+  const order = (guide.topics ?? []).map((t) => t.topic).filter(isTopic);
+  const following = order[order.indexOf(topic) + 1] ?? null;
+  const own = (guide.topics ?? []).find((t) => t.topic === topic);
+  const end = (
+    <Link
+      className="button-link"
+      href={following ? angabenTopicHref(year, following) : taxFormHref("angaben", { year, propertyId: null, ownerId: null })}
+    >
+      {following ? a.nextTopic(a.topic(following)) : a.allTopics}
+    </Link>
+  );
   return (
     <div className="stack angaben angaben-topic-screen">
       <p className="fragen-back">
@@ -444,7 +466,7 @@ function TopicScreen({
           />
         ))
       ) : null}
-      <QuestionnaireFlow year={year} topic={topic} embedded start={start} extra={extra} onAnswered={onChanged} />
+      <QuestionnaireFlow year={year} topic={topic} embedded start={start} extra={extra} end={end} onAnswered={(rows) => (rows ? onChanged() : undefined)} />
       <AngabenPoints year={year} topic={topic} />
       {topic === "pay" ? <PayEntries year={year} owners={owners} onChanged={onChanged} /> : null}
       {kinds ? <OwnerEntries year={year} topic={topic} kinds={kinds} owners={owners} ownerParam={ownerParam} /> : null}
@@ -455,6 +477,8 @@ function TopicScreen({
           <HouseholdReturnBlocks year={year} part={topic} />
         </section>
       ) : null}
+      {/* A topic without questions (its entries only) ends here instead of in the flow's summary. */}
+      {own && own.questions_total === 0 ? <div className="row">{end}</div> : null}
     </div>
   );
 }

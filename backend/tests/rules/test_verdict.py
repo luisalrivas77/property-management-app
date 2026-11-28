@@ -205,6 +205,9 @@ def test_the_reserve_in_euros_against_its_target(amount, state):
     assert (part.target, part.strained_amount) == (Decimal("12000.00"), Decimal("6000.00"))
     assert (part.good, part.strained) == (None, Decimal("0.5"))
     assert part.origin is VerdictOrigin.DEFAULT
+    # „X € von Y €“ with „erreicht“ or „noch Z € bis zum Ziel“ (§7.13 (d) 2): the gap is served
+    gap = {"12000.00": "0.00", "11999.99": "0.01", "6000.00": "6000.00", "5999.99": "6000.01"}
+    assert part.gap == Decimal(gap[amount])
 
 
 # --- The household's limits win ----------------------------------------------------------

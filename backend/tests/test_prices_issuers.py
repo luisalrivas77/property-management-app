@@ -189,3 +189,39 @@ def test_a_name_no_fund_page_matches_is_a_lookup_miss():
     assert sources.discover("IE000INVENT5", "HANetf Nothing Matches Here UCITS ETF") is None
     assert dict(sources.misses) == {("issuer_nav:hanetf", "no_candidate", None): 1}
     assert not sources.errors and len(fetch.calls) == 1
+
+
+def _ishares_sample() -> bytes:
+    return (phase6.SAMPLES / "ishares_fund_download.xls").read_bytes()
+
+
+def test_an_ishares_file_with_german_sheet_names_is_read_like_the_english_one():
+    """Read live 28 Nov 2026: the download names its sheets „Fonds“, „Historische NAVs“ and
+    „Eckdaten“; every fund's file had failed as „parse“ that morning."""
+    german = (
+        _ishares_sample()
+        .replace(b'ss:Name="Fund Header"', b'ss:Name="Fonds"')
+        .replace(b'ss:Name="Historical NAVs"', b'ss:Name="Historische NAVs"')
+        .replace(b'ss:Name="Key Facts"', b'ss:Name="Eckdaten"')
+    )
+    assert b"Historische NAVs" in german
+    english = ADAPTERS["ishares"].parse(_ishares_sample())
+    assert ADAPTERS["ishares"].parse(german) == english
+
+
+def test_a_failed_fund_file_is_kept_for_the_run_without_its_traceback():
+    """28 Nov 2026: a kept SourceError's traceback held the failed reader's frames, so each
+    of nine unreadable iShares files kept its download and parsed tree alive (about 40 MB
+    each) until the run ended, and the API ran past its 512 MB."""
+    broken = _ishares_sample().replace(b'ss:Name="Historical NAVs"', b'ss:Name="Other"')
+
+    def fetch(url, headers, timeout, max_bytes, *body):
+        return 200, broken
+
+    sources = Sources(fetch=fetch, coingecko=None)
+    fund = NavSource(issuer="ishares", fund_ref="264659", isin="IE00B4L5Y983")
+    kept = sources.nav(fund)
+    assert isinstance(kept, SourceError) and kept.kind == "parse"
+    assert kept.__traceback__ is None
+    assert kept.__context__ is None and kept.__cause__ is None
+    assert sources.nav(fund) is kept  # asked once a run

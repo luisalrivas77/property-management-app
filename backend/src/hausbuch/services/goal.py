@@ -396,7 +396,7 @@ def goal_inputs(
     plan, parts = plan_parts(conn, today, row, levers, reads, inputs)
     if parts is None:  # below three closed months: the plan's to-dos say what is missing
         assert plan.projection is not None
-        passed = levers.goal.due_month <= current_month(today)
+        passed = levers.goal.year_end <= current_month(today)
         return HouseholdGoal(
             word=None,
             goal=levers.goal,

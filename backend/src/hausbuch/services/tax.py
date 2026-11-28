@@ -86,6 +86,7 @@ from hausbuch.schemas.tax import (
     PaymentProofFact,
     PurchaseSummary,
     RuleSet,
+    SourcePayment,
     TaxInputFact,
     TaxInputKind,
     TaxLoan,
@@ -135,7 +136,7 @@ def anlage_v_draft(
 
 def anlage_v_sources(
     conn: Connection, property_id: UUID, *, tax_year: int, today: date
-) -> list[AllocationFact]:
+) -> list[SourcePayment]:
     """The payments a draft line can cite, for the sources drawer (§11): the same confirmed
     allocations the draft reads (every year of the property, since the 15 % window, §82b and
     the ten-day rule reach across years), as AllocationFact: date, amount, category, period,
@@ -147,13 +148,27 @@ def anlage_v_sources(
     units = list_units(conn, property_id)
     tenancies = _tenancies(conn, [u.id for u in units])
     loans = list_loans(conn, property_id)
-    return _allocations(
+    facts = _allocations(
         conn,
         property_id,
         _accounts(conn, property_id),
         due_day={t.id: t.rent_due_day for t in tenancies},
         loans={lo.id: lo for lo in loans},
     ) + _private_proofs(conn, property_id)
+    return [
+        SourcePayment(**fact.model_dump(), receipt_missing=_receipt_missing(fact)) for fact in facts
+    ]
+
+
+def _receipt_missing(fact: AllocationFact) -> bool:
+    """Phase 10 §7.13 (c) 4 (D315): the checklist's cost_receipt entry (a cost of a named
+    category, never a 0.00 row, D70) for a rental payment with no Beleg linked yet."""
+    return (
+        fact.account_purpose == AccountPurpose.RENTAL
+        and fact.category in checklist_rule.RECEIPT_CATEGORIES
+        and fact.amount != 0
+        and fact.document_id is None
+    )
 
 
 def purchase_summary(conn: Connection, property_id: UUID, *, today: date) -> PurchaseSummary:

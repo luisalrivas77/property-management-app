@@ -88,8 +88,12 @@ export function pathWord(state: GoalPathState): GoalWord {
   return state;
 }
 
-/** The path's word and its pill colour; „Machbar mit 9,4 %“ at a higher return. */
-export function usePathWord(goal: HouseholdGoal | null | undefined): { word: GoalWord; text: string; view: PathView } | null {
+/** The path's word and its pill colour. At a higher return the word stays „Machbar“ and the
+ * return is its own labelled figure („9,4 % Rendite nötig“), the sentence („Machbar, wenn eure
+ * Anlagen 9,4 % im Jahr bringen“) for the side panel (§7.13 (d) 1, D316). */
+export function usePathWord(
+  goal: HouseholdGoal | null | undefined,
+): { word: GoalWord; text: string; figure: string | null; sentence: string | null; view: PathView } | null {
   const g = useT(goalText);
   const t = useT(goalPathText);
   const p = usePlanFormat();
@@ -98,11 +102,18 @@ export function usePathWord(goal: HouseholdGoal | null | undefined): { word: Goa
   const texts: Record<GoalPathState, string> = {
     on_track: g.onTrack,
     doable_rates: g.feasible,
-    doable_return: view.rate != null ? t.feasibleAt(p.ratio(view.rate)) : g.feasible,
+    doable_return: g.feasible,
     ambitious: g.ambitious,
     hardly: g.hardly,
   };
-  return { word: pathWord(view.state), text: texts[view.state], view };
+  const higher = view.state === "doable_return" && view.rate != null ? p.ratio(view.rate) : null;
+  return {
+    word: pathWord(view.state),
+    text: texts[view.state],
+    figure: higher != null ? t.returnNeededShort(higher) : null,
+    sentence: higher != null ? t.feasibleIf(higher) : null,
+    view,
+  };
 }
 
 /** A gap the server reports: an amount above 0, or nothing. */

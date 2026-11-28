@@ -205,9 +205,6 @@ KEPT_ROUTES: tuple[str, ...] = (
     # Phase 10 §7.9 (e): „Für euer Ziel“, the goal's reads plus /assets/overview (on the day
     # chosen and today) and /assets/performance, all kept above; the rows and the Berlin day
     "/api/household-goal/tracking",
-    # Phase 10 §7.9 (e) items 1, 2: the property cards, the goal's reads plus each default
-    # property scenario's draft facts and loans (rows) and the committed house price index
-    "/api/household-goal/properties",
     # Phase 10 §7.9 (b), (c): the confirmed private lines and the spending marks (migration
     # 0056, its data-version triggers) and the Berlin day only
     "/api/household/recurring",

@@ -91,6 +91,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+.verdict-gap {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
 .verdict-headline {
   display: flex;
   align-items: center;
