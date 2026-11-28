@@ -172,7 +172,7 @@ def route_of(i: GoalInputs, answer: HouseholdGoal) -> Route | None:
     if goal.kind is not GoalKind.NET_WORTH:
         p = replace(p, split=None)  # as household_goal: nothing moves out of the reserve
     if answer.word is GoalWord.ON_TRACK:
-        if answer.reached is not None and answer.reached <= goal.due_month:
+        if answer.reached is not None and answer.reached <= goal.year_end:
             return Route(projection=p)
         return Route(projection=p, spending_changes=tuple(i.household_changes))
     b = answer.balanced

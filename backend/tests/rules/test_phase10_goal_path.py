@@ -320,7 +320,7 @@ def test_the_plans_steps_per_state(case) -> None:
     # (the return needed is the one that reaches it then), else the why's at the typed rates
     if path.adoptable or path.return_needed is not None:
         assert path.plan_reached is not None
-        assert path.plan_reached <= inputs.goal.due_month
+        assert path.plan_reached <= inputs.goal.year_end
     else:
         assert path.plan_reached == path.why.reached
 

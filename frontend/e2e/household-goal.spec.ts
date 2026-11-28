@@ -188,7 +188,8 @@ test("a plan to-do's old /planning href leads to Anlagen › Immobilie", () => {
 
 test("no goal: Übersicht leads to the form, saving the goal shows its word there and on the tab", async ({ page, signedIn }) => {
   void signedIn;
-  const due = monthsAhead(24);
+  // §7.13 (d) 8 (D316): the form asks for a year and posts its December.
+  const year = monthsAhead(24).slice(0, 4);
   const { posted } = await goalApi(page, { goal: emptyGoal() }, (body) => onTrack(body.levers.goal as Goal));
 
   await page.goto("/");
@@ -200,20 +201,20 @@ test("no goal: Übersicht leads to the form, saving the goal shows its word ther
 
   const form = detail(page, "Ziel festlegen");
   await expect(form).toBeVisible();
-  // Nothing is proposed: the amount and the month start empty.
+  // Nothing is proposed: the amount and the year start empty.
   await expect(form.getByLabel("Betrag", { exact: true })).toHaveValue("");
-  await expect(form.getByLabel("Bis", { exact: true })).toHaveValue("");
+  await expect(form.getByLabel("Bis zum Jahr", { exact: true })).toHaveValue("");
   await expect(form.getByRole("radio", { name: /^Vermögen/ })).toBeChecked();
 
-  // A month that is not after the current one is refused in the page, nothing posted.
+  // A year already over is refused in the page, nothing posted.
   // The hint's own example, German thousands separator included.
   await form.getByLabel("Betrag", { exact: true }).fill("500.000");
-  await form.getByLabel("Bis", { exact: true }).fill(monthsAhead(0));
+  await form.getByLabel("Bis zum Jahr", { exact: true }).fill(String(NOW.getFullYear() - 1));
   await form.getByRole("button", { name: "Ziel speichern" }).click();
-  await expect(form).toContainText("Bitte einen Monat nach dem laufenden wählen.");
+  await expect(form).toContainText("Bitte ein späteres Jahr wählen.");
   expect(posted).toHaveLength(0);
 
-  await form.getByLabel("Bis", { exact: true }).fill(due);
+  await form.getByLabel("Bis zum Jahr", { exact: true }).fill(year);
   await form.getByRole("button", { name: "Ziel speichern" }).click();
   await expect.poll(() => posted.length).toBe(1);
   const body = posted[0]!;
@@ -221,7 +222,7 @@ test("no goal: Übersicht leads to the form, saving the goal shows its word ther
   expect(body.supersedes_id).toBeNull();
   expect(body.levers.goal?.kind).toBe("net_worth");
   expect(body.levers.goal?.target).toBe("500000.00");
-  expect(body.levers.goal?.due_month).toBe(due);
+  expect(body.levers.goal?.due_month).toBe(`${year}-12`);
   expect(body.levers.goal?.set_on).toBe(TODAY);
   expect(body.levers.goal_choice ?? null).toBeNull();
 

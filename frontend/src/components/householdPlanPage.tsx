@@ -38,7 +38,7 @@ import { type GoalTracking, loadPathTracking, PathCards, PathPanelBody, usePathP
 import { pathView, usePathWord } from "./goalPathWord";
 import { HealthTodoList } from "./healthFigures";
 import { currentDefault, fillLevers, loadScenarioHistory, saveDefaultScenario } from "./healthShared";
-import { CardHead, GOAL_FORM_HREF, GOAL_PAGE, type HouseholdGoal, loadGoal, Stat, Stats, WordPill } from "./householdGoal";
+import { CardHead, dueYear, GOAL_FORM_HREF, GOAL_PAGE, type HouseholdGoal, loadGoal, Stat, Stats, WordPill } from "./householdGoal";
 import { SplitOnPlanPage } from "./investmentSplit";
 import { ALLOCATION_CATEGORY } from "./labels";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
@@ -272,7 +272,7 @@ function wordText(g: ReturnType<typeof useT<typeof goalText.de>>, word: GoalWord
 
 function targetText(t: PT, p: PlanFormat, plan: PlanPage): string {
   const goal = plan.goal!;
-  const month = p.month(goal.due_month);
+  const month = dueYear(goal);
   if (goal.kind === "reserve_months") return t.targetReserve(p.short(goal.target), month);
   return t.targetMoney(p.euro(goal.target), month);
 }

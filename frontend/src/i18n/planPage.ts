@@ -60,7 +60,7 @@ export const planPageText = defineMessages({
     onTrackCard: "Ihr seid auf Kurs",
     moreInvest: "+ mehr anlegen",
     lessWants: "− weniger ausgeben",
-    atGoal: "Am Ziel",
+    atGoal: "Voraussichtlich am Ziel",
     notReached: "nicht erreicht",
     planPanelText: (without: string, gap: string) =>
       `So wie heute erreicht ihr ${without}. Die Lücke von ${gap} schließt ihr durch mehr Anlegen und weniger Wünsche.`,
@@ -214,7 +214,7 @@ export const planPageText = defineMessages({
     onTrackCard: "You are on track",
     moreInvest: "+ invest more",
     lessWants: "− spend less",
-    atGoal: "At the goal",
+    atGoal: "Expected at the goal",
     notReached: "not reached",
     planPanelText: (without, gap) => `As things are you reach ${without}. You close the gap of ${gap} by investing more and spending less on wants.`,
     keepSaving: "Keep saving",

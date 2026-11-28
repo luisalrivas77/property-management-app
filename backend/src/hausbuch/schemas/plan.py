@@ -273,6 +273,13 @@ class Goal(Schema):
     due_month: YearMonth
     set_on: date
 
+    @property
+    def year_end(self) -> str:
+        """Phase 10 §7.13 (d) 8 (D316): the goal is judged by its year, not its month. It is
+        reached when the walk reaches the target at any month-end of its year, and every route
+        solves for December of that year; a goal stored with a month keeps its year."""
+        return f"{self.due_month[:4]}-12"
+
     @model_validator(mode="after")
     def _months(self) -> Self:
         if self.kind is GoalKind.RESERVE_MONTHS and (
@@ -401,8 +408,10 @@ class GoalPathLever(Schema):
         if (self.state is GoalPathState.DOABLE_RETURN) != (self.return_needed is not None):
             raise ValueError(f"{LEVER_INVALID}: a return is needed exactly on step 2")
         seen = [m.month for m in self.months]
-        if seen != sorted(set(seen)) or any(m > self.goal.due_month for m in seen):
-            raise ValueError(f"{LEVER_INVALID}: the path's months, in order, up to the due month")
+        if seen != sorted(set(seen)) or any(m > self.goal.year_end for m in seen):
+            raise ValueError(
+                f"{LEVER_INVALID}: the path's months, in order, up to the goal's year end"
+            )
         return self
 
 

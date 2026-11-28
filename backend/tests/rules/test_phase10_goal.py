@@ -533,7 +533,7 @@ def test_the_screens_read_fields_follow_the_walks() -> None:
             assert got.path == [] and got.short_at_due is None, case.id
             continue
         target = got.target
-        due = inputs.goal.due_month
+        due = inputs.goal.year_end
         missed = got.projected < target
         assert got.short_at_due == (target - got.projected if missed else None), case.id
         assert got.path[-1].month == due and got.path[-1].as_is == got.projected, case.id
@@ -579,3 +579,31 @@ def test_the_balanced_cut_never_exceeds_a_wants_mean() -> None:
     assert got.balanced is not None
     for b in got.balanced.budgets:
         assert D("0.00") <= b.budget <= b.mean
+
+
+def test_a_month_over_in_a_year_not_over_is_not_passed() -> None:
+    """§7.13 (d) 8 (D316): the goal is judged by its year. On 24 Nov 2026 a goal stored with the
+    month Jun 2026 reads 2026: one month left (Nov → Dec 2026), never `due_passed`, and saving
+    it is allowed; a goal for 2025 is passed and refused, and so is one for 2026 in Dec 2026,
+    whose year ends with the current month."""
+    from datetime import date
+
+    from hausbuch.schemas.goal import GoalIssue
+    from hausbuch.services.errors import RuleViolationError
+    from hausbuch.services.household_scenarios import _check_goal
+
+    case = next(c for c in GOAL if c.id == "net_worth_on_track")
+
+    def due(month: str):
+        goal = case.levers.goal.model_copy(update={"due_month": month})
+        return case.model_copy(update={"levers": case.levers.model_copy(update={"goal": goal})})
+
+    stored, passed = due("2026-06"), due("2025-12")
+    got = _answer(stored)
+    assert got.issue is not GoalIssue.DUE_PASSED and got.months_left == 1
+    assert _answer(passed).issue is GoalIssue.DUE_PASSED
+
+    _check_goal(stored.levers, date(2026, 11, 24), None)  # no refusal
+    for levers, today in ((passed.levers, date(2026, 11, 24)), (stored.levers, date(2026, 12, 3))):
+        with pytest.raises(RuleViolationError):
+            _check_goal(levers, today, None)

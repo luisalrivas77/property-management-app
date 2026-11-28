@@ -25,7 +25,7 @@ import { ErrorNotice } from "@/lib/ErrorNotice";
 import { HOUSEHOLD_BUDGET, HOUSEHOLD_PLAN_PAGE } from "@/lib/planningRoutes";
 
 import { hasGap, type PathView, usePathWord } from "./goalPathWord";
-import { CardHead, GOAL_FORM_HREF, Stat, Stats } from "./householdGoal";
+import { CardHead, dueYear, GOAL_FORM_HREF, Stat, Stats } from "./householdGoal";
 import { ALLOCATION_CATEGORY } from "./labels";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
 
@@ -302,7 +302,7 @@ function RealisticCard({
     <div className="goal-c" data-testid="path-realistic">
       <CardHead kind={KIND} id={PATH_IDS.route} title={t.realisticTitle} />
       <Stats count={2}>
-        <Stat value={p.euro(why.due_value)} label={t.byDue(p.month(goal.goal.due_month))} />
+        <Stat value={p.euro(why.due_value)} label={t.byDue(dueYear(goal.goal))} />
         <Stat value={why.reached ? p.month(why.reached) : t.notReached} label={t.targetReached(p.euro(goal.goal.target))} />
       </Stats>
       {investNow ? <InvestNowRow view={view} /> : null}
@@ -549,7 +549,7 @@ function RoutePanel({ view, due, target }: { view: PathView; due: string | null;
       {view.state === "hardly" ? <p>{view.windows != null ? t.hardlyText : t.hardlyNoHistory}</p> : null}
       {(view.state === "ambitious" || view.state === "hardly") && view.path.why && due ? (
         <p>
-          {t.realisticText(p.month(due), p.euro(view.path.why.due_value))}
+          {t.realisticText(dueYear({ due_month: due }), p.euro(view.path.why.due_value))}
           {view.path.why.reached && target ? ` ${t.realisticReached(p.euro(target), p.month(view.path.why.reached))}` : ""}
         </p>
       ) : null}

@@ -277,10 +277,10 @@ def _check_goal(levers: HouseholdLevers, today: date, previous: Goal | None) -> 
     goal = levers.goal
     if goal is None or goal == previous:
         return
-    if goal.due_month <= month_of(today):
+    if goal.year_end <= month_of(today):  # §7.13 (d) 8: judged by its year
         raise RuleViolationError(
             [HOUSEHOLD_SCENARIO_GOAL_INVALID],
-            f"a goal due in {goal.due_month}, which is not after the current month",
+            f"a goal for {goal.due_month[:4]}, whose year ends with the current month or before",
         )
 
 
