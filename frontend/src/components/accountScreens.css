@@ -47,15 +47,22 @@
   font-weight: 600;
 }
 
+.month-figure {
+  container-type: inline-size;
+}
+
+/* An amount never breaks inside itself (§7.13 (g)): it shrinks with its cell instead. */
 .month-value {
-  font-size: 1.35rem;
+  font-size: clamp(0.95rem, 12cqi, 1.35rem);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 
 .month-value-small {
   font-size: 1rem;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .month-sub {
@@ -74,7 +81,7 @@
 
 @media (max-width: 799px) {
   .month-card {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .month-figure {
@@ -96,7 +103,7 @@
   }
 
   .month-value {
-    font-size: 1.15rem;
+    font-size: clamp(0.95rem, 12cqi, 1.15rem);
   }
 }
 

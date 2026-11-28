@@ -79,16 +79,22 @@
   color: var(--muted);
 }
 
+/* A figure never breaks inside itself (§7.13 (g)): it shrinks with its tile instead (a half-width
+ * tile on a phone), and a text value („Ziel festlegen“) breaks between words. */
+.tile {
+  container-type: inline-size;
+}
+
 .tile-value {
-  font-size: 1.5rem;
+  font-size: clamp(1.05rem, 12cqi, 1.5rem);
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1.2;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .tile-value-big {
-  font-size: 2rem;
+  font-size: clamp(1.25rem, 15cqi, 2rem);
 }
 
 /* One line each (phase 10 §7.6 rule (1)): a longer line is cut, so no tile grows and stretches
@@ -309,10 +315,10 @@
   }
 
   .tile-value {
-    font-size: 1.2rem;
+    font-size: clamp(1.05rem, 12cqi, 1.2rem);
   }
 
   .tile-value-big {
-    font-size: 1.75rem;
+    font-size: clamp(1.25rem, 15cqi, 1.75rem);
   }
 }

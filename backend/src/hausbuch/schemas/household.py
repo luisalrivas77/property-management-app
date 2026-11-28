@@ -567,6 +567,9 @@ class ExchangeOverview(Schema):
     movements_to_answer: int = Field(default=0, ge=0)
     todos: list[str] = Field(default_factory=list)  # error codes, e.g. the history missing
     learned: list[LearnedExchangeAddress] = Field(default_factory=list)
+    # Phase 10 §7.13 (a), D313: the account's one state from its positions
+    # (rules.exchange.overall), read by the Konten row and the account page alike.
+    reconciled: bool | None = None
 
 
 class ExchangeMovementRow(AssetMovement):

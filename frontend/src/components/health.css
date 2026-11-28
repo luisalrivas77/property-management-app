@@ -463,9 +463,11 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--muted);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  hyphens: auto;
 }
 
+/* A figure never breaks inside itself („4,2 Mon.“ on one line, §7.13 (g)). */
 .health-mini-value {
   display: inline-flex;
   align-items: center;
@@ -473,12 +475,45 @@
   font-size: 20px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .health-mini-limit {
   font-size: 13px;
   color: var(--muted);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+/* Where three cards side by side would squeeze their figures (a phone), they stack, each a row:
+ * the name and its green line on the left, the figure on the right (§7.13 (g)). */
+@media (max-width: 479px) {
+  .health-minis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .health-mini {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 2px;
+  }
+
+  .health-mini-label {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .health-mini-limit {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .health-mini-value {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
 }
 
 .health-panel h3 {

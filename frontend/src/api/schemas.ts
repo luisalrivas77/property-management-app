@@ -131,6 +131,7 @@ export type AccountKind = Schemas["AccountKind"];
 export type AccountPurpose = Schemas["AccountPurpose"];
 // the Konten tabs, each with its total in the net worth (phase 10 §7.6 Konten (2))
 export type AccountTab = Schemas["AccountTab"];
+export type AccountParts = Schemas["AccountParts"]; // phase 10 §7.13 (a): a Konten row's parts
 export type AccountOwnership = Schemas["AccountOwnership"];
 export type OwnershipShare = Schemas["OwnershipShare"];
 export type SetOwnershipBody = Schemas["SetOwnershipBody"];

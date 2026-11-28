@@ -371,6 +371,7 @@ def section_query(template: str, today: date) -> dict[str, Any] | None:
         "/api/accounts/{account_id}/month",
         "/api/transfers",
         "/api/household-plan/comparison",
+        "/api/household/differences",
     )
     by_year = (
         "/api/properties/{property_id}/anlage-v/sources",
@@ -386,6 +387,8 @@ def section_query(template: str, today: date) -> dict[str, Any] | None:
         return {"tax_year": year}
     if template == "/api/tax-rate":  # components/income.tsx, a result the household typed
         return {"tax_year": year, "result": "1000.00"}
+    if template == "/api/household/lines":  # Haushalt › Monat, one category's payments
+        return {"month": month, "category": "hh_supermarket"}
     if template == "/api/tenancies/{tenancy_id}/rent":  # the rent in force today
         return {"at": today.isoformat()}
     return None

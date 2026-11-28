@@ -515,3 +515,16 @@ def reconcile(
             )
         )
     return checks
+
+
+def overall(states: Iterable[bool | None]) -> bool | None:
+    """Phase 10 §7.13 (a), D313: the account's one reconciliation state from its positions'
+    (`AssetCheck.reconciled` per position, None where no balance is typed), so the Konten row
+    and the account page read one field: False when one position differs, True when every
+    position agrees, else None (no position, or one not typed yet)."""
+    seen = list(states)
+    if any(state is False for state in seen):
+        return False
+    if seen and all(state is True for state in seen):
+        return True
+    return None

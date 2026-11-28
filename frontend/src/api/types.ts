@@ -2516,6 +2516,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/household/differences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Household Differences Month */
+        get: operations["household_differences_month_api_household_differences_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/household/lines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Household Category Lines */
+        get: operations["household_category_lines_api_household_lines_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/household/recurring": {
         parameters: {
             query?: never;
@@ -4639,6 +4673,27 @@ export interface components {
             superseded_by?: string | null;
         };
         /**
+         * AccountParts
+         * @description Phase 10 §7.13 (a), D313: what one Konten row (or one tab) is made of today, from the
+         *     net worth's account and position lines (rules.net_worth.account_parts), so the page shows
+         *     each part without adding anything up. `value_eur` is what the tab's `by_account_tab` sums:
+         *     the balance, the positions and the money in transit (a depot's whole value, the Anlagen
+         *     portfolio card's total, PR #553). `balance_eur`: the balance lines without the money in
+         *     transit (a credit card's debt, negative); `positions_eur`: the valued positions;
+         *     `in_transit_eur`: the „unterwegs zu <Konto>“ lines (D292 (3)), on a credit card at most its
+         *     debt. A line without a value counts nowhere, as in `by_account_tab`.
+         */
+        AccountParts: {
+            /** Value Eur */
+            value_eur: string;
+            /** Balance Eur */
+            balance_eur: string;
+            /** Positions Eur */
+            positions_eur: string;
+            /** In Transit Eur */
+            in_transit_eur: string;
+        };
+        /**
          * AccountPatch
          * @description PATCH /accounts/{id}. The IBAN cannot change: a different IBAN is another account.
          *     Moving the anchor (opening_balance, opening_balance_on) re-checks every import.
@@ -6371,6 +6426,109 @@ export interface components {
             now: string;
             /** Change */
             change: string;
+        };
+        /**
+         * CategoryDifference
+         * @description A spending code whose month differs from its own mean over the closed months before it
+         *     (phase 10 §7.13 (b) 2, D314: „Supermarkt +84 €“); `difference` = `amount` − `mean`, both
+         *     the code's regular spending (one-off codes, marked payments and refunds left out).
+         */
+        CategoryDifference: {
+            category: components["schemas"]["AllocationCategory"];
+            group: components["schemas"]["HouseholdGroup"];
+            /** Amount */
+            amount: string;
+            /** Mean */
+            mean: string;
+            /** Difference */
+            difference: string;
+            words: components["schemas"]["DifferenceWords"];
+        };
+        /**
+         * CategoryDifferences
+         * @description GET /household/differences?month= (phase 10 §7.13 (b) 2, D314): the chosen month's
+         *     spending codes against their mean over the closed months before it (`baseline`, the
+         *     unbroken run ending before the month, three to twelve, oldest first). `final`: the month
+         *     is closed (ended, nothing waiting); until then only codes already above their mean are
+         *     named. `enough`: at least three months in `baseline`; below, `categories` is empty.
+         *     Every named code, the largest difference first; figures only, no colour, no advice.
+         */
+        CategoryDifferences: {
+            /** Month */
+            month: string;
+            /** Final */
+            final: boolean;
+            /** Enough */
+            enough: boolean;
+            /** Baseline */
+            baseline: string[];
+            /** Categories */
+            categories?: components["schemas"]["CategoryDifference"][];
+        };
+        /**
+         * CategoryLines
+         * @description GET /household/lines?month=&category= (phase 10 §7.13 (b) 2, 3, D314): the confirmed
+         *     private allocations counted under one spending code in the month (D234's recode applied,
+         *     as month_cashflow counts them), oldest booking first, each signed as spending (a refund
+         *     under the code negative). `total`: their sum, the code's figure in the month's spending
+         *     by category; `regular`: the total less the payments marked one-off, the figure „Was
+         *     diesen Monat anders ist“ compares. `group` None for a code that is no spending.
+         */
+        CategoryLines: {
+            /** Month */
+            month: string;
+            category: components["schemas"]["AllocationCategory"];
+            group?: components["schemas"]["HouseholdGroup"] | null;
+            /** Total */
+            total: string;
+            /** Regular */
+            regular: string;
+            /** Payments */
+            payments?: components["schemas"]["CategoryPayment"][];
+        };
+        /**
+         * CategoryPayment
+         * @description One payment behind a code's month (GET /household/lines); `one_off`: a person marked
+         *     it one-off, so it counts in the code's month but not in the comparison.
+         */
+        CategoryPayment: {
+            /**
+             * Allocation Id
+             * Format: uuid
+             */
+            allocation_id: string;
+            /**
+             * Transaction Id
+             * Format: uuid
+             */
+            transaction_id: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Account Label */
+            account_label: string;
+            /**
+             * Booked On
+             * Format: date
+             */
+            booked_on: string;
+            /** Payee */
+            payee?: string | null;
+            /**
+             * Purpose
+             * @default
+             */
+            purpose: string;
+            category: components["schemas"]["AllocationCategory"];
+            /** Amount */
+            amount: string;
+            /**
+             * One Off
+             * @default false
+             */
+            one_off: boolean;
         };
         /**
          * Chain
@@ -8430,6 +8588,8 @@ export interface components {
             todos?: string[];
             /** Learned */
             learned?: components["schemas"]["LearnedExchangeAddress"][];
+            /** Reconciled */
+            reconciled?: boolean | null;
         };
         /**
          * ExchangePosition
@@ -12051,7 +12211,8 @@ export interface components {
          *     stored month-end, None before the first; `month_end_due` the last month-end when no run
          *     holds it yet (the button „Monatsabschluss festhalten“); `month_end_now` the total read
          *     now for the stored month-end's day when it differs from the stored total, set only when
-         *     that day is the last month-end (the one the button stores again).
+         *     that day is the last month-end (the one the button stores again). `today_accounts` and
+         *     `today_tabs`: today's parts per account and per tab (§7.13 (a)).
          */
         NetWorthOverview: {
             today: components["schemas"]["NetWorth"];
@@ -12060,6 +12221,14 @@ export interface components {
             month_end_due?: string | null;
             /** Month End Now */
             month_end_now?: string | null;
+            /** Today Accounts */
+            today_accounts?: {
+                [key: string]: components["schemas"]["AccountParts"];
+            };
+            /** Today Tabs */
+            today_tabs?: {
+                [key: string]: components["schemas"]["AccountParts"];
+            };
         };
         /**
          * NetWorthPoint
@@ -23738,6 +23907,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HouseholdCashflow"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_differences_month_api_household_differences_get: {
+        parameters: {
+            query: {
+                month: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryDifferences"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_category_lines_api_household_lines_get: {
+        parameters: {
+            query: {
+                month: string;
+                category: components["schemas"]["AllocationCategory"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryLines"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

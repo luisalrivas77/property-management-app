@@ -28,6 +28,10 @@
   font-variant-numeric: tabular-nums;
 }
 
+.recurring-total h3 {
+  margin: 0;
+}
+
 .recurring-rows {
   list-style: none;
   margin: 0;

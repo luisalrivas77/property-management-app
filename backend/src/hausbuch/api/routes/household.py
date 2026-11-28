@@ -22,6 +22,13 @@
   answer and linked to each other. 404 for an unknown line, 409 when either is linked to
   another, 422 transfer.return_invalid for two lines that are no returned payment.
 - GET /household/cashflow?month=: the Haushalt screen, confirmed allocations only.
+- GET /household/differences?month= (phase 10 §7.13 (b) 2, D314): „Was diesen Monat anders
+  ist“ for the chosen month, per spending code against its mean over the closed months
+  before it; the month in progress names only what is above its mean. 422
+  health.range_invalid for a month before January 2026 or after the one running today.
+- GET /household/lines?month=&category= (§7.13 (b) 2, 3): the payments counted under one
+  spending code in the month, signed as spending, with their sum and the sum less those
+  marked one-off. 422 as above.
 - POST /transactions/{id}/private-costs: a property bill paid from a private account (D161
   path 2): the card's private_cost rows recorded; the bill's current rows unchanged when it
   has them already. 404 for a line that is no private property-cost payment with a bill.
@@ -49,6 +56,8 @@ from uuid import UUID
 
 from fastapi import Query, Response
 
+from hausbuch.schemas.allocation import AllocationCategory
+from hausbuch.schemas.health import CategoryDifferences, CategoryLines
 from hausbuch.schemas.household import (
     HouseholdCashflow,
     OpenTransfer,
@@ -70,6 +79,7 @@ from hausbuch.schemas.recurring import (
 from hausbuch.schemas.tax import TaxInput
 from hausbuch.services import (
     household,
+    household_differences,
     property_costs,
     recurring,
     returns,
@@ -135,6 +145,25 @@ def returned_payment(body: ReturnedPaymentCreate, cmd: Cmd, settings: SettingsDe
 @router.get("/household/cashflow")
 def household_cashflow(month: Month, cmd: Cmd) -> HouseholdCashflow:
     return cmd.read(household.cashflow, month)
+
+
+@router.get("/household/differences")
+def household_differences_month(month: Month, cmd: Cmd) -> CategoryDifferences:
+    return cmd.read(
+        household_differences.month_category_differences,
+        month,
+        datetime.now(LOCAL_TIME_ZONE).date(),
+    )
+
+
+@router.get("/household/lines")
+def household_category_lines(month: Month, category: AllocationCategory, cmd: Cmd) -> CategoryLines:
+    return cmd.read(
+        household_differences.category_lines,
+        month,
+        category,
+        datetime.now(LOCAL_TIME_ZONE).date(),
+    )
 
 
 @router.get("/household/recurring")

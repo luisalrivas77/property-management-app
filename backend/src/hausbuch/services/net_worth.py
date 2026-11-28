@@ -1482,7 +1482,9 @@ def overview(conn: Connection, today: date) -> NetWorthOverview:
     neu speichern“. The property's estimate is the default scenario standing at the end of
     that day (phase 9 D241, services.scenarios.estimate_on_day), so a „Wert heute“ recorded
     after it does not move it; a loan's balance is read from the loan's terms as they are now
-    (with that scenario's follow-up rate), so a change of those does show as a difference."""
+    (with that scenario's follow-up rate), so a change of those does show as a difference.
+    `today_accounts` and `today_tabs` split today's lines per account and per Konten tab
+    (phase 10 §7.13 (a), rules.net_worth.account_parts)."""
     due = last_month_end(today)
     stored = latest_month_end(conn)
     reads = _Reads(conn)  # both days read the movements, idle cards and history once
@@ -1490,11 +1492,15 @@ def overview(conn: Connection, today: date) -> NetWorthOverview:
     if stored is not None and stored.on == due:
         current = _net_worth(conn, due, reads).total
         now = current if current != stored.total else None
+    figure = _net_worth(conn, today, reads, today=today)
+    accounts, tabs = rules.account_parts(figure.lines)  # phase 10 §7.13 (a), D313
     return NetWorthOverview(
-        today=_net_worth(conn, today, reads, today=today),
+        today=figure,
         month_end=stored,
         month_end_due=None if _latest_run(conn, due) is not None else due,
         month_end_now=now,
+        today_accounts=accounts,
+        today_tabs=tabs,
     )
 
 

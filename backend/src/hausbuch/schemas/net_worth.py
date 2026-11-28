@@ -138,17 +138,37 @@ class NetWorth(Schema):
     run: NetWorthRun | None = None
 
 
+class AccountParts(Schema):
+    """Phase 10 §7.13 (a), D313: what one Konten row (or one tab) is made of today, from the
+    net worth's account and position lines (rules.net_worth.account_parts), so the page shows
+    each part without adding anything up. `value_eur` is what the tab's `by_account_tab` sums:
+    the balance, the positions and the money in transit (a depot's whole value, the Anlagen
+    portfolio card's total, PR #553). `balance_eur`: the balance lines without the money in
+    transit (a credit card's debt, negative); `positions_eur`: the valued positions;
+    `in_transit_eur`: the „unterwegs zu <Konto>“ lines (D292 (3)), on a credit card at most its
+    debt. A line without a value counts nowhere, as in `by_account_tab`."""
+
+    value_eur: Money
+    balance_eur: Money
+    positions_eur: Money
+    in_transit_eur: Money
+
+
 class NetWorthOverview(Schema):
     """GET /net-worth/overview: the Übersicht's card. `today` on read; `month_end` the latest
     stored month-end, None before the first; `month_end_due` the last month-end when no run
     holds it yet (the button „Monatsabschluss festhalten“); `month_end_now` the total read
     now for the stored month-end's day when it differs from the stored total, set only when
-    that day is the last month-end (the one the button stores again)."""
+    that day is the last month-end (the one the button stores again). `today_accounts` and
+    `today_tabs`: today's parts per account and per tab (§7.13 (a))."""
 
     today: NetWorth
     month_end: NetWorth | None = None
     month_end_due: date | None = None
     month_end_now: Money | None = None
+    # Phase 10 §7.13 (a), D313: `today`'s parts per account and per Konten tab.
+    today_accounts: dict[UUID, AccountParts] = Field(default_factory=dict)
+    today_tabs: dict[AccountTab, AccountParts] = Field(default_factory=dict)
 
 
 class SnapshotOutcome(StrEnum):

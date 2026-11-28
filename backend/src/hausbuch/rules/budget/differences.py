@@ -26,7 +26,12 @@ from uuid import UUID
 from hausbuch.rules.health.month import cashflow_rows
 from hausbuch.rules.household.taxonomy import ONE_OFF, TAXONOMY
 from hausbuch.schemas.allocation import AllocationCategory
-from hausbuch.schemas.health import DifferenceWords, GroupDifference, MonthLine
+from hausbuch.schemas.health import (
+    CategoryDifference,
+    DifferenceWords,
+    GroupDifference,
+    MonthLine,
+)
 from hausbuch.schemas.household import HouseholdGroup, Relevance
 
 MIN_BASELINE = 3
@@ -122,3 +127,67 @@ def differences(
         )
     named.sort(key=lambda d: (-abs(d.difference), _ORDER[d.group]))
     return named[:MAX_NAMED]
+
+
+# --- Per category (phase 10 §7.13 (b) 2, D314) ---------------------------------------------
+
+_CATEGORY_ORDER = {category: index for index, category in enumerate(AllocationCategory)}
+
+
+def compared_by_category(
+    rows: Iterable[tuple[AllocationCategory, Decimal]],
+    one_off_codes: Collection[AllocationCategory] = ONE_OFF,
+) -> dict[AllocationCategory, Decimal]:
+    """One month's regular spending per compared code (compared_group's codes: one-off codes
+    and refunds left out), from month_cashflow's rows (an outflow is negative there)."""
+    out: dict[AllocationCategory, Decimal] = {}
+    for category, amount in rows:
+        if compared_group(category, one_off_codes) is not None:
+            out[category] = out.get(category, _ZERO) - amount
+    return out
+
+
+def category_differences(
+    now: Mapping[AllocationCategory, Decimal],
+    before: Sequence[Mapping[AllocationCategory, Decimal]],
+    *,
+    final: bool,
+) -> list[CategoryDifference] | None:
+    """„Was diesen Monat anders ist“ per category for any chosen month (D314): each code of
+    `now` (one month's regular spending by compared_by_category) whose month differs from its
+    mean over `before` (the closed months before it, oldest first), with the thresholds of
+    `differences` (the mean to the cent, |difference| ≥ 50 € and ≥ 25 % of |mean|, a mean of 0
+    needing the 50 € only). None below three earlier months. Every code that crosses them is
+    named, the largest |difference| first, a tie in the groups' then the codes' order; the
+    screen folds the list. While the month is not `final` (not closed: it runs, or lines still
+    wait) a code is named only when it is already above its mean: a month half read is lower
+    than usual by being half read, so „weniger als üblich“ would say nothing."""
+    if len(before) < MIN_BASELINE:
+        return None
+    count = Decimal(len(before))
+    named: list[CategoryDifference] = []
+    for category in set(now).union(*before):
+        group = spending_group(category)
+        if group is None:  # compared_by_category's rows hold spending codes only
+            continue
+        total = sum((month.get(category, _ZERO) for month in before), _ZERO)
+        mean = (total / count).quantize(_CENT, ROUND_HALF_UP)
+        amount = now.get(category, _ZERO)
+        difference = amount - mean
+        size = abs(difference)
+        if size < MIN_AMOUNT or size < MIN_SHARE * abs(mean):
+            continue
+        if not final and difference < 0:
+            continue
+        named.append(
+            CategoryDifference(
+                category=category,
+                group=group,
+                amount=amount,
+                mean=mean,
+                difference=difference,
+                words=DifferenceWords.MORE if difference > 0 else DifferenceWords.LESS,
+            )
+        )
+    named.sort(key=lambda d: (-abs(d.difference), _ORDER[d.group], _CATEGORY_ORDER[d.category]))
+    return named
