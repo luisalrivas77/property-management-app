@@ -100,6 +100,35 @@ bases:
   # INVENTED funds returns 2010–2025: their worst 5-year window, 2011–2015, 0.70 × 1.05 × 0.90 ×
   # 1.15 × 0.75 = 0.57054375, annualised −10.7 % (0.893⁵ = 0.56788 ≤ it < 0.894⁵ = 0.57107)
   funds2: &funds2 {2010: '0.10', 2011: '-0.30', 2012: '0.05', 2013: '-0.10', 2014: '0.15', 2015: '-0.25', 2016: '0.08', 2017: '-0.05', 2018: '0.20', 2019: '0.12', 2020: '-0.15', 2021: '0.25', 2022: '0.10', 2023: '0.05', 2024: '-0.10', 2025: '0.06'}
+  # „Noch nie erreicht“ (§7.13 (d) 5, D316; readings at the end of this file). INVENTED Q4
+  # values of a house price index 2005–2025 (goal_property.yaml's `index`, moved here when that
+  # card was removed): 20 yearly returns 2006–2025, so 16 five-year windows.
+  house_index: &house_index {2005: '80.0', 2006: '80.8', 2007: '81.6', 2008: '80.0', 2009: '82.4', 2010: '82.4', 2011: '85.7', 2012: '90.0', 2013: '92.7', 2014: '98.3', 2015: '100.0', 2016: '107.0', 2017: '115.6', 2018: '126.0', 2019: '132.3', 2020: '145.5', 2021: '163.0', 2022: '158.1', 2023: '150.2', 2024: '151.7', 2025: '154.7'}
+  # goal_property.yaml's household: this file's with a flat worth 300,000 today, its loan
+  # 200,000 falling 5,000 a year, sold in 2038 at 5 % selling costs, 55 m²; its value at 31 Dec
+  # of year Y is 300,000 × (1 + g)^(Y − 2026) to the cent half-up. A goal of 300,000 by Dec
+  # 2031: today Nov 2026, so 61 months left and windows of L = 5 years.
+  sold: &sold
+    <<: *household
+    start: {month_end: '2026-10-31', bank: '50000.00', depot: '0.00', crypto: '0.00', property: '300000.00', loans: '200000.00', other_liabilities: '0.00'}
+    value_today: {net_worth: '151000.00', reserve: '31000.00'}
+    net_worth_today: '151000.00'
+    levers:
+      goal: {kind: net_worth, target: '300000.00', due_month: '2031-12', set_on: '2026-11-20'}
+      value_change: {depot: '0.06'}
+    house_index: *house_index
+  flat2: &flat2   # g = 2 %: 380,472.54 in 2038, less 19,023.63 selling costs and the 140,000 loan
+    sale_year: 2038
+    years: {2027: ['306000.00', '195000.00'], 2028: ['312120.00', '190000.00'], 2029: ['318362.40', '185000.00'], 2030: ['324729.65', '180000.00'], 2031: ['331224.24', '175000.00'], 2032: ['337848.73', '170000.00'], 2033: ['344605.70', '165000.00'], 2034: ['351497.81', '160000.00'], 2035: ['358527.77', '155000.00'], 2036: ['365698.33', '150000.00'], 2037: ['373012.29', '145000.00'], 2038: ['380472.54', '140000.00']}
+    net_proceeds: '221448.91'
+    living_area: '55'
+    value_change: '0.02'
+  flat9: &flat9   # g = 9 %: 843,799.43 in 2038, less 42,189.97 selling costs and the 140,000 loan
+    sale_year: 2038
+    years: {2027: ['327000.00', '195000.00'], 2028: ['356430.00', '190000.00'], 2029: ['388508.70', '185000.00'], 2030: ['423474.48', '180000.00'], 2031: ['461587.19', '175000.00'], 2032: ['503130.03', '170000.00'], 2033: ['548411.74', '165000.00'], 2034: ['597768.79', '160000.00'], 2035: ['651567.98', '155000.00'], 2036: ['710209.10', '150000.00'], 2037: ['774127.92', '145000.00'], 2038: ['843799.43', '140000.00']}
+    net_proceeds: '661609.46'
+    living_area: '55'
+    value_change: '0.09'
 
 rules:
   income_gap_months: 6
@@ -394,3 +423,90 @@ cases:
         repair: {available: false, reason: no_living_area, amount: null, by_property: {}}
         todos:
         - {code: plan.living_area_missing, property: flat, action: Wohnfläche eintragen, href: /properties/flat}
+
+# --- „Noch nie erreicht“ (§7.13 (d) 5, D316), added 28 Nov 2026 --------------------------------
+# A property's typed yearly value change on card 4 „Eure Annahmen“ carries the German house
+# price index beside it (`house_prices`), a mark, never a block: nothing else on the page
+# changes with it. Readings this part pins:
+# 8. L = the goal's months left ÷ 12 whole years, at least 1 (route 3's and the weak markets'
+#    window). Every run of L consecutive yearly returns Q4 to Q4 (Q4 of Y ÷ Q4 of Y−1) is a
+#    window; `reached` counts those whose product is at least (1 + the typed change)^L, of
+#    `windows`; `never` is true when none reached it (the mark „Noch nie erreicht“); `thin` under
+#    5 windows, as route 3 counts. The key is present and null for a property without a typed
+#    change (kept without a scenario), in `generic` mode, and when the index has no window of L
+#    years. `house_index` is the case's invented index; the page itself reads the committed
+#    Eurostat series.
+# The counts were worked apart from the rule with exact fractions on a scratch sheet that
+# imports nothing from hausbuch; it first reproduced goal_property.yaml's 10, 5 and 0 of 16
+# five-year windows at 3.0 %, 6.0 % and 10.0 % and its 2 windows from Q4 2019.
+- id: house_prices_reached
+  description: >-
+    the flat's typed 2 % a year: the index rose at least 1.02^5 over 12 of its 16 five-year
+    windows, so no mark
+  <<: *sold
+  flats: {flat: *flat2}
+  expect:
+    cards:
+      assumptions:
+        properties:
+        - {key: flat, kept: false, sale_year: 2038, value_change: '0.02', house_prices: {window_years: 5, windows: 16, reached: 12, never: false, thin: false}}
+
+- id: house_prices_never_reached
+  description: >-
+    the flat's typed 9 % a year: no five-year window reached 1.09^5 = 1.5386 (the best, 2017–2021,
+    163.0 ÷ 107.0 = 1.5234, is 8.7 % a year), so „Noch nie erreicht“, 0 of 16
+  <<: *sold
+  flats: {flat: *flat9}
+  expect:
+    cards:
+      assumptions:
+        properties:
+        - {key: flat, kept: false, sale_year: 2038, value_change: '0.09', house_prices: {window_years: 5, windows: 16, reached: 0, never: true, thin: false}}
+
+- id: house_prices_thin
+  description: >-
+    the index only from Q4 2019: six returns 2020–2025 give 2 five-year windows; 2021–2025
+    (154.7 ÷ 145.5) does not reach 1.02^5 = 1.1041, 2020–2024 (151.7 ÷ 132.3 = 1.1466) does: 1 of
+    2, thin, no mark
+  <<: *sold
+  house_index: {2019: '132.3', 2020: '145.5', 2021: '163.0', 2022: '158.1', 2023: '150.2', 2024: '151.7', 2025: '154.7'}
+  flats: {flat: *flat2}
+  expect:
+    cards:
+      assumptions:
+        properties:
+        - {key: flat, kept: false, sale_year: 2038, value_change: '0.02', house_prices: {window_years: 5, windows: 2, reached: 1, never: false, thin: true}}
+
+- id: house_prices_no_window
+  description: the index only from Q4 2022 has three returns and no five-year window, so no mark
+  <<: *sold
+  house_index: {2022: '158.1', 2023: '150.2', 2024: '151.7', 2025: '154.7'}
+  flats: {flat: *flat2}
+  expect:
+    cards:
+      assumptions:
+        properties:
+        - {key: flat, kept: false, sale_year: 2038, value_change: '0.02', house_prices: null}
+
+- id: house_prices_generic
+  description: in `generic` mode the typed 9 % gets no comparison with house prices
+  <<: *sold
+  mode: generic
+  flats: {flat: *flat9}
+  expect:
+    cards:
+      assumptions:
+        properties:
+        - {key: flat, kept: false, sale_year: 2038, value_change: '0.09', house_prices: null}
+
+- id: house_prices_kept_property
+  description: >-
+    the cards household's property, kept without a scenario, has no typed value change, so no
+    comparison although the index is there
+  <<: *cards
+  house_index: *house_index
+  expect:
+    cards:
+      assumptions:
+        properties:
+        - {key: flat, kept: true, sale_year: null, value_change: null, house_prices: null}

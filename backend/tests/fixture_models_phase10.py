@@ -662,6 +662,9 @@ class PlanCase(RouteCase):
     invested_this_month: Money = Decimal("0.00")  # the running month's booked investments
     budget_adopted: bool = False  # the balanced route's wants budget is the default scenario's
     switches: PlanSwitchesIn = Field(default_factory=lambda: PlanSwitchesIn())
+    # §7.13 (d) 5: an INVENTED house price index, Q4 value by year (never Eurostat's data);
+    # None: no index, so no property carries the comparison
+    house_index: dict[int, Decimal] | None = None
     expect: PlanExpect  # type: ignore[assignment]
 
 
