@@ -26,6 +26,7 @@ import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { useT } from "@/i18n";
 import { goalText } from "@/i18n/goal";
+import { goalPathText } from "@/i18n/goalPath";
 import { planPageText } from "@/i18n/planPage";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { deviceSetting, useDeviceSetting } from "@/lib/deviceSetting";
@@ -278,13 +279,17 @@ function GoalCard({ plan, goal: household }: { plan: PlanPage; goal: HouseholdGo
   const g = useT(goalText);
   const p = usePlanFormat();
   const goal = plan.goal!;
-  // With the goal's path, its word („Machbar mit 9,4 %“), as Übersicht and Ziel read it.
+  // With the goal's path, its word and the return it needs as its own labelled figure, as
+  // Übersicht and Ziel read it (§7.13 (d) 1, D316).
   const pathWord = usePathWord(household);
   return (
     <div className="goal-c goal-c-excess planp-goal">
       <CardHead kind={KIND} id={P.goal} title={targetText(t, p, plan)} />
       {pathWord ? (
-        <WordPill word={pathWord.word} text={pathWord.text} />
+        <>
+          <WordPill word={pathWord.word} text={pathWord.text} />
+          {pathWord.figure ? <span className="tile-sub">{pathWord.figure}</span> : null}
+        </>
       ) : (
         <WordPill word={goal.word ?? "none"} text={wordText(g, goal.word, plan.issue)} />
       )}
@@ -295,7 +300,7 @@ function GoalCard({ plan, goal: household }: { plan: PlanPage; goal: HouseholdGo
           </span>
           <div className="planp-goal-foot">
             <span>{t.today(amount(t, p, plan, goal.value_today))}</span>
-            <b>{p.percentValue(goal.percent)}</b>
+            <b>{g.percentReached(p.percentValue(goal.percent))}</b>
           </div>
         </>
       ) : null}
@@ -481,6 +486,7 @@ function RisksCard({ plan }: { plan: PlanPage }) {
 
 function OtherCard({ plan }: { plan: PlanPage }) {
   const t = useT(planPageText);
+  const tp = useT(goalPathText);
   const p = usePlanFormat();
   const o = plan.other_routes!;
   return (
@@ -493,7 +499,7 @@ function OtherCard({ plan }: { plan: PlanPage }) {
         </div>
         <div className="goal-rw">
           <span>{t.onlyMoreReturn}</span>
-          <b>{o.needed_return != null ? p.ratio(o.needed_return) : t.unavailable}</b>
+          <b>{o.needed_return != null ? tp.perYear(p.ratio(o.needed_return)) : t.unavailable}</b>
         </div>
         <div className="goal-rw">
           <span>{t.onlyLessSpending}</span>
@@ -588,7 +594,7 @@ function Panel({
   if (!title) return null;
   let body: ReactNode = null;
   if (id === P.share) body = share ? <SharePanel code={code} /> : null;
-  else if (id === P.goal) body = <GoalPanel plan={data} />;
+  else if (id === P.goal) body = <GoalPanel plan={data} household={data.view === "own" ? (path?.goal ?? null) : null} />;
   else if (id === P.heute && data.heute) body = <HeutePanel plan={data} />;
   else if (id === P.route && data.plan) body = <RoutePanel plan={data} onWritten={onWritten} />;
   else if (id === P.assumptions && data.assumptions) body = <AssumptionsPanel plan={data} />;
@@ -642,10 +648,14 @@ function SharePanel({ code }: { code: string }) {
   );
 }
 
-function GoalPanel({ plan }: { plan: PlanPage }) {
+function GoalPanel({ plan, household }: { plan: PlanPage; household: HouseholdGoal | null }) {
   const t = useT(planPageText);
+  const tp = useT(goalPathText);
   const p = usePlanFormat();
   const goal = plan.goal!;
+  // The sentence the card leaves out, with how often the household's own mix reached it.
+  const pathWord = usePathWord(household);
+  const view = pathWord?.view ?? null;
   const words: Record<string, string> = { on_track: t.wordOnTrack, feasible: t.wordFeasible, ambitious: t.wordAmbitious, hardly: t.wordHardly };
   return (
     <>
@@ -653,6 +663,10 @@ function GoalPanel({ plan }: { plan: PlanPage }) {
         <p>{t.goalPanelText(targetText(t, p, plan), amount(t, p, plan, goal.value_today), p.percentValue(goal.percent))}</p>
       ) : null}
       <p className="goal-one">{t.goalPanelWord}</p>
+      {pathWord?.sentence ? <p>{pathWord.sentence}</p> : null}
+      {pathWord?.sentence && view?.windows != null && view.reached_windows != null && view.path.window_years != null ? (
+        <p>{tp.windowsLine(view.path.window_years, view.reached_windows, view.windows)}</p>
+      ) : null}
       {goal.word && words[goal.word] ? <p>{words[goal.word]}</p> : null}
       {plan.view === "own" ? (
         <Link href={GOAL_FORM_HREF} className="goal-lnk">

@@ -181,7 +181,10 @@ export function GoalTileBody({ goal }: { goal: HouseholdGoal }) {
     <>
       <GoalHeadline goal={goal} goalSet={goal.goal} />
       {path ? (
-        <WordPill word={path.word} text={path.text} />
+        <>
+          <WordPill word={path.word} text={path.text} />
+          {path.figure ? <span className="tile-sub">{path.figure}</span> : null}
+        </>
       ) : goal.word && goal.word !== "none" ? (
         <WordPill word={goal.word} text={goalWordText(t, goal)} />
       ) : (
@@ -526,6 +529,7 @@ function GoalCards({ goal, goalSet, onChanged }: { goal: HouseholdGoal; goalSet:
         ) : (
           <WordPill word="none" text={goalWordText(t, goal)} />
         )}
+        {path?.figure ? <p className="goal-one">{path.figure}</p> : null}
         {keepsOnTrack(goal) ? (
           <p className="goal-one">{t.keepOnTrack(p.euro(goal.heute))}</p>
         ) : chosen && goal.issue == null ? (
@@ -852,6 +856,7 @@ function lessSpending(goal: HouseholdGoal): GoalScenario | null {
 /** „Andere Wege“: routes 2, 3 and 4, each a row that opens its panel (D302, D303). */
 function OtherRoutesCard({ goal }: { goal: HouseholdGoal }) {
   const t = useT(goalText);
+  const tp = useT(goalPathText);
   const p = usePlanFormat();
   const detail = useDetail(GOAL_DETAIL);
   const ret = goal.more_return ?? null;
@@ -874,7 +879,7 @@ function OtherRoutesCard({ goal }: { goal: HouseholdGoal }) {
               {t.onlyMoreReturn}
               {returnTag ? <span className={`goal-tag ${returnClass}`}>{returnTag}</span> : null}
             </span>
-            <b>{ret.needed_return != null ? p.ratio(ret.needed_return) : "–"}</b>
+            <b>{ret.needed_return != null ? tp.perYear(p.ratio(ret.needed_return)) : "–"}</b>
           </a>
         ) : null}
         {less ? (
@@ -1105,6 +1110,10 @@ function WordsPanel({ goal }: { goal: HouseholdGoal }) {
   const less = lessSpending(goal);
   const ret = goal.more_return ?? null;
   const due = goal.goal ? p.month(goal.goal.due_month) : "";
+  // With the goal's path at a higher return, the sentence the card leaves out (§7.13 (d) 1).
+  const tp = useT(goalPathText);
+  const path = usePathWord(goal);
+  const view = path?.view ?? null;
   const today = (word: GoalWord): string | null => {
     switch (word) {
       case "on_track":
@@ -1129,6 +1138,10 @@ function WordsPanel({ goal }: { goal: HouseholdGoal }) {
   ];
   return (
     <div className="stack goal-panel">
+      {path?.sentence ? <p>{path.sentence}</p> : null}
+      {path?.sentence && view?.windows != null && view.reached_windows != null && view.path.window_years != null ? (
+        <p>{tp.windowsLine(view.path.window_years, view.reached_windows, view.windows)}</p>
+      ) : null}
       <div className="goal-words">
         {words.map((row) => {
           const current = row.word === goal.word;

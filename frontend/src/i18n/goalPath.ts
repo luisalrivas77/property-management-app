@@ -8,8 +8,10 @@ import { defineMessages } from "./core";
 
 export const goalPathText = defineMessages({
   de: {
-    // the word: Machbar at a higher return names it
-    feasibleAt: (rate: string) => `Machbar mit ${rate}`,
+    // the word stays „Machbar“; the return it needs is its own figure with a label, the
+    // sentence goes in the side panel (§7.13 (d) 1, D316)
+    returnNeededShort: (rate: string) => `${rate} Rendite nötig`,
+    feasibleIf: (rate: string) => `Machbar, wenn eure Anlagen ${rate} im Jahr bringen`,
     // Heute angelegt (item 7)
     todayCard: "Heute angelegt",
     investedLabel: "In Fonds und Krypto im Monat",
@@ -154,7 +156,8 @@ export const goalPathText = defineMessages({
     noPointsYet: "Die Kurve beginnt nach dem ersten Monatsende.",
   },
   en: {
-    feasibleAt: (rate) => `Feasible at ${rate}`,
+    returnNeededShort: (rate) => `${rate} return needed`,
+    feasibleIf: (rate) => `Feasible if your investments return ${rate} a year`,
     todayCard: "Invested today",
     investedLabel: "In funds and crypto a month",
     plansCount: (n) => (n === 1 ? "of which 1 savings plan" : `of which ${n} savings plans`),

@@ -717,6 +717,24 @@ test("the path at step 1: the plan card, „Woher“ and „Diesen Plan überneh
   await expect(main.getByTestId("path-since")).toContainText(/Angelegt 1\.100\s€/);
 });
 
+test("the path at a higher return: the card says Machbar and the return with its label, the sentence in the panel", async ({ page, signedIn }) => {
+  void signedIn;
+  await planApi(page);
+  const higher: GoalPath = { ...stepOne(), state: "doable_return", rate: "0.094", return_needed: "0.094", window_years: 5, windows: 4, reached_windows: 3 };
+  const state = { goal: withPath(higher), tracking: tracking([]) };
+  await pathApi(page, state, () => ({ status: 201, json: {} }));
+  await page.goto("/household/plan");
+  const card = page.locator(".planp-cards .planp-goal");
+  // No sentence and no bare percent on the card (§7.13 (d) 1, D316).
+  await expect(card.locator(".goal-word")).toHaveText("Machbar");
+  await expect(card).toContainText(/9,4\s%\sRendite nötig/);
+  await expect(card).not.toContainText("wenn eure Anlagen");
+  await page.goto("/household/plan#d-plan-ziel");
+  const panel = detail(page, "Euer Ziel");
+  await expect(panel).toContainText(/Machbar, wenn eure Anlagen 9,4\s% im Jahr bringen/);
+  await expect(panel).toContainText("erreicht in 3 von 4");
+});
+
 test("the path when it cannot hold: no adopt button; Ehrgeizig and Kaum erreichbar say why", async ({ page, signedIn }) => {
   void signedIn;
   await planApi(page);

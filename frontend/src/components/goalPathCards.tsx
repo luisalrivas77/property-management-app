@@ -539,6 +539,7 @@ function RoutePanel({ view, due, target }: { view: PathView; due: string | null;
   const history = historyLine(t, view);
   return (
     <>
+      {view.state === "doable_return" && view.rate != null ? <p>{t.feasibleIf(p.ratio(view.rate))}</p> : null}
       <PlanSteps view={view} target={target} />
       {view.state === "ambitious" && view.windows != null && view.reached_windows != null ? <p>{t.ambitiousText(view.reached_windows, view.windows)}</p> : null}
       {view.state === "hardly" ? <p>{view.windows != null ? t.hardlyText : t.hardlyNoHistory}</p> : null}
