@@ -17,18 +17,34 @@
 // upload; an exchange or a wallet shows its own section (exchange.tsx, wallet.tsx), as its page
 // does. A wallet's Stand is the wallet page's verdicts (GET /wallets/{id}/state) and when it was
 // last read. A loan's Restschuld is its balance after the last instalment due by today.
+// §7.13 (a), D313: a depot's Stand is its whole value today (funds at the newest price, cash
+// and money on its way, the Anlagen portfolio card's total), a credit card's what is owed
+// with the payment on its way beside it, both from GET /net-worth/overview's
+// `today_accounts` and `today_tabs`; an exchange's the account page's own state
+// (GET /accounts/{id}/exchange `reconciled`).
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
-import type { Account, AccountTab, Loan, LoanSchedule, Owner, StatementImport, WalletAddress, WalletState } from "@/api/schemas";
+import type {
+  Account,
+  AccountParts,
+  AccountTab,
+  ExchangeOverview,
+  Loan,
+  LoanSchedule,
+  Owner,
+  StatementImport,
+  WalletAddress,
+  WalletState,
+} from "@/api/schemas";
 import { AccountOwnership } from "@/app/(app)/accounts/[id]/AccountOwnership";
 import { ownersText } from "@/components/accountLines";
 import { ImportStatusPill, StatementUpload } from "@/components/accounts";
 import { BankSyncCard } from "@/components/bankSync";
 import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
-import { ExchangeSection } from "@/components/exchange";
+import { ExchangeSection, reconciledPill } from "@/components/exchange";
 import { todayIso } from "@/components/format";
 import { CHAIN } from "@/components/labels";
 import { Loading } from "@/components/ui";
@@ -44,8 +60,17 @@ import "@/components/accountScreens.css";
 type Messages = (typeof catalogue)["de"];
 
 /** `addresses` and `state` are set on a wallet's row only (its masked addresses from GET
- * /wallets/{id}, each address's verdict from GET /wallets/{id}/state). */
-type Row = { account: Account; imports: StatementImport[]; addresses: WalletAddress[] | null; state: WalletState | null };
+ * /wallets/{id}, each address's verdict from GET /wallets/{id}/state); `exchange` on an
+ * exchange's (GET /accounts/{id}/exchange); `parts` is the account's share of today's net
+ * worth (GET /net-worth/overview `today_accounts`), null when it has no line there. */
+type Row = {
+  account: Account;
+  imports: StatementImport[];
+  addresses: WalletAddress[] | null;
+  state: WalletState | null;
+  exchange: ExchangeOverview | null;
+  parts: AccountParts | null;
+};
 type LoanRow = { loan: Loan; schedule: LoanSchedule };
 
 type KindKey = "bank" | "karte" | "depot" | "boerse" | "wallet" | "darlehen";
@@ -68,18 +93,23 @@ const TAB_OF_KIND: Record<KindKey, AccountTab | null> = {
   darlehen: null,
 };
 
-/** A wallet has no statement imports: its row reads its addresses instead. */
-async function loadRow(account: Account): Promise<Row> {
+/** A wallet has no statement imports: its row reads its addresses instead; an exchange its
+ * page's overview, whose `reconciled` the row shows. */
+async function loadRow(account: Account, parts: AccountParts | null): Promise<Row> {
+  const params = { params: { path: { account_id: account.id } } };
   if (account.kind === "wallet") {
-    const params = { params: { path: { account_id: account.id } } };
     const [page, state] = await Promise.all([
       ok(api.GET("/api/wallets/{account_id}", params)),
       ok(api.GET("/api/wallets/{account_id}/state", params)),
     ]);
-    return { account, imports: [], addresses: page.addresses, state };
+    return { account, imports: [], addresses: page.addresses, state, exchange: null, parts };
   }
-  const imports = await ok(api.GET("/api/accounts/{account_id}/imports", { params: { path: { account_id: account.id } } }));
-  return { account, imports, addresses: null, state: null };
+  if (account.kind === "exchange") {
+    const exchange = await ok(api.GET("/api/accounts/{account_id}/exchange", params));
+    return { account, imports: [], addresses: null, state: null, exchange, parts };
+  }
+  const imports = await ok(api.GET("/api/accounts/{account_id}/imports", params));
+  return { account, imports, addresses: null, state: null, exchange: null, parts };
 }
 
 async function loadAccounts() {
@@ -98,7 +128,7 @@ async function loadAccounts() {
     )
   ).flat();
   const [rows, loanRows] = await Promise.all([
-    Promise.all(accounts.map(loadRow)),
+    Promise.all(accounts.map((account) => loadRow(account, netWorth.today_accounts?.[account.id] ?? null))),
     Promise.all(
       loans.map(
         async (loan): Promise<LoanRow> => ({
@@ -108,7 +138,7 @@ async function loadAccounts() {
       ),
     ),
   ]);
-  return { rows, owners, loanRows, today: netWorth.today };
+  return { rows, owners, loanRows, today: netWorth.today, tabs: netWorth.today_tabs ?? {} };
 }
 
 type Loaded = Awaited<ReturnType<typeof loadAccounts>>;
@@ -152,7 +182,7 @@ function AccountKinds({ data, onChanged }: { data: Loaded; onChanged: () => void
   const router = useRouter();
   const search = useSearchParams();
   const detail = useDetail("konto");
-  const { rows, owners, loanRows, today } = data;
+  const { rows, owners, loanRows, today, tabs } = data;
 
   const count = (key: KindKey) =>
     key === "darlehen" ? loanRows.length : rows.filter((row) => KINDS.find((kind) => kind.key === key)?.kinds.includes(row.account.kind)).length;
@@ -192,7 +222,7 @@ function AccountKinds({ data, onChanged }: { data: Loaded; onChanged: () => void
           </Link>
         ))}
       </nav>
-      <KindTotal kind={current.key} rows={members} loans={loanRows} today={today} />
+      <KindTotal kind={current.key} rows={members} loans={loanRows} today={today} tabs={tabs} />
       {current.key === "darlehen" ? (
         <LoanTable rows={loanRows} linkProps={detail.linkProps} />
       ) : (
@@ -206,19 +236,54 @@ function AccountKinds({ data, onChanged }: { data: Loaded; onChanged: () => void
 
 /** The kind's total as GET /net-worth/overview states it today (`by_account_tab`, the loans'
  * `loan_balances`), large, and its count under it. No total when no account of the tab has a
- * line in the net worth yet. */
-function KindTotal({ kind, rows, loans, today }: { kind: KindKey; rows: Row[]; loans: LoanRow[]; today: Loaded["today"] }) {
+ * line in the net worth yet. The cards' tab shows what is owed instead (`today_tabs`' balance
+ * without the money on its way, §7.13 (a)): their net worth figure is 0 once a payment on its
+ * way meets the debt, which read as nothing owed; the payment on its way under it. */
+function KindTotal({
+  kind,
+  rows,
+  loans,
+  today,
+  tabs,
+}: {
+  kind: KindKey;
+  rows: Row[];
+  loans: LoanRow[];
+  today: Loaded["today"];
+  tabs: Loaded["tabs"];
+}) {
   const t = useT(catalogue);
   const f = useFormat();
   const tab = TAB_OF_KIND[kind];
   const value = tab === null ? today.loan_balances : today.by_account_tab?.[tab];
   const count = kind === "darlehen" ? t.loanCount(loans.length) : t.accountCount(rows.length);
+  const card = tab === "card" ? tabs[tab] : undefined;
+  if (card) {
+    return (
+      <div className="kind-summary">
+        <p className="kind-total">{f.money(unsigned(card.balance_eur))}</p>
+        <p className="muted">{t.countToday(`${count} · ${isNegative(card.balance_eur) ? t.owedLabel : t.creditLabel}`)}</p>
+        {isPositive(card.in_transit_eur) ? <p className="muted">{t.paymentInTransit(f.money(card.in_transit_eur))}</p> : null}
+      </div>
+    );
+  }
   return (
     <div className="kind-summary">
       {value != null ? <p className="kind-total">{f.money(value)}</p> : null}
       <p className="muted">{t.countToday(count)}</p>
     </div>
   );
+}
+
+/** Sign tests and the sign dropped on the server's decimal strings; display only, no sum. */
+function isNegative(value: string): boolean {
+  return value.startsWith("-") && !/^-0*\.?0*$/.test(value);
+}
+function isPositive(value: string): boolean {
+  return !value.startsWith("-") && !/^0*\.?0*$/.test(value);
+}
+function unsigned(value: string): string {
+  return value.startsWith("-") ? value.slice(1) : value;
 }
 
 function AccountTable({
@@ -231,10 +296,11 @@ function AccountTable({
   linkProps: ReturnType<typeof useDetail>["linkProps"];
 }) {
   const t = useT(catalogue);
-  const f = useFormat();
   return (
     <ul className="account-list">
-      {rows.map(({ account, imports, addresses, state }) => (
+      {rows.map((row) => {
+        const { account, addresses, state } = row;
+        return (
         <li key={account.id}>
           <a {...linkProps(account.id)} className="account-row">
             <span className="account-main">
@@ -277,16 +343,61 @@ function AccountTable({
             </span>
             <span className="account-cell account-balance">
               <span className="account-cell-label">{t.colBalance}</span>
-              {addresses !== null && state !== null ? <WalletStand state={state} f={f} t={t} /> : <Stand imports={imports} owed={account.kind === "credit_card"} />}
+              <RowStand row={row} />
             </span>
             <span className="account-cell account-import">
               <span className="account-cell-label">{t.colLastImport}</span>
-              <LastImport imports={imports} />
+              <LastImport imports={row.imports} />
             </span>
           </a>
         </li>
-      ))}
+        );
+      })}
     </ul>
+  );
+}
+
+/** A row's „Stand“ by its kind (§7.13 (a)): a wallet its verdicts, an exchange its value today
+ * and the account page's state, a depot its whole value today, a credit card what is owed with
+ * the payment on its way, any other account its newest reconciled statement. */
+function RowStand({ row }: { row: Row }) {
+  const t = useT(catalogue);
+  const f = useFormat();
+  const { account, parts } = row;
+  if (row.addresses !== null && row.state !== null) return <WalletStand state={row.state} f={f} t={t} />;
+  if (account.kind === "exchange") {
+    return (
+      <span className="account-stand">
+        {parts ? <strong>{f.money(parts.value_eur)}</strong> : null}
+        <span className="account-sub">{reconciledPill(row.exchange?.reconciled)}</span>
+      </span>
+    );
+  }
+  if (account.kind === "depot" && parts) {
+    return (
+      <span className="account-stand">
+        <strong>{f.money(parts.value_eur)}</strong>
+        <span className="account-sub">{t.depotToday}</span>
+      </span>
+    );
+  }
+  if (account.kind === "credit_card" && parts) return <CardStand parts={parts} />;
+  return <Stand imports={row.imports} owed={account.kind === "credit_card"} />;
+}
+
+/** What a card owes (its balance without the money on its way), „offen“ or „Guthaben“, and the
+ * payment on its way when there is one. */
+function CardStand({ parts }: { parts: AccountParts }) {
+  const t = useT(catalogue);
+  const f = useFormat();
+  const owed = isNegative(parts.balance_eur);
+  return (
+    <span className="account-stand">
+      <strong>{f.money(unsigned(parts.balance_eur))}</strong>
+      <span className="account-sub">
+        {isPositive(parts.in_transit_eur) ? t.owedWithTransit(owed, f.money(parts.in_transit_eur)) : owed ? t.owedLabel : t.creditLabel}
+      </span>
+    </span>
   );
 }
 
@@ -443,9 +554,10 @@ function AccountPanel({ row, owners, onChanged }: { row: Row; owners: Owner[]; o
       {crypto ? null : (
         <div className="account-panel-balance">
           <span className="muted">{t.panelBalance}</span>
-          <Stand imports={imports} owed={account.kind === "credit_card"} />
+          <RowStand row={row} />
         </div>
       )}
+      {account.kind === "depot" && row.parts ? <DepotParts parts={row.parts} /> : null}
       {account.kind === "exchange" ? <ExchangeSection accountId={account.id} /> : null}
       {account.kind === "wallet" ? <WalletSection accountId={account.id} /> : null}
       <div className="detail-rows">
@@ -472,6 +584,29 @@ function AccountPanel({ row, owners, onChanged }: { row: Row; owners: Owner[]; o
           <StatementUpload accountId={account.id} card={account.kind === "credit_card"} depot={account.kind === "depot"} onImported={onChanged} />
         </div>
       )}
+    </div>
+  );
+}
+
+/** A depot's value today in its three parts, each as the net worth counts it. */
+function DepotParts({ parts }: { parts: AccountParts }) {
+  const t = useT(catalogue);
+  const f = useFormat();
+  const items: [string, string][] = [
+    [t.partFunds, parts.positions_eur],
+    [t.partCash, parts.balance_eur],
+    [t.partInTransit, parts.in_transit_eur],
+  ];
+  return (
+    <div className="detail-rows">
+      {items.map(([label, value]) => (
+        <div key={label} className="detail-row">
+          <span className="detail-row-text">
+            <span className="detail-row-title">{label}</span>
+          </span>
+          <span className="money">{f.money(value)}</span>
+        </div>
+      ))}
     </div>
   );
 }

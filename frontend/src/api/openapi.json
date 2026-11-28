@@ -6719,6 +6719,94 @@
         }
       }
     },
+    "/api/household/differences": {
+      "get": {
+        "summary": "Household Differences Month",
+        "operationId": "household_differences_month_api_household_differences_get",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+              "title": "Month"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryDifferences"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/household/lines": {
+      "get": {
+        "summary": "Household Category Lines",
+        "operationId": "household_category_lines_api_household_lines_get",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+              "title": "Month"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AllocationCategory"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryLines"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/household/recurring": {
       "get": {
         "summary": "Household Recurring",
@@ -12144,6 +12232,40 @@
         "title": "AccountOwnership",
         "description": "account_ownership row (append-only; a change is a new set under a new\neffective_from, an old row's superseded_by names the row that replaced it)."
       },
+      "AccountParts": {
+        "properties": {
+          "value_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Value Eur"
+          },
+          "balance_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Balance Eur"
+          },
+          "positions_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Positions Eur"
+          },
+          "in_transit_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "In Transit Eur"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value_eur",
+          "balance_eur",
+          "positions_eur",
+          "in_transit_eur"
+        ],
+        "title": "AccountParts",
+        "description": "Phase 10 §7.13 (a), D313: what one Konten row (or one tab) is made of today, from the\nnet worth's account and position lines (rules.net_worth.account_parts), so the page shows\neach part without adding anything up. `value_eur` is what the tab's `by_account_tab` sums:\nthe balance, the positions and the money in transit (a depot's whole value, the Anlagen\nportfolio card's total, PR #553). `balance_eur`: the balance lines without the money in\ntransit (a credit card's debt, negative); `positions_eur`: the valued positions;\n`in_transit_eur`: the „unterwegs zu <Konto>“ lines (D292 (3)), on a credit card at most its\ndebt. A line without a value counts nowhere, as in `by_account_tab`."
+      },
       "AccountPatch": {
         "properties": {
           "label": {
@@ -16598,6 +16720,207 @@
         ],
         "title": "CategoryChange",
         "description": "A category's rate when the Pauschale was set and today, for the whole flat."
+      },
+      "CategoryDifference": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "group": {
+            "$ref": "#/components/schemas/HouseholdGroup"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "mean": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Mean"
+          },
+          "difference": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Difference"
+          },
+          "words": {
+            "$ref": "#/components/schemas/DifferenceWords"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "group",
+          "amount",
+          "mean",
+          "difference",
+          "words"
+        ],
+        "title": "CategoryDifference",
+        "description": "A spending code whose month differs from its own mean over the closed months before it\n(phase 10 §7.13 (b) 2, D314: „Supermarkt +84 €“); `difference` = `amount` − `mean`, both\nthe code's regular spending (one-off codes, marked payments and refunds left out)."
+      },
+      "CategoryDifferences": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Month"
+          },
+          "final": {
+            "type": "boolean",
+            "title": "Final"
+          },
+          "enough": {
+            "type": "boolean",
+            "title": "Enough"
+          },
+          "baseline": {
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+            },
+            "type": "array",
+            "title": "Baseline"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryDifference"
+            },
+            "type": "array",
+            "title": "Categories"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month",
+          "final",
+          "enough",
+          "baseline"
+        ],
+        "title": "CategoryDifferences",
+        "description": "GET /household/differences?month= (phase 10 §7.13 (b) 2, D314): the chosen month's\nspending codes against their mean over the closed months before it (`baseline`, the\nunbroken run ending before the month, three to twelve, oldest first). `final`: the month\nis closed (ended, nothing waiting); until then only codes already above their mean are\nnamed. `enough`: at least three months in `baseline`; below, `categories` is empty.\nEvery named code, the largest difference first; figures only, no colour, no advice."
+      },
+      "CategoryLines": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Month"
+          },
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HouseholdGroup"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Total"
+          },
+          "regular": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Regular"
+          },
+          "payments": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryPayment"
+            },
+            "type": "array",
+            "title": "Payments"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month",
+          "category",
+          "total",
+          "regular"
+        ],
+        "title": "CategoryLines",
+        "description": "GET /household/lines?month=&category= (phase 10 §7.13 (b) 2, 3, D314): the confirmed\nprivate allocations counted under one spending code in the month (D234's recode applied,\nas month_cashflow counts them), oldest booking first, each signed as spending (a refund\nunder the code negative). `total`: their sum, the code's figure in the month's spending\nby category; `regular`: the total less the payments marked one-off, the figure „Was\ndiesen Monat anders ist“ compares. `group` None for a code that is no spending."
+      },
+      "CategoryPayment": {
+        "properties": {
+          "allocation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Allocation Id"
+          },
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Transaction Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "account_label": {
+            "type": "string",
+            "title": "Account Label"
+          },
+          "booked_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Booked On"
+          },
+          "payee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payee"
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose",
+            "default": ""
+          },
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "one_off": {
+            "type": "boolean",
+            "title": "One Off",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "allocation_id",
+          "transaction_id",
+          "account_id",
+          "account_label",
+          "booked_on",
+          "category",
+          "amount"
+        ],
+        "title": "CategoryPayment",
+        "description": "One payment behind a code's month (GET /household/lines); `one_off`: a person marked\nit one-off, so it counts in the code's month but not in the comparison."
       },
       "Chain": {
         "type": "string",
@@ -21813,6 +22136,17 @@
             },
             "type": "array",
             "title": "Learned"
+          },
+          "reconciled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reconciled"
           }
         },
         "additionalProperties": false,
@@ -31332,6 +31666,26 @@
               }
             ],
             "title": "Month End Now"
+          },
+          "today_accounts": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AccountParts"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "type": "object",
+            "title": "Today Accounts"
+          },
+          "today_tabs": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AccountParts"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/AccountTab"
+            },
+            "type": "object",
+            "title": "Today Tabs"
           }
         },
         "additionalProperties": false,
@@ -31340,7 +31694,7 @@
           "today"
         ],
         "title": "NetWorthOverview",
-        "description": "GET /net-worth/overview: the Übersicht's card. `today` on read; `month_end` the latest\nstored month-end, None before the first; `month_end_due` the last month-end when no run\nholds it yet (the button „Monatsabschluss festhalten“); `month_end_now` the total read\nnow for the stored month-end's day when it differs from the stored total, set only when\nthat day is the last month-end (the one the button stores again)."
+        "description": "GET /net-worth/overview: the Übersicht's card. `today` on read; `month_end` the latest\nstored month-end, None before the first; `month_end_due` the last month-end when no run\nholds it yet (the button „Monatsabschluss festhalten“); `month_end_now` the total read\nnow for the stored month-end's day when it differs from the stored total, set only when\nthat day is the last month-end (the one the button stores again). `today_accounts` and\n`today_tabs`: today's parts per account and per tab (§7.13 (a))."
       },
       "NetWorthPoint": {
         "properties": {

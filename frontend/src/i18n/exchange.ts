@@ -30,6 +30,7 @@ const de = {
 
   // the page's sections
   holdings: "Bestand",
+  overallState: "Abgleich mit der Börse:",
   imports: "Eingelesene Exporte",
   movements: "Bewegungen",
 
@@ -177,6 +178,7 @@ const en: Messages = {
     `${skipped > 0 ? `, ${skipped} already there` : ""}. Next, “Enter the balance per the exchange” below.`,
 
   holdings: "Holdings",
+  overallState: "Check against the exchange:",
   imports: "Exports read",
   movements: "Movements",
 

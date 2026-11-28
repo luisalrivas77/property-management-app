@@ -1279,6 +1279,7 @@ def exchange_overview(conn: Connection, account_id: UUID) -> ExchangeOverview:
         account_id=account_id,
         provider=account.provider or "",
         positions=positions,
+        reconciled=rules.overall(p.reconciled for p in positions),
         imports=[_exchange_import(conn, r) for r in imports],
         withdrawals_open=open_count,
         movements_to_answer=sum(1 for s in stored if s.status is MovementStatus.PROPOSED),

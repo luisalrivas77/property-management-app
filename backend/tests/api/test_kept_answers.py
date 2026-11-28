@@ -471,6 +471,8 @@ _QUERY: dict[str, dict[str, str]] = {
     "/api/tax-rate": {"tax_year": "2026", "result": "1000.00"},
     "/api/health/months": {"from": "2026-10", "to": "2026-10"},
     "/api/household/cashflow": {"month": "2026-10"},
+    "/api/household/differences": {"month": "2026-10"},
+    "/api/household/lines": {"month": "2026-10", "category": "hh_groceries"},
     "/api/accounts/auto-rate": {"month": "2026-10"},
     "/api/accounts/{account_id}/month": {"month": "2026-10"},
     "/api/transfers": {"month": "2026-10"},

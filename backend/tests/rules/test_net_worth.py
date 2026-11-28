@@ -160,3 +160,50 @@ def test_the_konten_tabs_sum_their_accounts_lines():
     ]
     assert net_worth.tab_totals([(K.DEPOT, None)]) == {AccountTab.DEPOT: Decimal("0.00")}
     assert net_worth.tab_totals([]) == {}
+
+
+def test_account_parts_split_balance_positions_and_transit():
+    """Phase 10 §7.13 (a), D313: per account and per tab, each part's sum, the value equal to
+    tab_totals over the same lines; a line without a value counts nowhere; a property line is
+    skipped."""
+    from hausbuch.schemas.net_worth import NetWorthLine, NetWorthLineKind
+
+    depot, card = uuid4(), uuid4()
+    L = NetWorthLineKind
+
+    def line(kind, account, account_kind, value, transit=False, cls=NetWorthClass.DEPOT):
+        return NetWorthLine(
+            kind=kind,
+            net_worth_class=cls,
+            label="x",
+            account_id=account,
+            account_kind=account_kind,
+            value_eur=None if value is None else Decimal(value),
+            in_transit=transit,
+        )
+
+    lines = [
+        line(L.ACCOUNT, depot, AccountKind.DEPOT, "200.00"),
+        line(L.POSITION, depot, AccountKind.DEPOT, "100.00"),
+        line(L.POSITION, depot, AccountKind.DEPOT, None),
+        line(L.ACCOUNT, depot, AccountKind.DEPOT, "500.00", transit=True),
+        line(L.ACCOUNT, card, AccountKind.CREDIT_CARD, "-300.00"),
+        line(L.ACCOUNT, card, AccountKind.CREDIT_CARD, "300.00", transit=True),
+        line(L.PROPERTY, None, None, "300000.00", cls=NetWorthClass.PROPERTY),
+    ]
+    accounts, tabs = net_worth.account_parts(lines)
+    assert accounts[depot].model_dump() == {
+        "value_eur": Decimal("800.00"),
+        "balance_eur": Decimal("200.00"),
+        "positions_eur": Decimal("100.00"),
+        "in_transit_eur": Decimal("500.00"),
+    }
+    assert (accounts[card].value_eur, accounts[card].balance_eur) == (
+        Decimal("0.00"),
+        Decimal("-300.00"),
+    )
+    assert list(tabs) == [AccountTab.CARD, AccountTab.DEPOT]
+    expected = net_worth.tab_totals(
+        (x.account_kind, x.value_eur) for x in lines if x.account_kind is not None
+    )
+    assert {tab: p.value_eur for tab, p in tabs.items()} == expected

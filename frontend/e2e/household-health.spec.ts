@@ -712,11 +712,14 @@ test("the month-end card, the split and the net worth over time are on Anlagen, 
   await expect(page.getByRole("region", { name: "Liquiditätsreserve" })).toHaveCount(0);
 });
 
-test("„Was diesen Monat anders ist“ names the server's groups and opens their payments", async ({ page, signedIn }) => {
+test("„Was diesen Monat anders ist“ follows the chosen month, names each category's difference and opens its payments", async ({ page, signedIn }) => {
   void signedIn;
+  // Phase 10 §7.13 (b) 2, D314: GET /household/differences?month= per chosen month, a row per
+  // category („Supermarkt +84,00 €“), each opening GET /household/lines?month=&category=.
   const window = [monthsBack(5), monthsBack(4), monthsBack(3), monthsBack(2)];
   const newest = window[window.length - 1] ?? "";
-  const payment = (id: string, day: string, payee: string, amount: string): components["schemas"]["GroupPayment"] => ({
+  const asked: string[] = [];
+  const payment = (id: string, day: string, payee: string, amount: string, oneOff = false): components["schemas"]["CategoryPayment"] => ({
     allocation_id: `00000000-0000-4000-8000-00000000092${id}`,
     transaction_id: `00000000-0000-4000-8000-00000000093${id}`,
     account_id: SAVINGS,
@@ -726,52 +729,70 @@ test("„Was diesen Monat anders ist“ names the server's groups and opens thei
     purpose: "",
     category: "hh_restaurant",
     amount,
+    one_off: oneOff,
   });
-  let differences: components["schemas"]["MonthDifferences"] | null = {
-    month: newest,
-    baseline: window.slice(0, -1),
-    groups: [
-      {
-        group: "dining",
-        amount: "180.00",
-        mean: "25.00",
-        difference: "155.00",
-        words: "more",
-        payments: [payment("1", "10", "Pizzeria Beispiel", "120.00"), payment("2", "11", "Café Muster", "60.00")],
-      },
-      { group: "mobility", amount: "20.00", mean: "100.00", difference: "-80.00", words: "less", payments: [] },
-    ],
-  };
+  const differenceOf = (month: string): components["schemas"]["CategoryDifferences"] => ({
+    month,
+    final: month !== monthsBack(0),
+    enough: true,
+    baseline: window.slice(0, 3),
+    categories:
+      month === newest
+        ? [
+            { category: "hh_restaurant", group: "dining", amount: "180.00", mean: "25.00", difference: "155.00", words: "more" },
+            { category: "hh_fuel", group: "mobility", amount: "20.00", mean: "100.00", difference: "-80.00", words: "less" },
+            { category: "hh_supermarket", group: "groceries", amount: "384.00", mean: "300.00", difference: "84.00", words: "more" },
+            { category: "hh_streaming", group: "subscriptions", amount: "40.00", mean: "15.00", difference: "25.00", words: "more" },
+          ]
+        : [],
+  });
   await scenarios(page);
-  await serve(page, "/api/health", () => ({ ...health(window), differences }));
+  await serve(page, "/api/health", () => health(window));
   await serve(page, "/api/health/net-worth-series", () => []);
   await monthsOf(page, (from, to) => window.filter((month) => month >= from && month <= to).map((month) => monthView(month, true)));
   await serve(page, "/api/household-plan", () => plan(window, null, null));
+  await serve(page, "/api/household/differences", (url) => {
+    const month = url.searchParams.get("month") ?? "";
+    asked.push(month);
+    return differenceOf(month);
+  });
+  await serve(page, "/api/household/lines", (url) => ({
+    month: url.searchParams.get("month"),
+    category: url.searchParams.get("category"),
+    group: "dining",
+    total: "180.00",
+    regular: "60.00",
+    payments: [payment("1", "10", "Pizzeria Beispiel", "120.00", true), payment("2", "11", "Café Muster", "60.00")],
+  }));
 
+  // Monat opens on the month running today; nothing differs yet, so no card.
   await page.goto("/household");
+  await expect(page.getByRole("region", { name: "Ausgaben nach Kategorie" })).toBeVisible();
+  await expect.poll(() => asked).toContain(monthsBack(0));
+  await expect(page.getByRole("region", { name: "Was diesen Monat anders ist" })).toHaveCount(0);
+
+  // The chosen month's own differences, largest three first, the rest behind „Alle 4 anzeigen“.
+  await page.goto(`/household?monat=${newest}`);
   const card = page.getByRole("region", { name: "Was diesen Monat anders ist" });
   await expect(card).toContainText("verglichen mit dem Schnitt der 3 abgeschlossenen Monate davor");
-  await expect(card.getByRole("listitem")).toHaveCount(2);
-  await expect(card.getByRole("listitem").nth(0)).toContainText("Essen gehen & bestellen: 155,00 € mehr als üblich");
-  await expect(card.getByRole("listitem").nth(1)).toContainText("Mobilität: 80,00 € weniger als üblich");
+  await expect(card.getByRole("listitem")).toHaveCount(3);
+  await expect(card.getByRole("listitem").nth(0)).toContainText("Restaurant");
+  await expect(card.getByRole("listitem").nth(0)).toContainText("+155,00 €");
+  await expect(card.getByRole("listitem").nth(1)).toContainText("-80,00 €");
+  await card.getByRole("button", { name: "Alle 4 anzeigen" }).click();
+  await expect(card.getByRole("listitem")).toHaveCount(4);
+  await card.getByRole("button", { name: "Weniger anzeigen" }).click();
+  await expect(card.getByRole("listitem")).toHaveCount(3);
 
-  // A group opens its month, its mean and the payments behind the month in the panel.
-  await card.getByRole("link", { name: /Essen gehen & bestellen/ }).click();
-  const panel = page.getByRole("complementary", { name: "Essen gehen & bestellen" });
+  // A category opens its month, its mean and its payments with the server's sums.
+  await card.getByRole("link", { name: /Restaurant/ }).click();
+  const panel = page.getByRole("complementary", { name: "Restaurant" });
+  await expect(panel).toContainText("Restaurant: 155,00 € mehr als üblich");
   await expect(panel).toContainText("Ø 3 Monate davor");
-  await expect(panel).toContainText("25,00 €");
   await expect(panel.getByRole("listitem").filter({ hasText: "Pizzeria Beispiel" })).toContainText("120,00 €");
+  await expect(panel.getByRole("listitem").filter({ hasText: "Pizzeria Beispiel" })).toContainText("Einmalig");
   await expect(panel.getByRole("listitem").filter({ hasText: "Café Muster" })).toContainText("Girokonto A");
-
-  // No card when the server names no group, or compares nothing.
-  differences = { month: newest, baseline: window.slice(0, -1), groups: [] };
-  await page.goto("/household");
-  await expect(page.getByRole("region", { name: "Ausgaben nach Kategorie" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Was diesen Monat anders ist" })).toHaveCount(0);
-  differences = null;
-  await page.goto("/household");
-  await expect(page.getByRole("region", { name: "Ausgaben nach Kategorie" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Was diesen Monat anders ist" })).toHaveCount(0);
+  await expect(panel.getByRole("listitem").filter({ hasText: "Ohne Einmaliges" })).toContainText("60,00 €");
 });
 
 test("the Budget tile on Haushalt › Monat: „N von 3“ with a dot per class, coloured as on Haushalt › Budget", async ({ page, signedIn }) => {

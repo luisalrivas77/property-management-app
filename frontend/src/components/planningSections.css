@@ -74,9 +74,11 @@
   padding: 0;
 }
 
+/* The name keeps at least its longest word and the figures their amount on one line; on a phone the
+ * target line under the amount breaks between words instead of running under the name (§7.13 (g)). */
 .budget-line {
   display: grid;
-  grid-template-columns: 4px 14px minmax(0, 1fr) auto 12px;
+  grid-template-columns: 4px 14px minmax(min-content, 1fr) minmax(min-content, auto) 12px;
   align-items: center;
   gap: 10px;
   padding: 10px 4px 10px 0;
@@ -106,7 +108,7 @@
 }
 
 .budget-line-name .muted {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   font-size: 0.85rem;
 }
 
@@ -114,6 +116,10 @@
   align-items: flex-end;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.budget-line-figures strong {
+  white-space: nowrap;
 }
 
 .budget-line-figures .muted {
@@ -198,8 +204,10 @@
   gap: 6px 16px;
 }
 
+/* --accent-text is the text on an accent fill (white in light mode), which left both links
+ * invisible on the card; a link takes the accent itself (§7.13 (g)). */
 .budget-foot-links a {
-  color: var(--accent-text);
+  color: var(--accent-strong);
   font-weight: 700;
   text-decoration: none;
 }

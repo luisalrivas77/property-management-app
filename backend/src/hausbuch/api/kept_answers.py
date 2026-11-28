@@ -195,6 +195,10 @@ KEPT_ROUTES: tuple[str, ...] = (
     # Phase 10 §7.9 (b), (c): the confirmed private lines and the spending marks (migration
     # 0056, its data-version triggers) and the Berlin day only
     "/api/household/recurring",
+    # Phase 10 §7.13 (b) 2, 3: the private lines, the spending marks, the closed months' facts
+    # and the default scenario's switches (rows) and the Berlin day only
+    "/api/household/differences",
+    "/api/household/lines",
     "/api/owners/{owner_id}",
     "/api/owners/{owner_id}/anlage-n/exports",
     "/api/income-inputs",
