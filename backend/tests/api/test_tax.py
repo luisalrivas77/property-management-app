@@ -431,7 +431,9 @@ def test_a_counted_repair_without_its_bill_says_the_bill_is_missing(client_a, bo
     """Phase 10 §7.13 (c) 4 (D315): a repair the draft counts with no Beleg linked is
     receipt_missing (the drawer's „Rechnung fehlt“, the checklist's cost_receipt entry); an
     income line never is."""
-    rows = {row["allocation_id"]: row for row in ok(_sources(client_a, booked["pid"], tax_year=2026))}
+    rows = {
+        row["allocation_id"]: row for row in ok(_sources(client_a, booked["pid"], tax_year=2026))
+    }
     repair, income = rows[booked["repair_id"]], rows[booked["income_id"]]
     assert repair["document_id"] is None and repair["receipt_missing"] is True
     assert income["receipt_missing"] is False
