@@ -7,10 +7,10 @@ load of Übersicht and Zu prüfen finds its answers kept.
 Once per enrolled member (a user with a passkey) of every provisioned workspace, the page's
 kept routes are asked through the whole app (KeptAnswers.internal_get) in the language the
 member last asked in, kept across a start in `member_locale` (§7.13 (e) 3, migration 0058;
-read before the members are warmed). Nothing is warmed after a person's own change: the first
-load after it computes. A write after 09:00 (a late bank sync, the plan's explanation the
-08:30 step queued, a document read) moves the version and the warmed answers are simply not
-served.
+read before the members are warmed). This step warms every route; after a change, the
+refresh (api/kept_refresh.py) asks again only the paths members' own requests recorded, 4 s
+after a person's own write and 30 s after the worker's (§7.13 (e) 4), and it runs this warm
+again just after each midnight (`trigger` = `midnight`), when both days in the key turn.
 
 Check, daily at 15:00 UTC: one kept answer still current (its version and day unchanged) is
 computed again with the store bypassed and compared byte for byte, the route rotating by day.

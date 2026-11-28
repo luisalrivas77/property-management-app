@@ -118,6 +118,7 @@ ROUTE_SCOPE_KEY = "hausbuch.kept_route"
 INTERNAL_SCOPE_KEY = "hausbuch.kept_internal"
 # Set by a route (`keep_until`) in the request state: when its answer may change (§7.5 (b)).
 EXPIRES_STATE_KEY = "kept_expires_at"
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})  # no other method is a write
 LOCALE_STATE_KEY = "kept_locale_changed"  # §7.13 (e) 3: stored after the answer is sent
 
 MAX_BYTES = 32 * 1024 * 1024
@@ -440,6 +441,10 @@ class KeptAnswers:
         self._entries: OrderedDict[Key, Entry] = OrderedDict()
         self._bytes = 0
         self._lock = threading.Lock()
+        # §7.13 (e) 4: per workspace, the member whose own write the refresh has to follow,
+        # and the refresh's wake-up (set by KeptRefresher.start, called on the event loop).
+        self._person_writes: dict[UUID, UUID] = {}
+        self.on_person_write: Callable[[], None] | None = None
         self._locales: dict[UUID, str] = {}
         self._recorded: OrderedDict[tuple[UUID, UUID], RecordedMember] = OrderedDict()
         # §7.13 (e) 2: per member, path and query (and per member and path), the last key an
@@ -634,6 +639,23 @@ class KeptAnswers:
                 recorded.paths.pop((path, query), None)
 
     # --- Requests in flight (§7.5 (c)) -------------------------------------------------
+
+    def person_wrote(self, auth: AuthContext) -> None:
+        """§7.13 (e) 4: a person's own write request (any method but GET) has ended; the
+        refresh (api/kept_refresh.py) is woken and refreshes this workspace after a short
+        quiet, this member's recorded pages first."""
+        with self._lock:
+            self._person_writes[auth.workspace_id] = auth.user_id
+        wake = self.on_person_write
+        if wake is not None:
+            wake()
+
+    def take_person_write(self, workspace_id: UUID) -> UUID | None:
+        """The member whose own write ended since the refresh last looked, if any; the
+        refresh takes it when it sees the data version move (so a write it saw no move for,
+        and the worker's writes, keep the long quiet)."""
+        with self._lock:
+            return self._person_writes.pop(workspace_id, None)
 
     def _count(self, attribute: str, step: int) -> None:
         with self._lock:
@@ -847,10 +869,14 @@ class KeptAnswersMiddleware:
             return
         self.kept._count("in_flight", 1)
         try:
+            state = scope.setdefault("state", {})  # shared with the route's request.state
             await self._handle(scope, receive, send)
-            changed = scope.get("state", {}).pop(LOCALE_STATE_KEY, None)
+            changed = state.pop(LOCALE_STATE_KEY, None)
             if changed is not None:  # after the answer was sent: the person never waits for it
                 await run_in_threadpool(self.kept.store_locale, *changed)
+            auth = state.get("auth")  # set by current_auth once the route resolved the session
+            if scope["method"] not in SAFE_METHODS and auth is not None and self.kept.enabled:
+                self.kept.person_wrote(auth)  # §7.13 (e) 4, after the write committed
         finally:
             self.kept._person_ended()
 

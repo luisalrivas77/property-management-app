@@ -22,16 +22,28 @@ Pacing (the API is one 0.25 vCPU process):
 - a recorded path that answers 404 (its record was deleted) is forgotten; another failure
   is logged and the path kept.
 
+After a person's own write (§7.13 (e) 4) the middleware wakes the task at once and the quiet
+is `quick_quiet_s` (QUICK_QUIET_S, 4 s) instead of 30 s, the writing member's recorded paths
+asked first; the pacing above is unchanged, so a person's request still goes first. A write by
+the worker (a bank sync, a document read) keeps the 30 s quiet.
+
+Just after each midnight, Berlin's and UTC's (both days are in a kept answer's key, so every
+kept answer turns stale then), the task runs the full warm (jobs/kept_answers.run_warm, every
+enrolled member's routes in their last language) with the same pacing, `trigger` = `midnight`,
+so the first load of the new day finds its answers kept (§7.13 (e) 4).
+
 No model call, no new table, no new container. With no store, or the store switched off, the
 task does nothing. Every failure is logged (the route's template, never its path, which holds
 ids) and never ends the task.
 """
 
 import asyncio
+import contextlib
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from starlette.concurrency import run_in_threadpool
@@ -43,6 +55,7 @@ logger = logging.getLogger("hausbuch.api.kept_refresh")
 POLL_S = 5.0  # how often the versions are read while anything is recorded
 PAUSE_S = 0.05  # how often a waiting run looks again whether a request still runs
 IDLE_S = 1.0  # how long no person's request must have run before an internal one starts
+QUICK_QUIET_S = 4.0  # the quiet after a person's own write (§7.13 (e) 4)
 # How long stop() waits for the cancelled task. Cancelling ends the task at once; a route it
 # was running in a worker thread runs on by itself and its answer is dropped.
 STOP_TIMEOUT_S = 5.0
@@ -55,6 +68,7 @@ class Watch:
     version: int
     since: datetime  # when this version was first seen
     done: int | None = None  # the version the last complete run refreshed
+    writer: UUID | None = None  # the member whose own write this version follows (§7.13 (e) 4)
 
 
 @dataclass
@@ -77,18 +91,23 @@ class KeptRefresher:
         poll_s: float = POLL_S,
         pause_s: float = PAUSE_S,
         idle_s: float = IDLE_S,
+        quick_quiet_s: float = QUICK_QUIET_S,
     ) -> None:
         self.kept = kept
         self.quiet = timedelta(seconds=quiet_s)
+        self.quick_quiet = timedelta(seconds=min(quick_quiet_s, quiet_s))
         self.poll_s = poll_s
         self.pause_s = pause_s
         self.idle_s = idle_s
         self.watch: dict[UUID, Watch] = {}
         self._task: asyncio.Task | None = None
+        self._wake = asyncio.Event()
+        self._day: tuple[date, date] | None = None  # (Berlin, UTC) as the loop last saw it
 
     # --- Lifespan ---------------------------------------------------------------------
 
     def start(self) -> None:
+        self.kept.on_person_write = self._wake.set  # the middleware runs on the same loop
         self._task = asyncio.create_task(self._loop(), name="kept_answers_refresh")
         logger.info("kept answers refresh started", extra={"fields": {"event": "refresh_started"}})
 
@@ -96,6 +115,7 @@ class KeptRefresher:
         task, self._task = self._task, None
         if task is None:
             return
+        self.kept.on_person_write = None
         task.cancel()
         done, _ = await asyncio.wait({task}, timeout=timeout)
         if not done:
@@ -110,12 +130,42 @@ class KeptRefresher:
 
     async def _loop(self) -> None:
         while True:
-            await asyncio.sleep(self.poll_s)
+            # every poll_s, or at once when a person's own write has ended
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._wake.wait(), timeout=self.poll_s)
+            self._wake.clear()
             try:
+                await self.day_turn()
                 await self.tick()
             except Exception as exc:  # noqa: BLE001 - the task outlives any one failure
                 fields = {"event": "refresh_failed", "exc_type": type(exc).__name__}
                 logger.warning("kept answers refresh failed", extra={"fields": fields})
+
+    # --- The midnight warm ------------------------------------------------------------
+
+    async def day_turn(self) -> Any:
+        """Run the full warm once the Berlin or the UTC day has changed since the last call
+        (never on the first call); its WarmRun, or None. Afterwards every workspace's recorded
+        paths are asked again by the next pass, the ones the warm kept skipped."""
+        from hausbuch.services.documents import LOCAL_TIME_ZONE
+
+        kept = self.kept
+        now = kept.clock()
+        day = (now.astimezone(LOCAL_TIME_ZONE).date(), now.astimezone(UTC).date())
+        last, self._day = self._day, day
+        if last is None or last == day:
+            return None
+        if not kept.enabled or kept.engine is None or kept.app is None:
+            return None
+        from hausbuch.jobs.kept_answers import run_warm  # jobs import the api package
+
+        from .kept_start_warm import _WarmDeps
+
+        deps = _WarmDeps(kept.engine, kept.clock, kept)
+        run = await run_warm(deps, before=self._wait_idle, trigger="midnight")  # type: ignore[arg-type]
+        for watch in self.watch.values():
+            watch.done = None
+        return run
 
     # --- One pass ---------------------------------------------------------------------
 
@@ -135,13 +185,17 @@ class KeptRefresher:
                 continue
             now = kept.clock()
             watch = self.watch.get(workspace_id)
+            writer = kept.take_person_write(workspace_id)  # ended since the last look
             if watch is None or watch.version != version:
                 done = None if watch is None else watch.done
-                self.watch[workspace_id] = Watch(version, now, done)
+                # §7.13 (e) 4: a person's own write since the last look made this move
+                moved_by = writer if watch is not None else None
+                self.watch[workspace_id] = Watch(version, now, done, moved_by)
                 continue
-            if watch.done == version or now - watch.since < self.quiet:
+            quiet = self.quiet if watch.writer is None else self.quick_quiet
+            if watch.done == version or now - watch.since < quiet:
                 continue
-            run = await self.refresh(workspace_id, version)
+            run = await self.refresh(workspace_id, version, first=watch.writer)
             runs.append(run)
             if run.result == "done":
                 watch.done = version
@@ -160,16 +214,21 @@ class KeptRefresher:
         while not self._idle():
             await asyncio.sleep(self.pause_s)
 
-    async def refresh(self, workspace_id: UUID, version: int) -> RefreshRun:
+    async def refresh(
+        self, workspace_id: UUID, version: int, *, first: UUID | None = None
+    ) -> RefreshRun:
         """Ask every recorded path of `workspace_id`'s members that is not kept, one at a
-        time, as long as the version stays `version` and the day does not change."""
+        time, as long as the version stays `version` and the day does not change; the member
+        `first` (whose own write it follows) before the others."""
         kept = self.kept
         run = RefreshRun(workspace_id)
         stamp = await run_in_threadpool(kept.stamp, workspace_id)
         if stamp is None or stamp.version != version:
             run.result = "moved"
             return run
-        for auth, paths in kept.recorded(workspace_id):
+        members = kept.recorded(workspace_id)
+        members.sort(key=lambda member: member[0].user_id != first)  # stable: recency kept
+        for auth, paths in members:
             for path, query, seen in paths:
                 key = Key(
                     path=path,

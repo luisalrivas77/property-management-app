@@ -280,3 +280,92 @@ def test_an_expired_answer_is_not_kept_so_a_run_recomputes_it():
     assert store.is_kept(_key(1, ws))
     clock.advance(5)
     assert not store.is_kept(_key(1, ws))
+
+
+# --- §7.13 (e) 4: after a person's own write, and just after midnight -----------------------
+
+
+@pytest.mark.db
+def test_a_persons_own_write_is_refreshed_after_the_short_quiet(
+    client_a, kept, refresher, clock, auth_a
+):
+    ws = auth_a.workspace_id
+    woken: list[int] = []
+    kept.on_person_write = lambda: woken.append(1)
+    ok(client_a.get("/api/owners"))
+    assert woken == []  # a read wakes nothing
+    assert asyncio.run(refresher.tick()) == []  # first sighting
+    ok(client_a.post("/api/owners", json={"full_name": "Owner A"}), 201)
+    assert woken == [1]
+    assert asyncio.run(refresher.tick()) == []  # the move is seen, the short quiet starts
+    assert refresher.watch[ws].writer == auth_a.user_id
+    clock.advance(3)
+    assert asyncio.run(refresher.tick()) == []
+    clock.advance(1.5)
+    (run,) = asyncio.run(refresher.tick())  # 4.5 s: refreshed, not after 30 s
+    assert (run.result, run.requested, run.stored) == ("done", 1, 1)
+    owners = ok(client_a.get("/api/owners"))
+    assert [o["full_name"] for o in owners] == ["Owner A"]
+
+
+@pytest.mark.db
+def test_a_write_outside_a_persons_request_keeps_the_long_quiet(
+    client_a, kept, refresher, clock, app_engine, auth_a
+):
+    ws = auth_a.workspace_id
+    ok(client_a.get("/api/owners"))
+    assert asyncio.run(refresher.tick()) == []
+    _write(app_engine, ws)  # the worker's write: no person waits for it
+    assert asyncio.run(refresher.tick()) == []
+    clock.advance(5)
+    assert asyncio.run(refresher.tick()) == []
+    assert refresher.watch[ws].writer is None
+    clock.advance(26)
+    (run,) = asyncio.run(refresher.tick())
+    assert run.result == "done"
+
+
+@pytest.mark.db
+def test_the_writing_members_pages_are_asked_first(client_a, kept, refresher, auth_a):
+    ws = auth_a.workspace_id
+    other = auth_for(ws)  # a second member of the same household
+    stamp = kept.stamp(ws)
+    for auth, path in ((auth_a, "/api/owners"), (other, "/api/properties")):
+        key = Key(path, (), ws, auth.user_id, stamp, "de", kept.app_version, kept.rule_version)
+        kept.record(key, path, auth)
+    run = asyncio.run(refresher.refresh(ws, stamp.version, first=auth_a.user_id))
+    assert run.templates == ["/api/owners", "/api/properties"]
+    kept.clear()
+    run = asyncio.run(refresher.refresh(ws, stamp.version, first=other.user_id))
+    assert run.templates == ["/api/properties", "/api/owners"]
+
+
+@pytest.mark.db
+def test_just_after_midnight_the_full_warm_runs(client_a, kept, refresher, clock, auth_a, dbname):
+    from db.db_support import _admin
+
+    with _admin(dbname) as conn:  # an enrolled member: a user with a passkey
+        conn.execute(
+            "INSERT INTO app_user (id, workspace_id, email, display_name)"
+            " VALUES (%s, %s, %s, 'Test')",
+            (auth_a.user_id, auth_a.workspace_id, f"{auth_a.user_id}@example.test"),
+        )
+        conn.execute(
+            "INSERT INTO auth_passkey (workspace_id, user_id, credential_id, public_key, "
+            "backup_eligible, backed_up, label) VALUES (%s, %s, %s, %s, false, false, 'k')",
+            (auth_a.workspace_id, auth_a.user_id, uuid.uuid4().bytes, b"k"),
+        )
+    new_property(client_a)
+    clock.now = datetime(2026, 11, 21, 22, 59, 50, tzinfo=UTC)  # 23:59:50 in Berlin
+    assert asyncio.run(refresher.day_turn()) is None  # the first look sets the day
+    clock.advance(5)
+    assert asyncio.run(refresher.day_turn()) is None  # the same day
+    clock.advance(10)  # 00:00:05 in Berlin, still 21 Nov in UTC
+    run = asyncio.run(refresher.day_turn())
+    assert (run.members, run.failed) == (1, 0)
+    assert run.requests > 0
+    assert date(2026, 11, 22) in {key.stamp.berlin_day for key, _ in kept.items()}
+    assert asyncio.run(refresher.day_turn()) is None
+    clock.now = datetime(2026, 11, 22, 0, 0, 5, tzinfo=UTC)  # the UTC midnight
+    assert asyncio.run(refresher.day_turn()).members == 1
+    assert date(2026, 11, 22) in {key.stamp.utc_day for key, _ in kept.items()}
