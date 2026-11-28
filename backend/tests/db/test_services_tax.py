@@ -31,6 +31,7 @@ from hausbuch.schemas.property import (
     PriceSplitCreate,
     PropertyCreate,
 )
+from hausbuch.schemas.tax import AllocationFact
 from hausbuch.services import allocations
 from hausbuch.services import tax as tax_service
 from hausbuch.services.errors import NotFoundError
@@ -662,8 +663,11 @@ def test_the_sources_are_the_drafts_allocations(world):
     sources = world.query(
         tax_service.anlage_v_sources, world.property_id, tax_year=2026, today=TODAY
     )
-    # The same rows the draft reads, every year (a line can cite another year's payment).
-    assert sources == _facts(world).allocations
+    # The same rows the draft reads, every year (a line can cite another year's payment),
+    # each with its receipt flag (phase 10 §7.13 (c) 4, D315).
+    assert [AllocationFact(**s.model_dump(exclude={"receipt_missing"})) for s in sources] == _facts(
+        world
+    ).allocations
     rows = {a.allocation_id: a for a in sources}
     assert set(rows) == {insured_row.id, earlier_row.id}
     assert rows[insured_row.id].transaction_id == insured
