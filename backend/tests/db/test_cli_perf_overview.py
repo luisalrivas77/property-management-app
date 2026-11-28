@@ -300,6 +300,25 @@ def test_check_kept_serves_the_later_pass_from_the_store_and_finds_no_difference
     assert TENANT_NAME not in out
 
 
+def test_check_kept_writes_no_language_on_the_read_only_engine(world, dbname):
+    """Phase 10 §7.13 (e) 3: the probe's kept answers do not store a member's language
+    (member_locale), so its read-only engine refuses nothing: every request of the page
+    answers 200 in the first pass (where the language was first seen), no other kept route is
+    refused, and the report names no write-refused path."""
+    engine = perf_probe.read_only_engine(_owner_url(dbname))
+    lines: list[str] = []
+    try:
+        passes = perf_probe.run_probe(engine, world.ws, repeat=2, check_kept=True, out=lines.append)
+    finally:
+        engine.dispose()
+    first = passes[0]
+    for timing in first.timings:
+        assert timing.status == 200, (timing.label, timing.status, timing.error)
+    for timing in first.extra:  # a route whose record the workspace lacks may answer 404
+        assert timing.status != perf_probe.WRITE_REFUSED, timing.label
+    assert "write-refused paths: none" in "\n".join(lines)
+
+
 def test_check_kept_also_compares_every_other_kept_route(world, dbname):
     """Phase 10 §7.5 (a): with --check-kept each pass also requests every kept route the page
     does not fire, with the workspace's own ids; a route whose kind of id the workspace lacks

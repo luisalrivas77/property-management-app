@@ -275,7 +275,7 @@ def build_app(engine: Engine, member: Member, blob_root: Path, *, kept: bool = F
 
     settings = probe_settings(blob_root)
     resolver = ProbeResolver(engine, member.auth)
-    store = KeptAnswers(enabled=kept)
+    store = KeptAnswers(enabled=kept, store_locales=False)  # the engine is read-only
     return create_app(
         settings, engine, LocalBlobStore(blob_root), resolver, worker=None, kept_answers=store
     )

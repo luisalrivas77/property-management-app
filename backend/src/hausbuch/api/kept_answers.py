@@ -431,10 +431,14 @@ class KeptAnswers:
         max_bytes: int = MAX_BYTES,
         clock: Callable[[], datetime] | None = None,
         enabled: bool = True,
+        store_locales: bool = True,
     ) -> None:
         self.max_bytes = max_bytes
         self.clock = clock or (lambda: datetime.now(UTC))
         self.enabled = enabled
+        # §7.13 (e) 3: whether a member's language is written to member_locale; off for the
+        # read-only perf probe (perf_probe.build_app), whose engine refuses every write.
+        self.store_locales = store_locales
         self.counters = Counters()
         self.app_version = _app_version()
         self.rule_version = _rule_version()
@@ -445,7 +449,11 @@ class KeptAnswers:
         # and the refresh's wake-up (set by KeptRefresher.start, called on the event loop).
         self._person_writes: dict[UUID, UUID] = {}
         self.on_person_write: Callable[[], None] | None = None
-        self._locales: dict[UUID, str] = {}
+        self._locales: dict[UUID, str] = {}  # the language each member last asked in
+        # What member_locale is known to hold: set only after a write committed or a load
+        # read it, so a failed or skipped write is made by the member's next request.
+        self._stored_locales: dict[UUID, str] = {}
+        self._locale_write = threading.Lock()  # one write at a time: the mark mirrors the row
         self._recorded: OrderedDict[tuple[UUID, UUID], RecordedMember] = OrderedDict()
         # §7.13 (e) 2: per member, path and query (and per member and path), the last key an
         # answer was stored under, to explain a person's miss.
@@ -672,23 +680,25 @@ class KeptAnswers:
         return self.in_flight > 0 or self.internal_in_flight > 0
 
     def remember_locale(self, user_id: UUID, locale: str) -> bool:
-        """Remember the language of a person's kept request; True when it changed (or the
-        process had not seen this member yet), so the caller stores it (`store_locale`)."""
+        """Remember the language of a person's kept request; True when it differs from what
+        member_locale is known to hold, so the caller stores it after the answer is sent
+        (`store_locale`)."""
         with self._lock:
-            changed = self._locales.get(user_id) != locale
             self._locales[user_id] = locale
-        return changed
+            return self.store_locales and self._stored_locales.get(user_id) != locale
 
     def locale_of(self, user_id: UUID) -> str:
         """The language this member's last kept request asked for (German by default)."""
         return self._locales.get(user_id, i18n.DE)
 
-    def store_locale(self, workspace_id: UUID, user_id: UUID, locale: str) -> None:
+    def store_locale(self, workspace_id: UUID, user_id: UUID) -> None:
         """§7.13 (e) 3: keep a member's language across a start (`member_locale`, migration
-        0058, outside the data version). The row is written only when the language differs
-        from the stored one, so a start's first request in an unchanged language writes
-        nothing. A failure is logged by its class name only; the language stays in memory."""
-        if self.engine is None:
+        0058, outside the data version). It writes the language in memory at this moment, so
+        two requests that end out of order leave the row at the member's last language, and
+        nothing when the row is known to hold it already (the database also leaves an
+        unchanged row alone). It is marked as stored only once the write committed; a
+        failure is logged by its class name only and the member's next request writes."""
+        if self.engine is None or not self.store_locales:
             return
         statement = text(
             "INSERT INTO member_locale (workspace_id, user_id, locale) "
@@ -697,12 +707,23 @@ class KeptAnswers:
             "SET locale = EXCLUDED.locale, updated_at = now() "
             "WHERE member_locale.locale IS DISTINCT FROM EXCLUDED.locale"
         )
-        try:
-            with workspace_transaction(self.engine, workspace_id) as conn:
-                conn.execute(statement, {"ws": workspace_id, "user": user_id, "locale": locale})
-        except Exception as exc:  # noqa: BLE001 - never fails the request; class name only
-            fields = {"event": "member_locale_not_stored", "exc_type": type(exc).__name__}
-            logger.warning("a member's language was not stored", extra={"fields": fields})
+        with self._locale_write:
+            with self._lock:
+                locale = self._locales.get(user_id)
+                if locale is None or self._stored_locales.get(user_id) == locale:
+                    return
+                # Unknown while the write runs: a request arriving meanwhile in the language
+                # the row held before schedules its own write instead of trusting that mark.
+                self._stored_locales.pop(user_id, None)
+            try:
+                with workspace_transaction(self.engine, workspace_id) as conn:
+                    conn.execute(statement, {"ws": workspace_id, "user": user_id, "locale": locale})
+            except Exception as exc:  # noqa: BLE001 - never fails the request; class name only
+                fields = {"event": "member_locale_not_stored", "exc_type": type(exc).__name__}
+                logger.warning("a member's language was not stored", extra={"fields": fields})
+                return
+            with self._lock:
+                self._stored_locales[user_id] = locale
 
     def load_locales(self, workspace_ids: Iterable[UUID]) -> int:
         """§7.13 (e) 3: read the stored languages of these workspaces' members, for the warm
@@ -712,13 +733,17 @@ class KeptAnswers:
             return 0
         taken = 0
         for workspace_id in workspace_ids:
-            with workspace_transaction(self.engine, workspace_id) as conn:
-                rows = conn.execute(text("SELECT user_id, locale FROM member_locale")).all()
-            with self._lock:
-                for user_id, locale in rows:
-                    if user_id not in self._locales and locale in i18n.LOCALES:
-                        self._locales[user_id] = locale
-                        taken += 1
+            # Read and mark under the write lock, so a write committing in between is never
+            # marked back to the row's older language.
+            with self._locale_write:
+                with workspace_transaction(self.engine, workspace_id) as conn:
+                    rows = conn.execute(text("SELECT user_id, locale FROM member_locale")).all()
+                with self._lock:
+                    for user_id, locale in rows:
+                        self._stored_locales[user_id] = locale  # what the row holds
+                        if user_id not in self._locales and locale in i18n.LOCALES:
+                            self._locales[user_id] = locale
+                            taken += 1
         return taken
 
     # --- Internal requests (the warm step, the checks) ---------------------------------
@@ -911,7 +936,7 @@ class KeptAnswersMiddleware:
             # The refresh asks in a recorded path's language (C1); a changed one is stored once
             # the answer is sent (§7.13 (e) 3), never before it.
             if not internal and kept.remember_locale(auth.user_id, key.locale):
-                state[LOCALE_STATE_KEY] = (auth.workspace_id, auth.user_id, key.locale)
+                state[LOCALE_STATE_KEY] = (auth.workspace_id, auth.user_id)
             entry = kept.get(key)
             if entry is not None:
                 kept.counters.hits += 1

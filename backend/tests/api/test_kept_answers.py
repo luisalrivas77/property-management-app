@@ -833,6 +833,7 @@ def test_a_members_language_is_stored_once_and_only_when_it_changes(client_a, ke
     assert locale == "en"
     ok(client_a.get("/api/reminders", headers={"Accept-Language": "en"}))
     kept._locales.clear()  # a start: the first request writes, the row stays as it was
+    kept._stored_locales.clear()
     ok(client_a.get("/api/properties", headers={"Accept-Language": "en"}))
     assert _stored_locales(dbname, ws) == [("en", first)]
     ok(client_a.get("/api/properties", headers={"Accept-Language": "de"}))
@@ -849,6 +850,7 @@ def test_the_warm_after_a_start_asks_in_the_stored_language(
     ok(client_a.get("/api/properties", headers={"Accept-Language": "en"}))
     kept.clear()
     kept._locales.clear()  # a new process: nothing in memory
+    kept._stored_locales.clear()
     deps = JobDeps(
         engine=app_engine,
         settings=settings,
@@ -869,3 +871,94 @@ def test_the_language_a_process_saw_wins_over_the_stored_one(kept, auth_a, clien
     kept._locales[auth_a.user_id] = "de"  # seen since the row was written
     assert kept.load_locales([auth_a.workspace_id]) == 0
     assert kept.locale_of(auth_a.user_id) == "de"
+
+
+def test_a_language_whose_write_failed_is_written_by_the_next_request(
+    client_a, kept, auth_a, dbname
+):
+    """§7.13 (e) 3: a language is marked as stored only once its row is written, so after a
+    failed write (here the member's user row is missing, so the foreign key refuses it) the
+    member's next kept request in the same language writes it."""
+    ws = auth_a.workspace_id
+    ok(client_a.get("/api/properties", headers={"Accept-Language": "en"}))
+    assert _stored_locales(dbname, ws) == []
+    _member_exists(dbname, auth_a)
+    ok(client_a.get("/api/properties", headers={"Accept-Language": "en"}))
+    assert [locale for locale, _ in _stored_locales(dbname, ws)] == ["en"]
+
+
+def test_two_requests_ending_out_of_order_leave_the_row_at_the_last_language(kept, auth_a, dbname):
+    """§7.13 (e) 3: request A asks in German and is slow, request B asks in English and ends
+    first. Each schedules its write when its language is remembered, and each write takes the
+    language in memory when it runs, so the row ends at the member's last language whichever
+    write runs last. This is the middleware's order: remember on the way in, store after the
+    answer."""
+    _member_exists(dbname, auth_a)
+    ws, user = auth_a.workspace_id, auth_a.user_id
+    assert kept.remember_locale(user, "de")  # A arrives
+    assert kept.remember_locale(user, "en")  # B arrives
+    kept.store_locale(ws, user)  # B's answer was sent first
+    kept.store_locale(ws, user)  # then A's
+    assert [locale for locale, _ in _stored_locales(dbname, ws)] == ["en"]
+    assert kept.locale_of(user) == "en"
+    assert not kept.remember_locale(user, "en")  # the row holds it: nothing to write
+
+
+def test_a_request_arriving_during_a_write_schedules_its_own(kept, auth_a, dbname, monkeypatch):
+    """§7.13 (e) 3: the row holds English; request A asks in German and its write starts;
+    request B asks in English while that write runs. B must not trust the mark the row had
+    before A's write: it schedules its own write, which leaves the row at English."""
+    import contextlib
+
+    import hausbuch.api.kept_answers as kept_module
+
+    _member_exists(dbname, auth_a)
+    ws, user = auth_a.workspace_id, auth_a.user_id
+    assert kept.remember_locale(user, "en")
+    kept.store_locale(ws, user)
+    assert kept.remember_locale(user, "de")  # A arrives
+    real = kept_module.workspace_transaction
+    b_scheduled: list[bool] = []
+
+    @contextlib.contextmanager
+    def b_arrives_mid_write(engine, workspace_id):
+        if not b_scheduled:
+            b_scheduled.append(kept.remember_locale(user, "en"))  # B arrives
+        with real(engine, workspace_id) as conn:
+            yield conn
+
+    monkeypatch.setattr(kept_module, "workspace_transaction", b_arrives_mid_write)
+    kept.store_locale(ws, user)  # A's write, B arriving while it runs
+    assert b_scheduled == [True]
+    kept.store_locale(ws, user)  # B's write
+    assert [locale for locale, _ in _stored_locales(dbname, ws)] == ["en"]
+    assert kept.locale_of(user) == "en"
+
+
+def test_a_failure_to_read_the_languages_does_not_stop_the_warm(
+    client_a, kept, app_engine, settings, blob_store, auth_a, monkeypatch
+):
+    """§7.13 (e) 3: when member_locale cannot be read, the warm still asks every route, in the
+    language the process remembers, or in German for a member it has not seen."""
+    new_property(client_a)
+
+    def unreadable(_workspace_ids):
+        raise RuntimeError("member_locale cannot be read")
+
+    monkeypatch.setattr(kept, "load_locales", unreadable)
+    deps = JobDeps(
+        engine=app_engine,
+        settings=settings,
+        blob_store=blob_store,
+        model_client=None,
+        clock=kept.clock,
+        kept_answers=kept,
+    )
+    for remembered, asked in (("en", "en"), (None, "de")):
+        kept.clear()
+        kept._locales.clear()
+        if remembered is not None:
+            kept._locales[auth_a.user_id] = remembered
+        run = asyncio.run(run_warm(deps, members=[auth_a]))
+        assert (run.members, run.failed) == (1, 0) and run.requests > 0
+        assert {key.locale for key, _ in kept.items()} == {asked}

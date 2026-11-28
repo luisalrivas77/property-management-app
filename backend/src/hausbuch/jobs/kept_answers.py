@@ -90,8 +90,14 @@ async def run_warm(
         return run
     if members is None:
         members = await run_in_threadpool(enrolled_members, deps)
-    # §7.13 (e) 3: each member's last language, kept across a start (member_locale).
-    await run_in_threadpool(kept.load_locales, sorted({m.workspace_id for m in members}))
+    # §7.13 (e) 3: each member's last language, kept across a start (member_locale). A
+    # failure to read them never stops the warm: it asks in the remembered language, or in
+    # German for a member this process has not seen.
+    try:
+        await run_in_threadpool(kept.load_locales, sorted({m.workspace_id for m in members}))
+    except Exception as exc:  # noqa: BLE001 - the warm goes on; class name only
+        fields = {"event": "member_locales_not_read", "exc_type": type(exc).__name__}
+        logger.warning("the members' languages were not read", extra={"fields": fields})
     from hausbuch.services.documents import LOCAL_TIME_ZONE
 
     today = deps.clock().astimezone(LOCAL_TIME_ZONE).date()

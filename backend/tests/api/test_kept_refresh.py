@@ -361,11 +361,18 @@ def test_just_after_midnight_the_full_warm_runs(client_a, kept, refresher, clock
     clock.advance(5)
     assert asyncio.run(refresher.day_turn()) is None  # the same day
     clock.advance(10)  # 00:00:05 in Berlin, still 21 Nov in UTC
+
+    # The warm asks for every enrolled member in the database, and other tests may leave some
+    # behind, so the assertions look at this member's own answers, never at a total.
+    def own_days(part: str) -> set[date]:
+        return {
+            getattr(key.stamp, part) for key, _ in kept.items() if key.user_id == auth_a.user_id
+        }
+
     run = asyncio.run(refresher.day_turn())
-    assert (run.members, run.failed) == (1, 0)
-    assert run.requests > 0
-    assert date(2026, 11, 22) in {key.stamp.berlin_day for key, _ in kept.items()}
+    assert run is not None and run.members >= 1 and run.requests > 0
+    assert date(2026, 11, 22) in own_days("berlin_day")
     assert asyncio.run(refresher.day_turn()) is None
     clock.now = datetime(2026, 11, 22, 0, 0, 5, tzinfo=UTC)  # the UTC midnight
-    assert asyncio.run(refresher.day_turn()).members == 1
-    assert date(2026, 11, 22) in {key.stamp.utc_day for key, _ in kept.items()}
+    assert asyncio.run(refresher.day_turn()) is not None
+    assert date(2026, 11, 22) in own_days("utc_day")
