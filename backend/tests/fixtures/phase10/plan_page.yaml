@@ -139,7 +139,8 @@ cases:
   expect:
     cards:
       goal: {kind: net_worth, target: '600000.00', due_month: '2036-06', word: feasible, value_today: '251000.00', percent: '41.8'}
-      heute: {net_worth: '251000.00', reserve: '31000.00', reserve_months: '10.3', reserve_full: true, saved_mean: '2000.00', reserve_accounts: ['Tagesgeld (Bank A)']}
+      # §7.13 (d) 2: the reserve as „31.000 € von 18.000 €“ (the target 6 × 3,000), reached
+      heute: {net_worth: '251000.00', reserve: '31000.00', reserve_months: '10.3', reserve_full: true, reserve_target: '18000.00', reserve_gap: '0.00', saved_mean: '2000.00', reserve_accounts: ['Tagesgeld (Bank A)']}
       plan:
         on_track: false
         reached: '2036-06'         # 600,128.82 at 30 Jun 2036 (goal_routes: 98 reaches, 97 not)
@@ -303,7 +304,8 @@ cases:
   expect:
     cards:
       goal: {word: on_track}
-      heute: {reserve_months: '1.7', reserve_full: false}
+      # §7.13 (d) 2: „5.000 € von 18.000 €“, noch 18,000 − 5,000 = 13,000 bis zum Ziel
+      heute: {reserve_months: '1.7', reserve_full: false, reserve_target: '18000.00', reserve_gap: '13000.00'}
       risks:
         base_reached: '2032-06'
         income_gap:
