@@ -30,6 +30,8 @@ the Anlagen overview's valuations and hands them here. Built in phase 6 step 6.
   to one account counts; a credit card takes them only up to its known debt.
 - `tab_totals(lines)`: phase 10 §7.6 Konten (2), Σ per Konten tab of the account and position
   lines by the account's kind (both bank kinds one tab), so the page never adds them up.
+- `account_parts(lines)`: phase 10 §7.13 (a), D313, the same lines per account and per tab
+  split into balance, positions and money in transit, each part's `value_eur` the tab's sum.
 """
 
 from collections.abc import Hashable, Iterable, Mapping, Sequence
@@ -37,6 +39,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 from fractions import Fraction
+from uuid import UUID
 
 from hausbuch.rules.errors import (
     NET_WORTH_MONTH_END_BEFORE_HISTORY,
@@ -46,7 +49,7 @@ from hausbuch.rules.errors import (
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.household import NetWorthClass
 from hausbuch.schemas.loan import ScheduleEntry
-from hausbuch.schemas.net_worth import AccountTab
+from hausbuch.schemas.net_worth import AccountParts, AccountTab, NetWorthLine, NetWorthLineKind
 
 ZERO = Decimal("0.00")
 CENT = Decimal("0.01")
@@ -92,6 +95,55 @@ def tab_totals(lines: Iterable[tuple[AccountKind, Decimal | None]]) -> dict[Acco
         tab = _TAB_OF_KIND[kind]
         sums[tab] = sums.get(tab, ZERO) + (value if value is not None else ZERO)
     return {tab: sums[tab] for tab in AccountTab if tab in sums}
+
+
+def _add(
+    a: tuple[Decimal, Decimal, Decimal], b: tuple[Decimal, Decimal, Decimal]
+) -> tuple[Decimal, Decimal, Decimal]:
+    return (a[0] + b[0], a[1] + b[1], a[2] + b[2])
+
+
+def account_parts(
+    lines: Iterable[NetWorthLine],
+) -> tuple[dict[UUID, AccountParts], dict[AccountTab, AccountParts]]:
+    """Per account and per Konten tab, the account and position lines `tab_totals` sums, split
+    into the balance (account lines, no money in transit), the positions and the money in
+    transit; `value_eur` their sum, so a tab's equals its `tab_totals` figure (the same lines:
+    an account kind set). A line without a value counts nowhere. An account or tab
+    appears once one of its lines does; tabs in their order."""
+    zero = (ZERO, ZERO, ZERO)
+    by_account: dict[UUID, tuple[Decimal, Decimal, Decimal]] = {}
+    by_tab: dict[AccountTab, tuple[Decimal, Decimal, Decimal]] = {}
+    for line in lines:
+        if line.kind not in (NetWorthLineKind.ACCOUNT, NetWorthLineKind.POSITION):
+            continue
+        if line.account_kind is None:
+            continue
+        value = line.value_eur if line.value_eur is not None else ZERO
+        if line.kind is NetWorthLineKind.POSITION:
+            part = (ZERO, value, ZERO)
+        elif line.in_transit:
+            part = (ZERO, ZERO, value)
+        else:
+            part = (value, ZERO, ZERO)
+        if line.account_id is not None:
+            by_account[line.account_id] = _add(by_account.get(line.account_id, zero), part)
+        tab = _TAB_OF_KIND[line.account_kind]
+        by_tab[tab] = _add(by_tab.get(tab, zero), part)
+
+    def parts(sums: tuple[Decimal, Decimal, Decimal]) -> AccountParts:
+        balance, positions, transit = sums
+        return AccountParts(
+            value_eur=balance + positions + transit,
+            balance_eur=balance,
+            positions_eur=positions,
+            in_transit_eur=transit,
+        )
+
+    return (
+        {account: parts(sums) for account, sums in by_account.items()},
+        {tab: parts(by_tab[tab]) for tab in AccountTab if tab in by_tab},
+    )
 
 
 def bank_balance(

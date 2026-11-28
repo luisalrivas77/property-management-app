@@ -4656,6 +4656,27 @@ export interface components {
             superseded_by?: string | null;
         };
         /**
+         * AccountParts
+         * @description Phase 10 §7.13 (a), D313: what one Konten row (or one tab) is made of today, from the
+         *     net worth's account and position lines (rules.net_worth.account_parts), so the page shows
+         *     each part without adding anything up. `value_eur` is what the tab's `by_account_tab` sums:
+         *     the balance, the positions and the money in transit (a depot's whole value, the Anlagen
+         *     portfolio card's total, PR #553). `balance_eur`: the balance lines without the money in
+         *     transit (a credit card's debt, negative); `positions_eur`: the valued positions;
+         *     `in_transit_eur`: the „unterwegs zu <Konto>“ lines (D292 (3)), on a credit card at most its
+         *     debt. A line without a value counts nowhere, as in `by_account_tab`.
+         */
+        AccountParts: {
+            /** Value Eur */
+            value_eur: string;
+            /** Balance Eur */
+            balance_eur: string;
+            /** Positions Eur */
+            positions_eur: string;
+            /** In Transit Eur */
+            in_transit_eur: string;
+        };
+        /**
          * AccountPatch
          * @description PATCH /accounts/{id}. The IBAN cannot change: a different IBAN is another account.
          *     Moving the anchor (opening_balance, opening_balance_on) re-checks every import.
@@ -8498,6 +8519,8 @@ export interface components {
             todos?: string[];
             /** Learned */
             learned?: components["schemas"]["LearnedExchangeAddress"][];
+            /** Reconciled */
+            reconciled?: boolean | null;
         };
         /**
          * ExchangePosition
@@ -12142,7 +12165,8 @@ export interface components {
          *     stored month-end, None before the first; `month_end_due` the last month-end when no run
          *     holds it yet (the button „Monatsabschluss festhalten“); `month_end_now` the total read
          *     now for the stored month-end's day when it differs from the stored total, set only when
-         *     that day is the last month-end (the one the button stores again).
+         *     that day is the last month-end (the one the button stores again). `today_accounts` and
+         *     `today_tabs`: today's parts per account and per tab (§7.13 (a)).
          */
         NetWorthOverview: {
             today: components["schemas"]["NetWorth"];
@@ -12151,6 +12175,14 @@ export interface components {
             month_end_due?: string | null;
             /** Month End Now */
             month_end_now?: string | null;
+            /** Today Accounts */
+            today_accounts?: {
+                [key: string]: components["schemas"]["AccountParts"];
+            };
+            /** Today Tabs */
+            today_tabs?: {
+                [key: string]: components["schemas"]["AccountParts"];
+            };
         };
         /**
          * NetWorthPoint

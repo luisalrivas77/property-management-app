@@ -255,3 +255,12 @@ def test_a_positive_transaction_fee_is_unreadable_not_a_crash():
     assert "2026-03-02T10:00:00" in message and "out of range" in message
     assert "0.000004" not in message and "987654321" not in message
     assert caught.value.__cause__ is None and caught.value.__suppress_context__
+
+
+def test_overall_reconciliation_of_an_exchange_account():
+    """Phase 10 §7.13 (a), D313: one state for the Konten row and the account page, from the
+    positions' states: a difference wins, all agreeing is True, else not entered (None)."""
+    assert exchange.overall([True, True]) is True
+    assert exchange.overall([True, False, None]) is False
+    assert exchange.overall([True, None]) is None
+    assert exchange.overall([]) is None

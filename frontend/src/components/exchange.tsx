@@ -257,6 +257,12 @@ export function ExchangeSection({ accountId }: { accountId: string }) {
           <ExchangeTodos overview={overview} accountId={accountId} onChanged={state.reload} />
           <ExchangeExportUpload accountId={accountId} provider={overview.provider} onImported={state.reload} />
           <h2>{t.holdings}</h2>
+          {/* §7.13 (a): the account's one state, the field the Konten row shows too. */}
+          {(overview.positions ?? []).length > 0 ? (
+            <p className="row">
+              <span className="muted">{t.overallState}</span> {reconciledPill(overview.reconciled)}
+            </p>
+          ) : null}
           <PositionsTable overview={overview} />
           <h2>{t.imports}</h2>
           <ExchangeImportsTable imports={overview.imports ?? []} movements={movements} onChanged={state.reload} />
@@ -336,7 +342,7 @@ function ExchangeTodos({ overview, accountId, onChanged }: { overview: ExchangeO
   );
 }
 
-function reconciledPill(reconciled: boolean | null | undefined) {
+export function reconciledPill(reconciled: boolean | null | undefined) {
   const t = translate(messages);
   if (reconciled === true) return <span className="badge">{t.agrees}</span>;
   if (reconciled === false) return <span className="badge badge-danger">{t.differs}</span>;

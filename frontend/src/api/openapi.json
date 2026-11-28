@@ -12172,6 +12172,40 @@
         "title": "AccountOwnership",
         "description": "account_ownership row (append-only; a change is a new set under a new\neffective_from, an old row's superseded_by names the row that replaced it)."
       },
+      "AccountParts": {
+        "properties": {
+          "value_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Value Eur"
+          },
+          "balance_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Balance Eur"
+          },
+          "positions_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Positions Eur"
+          },
+          "in_transit_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "In Transit Eur"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value_eur",
+          "balance_eur",
+          "positions_eur",
+          "in_transit_eur"
+        ],
+        "title": "AccountParts",
+        "description": "Phase 10 §7.13 (a), D313: what one Konten row (or one tab) is made of today, from the\nnet worth's account and position lines (rules.net_worth.account_parts), so the page shows\neach part without adding anything up. `value_eur` is what the tab's `by_account_tab` sums:\nthe balance, the positions and the money in transit (a depot's whole value, the Anlagen\nportfolio card's total, PR #553). `balance_eur`: the balance lines without the money in\ntransit (a credit card's debt, negative); `positions_eur`: the valued positions;\n`in_transit_eur`: the „unterwegs zu <Konto>“ lines (D292 (3)), on a credit card at most its\ndebt. A line without a value counts nowhere, as in `by_account_tab`."
+      },
       "AccountPatch": {
         "properties": {
           "label": {
@@ -22012,6 +22046,17 @@
             },
             "type": "array",
             "title": "Learned"
+          },
+          "reconciled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reconciled"
           }
         },
         "additionalProperties": false,
@@ -31622,6 +31667,26 @@
               }
             ],
             "title": "Month End Now"
+          },
+          "today_accounts": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AccountParts"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "type": "object",
+            "title": "Today Accounts"
+          },
+          "today_tabs": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AccountParts"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/AccountTab"
+            },
+            "type": "object",
+            "title": "Today Tabs"
           }
         },
         "additionalProperties": false,
@@ -31630,7 +31695,7 @@
           "today"
         ],
         "title": "NetWorthOverview",
-        "description": "GET /net-worth/overview: the Übersicht's card. `today` on read; `month_end` the latest\nstored month-end, None before the first; `month_end_due` the last month-end when no run\nholds it yet (the button „Monatsabschluss festhalten“); `month_end_now` the total read\nnow for the stored month-end's day when it differs from the stored total, set only when\nthat day is the last month-end (the one the button stores again)."
+        "description": "GET /net-worth/overview: the Übersicht's card. `today` on read; `month_end` the latest\nstored month-end, None before the first; `month_end_due` the last month-end when no run\nholds it yet (the button „Monatsabschluss festhalten“); `month_end_now` the total read\nnow for the stored month-end's day when it differs from the stored total, set only when\nthat day is the last month-end (the one the button stores again). `today_accounts` and\n`today_tabs`: today's parts per account and per tab (§7.13 (a))."
       },
       "NetWorthPoint": {
         "properties": {

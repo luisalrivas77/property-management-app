@@ -243,6 +243,7 @@ def test_a_bison_export_imports_dedups_and_reconciles_against_the_typed_balances
     overview = read(ws, imports.exchange_overview, account.id)
     [eur_position] = [p for p in overview.positions if p.symbol == "EUR"]
     assert (eur_position.typed_units, eur_position.reconciled) == (Decimal("150.01"), False)
+    assert overview.reconciled is False  # phase 10 §7.13 (a): the account's one state
 
 
 BISON_HEADER = (
